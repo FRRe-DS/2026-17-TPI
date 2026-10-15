@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  specs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - name: spec-check del PR
+        if: github.event_name == 'pull_request'
+        env:
+          RAMA: ${{ github.head_ref }}
+          BASE: origin/${{ github.base_ref }}
+        run: node scripts/spec-check.mjs --rama "$RAMA" --base "$BASE"
+      - name: spec-check de main
+        if: github.event_name == 'push'
+        run: node scripts/spec-check.mjs
+
+  contrato:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - name: ¿el contrato ya define operaciones?
+        id: contrato
+        run: |
+          if grep -qE '^(paths|components|webhooks):' contrato/openapi.yml; then
+            echo "listo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::contrato/openapi.yml todavía no define paths, components ni webhooks: se omite el lint hasta el contrato v1."
+            echo "listo=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: lint del contrato
+        if: steps.contrato.outputs.listo == 'true'
+        run: npx --yes @redocly/cli@2.62.1 lint contrato/openapi.yml
+
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: ¿ya existe el proyecto?
+        id: proyecto
+        run: |
+          if [ -f package.json ]; then
+            echo "existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Todavía no hay package.json (lo crea la spec base): se omiten build, lint y tests."
+            echo "existe=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v7.1.0
+        if: steps.proyecto.outputs.existe == 'true'
+        with:
+          node-version: 24
+          cache: npm
+      - name: dependencias
+        if: steps.proyecto.outputs.existe == 'true'
+        run: npm ci
+      - name: build
+        if: steps.proyecto.outputs.existe == 'true'
+        run: npm run build
+      - name: lint
+        if: steps.proyecto.outputs.existe == 'true'
+        run: npm run lint
+      - name: tests
+        if: steps.proyecto.outputs.existe == 'true'
+        run: npm test
+
+  contract-test:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: ¿ya existe docker-compose.yml?
+        id: compose
+        run: |
+          if [ -f docker-compose.yml ]; then
+            echo "existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Todavía no hay docker-compose.yml (lo crea la spec base): se omiten los tests de contrato."
+            echo "existe=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v7.1.0
+        if: steps.compose.outputs.existe == 'true'
+        with:
+          node-version: 24
+          cache: npm
+      - name: dependencias
+        if: steps.compose.outputs.existe == 'true'
+        run: npm ci
+      - name: levantar servicio, base y mocks
+        if: steps.compose.outputs.existe == 'true'
+        run: docker compose up -d --build --wait
+      - name: tests de contrato
+        if: steps.compose.outputs.existe == 'true'
+        run: npm run contrato:test
+      - name: logs si falla
+        if: failure() && steps.compose.outputs.existe == 'true'
+        run: docker compose logs
+
+  auditoria-main:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: el cambio llegó por un PR aprobado
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          APROBADORES: "sandobaitt agustinpagno"
+        run: |
+          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then echo "::error::Push directo a main sin PR ($SHA)"; exit 1; fi
+          ok=$(gh api "repos/$REPO/pulls/$pr/reviews" --jq '[.[] | select(.state == "APPROVED") | .user.login] | unique | join(" ")')
+          for u in $APROBADORES; do
+            case " $ok " in *" $u "*) echo "PR #$pr aprobado por $u"; exit 0 ;; esac
+          done
+          echo "::error::PR #$pr mergeado sin aprobación de: $APROBADORES"
+          exit 1
