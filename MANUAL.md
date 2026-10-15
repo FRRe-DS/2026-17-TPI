@@ -21,7 +21,7 @@ Cómo empezar a trabajar en este repo, uses Claude Code o Codex. Las reglas comp
    sudo usermod -aG docker $USER   # después cierra sesión y vuelve a entrar
    ```
 
-4. `gh auth login`, para manejar issues y PR desde la terminal.
+4. GitHub CLI (`gh`), para manejar issues y PR desde la terminal. Instálalo desde su repositorio oficial ([instrucciones para Linux](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)) y después corre `gh auth login`. El `gh` de apt de Ubuntu 24.04 (versión 2.45) es viejo: `gh issue view` y `gh pr view` fallan con "Projects (classic) is being deprecated". Si te pasa, agrega `--json`, por ejemplo `gh issue view 3 --json title,body`.
 
 ## 2. Configurar tu herramienta
 
