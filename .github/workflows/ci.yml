@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   specs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -30,7 +30,7 @@ jobs:
         run: node scripts/spec-check.mjs
 
   contrato:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.1.0
@@ -50,7 +50,7 @@ jobs:
         run: npx --yes @redocly/cli@2.62.1 lint contrato/openapi.yml
 
   build-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
       - name: ¿ya existe el proyecto?
@@ -82,7 +82,7 @@ jobs:
 
   contract-test:
     needs: build-test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
       - name: ¿ya existe docker-compose.yml?
@@ -114,7 +114,7 @@ jobs:
 
   auditoria-main:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
