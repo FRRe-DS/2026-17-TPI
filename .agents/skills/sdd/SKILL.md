@@ -12,7 +12,8 @@ Issue → rama `spec/NNN-slug` → spec → clarificación → plan → tareas �
 - La aprobación es el merge del PR. Nunca pases al código sin que el PR de spec esté mergeado en `main`.
 - El contrato (`contrato/openapi.yml`) manda sobre la spec. Si la spec necesita algo que el contrato no tiene, para: es un cambio de contrato (skill `contrato-cambio`).
 - La spec manda sobre el código. Un cambio de requisitos ya mergeado va por `sdd-change`, en una rama `spec/`.
-- Si falta una decisión: `[NECESITA ACLARACIÓN]` y pregunta. No la resuelvas por tu cuenta.
+- Si falta una decisión: `[NECESITA ACLARACIÓN]` y pregunta, con tu recomendación y su motivo. No la resuelvas por tu cuenta.
+- Si la persona te delega una decisión mientras se escribe o se aclara la spec (sdd-spec, sdd-clarify, sdd-change), aplica tu recomendación y anótala en `## Decisiones` de spec.md. Una decisión sobre cómo construir va en las decisiones de plan.md. En una rama impl, para: la spec no se toca ahí.
 - `node scripts/spec-check.mjs` valida la estructura; CI corre lo mismo. Córrelo antes de cada PR.
 
 ## Plantilla de spec (spec.md)
@@ -38,6 +39,8 @@ Responsable: @<usuario>
 ## Casos límite
 ## Fuera de alcance
 ## Criterios de finalización
+## Decisiones
+- <qué se decidió al clarificar y por qué> (opcional)
 ## Dudas abiertas
 - [NECESITA ACLARACIÓN] <duda>
 ```

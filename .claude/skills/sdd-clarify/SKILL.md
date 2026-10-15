@@ -1,5 +1,5 @@
 ---
-description: SDD · Revisa una spec como QA, sin resolver nada (uso - /sdd-clarify 004-perfil-cliente)
+description: SDD · Revisa una spec como QA, recomienda cómo resolver cada punto y aplica lo que aceptes (uso - /sdd-clarify 004-perfil-cliente)
 argument-hint: "[NNN-slug]"
 disable-model-invocation: true
 ---
