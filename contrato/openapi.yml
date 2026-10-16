@@ -2,5 +2,1127 @@ openapi: 3.1.0
 info:
   title: DS 2026 API
   description: |
-    API de Clientes
+    API de Clientes (M2). Perfil, direcciones frecuentes, preferencias, historial
+    resumido de viajes, calificación del conductor y estado de cuenta con bloqueos.
+
+    **Borrador v1 en negociación con el Grupo 1 (issue #1, ADR 001).** No está
+    publicado en el repositorio de la cátedra.
+
+    Convenciones:
+    - Autenticación: `Authorization: Bearer <JWT>` emitido por M1. El `sub` del
+      token es el `clienteId`. Los roles salen del token (CLIENTE, CONDUCTOR,
+      OPERADOR) y cada operación los declara en `x-roles`.
+    - Un CLIENTE solo opera sobre su propio `clienteId`; si no coincide con su
+      `sub`, recibe `403`.
+    - Errores: `application/problem+json` (RFC 9457) con el esquema `Problema`.
+    - Listas paginadas con `page` (desde 0) y `size` (por defecto 20, máximo 100).
+    - Los POST que no deben duplicarse exigen `Idempotency-Key`: la misma clave
+      con el mismo cuerpo devuelve la respuesta original; con otro cuerpo, `422`.
+    - Los datos de otros módulos (viajes de M6) se obtienen por su API, nunca
+      por su base. Si M6 no contesta a tiempo, M2 responde `503`; nunca queda
+      esperando.
   version: 1.0.0
+servers:
+  - url: /
+    description: Relativa al host donde se despliegue (en local, puerto 8082).
+security:
+  - bearerAuth: []
+tags:
+  - name: Perfil
+    description: Perfil del cliente (RF-2.1).
+  - name: Direcciones
+    description: Orígenes y destinos favoritos o recientes (RF-2.2).
+  - name: Preferencias
+    description: Tipo de vehículo, comunicación y accesibilidad (RF-2.3).
+  - name: Historial
+    description: Historial resumido de viajes, obtenido de M6 (RF-2.4).
+  - name: Calificaciones
+    description: Valoración del conductor después de un viaje completado (RF-2.5).
+  - name: Estado de cuenta
+    description: Estado del perfil y bloqueos administrativos (RF-2.6).
+
+paths:
+  /api/v1/clientes:
+    post:
+      tags: [Perfil]
+      operationId: crearCliente
+      summary: Crear el perfil del cliente autenticado
+      description: |
+        Crea el perfil del cliente cuyo `clienteId` es el `sub` del token.
+        Un cliente tiene como máximo un perfil: si ya existe, `409`.
+      x-roles: [CLIENTE]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClienteNuevo'
+      responses:
+        '201':
+          description: Perfil creado.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '422':
+          $ref: '#/components/responses/NoProcesable'
+
+  /api/v1/clientes/{clienteId}:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Perfil]
+      operationId: obtenerCliente
+      summary: Consultar el perfil
+      x-roles: [CLIENTE, OPERADOR]
+      responses:
+        '200':
+          description: Perfil del cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    patch:
+      tags: [Perfil]
+      operationId: actualizarCliente
+      summary: Actualizar el perfil
+      description: Actualiza solo los campos enviados.
+      x-roles: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClienteCambios'
+      responses:
+        '200':
+          description: Perfil actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/v1/clientes/{clienteId}/direcciones:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Direcciones]
+      operationId: listarDirecciones
+      summary: Listar direcciones frecuentes
+      x-roles: [CLIENTE, OPERADOR]
+      parameters:
+        - name: tipo
+          in: query
+          required: false
+          description: Filtra por favoritas o recientes.
+          schema:
+            $ref: '#/components/schemas/TipoDireccion'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página de direcciones.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaDirecciones'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    post:
+      tags: [Direcciones]
+      operationId: crearDireccion
+      summary: Registrar una dirección frecuente
+      description: |
+        Guarda la dirección con sus propios datos (texto y, opcionalmente,
+        coordenadas). No guarda identificadores internos de M4.
+      x-roles: [CLIENTE]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DireccionNueva'
+      responses:
+        '201':
+          description: Dirección registrada.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Direccion'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '422':
+          $ref: '#/components/responses/NoProcesable'
+
+  /api/v1/clientes/{clienteId}/direcciones/{direccionId}:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+      - name: direccionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Direcciones]
+      operationId: obtenerDireccion
+      summary: Consultar una dirección
+      x-roles: [CLIENTE, OPERADOR]
+      responses:
+        '200':
+          description: Dirección.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Direccion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    patch:
+      tags: [Direcciones]
+      operationId: actualizarDireccion
+      summary: Actualizar una dirección
+      x-roles: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DireccionCambios'
+      responses:
+        '200':
+          description: Dirección actualizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Direccion'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    delete:
+      tags: [Direcciones]
+      operationId: eliminarDireccion
+      summary: Eliminar una dirección
+      x-roles: [CLIENTE]
+      responses:
+        '204':
+          description: Dirección eliminada.
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/v1/clientes/{clienteId}/preferencias:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Preferencias]
+      operationId: obtenerPreferencias
+      summary: Consultar preferencias
+      description: Si el cliente nunca las guardó, devuelve los valores por defecto.
+      x-roles: [CLIENTE, OPERADOR]
+      responses:
+        '200':
+          description: Preferencias del cliente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferencias'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    put:
+      tags: [Preferencias]
+      operationId: guardarPreferencias
+      summary: Guardar preferencias
+      description: Reemplaza todas las preferencias. Es idempotente por naturaleza.
+      x-roles: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Preferencias'
+      responses:
+        '200':
+          description: Preferencias guardadas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferencias'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/v1/clientes/{clienteId}/viajes:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Historial]
+      operationId: listarHistorialViajes
+      summary: Historial resumido de viajes
+      description: |
+        M2 lo arma consultando la API de M6 en cada pedido; no copia ni lee la
+        base de M6. Si M6 no contesta dentro del timeout configurado (con
+        reintentos limitados), responde `503`.
+      x-roles: [CLIENTE, OPERADOR]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página del historial.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaViajes'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '503':
+          $ref: '#/components/responses/DependenciaNoDisponible'
+
+  /api/v1/clientes/{clienteId}/calificaciones:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Calificaciones]
+      operationId: listarCalificaciones
+      summary: Listar las calificaciones que hizo el cliente
+      x-roles: [CLIENTE, OPERADOR]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página de calificaciones.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaCalificaciones'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    post:
+      tags: [Calificaciones]
+      operationId: calificarConductor
+      summary: Calificar al conductor de un viaje completado
+      description: |
+        M2 consulta a M6 que el viaje esté completado y que el cliente haya sido
+        su pasajero; el conductor calificado sale de esa respuesta, no del cuerpo.
+        Hay como máximo una calificación por viaje y cliente, garantizada en la
+        base: un segundo intento con otra `Idempotency-Key` devuelve `409`.
+      x-roles: [CLIENTE]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalificacionNueva'
+      responses:
+        '201':
+          description: Calificación registrada.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Calificacion'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+        '422':
+          $ref: '#/components/responses/NoProcesable'
+        '503':
+          $ref: '#/components/responses/DependenciaNoDisponible'
+
+  /api/v1/clientes/{clienteId}/calificaciones/{calificacionId}:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+      - name: calificacionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Calificaciones]
+      operationId: obtenerCalificacion
+      summary: Consultar una calificación
+      x-roles: [CLIENTE, OPERADOR]
+      responses:
+        '200':
+          description: Calificación.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Calificacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/v1/clientes/{clienteId}/estado-cuenta:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Estado de cuenta]
+      operationId: obtenerEstadoCuenta
+      summary: Estado del perfil y bloqueos vigentes
+      description: |
+        Lo consultan el cliente, el operador y los módulos que necesitan saber
+        si el cliente está habilitado (por ejemplo M5 y M9).
+      x-roles: [CLIENTE, OPERADOR]
+      responses:
+        '200':
+          description: Estado de cuenta.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoCuenta'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /api/v1/clientes/{clienteId}/bloqueos:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Estado de cuenta]
+      operationId: listarBloqueos
+      summary: Historial de bloqueos (vigentes y levantados)
+      x-roles: [OPERADOR]
+      parameters:
+        - name: vigente
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Página de bloqueos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaBloqueos'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    post:
+      tags: [Estado de cuenta]
+      operationId: crearBloqueo
+      summary: Bloquear administrativamente al cliente
+      x-roles: [OPERADOR]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BloqueoNuevo'
+      responses:
+        '201':
+          description: Bloqueo registrado.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bloqueo'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '422':
+          $ref: '#/components/responses/NoProcesable'
+
+  /api/v1/clientes/{clienteId}/bloqueos/{bloqueoId}:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+      - name: bloqueoId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Estado de cuenta]
+      operationId: obtenerBloqueo
+      summary: Consultar un bloqueo
+      x-roles: [OPERADOR]
+      responses:
+        '200':
+          description: Bloqueo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bloqueo'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+    patch:
+      tags: [Estado de cuenta]
+      operationId: levantarBloqueo
+      summary: Levantar un bloqueo
+      description: |
+        No borra el bloqueo: registra quién, cuándo y por qué lo levantó.
+        Levantar uno ya levantado devuelve `409`.
+      x-roles: [OPERADOR]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LevantamientoBloqueo'
+      responses:
+        '200':
+          description: Bloqueo levantado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bloqueo'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          $ref: '#/components/responses/Conflicto'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token emitido por M1. `sub` = `clienteId`; los roles van en el token.
+
+  parameters:
+    ClienteId:
+      name: clienteId
+      in: path
+      required: true
+      description: Identificador del cliente; es el `sub` que asigna M1.
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Número de página, desde 0.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Elementos por página.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Clave única generada por quien llama (se recomienda UUID). Con la misma
+        clave y el mismo cuerpo se devuelve la respuesta original sin repetir el
+        efecto; con la misma clave y otro cuerpo, `422`.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+
+  headers:
+    Location:
+      description: URL del recurso creado.
+      schema:
+        type: string
+        format: uri-reference
+
+  responses:
+    SolicitudInvalida:
+      description: Cuerpo o parámetros con formato inválido.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    NoAutenticado:
+      description: Falta el token o no es válido.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    SinPermiso:
+      description: El rol no permite la operación, o el cliente no es el dueño del recurso.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    NoEncontrado:
+      description: El cliente o el recurso no existe.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    Conflicto:
+      description: El recurso ya existe o su estado no admite la operación.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    NoProcesable:
+      description: |
+        Formato correcto pero la regla de negocio no se cumple (por ejemplo, el
+        viaje no está completado), o se reusó una `Idempotency-Key` con otro cuerpo.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+    DependenciaNoDisponible:
+      description: Un módulo del que depende la operación (M6) no respondió a tiempo.
+      headers:
+        Retry-After:
+          description: Segundos sugeridos antes de reintentar.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problema'
+
+  schemas:
+    Problema:
+      type: object
+      description: Error según RFC 9457.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Identifica el tipo de error.
+          examples: ['/errores/calificacion-duplicada']
+        title:
+          type: string
+          examples: ['El viaje ya fue calificado']
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        errores:
+          type: array
+          description: Detalle por campo cuando falla la validación (400).
+          items:
+            type: object
+            required: [campo, mensaje]
+            properties:
+              campo:
+                type: string
+              mensaje:
+                type: string
+
+    Pagina:
+      type: object
+      required: [page, size, totalElementos, totalPaginas]
+      properties:
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+        totalElementos:
+          type: integer
+          minimum: 0
+        totalPaginas:
+          type: integer
+          minimum: 0
+
+    ClienteNuevo:
+      type: object
+      additionalProperties: false
+      required: [nombre, apellido, telefono]
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 100
+        apellido:
+          type: string
+          minLength: 1
+          maxLength: 100
+        telefono:
+          type: string
+          description: Formato E.164.
+          pattern: '^\+[1-9][0-9]{6,14}$'
+          examples: ['+5493624000000']
+        fechaNacimiento:
+          type: string
+          format: date
+
+    ClienteCambios:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 100
+        apellido:
+          type: string
+          minLength: 1
+          maxLength: 100
+        telefono:
+          type: string
+          pattern: '^\+[1-9][0-9]{6,14}$'
+        fechaNacimiento:
+          type: string
+          format: date
+
+    Cliente:
+      type: object
+      required: [clienteId, nombre, apellido, telefono, estado, creadoEn, actualizadoEn]
+      properties:
+        clienteId:
+          type: string
+          format: uuid
+        nombre:
+          type: string
+        apellido:
+          type: string
+        telefono:
+          type: string
+        fechaNacimiento:
+          type: string
+          format: date
+        estado:
+          $ref: '#/components/schemas/EstadoCliente'
+        creadoEn:
+          type: string
+          format: date-time
+        actualizadoEn:
+          type: string
+          format: date-time
+
+    EstadoCliente:
+      type: string
+      description: |
+        ACTIVO: puede solicitar y reservar viajes. BLOQUEADO: tiene al menos un
+        bloqueo administrativo vigente.
+      enum: [ACTIVO, BLOQUEADO]
+
+    TipoDireccion:
+      type: string
+      enum: [FAVORITA, RECIENTE]
+
+    Coordenadas:
+      type: object
+      additionalProperties: false
+      required: [latitud, longitud]
+      properties:
+        latitud:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitud:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    DireccionNueva:
+      type: object
+      additionalProperties: false
+      required: [tipo, texto]
+      properties:
+        tipo:
+          $ref: '#/components/schemas/TipoDireccion'
+        alias:
+          type: string
+          maxLength: 50
+          examples: ['Casa']
+        texto:
+          type: string
+          minLength: 1
+          maxLength: 255
+          examples: ['Av. Sarmiento 1234, Resistencia, Chaco']
+        coordenadas:
+          $ref: '#/components/schemas/Coordenadas'
+
+    DireccionCambios:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        tipo:
+          $ref: '#/components/schemas/TipoDireccion'
+        alias:
+          type: string
+          maxLength: 50
+        texto:
+          type: string
+          minLength: 1
+          maxLength: 255
+        coordenadas:
+          $ref: '#/components/schemas/Coordenadas'
+
+    Direccion:
+      type: object
+      required: [direccionId, tipo, texto, creadoEn]
+      properties:
+        direccionId:
+          type: string
+          format: uuid
+        tipo:
+          $ref: '#/components/schemas/TipoDireccion'
+        alias:
+          type: string
+        texto:
+          type: string
+        coordenadas:
+          $ref: '#/components/schemas/Coordenadas'
+        creadoEn:
+          type: string
+          format: date-time
+        usadoEn:
+          type: string
+          format: date-time
+          description: Último uso como origen o destino.
+
+    PaginaDirecciones:
+      allOf:
+        - $ref: '#/components/schemas/Pagina'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Direccion'
+
+    TipoVehiculo:
+      type: string
+      enum: [AUTO, MOTO]
+
+    CanalComunicacion:
+      type: string
+      enum: [EMAIL, SMS, PUSH]
+
+    NecesidadAccesibilidad:
+      type: string
+      enum: [SILLA_DE_RUEDAS, ASISTENCIA_VISUAL, ASISTENCIA_AUDITIVA, ANIMAL_DE_ASISTENCIA]
+
+    Preferencias:
+      type: object
+      additionalProperties: false
+      required: [tiposVehiculo, canales, accesibilidad]
+      properties:
+        tiposVehiculo:
+          type: array
+          description: Tipos aceptados. Vacío = cualquiera.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/TipoVehiculo'
+        canales:
+          type: array
+          description: Canales por los que acepta avisos. Vacío = ninguno opcional.
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/CanalComunicacion'
+        accesibilidad:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/NecesidadAccesibilidad'
+        observacionesAccesibilidad:
+          type: string
+          maxLength: 255
+
+    ViajeResumen:
+      type: object
+      description: Resumen armado con la respuesta de M6. Sin datos sensibles.
+      required: [viajeId, estado]
+      properties:
+        viajeId:
+          type: string
+          format: uuid
+        estado:
+          type: string
+          description: Estado informado por M6, sin traducir.
+          examples: ['FINALIZADO']
+        tipoVehiculo:
+          $ref: '#/components/schemas/TipoVehiculo'
+        origen:
+          type: string
+        destino:
+          type: string
+        iniciadoEn:
+          type: string
+          format: date-time
+        finalizadoEn:
+          type: string
+          format: date-time
+        conductorId:
+          type: string
+          format: uuid
+        calificado:
+          type: boolean
+          description: Si el cliente ya calificó al conductor de este viaje (dato de M2).
+
+    PaginaViajes:
+      allOf:
+        - $ref: '#/components/schemas/Pagina'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ViajeResumen'
+
+    CalificacionNueva:
+      type: object
+      additionalProperties: false
+      required: [viajeId, puntaje]
+      properties:
+        viajeId:
+          type: string
+          format: uuid
+        puntaje:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comentario:
+          type: string
+          maxLength: 500
+
+    Calificacion:
+      type: object
+      required: [calificacionId, viajeId, conductorId, puntaje, creadoEn]
+      properties:
+        calificacionId:
+          type: string
+          format: uuid
+        viajeId:
+          type: string
+          format: uuid
+        conductorId:
+          type: string
+          format: uuid
+        puntaje:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comentario:
+          type: string
+        creadoEn:
+          type: string
+          format: date-time
+
+    PaginaCalificaciones:
+      allOf:
+        - $ref: '#/components/schemas/Pagina'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Calificacion'
+
+    EstadoCuenta:
+      type: object
+      required: [clienteId, estado, bloqueosVigentes]
+      properties:
+        clienteId:
+          type: string
+          format: uuid
+        estado:
+          $ref: '#/components/schemas/EstadoCliente'
+        bloqueosVigentes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bloqueo'
+
+    BloqueoNuevo:
+      type: object
+      additionalProperties: false
+      required: [motivo]
+      properties:
+        motivo:
+          type: string
+          minLength: 1
+          maxLength: 500
+        hasta:
+          type: string
+          format: date-time
+          description: Fin del bloqueo. Sin valor, vigente hasta que se levante.
+
+    LevantamientoBloqueo:
+      type: object
+      additionalProperties: false
+      required: [motivo]
+      properties:
+        motivo:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    Bloqueo:
+      type: object
+      required: [bloqueoId, motivo, vigente, creadoEn, creadoPor]
+      properties:
+        bloqueoId:
+          type: string
+          format: uuid
+        motivo:
+          type: string
+        vigente:
+          type: boolean
+        desde:
+          type: string
+          format: date-time
+        hasta:
+          type: string
+          format: date-time
+        creadoEn:
+          type: string
+          format: date-time
+        creadoPor:
+          type: string
+          description: 'Sub del token del operador que lo registró.'
+        levantadoEn:
+          type: string
+          format: date-time
+        levantadoPor:
+          type: string
+        motivoLevantamiento:
+          type: string
+
+    PaginaBloqueos:
+      allOf:
+        - $ref: '#/components/schemas/Pagina'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Bloqueo'
