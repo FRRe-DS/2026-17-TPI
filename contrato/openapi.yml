@@ -10,17 +10,29 @@ info:
 
     Convenciones:
     - Autenticación: `Authorization: Bearer <JWT>` emitido por M1. El `sub` del
-      token es el `clienteId`. Los roles salen del token (CLIENTE, CONDUCTOR,
-      OPERADOR) y cada operación los declara en `x-roles`.
+      token es el `clienteId`. Los roles salen del token (CLIENTE, OPERADOR,
+      SERVICIO) y cada operación declara los que admite en `security`, como
+      roles de OpenAPI 3.1 (`bearerAuth: [CLIENTE, OPERADOR]`). `GET /health`
+      no exige token.
     - Un CLIENTE solo opera sobre su propio `clienteId`; si no coincide con su
-      `sub`, recibe `403`.
+      `sub`, recibe `403`. SERVICIO es el rol de los módulos que consultan a M2
+      (por ejemplo M5 y M9) y solo está habilitado en `obtenerEstadoCuenta`.
+    - Correlación: toda solicitud puede traer `X-Request-Id` (1 a 128
+      caracteres: letras, números, `.`, `_`, `-`). Toda respuesta, también las
+      de error, lo devuelve; si la solicitud no lo trae, M2 genera uno.
     - Errores: `application/problem+json` (RFC 9457) con el esquema `Problema`.
+      Los genéricos (`400`, `401`, `403`, `404`, `413`, `415`, `500`, `503` de
+      la base) usan `type: about:blank`; los de dominio (`409`, `422`, `503` de
+      dependencia) tienen su propio `type`.
+    - Cuerpos: solo `application/json` (otro `Content-Type`, `415`) y hasta
+      1 MiB (más grande, `413`).
     - Listas paginadas con `page` (desde 0) y `size` (por defecto 20, máximo 100).
     - Los POST que no deben duplicarse exigen `Idempotency-Key`: la misma clave
       con el mismo cuerpo devuelve la respuesta original; con otro cuerpo, `422`.
     - Los datos de otros módulos (viajes de M6) se obtienen por su API, nunca
-      por su base. Si M6 no contesta a tiempo, M2 responde `503`; nunca queda
-      esperando.
+      por su base. M2 espera hasta 2 s por intento a otro módulo y reintenta una
+      vez las consultas `GET`; si no hay respuesta, contesta `503`. Nunca queda
+      esperando: el tiempo máximo de respuesta es de 4,2 s.
   version: 1.0.0
 servers:
   - url: /
@@ -28,6 +40,8 @@ servers:
 security:
   - bearerAuth: []
 tags:
+  - name: Salud
+    description: Disponibilidad del servicio.
   - name: Perfil
     description: Perfil del cliente (RF-2.1).
   - name: Direcciones
@@ -42,7 +56,37 @@ tags:
     description: Estado del perfil y bloqueos administrativos (RF-2.6).
 
 paths:
+  /health:
+    parameters:
+      - $ref: '#/components/parameters/XRequestId'
+    get:
+      tags: [Salud]
+      operationId: verificarSalud
+      summary: Verificar que el servicio responde
+      description: |
+        No exige token. Responde `200` si el servicio y su base están
+        disponibles; si no, `503`.
+      security: []
+      responses:
+        '200':
+          description: El servicio responde.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+
   /api/v1/clientes:
+    parameters:
+      - $ref: '#/components/parameters/XRequestId'
     post:
       tags: [Perfil]
       operationId: crearCliente
@@ -50,7 +94,8 @@ paths:
       description: |
         Crea el perfil del cliente cuyo `clienteId` es el `sub` del token.
         Un cliente tiene como máximo un perfil: si ya existe, `409`.
-      x-roles: [CLIENTE]
+      security:
+        - bearerAuth: [CLIENTE]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -63,6 +108,8 @@ paths:
         '201':
           description: Perfil creado.
           headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
             Location:
               $ref: '#/components/headers/Location'
           content:
@@ -77,45 +124,33 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '409':
           $ref: '#/components/responses/Conflicto'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
         '422':
           $ref: '#/components/responses/NoProcesable'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
     get:
       tags: [Perfil]
       operationId: obtenerCliente
       summary: Consultar el perfil
-      x-roles: [CLIENTE, OPERADOR]
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
       responses:
         '200':
           description: Perfil del cliente.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Cliente'
-        '401':
-          $ref: '#/components/responses/NoAutenticado'
-        '403':
-          $ref: '#/components/responses/SinPermiso'
-        '404':
-          $ref: '#/components/responses/NoEncontrado'
-    patch:
-      tags: [Perfil]
-      operationId: actualizarCliente
-      summary: Actualizar el perfil
-      description: Actualiza solo los campos enviados.
-      x-roles: [CLIENTE]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ClienteCambios'
-      responses:
-        '200':
-          description: Perfil actualizado.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -128,15 +163,60 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+    patch:
+      tags: [Perfil]
+      operationId: actualizarCliente
+      summary: Actualizar el perfil
+      description: Actualiza solo los campos enviados.
+      security:
+        - bearerAuth: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClienteCambios'
+      responses:
+        '200':
+          description: Perfil actualizado.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}/direcciones:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
     get:
       tags: [Direcciones]
       operationId: listarDirecciones
       summary: Listar direcciones frecuentes
-      x-roles: [CLIENTE, OPERADOR]
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
       parameters:
         - name: tipo
           in: query
@@ -149,6 +229,9 @@ paths:
       responses:
         '200':
           description: Página de direcciones.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -161,6 +244,10 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
     post:
       tags: [Direcciones]
       operationId: crearDireccion
@@ -168,7 +255,8 @@ paths:
       description: |
         Guarda la dirección con sus propios datos (texto y, opcionalmente,
         coordenadas). No guarda identificadores internos de M4.
-      x-roles: [CLIENTE]
+      security:
+        - bearerAuth: [CLIENTE]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -181,6 +269,8 @@ paths:
         '201':
           description: Dirección registrada.
           headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
             Location:
               $ref: '#/components/headers/Location'
           content:
@@ -195,11 +285,20 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
         '422':
           $ref: '#/components/responses/NoProcesable'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}/direcciones/{direccionId}:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
       - name: direccionId
         in: path
@@ -211,25 +310,36 @@ paths:
       tags: [Direcciones]
       operationId: obtenerDireccion
       summary: Consultar una dirección
-      x-roles: [CLIENTE, OPERADOR]
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
       responses:
         '200':
           description: Dirección.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Direccion'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
         '401':
           $ref: '#/components/responses/NoAutenticado'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
     patch:
       tags: [Direcciones]
       operationId: actualizarDireccion
       summary: Actualizar una dirección
-      x-roles: [CLIENTE]
+      security:
+        - bearerAuth: [CLIENTE]
       requestBody:
         required: true
         content:
@@ -239,6 +349,9 @@ paths:
       responses:
         '200':
           description: Dirección actualizada.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -251,58 +364,56 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
     delete:
       tags: [Direcciones]
       operationId: eliminarDireccion
       summary: Eliminar una dirección
-      x-roles: [CLIENTE]
+      security:
+        - bearerAuth: [CLIENTE]
       responses:
         '204':
           description: Dirección eliminada.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
         '401':
           $ref: '#/components/responses/NoAutenticado'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}/preferencias:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
     get:
       tags: [Preferencias]
       operationId: obtenerPreferencias
       summary: Consultar preferencias
       description: Si el cliente nunca las guardó, devuelve los valores por defecto.
-      x-roles: [CLIENTE, OPERADOR]
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
       responses:
         '200':
           description: Preferencias del cliente.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Preferencias'
-        '401':
-          $ref: '#/components/responses/NoAutenticado'
-        '403':
-          $ref: '#/components/responses/SinPermiso'
-        '404':
-          $ref: '#/components/responses/NoEncontrado'
-    put:
-      tags: [Preferencias]
-      operationId: guardarPreferencias
-      summary: Guardar preferencias
-      description: Reemplaza todas las preferencias. Es idempotente por naturaleza.
-      x-roles: [CLIENTE]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Preferencias'
-      responses:
-        '200':
-          description: Preferencias guardadas.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -315,9 +426,53 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+    put:
+      tags: [Preferencias]
+      operationId: guardarPreferencias
+      summary: Guardar preferencias
+      description: Reemplaza todas las preferencias. Es idempotente por naturaleza.
+      security:
+        - bearerAuth: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Preferencias'
+      responses:
+        '200':
+          description: Preferencias guardadas.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferencias'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}/viajes:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
     get:
       tags: [Historial]
@@ -325,15 +480,19 @@ paths:
       summary: Historial resumido de viajes
       description: |
         M2 lo arma consultando la API de M6 en cada pedido; no copia ni lee la
-        base de M6. Si M6 no contesta dentro del timeout configurado (con
-        reintentos limitados), responde `503`.
-      x-roles: [CLIENTE, OPERADOR]
+        base de M6. Si M6 no contesta (2 s por intento, un reintento), responde
+        `503`.
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
       responses:
         '200':
           description: Página del historial.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -346,23 +505,30 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
         '503':
           $ref: '#/components/responses/DependenciaNoDisponible'
 
   /api/v1/clientes/{clienteId}/calificaciones:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
     get:
       tags: [Calificaciones]
       operationId: listarCalificaciones
       summary: Listar las calificaciones que hizo el cliente
-      x-roles: [CLIENTE, OPERADOR]
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
       responses:
         '200':
           description: Página de calificaciones.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -375,6 +541,10 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
     post:
       tags: [Calificaciones]
       operationId: calificarConductor
@@ -384,7 +554,8 @@ paths:
         su pasajero; el conductor calificado sale de esa respuesta, no del cuerpo.
         Hay como máximo una calificación por viaje y cliente, garantizada en la
         base: un segundo intento con otra `Idempotency-Key` devuelve `409`.
-      x-roles: [CLIENTE]
+      security:
+        - bearerAuth: [CLIENTE]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -397,6 +568,8 @@ paths:
         '201':
           description: Calificación registrada.
           headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
             Location:
               $ref: '#/components/headers/Location'
           content:
@@ -413,13 +586,20 @@ paths:
           $ref: '#/components/responses/NoEncontrado'
         '409':
           $ref: '#/components/responses/Conflicto'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
         '422':
           $ref: '#/components/responses/NoProcesable'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
         '503':
           $ref: '#/components/responses/DependenciaNoDisponible'
 
   /api/v1/clientes/{clienteId}/calificaciones/{calificacionId}:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
       - name: calificacionId
         in: path
@@ -431,23 +611,34 @@ paths:
       tags: [Calificaciones]
       operationId: obtenerCalificacion
       summary: Consultar una calificación
-      x-roles: [CLIENTE, OPERADOR]
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
       responses:
         '200':
           description: Calificación.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Calificacion'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
         '401':
           $ref: '#/components/responses/NoAutenticado'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}/estado-cuenta:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
     get:
       tags: [Estado de cuenta]
@@ -455,30 +646,43 @@ paths:
       summary: Estado del perfil y bloqueos vigentes
       description: |
         Lo consultan el cliente, el operador y los módulos que necesitan saber
-        si el cliente está habilitado (por ejemplo M5 y M9).
-      x-roles: [CLIENTE, OPERADOR]
+        si el cliente está habilitado (por ejemplo M5 y M9) con un token de rol
+        SERVICIO emitido por M1. Es la única operación que admite SERVICIO.
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR, SERVICIO]
       responses:
         '200':
           description: Estado de cuenta.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/EstadoCuenta'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
         '401':
           $ref: '#/components/responses/NoAutenticado'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}/bloqueos:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
     get:
       tags: [Estado de cuenta]
       operationId: listarBloqueos
       summary: Historial de bloqueos (vigentes y levantados)
-      x-roles: [OPERADOR]
+      security:
+        - bearerAuth: [OPERADOR]
       parameters:
         - name: vigente
           in: query
@@ -490,6 +694,9 @@ paths:
       responses:
         '200':
           description: Página de bloqueos.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -502,11 +709,16 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
     post:
       tags: [Estado de cuenta]
       operationId: crearBloqueo
       summary: Bloquear administrativamente al cliente
-      x-roles: [OPERADOR]
+      security:
+        - bearerAuth: [OPERADOR]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -519,6 +731,8 @@ paths:
         '201':
           description: Bloqueo registrado.
           headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
             Location:
               $ref: '#/components/headers/Location'
           content:
@@ -533,11 +747,20 @@ paths:
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
         '422':
           $ref: '#/components/responses/NoProcesable'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
   /api/v1/clientes/{clienteId}/bloqueos/{bloqueoId}:
     parameters:
+      - $ref: '#/components/parameters/XRequestId'
       - $ref: '#/components/parameters/ClienteId'
       - name: bloqueoId
         in: path
@@ -549,20 +772,30 @@ paths:
       tags: [Estado de cuenta]
       operationId: obtenerBloqueo
       summary: Consultar un bloqueo
-      x-roles: [OPERADOR]
+      security:
+        - bearerAuth: [OPERADOR]
       responses:
         '200':
           description: Bloqueo.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Bloqueo'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
         '401':
           $ref: '#/components/responses/NoAutenticado'
         '403':
           $ref: '#/components/responses/SinPermiso'
         '404':
           $ref: '#/components/responses/NoEncontrado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
     patch:
       tags: [Estado de cuenta]
       operationId: levantarBloqueo
@@ -570,7 +803,8 @@ paths:
       description: |
         No borra el bloqueo: registra quién, cuándo y por qué lo levantó.
         Levantar uno ya levantado devuelve `409`.
-      x-roles: [OPERADOR]
+      security:
+        - bearerAuth: [OPERADOR]
       requestBody:
         required: true
         content:
@@ -580,6 +814,9 @@ paths:
       responses:
         '200':
           description: Bloqueo levantado.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
           content:
             application/json:
               schema:
@@ -594,6 +831,14 @@ paths:
           $ref: '#/components/responses/NoEncontrado'
         '409':
           $ref: '#/components/responses/Conflicto'
+        '413':
+          $ref: '#/components/responses/CuerpoDemasiadoGrande'
+        '415':
+          $ref: '#/components/responses/TipoNoSoportado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
 
 components:
   securitySchemes:
@@ -601,9 +846,24 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Token emitido por M1. `sub` = `clienteId`; los roles van en el token.
+      description: |
+        Token emitido por M1. `sub` = `clienteId`; los roles (CLIENTE,
+        OPERADOR, SERVICIO) van en el token y cada operación declara en
+        `security` los que admite.
 
   parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: |
+        Identificador de correlación. Vuelve en la respuesta; si no llega, M2
+        genera uno.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._-]{1,128}$'
     ClienteId:
       name: clienteId
       in: path
@@ -650,34 +910,106 @@ components:
       schema:
         type: string
         format: uri-reference
+    XRequestId:
+      description: |
+        Identificador de correlación: el recibido en `X-Request-Id` o, si no
+        llegó, el que generó M2.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._-]{1,128}$'
+    RetryAfter:
+      description: Segundos sugeridos antes de reintentar.
+      schema:
+        type: integer
+        minimum: 1
 
   responses:
+    # Errores genéricos: type about:blank (RFC 9457, sección 4.2.1).
     SolicitudInvalida:
-      description: Cuerpo o parámetros con formato inválido.
+      description: |
+        Cuerpo, parámetros o encabezados con formato inválido (incluye un
+        identificador de la ruta que no es UUID o un `X-Request-Id` inválido).
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problema'
+            $ref: '#/components/schemas/ProblemaGenerico'
     NoAutenticado:
       description: Falta el token o no es válido.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problema'
+            $ref: '#/components/schemas/ProblemaGenerico'
     SinPermiso:
       description: El rol no permite la operación, o el cliente no es el dueño del recurso.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problema'
+            $ref: '#/components/schemas/ProblemaGenerico'
     NoEncontrado:
       description: El cliente o el recurso no existe.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problema'
+            $ref: '#/components/schemas/ProblemaGenerico'
+    CuerpoDemasiadoGrande:
+      description: El cuerpo supera 1 MiB.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemaGenerico'
+    TipoNoSoportado:
+      description: El `Content-Type` del cuerpo no es `application/json`.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemaGenerico'
+    ErrorInterno:
+      description: Error inesperado de M2. No expone detalles internos.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemaGenerico'
+    ServicioNoDisponible:
+      description: La base de M2 no está disponible.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemaGenerico'
+
+    # Errores de dominio: type propio.
     Conflicto:
       description: El recurso ya existe o su estado no admite la operación.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/problem+json:
           schema:
@@ -686,18 +1018,23 @@ components:
       description: |
         Formato correcto pero la regla de negocio no se cumple (por ejemplo, el
         viaje no está completado), o se reusó una `Idempotency-Key` con otro cuerpo.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problema'
     DependenciaNoDisponible:
-      description: Un módulo del que depende la operación (M6) no respondió a tiempo.
+      description: |
+        Un módulo del que depende la operación (M6) no respondió a tiempo
+        (`type` propio). Si la que no está disponible es la base de M2, el
+        `503` es genérico (`type: about:blank`), como en `ServicioNoDisponible`.
       headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
         Retry-After:
-          description: Segundos sugeridos antes de reintentar.
-          schema:
-            type: integer
-            minimum: 1
+          $ref: '#/components/headers/RetryAfter'
       content:
         application/problem+json:
           schema:
@@ -737,6 +1074,23 @@ components:
                 type: string
               mensaje:
                 type: string
+
+    ProblemaGenerico:
+      description: Error genérico; el `title` es la frase estándar del código HTTP.
+      allOf:
+        - $ref: '#/components/schemas/Problema'
+        - type: object
+          properties:
+            type:
+              const: about:blank
+
+    Salud:
+      type: object
+      required: [estado]
+      properties:
+        estado:
+          type: string
+          const: ok
 
     Pagina:
       type: object
