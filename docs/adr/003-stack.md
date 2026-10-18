@@ -1,7 +1,8 @@
 # ADR 003 — Stack del servicio M2 Clientes
 
-Fecha: 2026-10-15 · Estado: propuesta
+Fecha: 2026-10-15 · Estado: aceptada
 Issue: #3
+Aceptación: la cátedra aprobó el stack (RNF-01), según informó el integrador el 2026-10-18.
 
 ## Contexto
 RNF-01 deja lenguaje y framework a elección del grupo, con aprobación de la cátedra y justificación técnica. M2 expone una API REST definida por un contrato OpenAPI 3.1 compartido con el Grupo 1, tiene base propia (RNF-05), corre en contenedores (RNF-04) y necesita tests unitarios y de integración con base real desde TP1 (RNF-07). En clase se trabajó con TypeScript y Vitest. El grupo construye con agentes (Claude Code, Codex, Antigravity) y necesita entender lo construido a nivel principiante.
