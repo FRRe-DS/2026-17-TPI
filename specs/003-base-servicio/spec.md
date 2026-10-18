@@ -1,6 +1,6 @@
 # Spec 003 — Base del servicio
 
-Estado: borrador
+Estado: aprobada
 Issue: #3
 Etapa: TP1
 Responsable: @sandobaitt (con @Colomufa y @garciamorenaa)

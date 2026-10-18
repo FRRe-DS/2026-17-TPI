@@ -1,6 +1,6 @@
 # ADR 003 — Base del servicio: salud fuera del contrato y operaciones desde el contrato
 
-Fecha: 2026-10-18 · Estado: propuesta
+Fecha: 2026-10-18 · Estado: aceptada
 Issue: #3
 
 ## Contexto
