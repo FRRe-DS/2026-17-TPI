@@ -14,7 +14,7 @@ Cómo se implementan (lo decidió el integrador el 2026-10-18):
 ## Bloque A — Proyecto, contrato, errores y logs
 Depende de: nada. No necesita Docker.
 
-- [ ] **T1. Crear el proyecto: `package.json` con las versiones exactas y los scripts del plan, `package-lock.json`, configuración de TypeScript, ESLint y Vitest, y `.gitignore` (plan, Versiones a fijar).** RNF-01.1
+- [x] **T1. Crear el proyecto: `package.json` con las versiones exactas y los scripts del plan, `package-lock.json`, configuración de TypeScript, ESLint y Vitest, y `.gitignore` (plan, Versiones a fijar).** RNF-01.1
   - Hecho cuando: `npm ci`, `npm run build`, `npm run lint` y `npm test` pasan con Node 24; `pruebas/unitarias/consistencia.test.ts` comprueba que ninguna dependencia de `package.json` usa rangos (`^`, `~`, `*` ni `latest`); `src/generado/contrato.ts` se genera solo y `git status` no muestra `src/generado/` ni `dist/`; y la trampa de AGENTS.md ya no dice que falta `package.json` (sigue diciendo que falta `docker-compose.yml` hasta el bloque E).
 - [ ] **T2. Leer y validar la configuración del entorno: `cargarConfig` y `cargarConfigTokens` (plan, Lógica 1).** RNF-06.1, RNF-06.2
   - Hecho cuando: `pruebas/unitarias/config.test.ts` cubre los valores por defecto, cada valor inválido (un nombre de encabezado de correlación inválido incluido), cada variable obligatoria que falta y una variable vacía; ningún mensaje de error contiene el valor recibido; y `cargarConfigTokens` pide solo las variables de los tokens.
