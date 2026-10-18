@@ -1,0 +1,94 @@
+# Tareas 003 — Base del servicio
+
+Spec: [spec.md](spec.md) · Plan: [plan.md](plan.md) · Issue: #3
+
+Tareas de 20-30 minutos, en orden de dependencia. Cada una empieza por sus pruebas en rojo y sigue el plan: el cómo está en la sección que nombra.
+
+Cómo se implementan (lo decidió el integrador el 2026-10-18):
+- Un PR de implementación por bloque, cada uno desde su rama (`impl/003-bloque-a`, `impl/003-bloque-b`, …). Cuando A esté en `main`, B, C y D pueden avanzar en paralelo; E va al final.
+- En los PR de A a D, la validación cubre solo los requisitos de las tareas del bloque, y la spec sigue «aprobada». La validación completa (Visión general de la guía, Estado «implementada» y commit `003/V`) va en el PR del bloque E.
+- T4, T6, T8, T12, T16, T18, T21 y T23 son delicadas (contrato, orden interno de Fastify, concurrencia y red) y van con el modelo más capaz: Opus en Claude Code. Las demás, con Sonnet.
+- Si dos bloques en paralelo chocan al integrar `main` (`guia.md`, `tasks.md` o `src/app.ts`), se conservan los cambios de los dos lados.
+- Si el contrato v1 (#1) se mergea antes del bloque E: `/health` pasa a registrarse desde el contrato, `npm run contrato:test` avisa que la prueba con Schemathesis llega con T29, y la diferencia del `X-Request-Id` (plan, Trampas verificadas) se resuelve antes de cerrar E.
+
+## Bloque A — Proyecto, contrato, errores y logs
+Depende de: nada. No necesita Docker.
+
+- [ ] **T1. Crear el proyecto: `package.json` con las versiones exactas y los scripts del plan, `package-lock.json`, configuración de TypeScript, ESLint y Vitest, y `.gitignore` (plan, Versiones a fijar).** RNF-01.1
+  - Hecho cuando: `npm ci`, `npm run build`, `npm run lint` y `npm test` pasan con Node 24; `pruebas/unitarias/consistencia.test.ts` comprueba que ninguna dependencia de `package.json` usa rangos (`^`, `~`, `*` ni `latest`); `src/generado/contrato.ts` se genera solo y `git status` no muestra `src/generado/` ni `dist/`; y la trampa de AGENTS.md ya no dice que falta `package.json` (sigue diciendo que falta `docker-compose.yml` hasta el bloque E).
+- [ ] **T2. Leer y validar la configuración del entorno: `cargarConfig` y `cargarConfigTokens` (plan, Lógica 1).** RNF-06.1, RNF-06.2
+  - Hecho cuando: `pruebas/unitarias/config.test.ts` cubre los valores por defecto, cada valor inválido (un nombre de encabezado de correlación inválido incluido), cada variable obligatoria que falta y una variable vacía; ningún mensaje de error contiene el valor recibido; y `cargarConfigTokens` pide solo las variables de los tokens.
+- [ ] **T3. Armar los errores problem+json: `Problema`, sus subclases y `aProblema` en `src/errores.ts` (plan, Lógica 6).** RNF-03.1, RNF-03.2, RNF-03.3, RNF-08.1, RNF-13.3
+  - Hecho cuando: `src/errores.ts` define `NoAutenticado`, `SinPermiso`, `Conflicto`, `BaseNoDisponible`, `ModuloNoDisponible` y `Deteniendose`; `pruebas/unitarias/problemas.test.ts` comprueba cada fila de la tabla de Lógica 6: código, `type`, `title` y `detail` en español, `status` igual al código, `instance` sin query string (y sin `instance` si la solicitud no se pudo leer), `Allow` en el 405 y `WWW-Authenticate: Bearer` en el 401; y el 500 no trae el mensaje original.
+- [ ] **T4. Cargar el contrato y compilar sus esquemas con Ajv 2020: `cargarContrato` y `src/contrato/validacion.ts` (plan, Lógica 7).** RNF-03.2
+  - Hecho cuando: `pruebas/unitarias/validacion.test.ts`, con `pruebas/ayudas/contrato-prueba.yml`, compila un esquema por `$ref` al contrato y otro definido dentro de `paths`; rechaza un `uuid` y una fecha inválidos; convierte tipos en parámetros, query string y encabezados, pero no en el cuerpo; acepta `example` en un esquema; falla con un formato desconocido; y carga sin error el contrato de `main`, que solo tiene `info`.
+- [ ] **T5. Listar las operaciones implementadas y pendientes, y la primera parte de la prueba de contrato: `listarOperaciones` y `scripts/contrato-test.mjs`, pasos 1 a 3 (plan, Contrato).** RNF-07.2
+  - Hecho cuando: `pruebas/unitarias/contrato-test.test.ts` comprueba `listarOperaciones` con un contrato sin operaciones, con pendientes y con implementadas; `npm run contrato:test` informa, sin Docker, que no hay operaciones implementadas y termina con 0; y `npm run contrato:test -- --contrato pruebas/ayudas/contrato-prueba.yml` lista sus operaciones como pendientes y termina con 0.
+- [ ] **T6. Registrar las operaciones del contrato que tienen manejador: `registrarOperaciones` y un primer `construirApp` (plan, Contrato).** RNF-03.2, RNF-03.4
+  - Hecho cuando: `pruebas/http/operaciones.test.ts`, con el contrato de prueba, comprueba que solo responden las operaciones con manejador (las demás no se registran y dan 404); que una ruta con `{param}` funciona; que un dato inválido da 400 con el campo en el `detail`; que un `X-Request-Id` que no cumple el patrón del contrato no da 400; y que cada ruta guarda en su configuración los roles de su `security`.
+- [ ] **T7. Responder los errores genéricos: 404 antes de leer el cuerpo, 413, 415, 400 por JSON roto o vacío y 500 (plan, Lógica 6 y ciclo de una solicitud).** RNF-03.1, RNF-03.2, RNF-03.3
+  - Hecho cuando: `pruebas/http/errores.test.ts` obtiene cada uno en problem+json con `instance` sin query string; una ruta inexistente con un cuerpo de más de 1 MiB sigue dando 404; y el 500 no muestra el mensaje interno.
+- [ ] **T8. Responder 405 con `Allow` a todo método de Node que la ruta no tiene (plan, Lógica 8).** RNF-03.2
+  - Hecho cuando: `pruebas/http/errores.test.ts` obtiene 405 en problem+json, con `Allow` igual a los métodos de la ruta, para cada método de `http.METHODS` que la ruta no tiene, salvo `CONNECT` (`TRACE` y `QUERY` incluidos); a `HEAD`, 405 con `Allow` y sin cuerpo; un cuerpo de más de 1 MiB con un método que falta sigue dando 405; y una ruta inexistente sigue dando 404.
+- [ ] **T9. Tomar o generar el identificador de correlación y devolverlo en cada respuesta (plan, Lógica 2).** RNF-14.3, RNF-14.4
+  - Hecho cuando: `pruebas/unitarias/correlacion.test.ts` cubre el id válido, ausente, vacío, de 129 caracteres, repetido y con otros caracteres; y `pruebas/http/correlacion-logs.test.ts` comprueba que el encabezado vuelve en respuestas buenas y de error, respetado o reemplazado por un UUID.
+- [ ] **T10. Quitar los secretos de los logs y registrar completos los errores internos (plan, Lógica 10).** RNF-19.1, RNF-03.3
+  - Hecho cuando: `pruebas/unitarias/secretos.test.ts` comprueba `limpiarSecretos` con la clave, la contraseña de la base y el token; en `pruebas/http/correlacion-logs.test.ts`, un 500 provocado por un error cuyo mensaje trae la clave y el token deja el error en el log, con su id de correlación y sin esos datos; y un error de pg guarda `tabla`, `columna` y `restriccion`, pero no `detail` ni `where`.
+- [ ] **T11. Registrar una línea JSON por solicitud, sin cuerpos, query strings ni otros encabezados (plan, Lógica 11).** RNF-14.5, RNF-14.6, RNF-19.2
+  - Hecho cuando: `pruebas/http/correlacion-logs.test.ts` comprueba que cada solicitud deja una línea JSON con `idCorrelacion`, `metodo`, `ruta`, `estado` y `duracionMs`, y que ninguna línea contiene el valor de `Authorization`, cuerpos, query strings ni el id inválido recibido.
+- [ ] **T12. Llevar a problem+json los errores que Fastify responde por su cuenta: `frameworkErrors` y `clientErrorHandler` en `src/errores-fastify.ts` (plan, Lógica 9).** RNF-03.1, RNF-03.2, RNF-14.4, RNF-14.6
+  - Hecho cuando: `pruebas/http/errores-fastify.test.ts` comprueba que una URL mal codificada y un parámetro de ruta de 101 caracteres dan 400 en problem+json, con `instance`; que, por un socket, HTTP mal formado da 400 y encabezados de más de 16 KiB dan 431, en problem+json sin `instance` y con `Connection: close`; que `ERR_HTTP_REQUEST_TIMEOUT` da 408; que todas traen el encabezado de correlación y dejan su línea de log; y que ante `ECONNRESET` no se escribe nada.
+
+## Bloque B — Autenticación y orden de los errores
+Depende de: bloque A.
+
+- [ ] **T13. Validar tokens y generarlos para las pruebas: `verificarToken` y `generarToken` (plan, Lógica 3 y 5).** RNF-12.2, RNF-12.4
+  - Hecho cuando: `pruebas/unitarias/tokens.test.ts` cubre cada motivo de 401 de RNF-12.2 con tokens armados por la prueba (otra clave, otro algoritmo, `alg: none`, sin `exp`, vencido, `nbf` futuro, dentro y fuera de los 30 s de tolerancia, sin `sub` o con `sub` vacío o que no es texto, otro `iss` u otra `aud`, roles que no son una lista), el filtro de roles conocidos y la ida y vuelta de `generarToken`; y ningún `detail` contiene el token.
+- [ ] **T14. Comando de desarrollo que genera un token: `main(argv, env)` en `src/herramientas/token.ts` (plan, Lógica 5).** RNF-12.5
+  - Hecho cuando: `pruebas/unitarias/tokens.test.ts` llama a `main` con `--sub`, `--roles CLIENTE,OPERADOR` y `--vence 60`, y `verificarToken` acepta lo que imprime, con ese `sub`, esos roles y ese vencimiento; sin `--vence`, el token vence en 3600 s; y sin la clave configurada, `main` devuelve un código distinto de 0 y nombra la variable sin su valor.
+- [ ] **T15. Exigir token y rol en las operaciones protegidas: hook de permisos y `autorizar` (plan, Lógica 4).** RNF-12.1, RNF-12.3, RNF-12.4
+  - Hecho cuando: `pruebas/unitarias/permisos.test.ts` cubre `autorizar` con uno y con varios roles, roles desconocidos o en minúsculas, sin roles, lista vacía y operación sin roles; y `pruebas/http/autenticacion.test.ts`, con el contrato de prueba, comprueba que cada 401 lleva `WWW-Authenticate: Bearer`, que un rol no permitido o un token sin roles conocidos da 403, que con uno o con varios roles se accede y el manejador recibe `sub` y roles, que una operación sin roles acepta cualquier rol conocido y que una con `security: []` no pide token.
+- [ ] **T16. Respetar el orden de los errores cuando una solicitud tiene varios problemas (plan, ciclo de una solicitud).** RNF-03.5
+  - Hecho cuando: `pruebas/http/precedencia.test.ts` comprueba: un parámetro de ruta de 101 caracteres sin token → 400; ruta inexistente, con o sin token → 404; método que la ruta no tiene, con o sin token → 405; sin token y con cuerpo inválido → 401; rol no permitido y cuerpo inválido → 403; y, con token válido, un cuerpo de más de 1 MiB → 413 y uno de otro tipo → 415, antes que el 400 por datos.
+
+## Bloque C — Base de datos, salud, arranque y parada
+Depende de: bloque A.
+
+- [ ] **T17. Separar las pruebas en dos proyectos de Vitest, levantar `postgres:18.6` para las de integración y aplicar la migración inicial con `migrar()` (plan, Datos y Pruebas).** RNF-05.1, RNF-07.1
+  - Hecho cuando: `npm test` corre los proyectos `unitarias` e `integracion` y crea un único contenedor `postgres:18.6` por corrida, que descarta al terminar; `npx vitest run --project unitarias` pasa con `DOCKER_HOST` apuntando a un socket que no existe; y `pruebas/integracion/migraciones.test.ts` comprueba que `migrar()` aplica la migración inicial y la anota en `migraciones_aplicadas`, y que una segunda corrida no aplica nada.
+- [ ] **T18. Migraciones seguras: dos procesos a la vez, una que falla, una fuera de orden, una base que no responde y el plazo de 60 s (plan, Datos).** RNF-05.2, RNF-05.3
+  - Hecho cuando: `pruebas/integracion/migraciones.test.ts` comprueba que, con dos corridas a la vez, cada migración se aplica una sola vez; que una migración que falla no deja cambios y devuelve el error; que una con fecha más vieja que otra ya aplicada se aplica igual; que, con una base que no responde, `migrar()` falla en el tiempo de base más un margen; y que una fase que no termina en el plazo (acortado en la prueba) falla sin dejar la migración aplicada ni a medias.
+- [ ] **T19. Consultar la base con tiempo máximo y clasificar sus errores: `crearPool` y `consultar()` (plan, Datos).** RNF-08.1, RNF-14.2
+  - Hecho cuando: `pruebas/integracion/duplicados.test.ts` comprueba que el segundo alta sobre una tabla con restricción única que crea la prueba da 409 sin el nombre de la restricción; que una consulta más lenta que el tiempo de base (con `pg_sleep`) da 503 en ese tiempo más un margen; y que otro error de la base da 500.
+- [ ] **T20. `GET /health` con la base arriba, registrada desde el contrato o como excepción (plan, Contrato).** RNF-14.1, RNF-03.4
+  - Hecho cuando: `pruebas/integracion/salud.test.ts` comprueba 200 con `{"estado": "ok"}`, también con un token inválido; `POST /health` → 405 con `Allow: GET`; con `pruebas/ayudas/contrato-salud.yml`, la ruta se registra desde el contrato, y con un contrato sin `/health`, a mano; y `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml` lista `verificarSalud` como implementada, avisa que la prueba con Schemathesis llega con T29 y termina con 0.
+- [ ] **T21. Base caída con el servicio corriendo: 503 en 2 s y vuelta sin reiniciar (plan, Datos y Pruebas).** RNF-14.2
+  - Hecho cuando: `pruebas/integracion/salud.test.ts`, con el proxy TCP de prueba, comprueba que con el proxy colgado `GET /health` y una operación de prueba que consulta la base responden 503 en problem+json en 2 s más un margen; que con la conexión rechazada también dan 503; y que cuando el proxy vuelve, responden 200 sin reiniciar la app.
+- [ ] **T22. Arrancar en orden: configuración, contrato, app, migraciones y recién después escuchar, con `arrancar` y `src/servidor.ts` (plan, Lógica 12).** RNF-05.2, RNF-05.3, RNF-06.2, RNF-19.1
+  - Hecho cuando: `pruebas/integracion/arranque.test.ts` comprueba que se llama a `salir(1)`, con el motivo en una línea JSON y sin valores ni credenciales, cuando falta una variable, cuando el contrato no compila, cuando el puerto está ocupado y cuando la base está caída; y que en un arranque normal el servicio escucha recién después de migrar y registra las operaciones implementadas y pendientes.
+- [ ] **T23. Detenerse en orden ante SIGTERM o SIGINT: `detener()` con corte a los 8 s (plan, Lógica 13).** RNF-04.5
+  - Hecho cuando: `pruebas/integracion/parada.test.ts` comprueba que una solicitud en curso termina; que una conexión nueva se rechaza; que una solicitud sin token que llega por una conexión abierta durante el cierre recibe 503 en problem+json; que una que no termina en el corte (acortado en la prueba) se corta, queda en el log y el servicio llama igual a `salir(0)`; que el pool se cierra; y que `salir(0)` llega antes de 10 s.
+
+## Bloque D — Cliente para otros módulos
+Depende de: bloque A (del código, usa solo lo de T3).
+
+- [ ] **T24. Cliente para otros módulos: corte por tiempo, correlación y respuestas 4xx, con `crearClienteModulo` (plan, Integraciones).** RNF-13.1, RNF-14.7, RNF-02.1
+  - Hecho cuando: `pruebas/modulos/cliente.test.ts`, contra el servidor de prueba, comprueba que cada intento se corta a tiempo aunque los encabezados lleguen antes; que la llamada lleva el id de la solicitud en curso en el encabezado de correlación; y que un 4xx vuelve con su código y su cuerpo, sin reintento.
+- [ ] **T25. Reintentar las lecturas y responder 503 cuando el otro módulo no está disponible (plan, Integraciones).** RNF-13.2, RNF-13.3
+  - Hecho cuando: `pruebas/modulos/cliente.test.ts` comprueba que un GET se reintenta una vez a los 200 ms ante un 5xx, una conexión rechazada, un corte o una respuesta que no es JSON; que un POST no se reintenta; que al final da 503 nombrando el módulo; y que, con los valores por defecto, todo termina en no más de 4,2 s.
+
+## Bloque E — Contenedores, prueba de contrato, CI y README
+Depende de: bloques B y C. Su PR cierra la spec, así que va después de D.
+
+- [ ] **T26. Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.2
+  - Hecho cuando: `docker build -t m2-clientes:0.1.0 .` termina bien; `docker run --rm --entrypoint whoami m2-clientes:0.1.0` imprime `node`; y `pruebas/unitarias/consistencia.test.ts` comprueba que el `Dockerfile` usa imágenes con versión exacta, nunca `latest`, e instala con `npm ci`.
+- [ ] **T27. `docker-compose.yml` con el servicio y su base, y `ejemplo.env` documentado (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.3, RNF-04.4, RNF-06.3
+  - Hecho cuando: desde un clon limpio de la rama, `docker compose up -d --build --wait` termina con los dos servicios sanos y `curl localhost:8082/health` da 200; `M2_PUERTO=9090 docker compose config` muestra 9090; y `ejemplo-env.test.ts` y `consistencia.test.ts` comprueban las variables del ejemplo, que la etiqueta de la imagen es la versión de `package.json` y que la imagen de la base es la misma que en las pruebas.
+- [ ] **T28. Fallas al levantar y parada con docker compose (plan, Configuración, contenedores y CI).** RNF-04.4, RNF-04.5, RNF-05.3
+  - Hecho cuando: con `M2_CLAVE_TOKENS=corta`, `docker compose up -d --wait` termina con error en menos de 2 minutos y `docker compose logs m2` nombra la variable sin su valor; con `M2_URL_BD` apuntando a un servidor que no existe, también termina con error en menos de 2 minutos, con el motivo en los logs y sin la contraseña; y, con el servicio sano, `docker compose stop m2` tarda menos de 10 s y `docker inspect` muestra código 0.
+- [ ] **T29. Segunda parte de la prueba de contrato: token del contenedor y Schemathesis sobre lo implementado, pasos 4 a 6 (plan, Contrato).** RNF-07.2
+  - Hecho cuando: con el servicio levantado, `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml` pide un token al contenedor, corre Schemathesis solo sobre `verificarSalud` y pasa todos sus chequeos; si Schemathesis falla, el script termina con su código; y con el contrato de `main` sigue informando que no hay nada para probar y termina con 0.
+- [ ] **T30. CI sin pasos omitidos, con salud, prueba de contrato y parada (plan, Configuración, contenedores y CI).** RNF-17.1, RNF-17.2, RNF-04.5
+  - Hecho cuando: `ci.yml` ya no tiene condiciones sobre `package.json` ni `docker-compose.yml`; los pasos de `build-test` y `contract-test`, corridos a mano en local y en el mismo orden, pasan, incluido el de parada (menos de 10 s y código 0); `gh api` muestra que la regla «Protección de main» sigue exigiendo los cuatro checks; y la trampa de AGENTS.md sobre el proyecto y el compose que faltaban ya no está.
+- [ ] **T31. README del servicio con diagrama (plan, Configuración, contenedores y CI).** RNF-20.1
+  - Hecho cuando: el README explica qué hace el servicio y con qué stack, cómo levantarlo, cómo correr las pruebas, cómo generar un token y qué variables usa, con la nota sobre `M2_URL_BD`, `POSTGRES_*` y el volumen; incluye un diagrama Mermaid del servicio, su base y M1, M5, M6 y M9; y cada comando del README se probó tal cual está escrito.
