@@ -14,7 +14,7 @@ Issue: #3
    - Aprobar el PR de la spec 003 es la aceptación del grupo.
 2. **Las operaciones se registran desde el contrato.** Al arrancar, el servicio lee `contrato/openapi.yml`. Por cada `operationId` que tiene manejador en `src/operaciones/index.ts`, registra la ruta con:
    - los esquemas del contrato para validar parámetros, encabezados y cuerpo (Ajv con JSON Schema 2020-12), salvo el encabezado de correlación, que se reemplaza si no es válido (RNF-14.3);
-   - los roles de `security` para autorizar; una operación con `security: []` es pública.
+   - los roles de `security` para autorizar; una operación con `security: []` es pública, y una cuya seguridad no nombra roles admite cualquier rol conocido.
 
    Una operación sin manejador no se expone: responde 404 o 405. La prueba de contrato la informa como pendiente y Schemathesis prueba solo las que tienen manejador.
 3. **Cada spec de negocio agrega manejadores, no rutas.** Implementar una operación es escribir su manejador y anotarlo con su `operationId`. La ruta, la validación y los permisos salen del contrato.
@@ -29,4 +29,4 @@ Issue: #3
 - Si el contrato tiene un esquema que Ajv no puede compilar, el servicio no arranca: el error se ve en el primer arranque o en CI.
 - Las specs #4 a #8 escriben manejadores y sus pruebas. Si una operación necesita algo que el contrato no tiene, es un cambio de contrato (skill contrato-cambio).
 - Cuando el v1 se mergee, `verificarSalud` pasa a ser una operación más y entra en la prueba de contrato.
-- Mientras tanto, Schemathesis no prueba `/health`; la cubren las pruebas de integración.
+- Mientras tanto, la prueba de contrato no prueba `/health`, porque el contrato de `main` no la tiene. La cubren las pruebas de integración, y el script de la prueba de contrato se prueba con un contrato de prueba que solo tiene `/health`.
