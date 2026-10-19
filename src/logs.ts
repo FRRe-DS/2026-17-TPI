@@ -1,6 +1,6 @@
-// Lo que va a los logs: qué secretos se ocultan, cómo se guarda un error y las opciones del logger de Fastify (plan,
-// Lógica 10). No importa nada del servicio salvo el tipo de la configuración.
-import type { FastifyBaseLogger, FastifyLoggerOptions } from 'fastify';
+// Lo que va a los logs: qué secretos se ocultan, cómo se guarda un error, la línea de cada solicitud y las opciones del
+// logger de Fastify (plan, Lógicas 10 y 11). No importa nada del servicio salvo el tipo de la configuración.
+import type { FastifyBaseLogger, FastifyLoggerOptions, FastifyReply, FastifyRequest } from 'fastify';
 import type { Writable } from 'node:stream';
 import { inspect } from 'node:util';
 import type { Config } from './config.js';
@@ -122,6 +122,17 @@ class ErrorConSecretos {
 // Registra un error no previsto con el id de correlación de `log` (RNF-03.3), sin los secretos fijos ni los de la solicitud.
 export function registrarErrorInterno(log: FastifyBaseLogger, error: unknown, secretosDeLaSolicitud: readonly string[]): void {
   log.error({ err: new ErrorConSecretos(error, secretosDeLaSolicitud) }, 'Error interno');
+}
+
+// Registra la línea de una solicitud que terminó (RNF-14.6): el método, la ruta sin query string, el código de la respuesta y
+// cuánto tardó, en milisegundos desde que Fastify la recibió. El id de correlación lo pone `request.log`, que lo lleva como
+// idCorrelacion. Es una lista cerrada de campos, como la del error: ni encabezados ni cuerpos ni la query string, que puede
+// traer datos personales (RNF-19.2).
+export function registrarSolicitud(request: FastifyRequest, reply: FastifyReply): void {
+  request.log.info(
+    { metodo: request.method, ruta: request.url.split('?', 1)[0], estado: reply.statusCode, duracionMs: reply.elapsedTime },
+    'Solicitud terminada',
+  );
 }
 
 // Fastify tipa el serializador de `err` con la forma de pino (type, message, stack); el nuestro devuelve ErrorRegistrado.

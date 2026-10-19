@@ -6,7 +6,13 @@ import { prepararRutas405, registrarOperaciones, type Manejadores } from './cont
 import { crearCompilador } from './contrato/validacion.js';
 import { idCorrelacion } from './correlacion.js';
 import { aProblema, NoEncontrado } from './errores.js';
-import { opcionesLogger, registrarErrorInterno, secretosDeAutorizacion, secretosDeConfig } from './logs.js';
+import {
+  opcionesLogger,
+  registrarErrorInterno,
+  registrarSolicitud,
+  secretosDeAutorizacion,
+  secretosDeConfig,
+} from './logs.js';
 
 // `flujoLog` es adonde van los logs; sin él, a la salida estándar.
 export type OpcionesApp = { config: Config; contrato: Contrato; manejadores: Manejadores; flujoLog?: Writable };
@@ -16,7 +22,8 @@ const LIMITE_CUERPO = 1024 * 1024;
 
 // La app de Fastify armada desde el contrato: valida con sus esquemas, responde los errores con aProblema y expone solo
 // las operaciones que tienen manejador; a una ruta que no existe responde 404, y a un método que la ruta no tiene, 405.
-// Cada solicitud lleva un identificador de correlación y cada respuesta lo devuelve; un error no previsto queda en el log.
+// Cada solicitud lleva un identificador de correlación y cada respuesta lo devuelve; cada solicitud que termina deja una
+// línea en el log, y un error no previsto, su detalle.
 // No escucha en ningún puerto; eso lo hace el arranque.
 export function construirApp({ config, contrato, manejadores, flujoLog }: OpcionesApp) {
   // Node entrega los nombres de los encabezados de la solicitud en minúscula; el configurado se conserva como se escribió.
@@ -48,6 +55,11 @@ export function construirApp({ config, contrato, manejadores, flujoLog }: Opcion
   // en que se registren los hooks (RNF-14.4).
   app.addHook('onSend', async (request, reply) => {
     reply.header(config.encabezadoCorrelacion, request.id);
+  });
+  // Al terminar cada solicitud, su línea de log (RNF-14.6). Pasan por acá todas las respuestas, también las de error y las
+  // que un hook onRequest responde; las que Fastify contesta antes de crear la solicitud, no.
+  app.addHook('onResponse', async (request, reply) => {
+    registrarSolicitud(request, reply);
   });
   // Los hooks onRequest corren en el orden en que se registran. Una ruta que no existe da 404 acá, antes de que Fastify lea
   // el cuerpo: si no, uno de más de 1 MiB daría 413 y un JSON roto, 400 (RNF-03.5).

@@ -1,5 +1,5 @@
 import type { InjectOptions } from 'fastify';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Manejador, Manejadores } from '../../src/contrato/operaciones.js';
 import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
 import { CONFIG, crearApp } from '../ayudas/app.js';
@@ -19,7 +19,7 @@ const devuelveId: Manejador = async (request) => ({ id: request.id });
 
 const MANEJADORES = { probarPublica: devuelveId, probarAlta: bien, probarFalla: falla };
 
-type Pedido = { caso: string; estado: number; solicitud: InjectOptions };
+type Pedido = { caso: string; estado: number; solicitud: InjectOptions & { url: string } };
 
 // Una respuesta buena y una de cada error genérico que el servicio responde hoy: todas tienen que traer el encabezado.
 const PEDIDOS: Pedido[] = [
@@ -442,5 +442,189 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
     expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
     expect(errores(logs)).toMatchObject([{ err: { tipo: 'desconocido', mensaje: 'El error no se pudo serializar' } }]);
     sinSecretos(logs);
+  });
+});
+
+describe('construirApp: una línea por solicitud en el log (RNF-14.5, RNF-14.6, RNF-19.2)', () => {
+  const MENSAJE = 'Solicitud terminada';
+  // Lo que pino suma a cada línea por su cuenta: no sale de la solicitud.
+  const BASE_DE_PINO = ['level', 'time', 'pid', 'hostname'];
+  const CAMPOS = ['duracionMs', 'estado', 'idCorrelacion', 'metodo', 'msg', 'ruta'];
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYmMifQ.firma-del-token';
+  const QUERY = 'dni=12345678&token=secreto-en-la-query';
+  const CLIENTE_ID = '0b9b7e2e-5f5c-4d7a-9a0e-3c1d2f4a6b8c';
+  const DIRECCION_ID = '7d1c3a5e-9b2f-4e6a-8c0d-1f2a3b4c5d6e';
+
+  type Logs = ReturnType<typeof capturarLogs>;
+  const deLaSolicitud = (logs: Logs) => logs.lineas().filter((linea) => linea.msg === MENSAJE);
+  const conQuery = (url: string) => `${url}${url.includes('?') ? '&' : '?'}${QUERY}`;
+  const crear = (manejadores: Manejadores = MANEJADORES) => {
+    const logs = capturarLogs();
+    return { app: crearApp(manejadores, { flujoLog: logs.flujo }), logs };
+  };
+
+  describe.each(PEDIDOS)('$caso', ({ estado, solicitud }) => {
+    it('deja una línea JSON con el id, el método, la ruta, el estado y la duración, y ningún otro dato', async () => {
+      const { app, logs } = crear();
+      const antes = Date.now();
+
+      const respuesta = await app.inject({ ...solicitud, headers: { ...solicitud.headers, [ENCABEZADO]: 'cliente-1' } });
+
+      expect(respuesta.statusCode).toBe(estado);
+      const [linea, ...otras] = deLaSolicitud(logs);
+      expect(otras).toEqual([]);
+      expect(linea).toMatchObject({
+        level: 30,
+        idCorrelacion: 'cliente-1',
+        metodo: solicitud.method,
+        ruta: solicitud.url.split('?')[0],
+        estado,
+      });
+      expect(Object.keys(linea).filter((campo) => !BASE_DE_PINO.includes(campo)).sort()).toEqual(CAMPOS);
+      expect(linea.duracionMs).toEqual(expect.any(Number));
+      expect(linea.duracionMs).toBeGreaterThanOrEqual(0);
+      expect(linea.time).toBeGreaterThanOrEqual(antes);
+      expect(linea.time).toBeLessThanOrEqual(Date.now());
+      // Una línea por evento: la de la solicitud y, si un manejador falló, la del error.
+      expect(logs.lineas().filter((otra) => otra.msg !== 'Error interno')).toEqual([linea]);
+    });
+
+    it('registra la ruta sin la query string, que no queda en ninguna parte del log', async () => {
+      const { app, logs } = crear();
+
+      const respuesta = await app.inject({ ...solicitud, url: conQuery(solicitud.url) });
+
+      expect(respuesta.statusCode).toBe(estado);
+      expect(deLaSolicitud(logs)).toMatchObject([{ ruta: solicitud.url.split('?')[0] }]);
+      for (const privado of ['dni=', '12345678', 'token=', 'secreto-en-la-query']) {
+        expect(logs.texto()).not.toContain(privado);
+      }
+    });
+  });
+
+  it('un 500 deja la línea del error y la de la solicitud, las dos con el mismo id', async () => {
+    const { app, logs } = crear();
+
+    await app.inject({ method: 'GET', url: '/pruebas/falla', headers: { [ENCABEZADO]: 'cliente-500' } });
+
+    expect(logs.lineas()).toMatchObject([
+      { level: 50, msg: 'Error interno', idCorrelacion: 'cliente-500' },
+      { level: 30, msg: MENSAJE, idCorrelacion: 'cliente-500', estado: 500 },
+    ]);
+  });
+
+  it.each(INVALIDOS)('si el id recibido %s, la línea trae el UUID que lo reemplazó', async (_caso, invalido) => {
+    const { app, logs } = crear();
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/publica', headers: { [ENCABEZADO]: invalido } });
+
+    const [linea] = deLaSolicitud(logs);
+    expect(linea.idCorrelacion).toMatch(UUID_V4);
+    expect(linea.idCorrelacion).toBe(respuesta.headers[ENCABEZADO]);
+    // Un texto vacío está en cualquier texto: de ese caso solo importa que el id sea el UUID.
+    if (invalido !== '') expect(logs.texto()).not.toContain(invalido);
+  });
+
+  it('duracionMs es lo que tarda la solicitud, en milisegundos', async () => {
+    const tarda: Manejador = async () => {
+      await new Promise((listo) => setTimeout(listo, 60));
+      return { ok: true };
+    };
+    const { app, logs } = crear({ probarTarda: tarda });
+
+    await app.inject({ method: 'GET', url: '/pruebas/tarda' });
+
+    // En segundos serían 0,06 y en microsegundos, más de 60000.
+    const [linea] = deLaSolicitud(logs);
+    expect(linea.duracionMs).toBeGreaterThanOrEqual(50);
+    expect(linea.duracionMs).toBeLessThan(5000);
+  });
+
+  it('la línea se escribe con la respuesta ya terminada: trae el código que salió, aunque un onSend lo cambie', async () => {
+    const { app, logs } = crear();
+    app.addHook('onSend', async (_request, reply) => {
+      reply.code(299);
+    });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/publica' });
+
+    expect(respuesta.statusCode).toBe(299);
+    expect(deLaSolicitud(logs)).toMatchObject([{ estado: 299 }]);
+  });
+
+  it('la ruta es la que pidió el cliente, con sus parámetros y sin la query string', async () => {
+    const { app, logs } = crear({ probarParametros: bien });
+    const ruta = `/pruebas/clientes/${CLIENTE_ID}/direcciones/${DIRECCION_ID}`;
+
+    await app.inject({ method: 'GET', url: `${ruta}?pagina=2` });
+
+    expect(deLaSolicitud(logs)).toMatchObject([{ metodo: 'GET', ruta }]);
+  });
+
+  it('no registra el Authorization ni otros encabezados, ni el cuerpo de la solicitud ni el de la respuesta', async () => {
+    const { app, logs } = crear({ probarAltaDuplicada: async () => ({ dato: 'dato-de-la-respuesta' }) });
+    const privados = [TOKEN, 'Bearer', 'valor-de-la-cookie', 'agente-de-prueba', 'otro-encabezado'];
+    const cuerpos = ['valor-del-cuerpo', 'dato-de-la-respuesta'];
+    const nombres = ['authorization', 'cookie', 'user-agent', 'x-otro', 'content-type'];
+
+    const respuesta = await app.inject({
+      method: 'POST',
+      url: '/pruebas/duplicados',
+      headers: {
+        ...COMO_JSON,
+        authorization: `Bearer ${TOKEN}`,
+        cookie: 'sesion=valor-de-la-cookie',
+        'user-agent': 'agente-de-prueba',
+        'x-otro': 'otro-encabezado',
+      },
+      payload: { codigo: 'valor-del-cuerpo' },
+    });
+
+    expect(respuesta.json()).toEqual({ dato: 'dato-de-la-respuesta' });
+    expect(deLaSolicitud(logs)).toHaveLength(1);
+    for (const privado of [...privados, ...cuerpos, ...nombres]) expect(logs.texto()).not.toContain(privado);
+  });
+
+  it('solicitudes en paralelo: cada una deja su línea, con su id, su ruta y su estado', async () => {
+    const { app, logs } = crear();
+    const pedidos = Array.from({ length: 20 }, (_, i) => ({
+      id: `paralelo-${i}`,
+      ruta: i % 2 === 0 ? '/pruebas/publica' : `/no/existe/${i}`,
+      estado: i % 2 === 0 ? 200 : 404,
+    }));
+
+    await Promise.all(
+      pedidos.map(({ id, ruta }) => app.inject({ method: 'GET', url: ruta, headers: { [ENCABEZADO]: id } })),
+    );
+
+    const lineas = deLaSolicitud(logs);
+    expect(lineas).toHaveLength(20);
+    for (const { id, ruta, estado } of pedidos) {
+      expect(lineas.filter((linea) => linea.idCorrelacion === id)).toMatchObject([{ ruta, estado }]);
+    }
+  });
+
+  it('por un socket también deja su línea, y sin la query string', async () => {
+    const { app, logs } = crear();
+    const puerto = await escuchar(app);
+    const pedido = [
+      'GET /pruebas/publica?dni=12345678 HTTP/1.1',
+      'Host: localhost',
+      'X-Request-Id: socket-1',
+      'Connection: close',
+      '',
+      '',
+    ].join('\r\n');
+
+    const respuesta = leerRespuesta(await porSocket(puerto, pedido));
+
+    expect(respuesta.estado).toBe('HTTP/1.1 200 OK');
+    // La línea se escribe cuando Fastify termina de enviar, y el cliente puede leer la respuesta un instante antes.
+    await vi.waitFor(() => {
+      expect(deLaSolicitud(logs)).toMatchObject([
+        { idCorrelacion: 'socket-1', metodo: 'GET', ruta: '/pruebas/publica', estado: 200 },
+      ]);
+    });
+    expect(logs.texto()).not.toContain('12345678');
   });
 });

@@ -275,3 +275,30 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Con `disableRequestLogging` también se apagan otras líneas de Fastify (respuesta cortada, fallo de la serialización, `writeHead`). El aviso «request aborted - refusing to accept new requests as server is closing» no se apaga: sale con `{ res: { statusCode: 503 } }`, y T23 lo verá.
   - Las líneas llevan `pid`, `hostname` y `time` en milisegundos (los campos por defecto de pino): T11 decide si se dejan así.
   - Para el próximo `/sdd-change`: Lógica 10 suma la `causa`, y Lógica 11 pasa de las opciones sueltas al `LogController`.
+
+### T11 — Registrar una línea JSON por solicitud, sin cuerpos, query strings ni otros encabezados · commit `003/T11`
+- Qué cambió:
+  - `src/logs.ts`: `registrarSolicitud(request, reply)` escribe con `request.log.info` la línea «Solicitud terminada» con `metodo`, `ruta` (la URL sin query string), `estado` (`reply.statusCode`) y `duracionMs` (`reply.elapsedTime`). El id de correlación no lo pone esta función: `request.log` ya lo lleva como `idCorrelacion` desde T10.
+  - `src/app.ts`: un hook `onResponse` llama a `registrarSolicitud`, después del `onSend` de T9.
+  - `pruebas/http/correlacion-logs.test.ts`: suma el grupo «una línea por solicitud en el log», y el tipo `Pedido` de la tabla pide una `url` de texto para poder partirla en la query string.
+- Por qué así:
+  - `onResponse` y no `onSend`: la línea se escribe cuando la respuesta terminó de enviarse, con el código que de verdad salió (un hook `onSend` posterior puede cambiarlo) y la duración completa. Pasan por ahí las respuestas buenas, las que arma el manejador de errores y las que responde un hook `onRequest` (404 y 405 hoy; 401, 403 y 503 más adelante).
+  - Los campos son una lista cerrada (RNF-19.2): la línea lleva lo que se nombra, nunca el objeto de la solicitud ni el de la respuesta. De la solicitud salen el método y la ruta; ningún encabezado, cuerpo ni query string.
+  - `ruta` es la que pidió el cliente, con sus parámetros (`/…/clientes/<id>/…`), no la plantilla del contrato: es lo que dice RNF-14.6 («la ruta sin query string») y lo mismo que `instance` en los problemas.
+  - Siempre en nivel `info`, también ante un 4xx o un 500: el nivel `error` queda para el detalle del error imprevisto (T10), y las pruebas de T10 cuentan las líneas `error` para saber si algo se registró como imprevisto.
+  - Decisión que T10 dejó a esta tarea: se dejan los campos que pino suma por su cuenta (`time` en milisegundos desde 1970, `pid` y `hostname`). No salen de la solicitud ni son secretos (RNF-19), las herramientas que leen logs de pino los esperan y ningún requisito pide cambiarlos. Una prueba fija los campos que sí salen de la solicitud, aparte de esos cuatro.
+  - `duracionMs` es `reply.elapsedTime` tal cual: milisegundos con los decimales que da Fastify (por ejemplo, 2.631147999999996). El reloj arranca antes de los hooks `onRequest`, así que cuenta la solicitud entera.
+- Cómo se conecta:
+  - Usa el logger de T10 (el mismo flujo, `idCorrelacion` por `requestIdLogLabel`) y el id de T9 (`request.id`).
+  - T12: lo que Fastify contesta antes de crear la solicitud no pasa por `onResponse`; `frameworkErrors` y `clientErrorHandler` escriben su propia línea, con el mismo mensaje. Si `frameworkErrors` reutiliza `registrarSolicitud`, ojo: `reply.elapsedTime` da 0 mientras el reloj no arrancó, y arranca ya dentro de una ruta.
+  - T15, T16, T20 y T23 (401, 403, `/health` y 503) la heredan sin hacer nada.
+- Tests:
+  - `pruebas/http/correlacion-logs.test.ts` suma 27 (782 en total). Para cada solicitud de la tabla (una buena y siete errores: 400 por validación, 400 por JSON roto, 404, 405, 413, 415 y 500): una sola línea de solicitud, en nivel `info`, con `idCorrelacion`, `metodo`, `ruta`, `estado` y `duracionMs` y ningún otro campo salvo los cuatro de pino, con `time` entre el inicio y el fin de la prueba; y la misma solicitud con una query string, que no aparece en ninguna parte del log.
+  - Además: un 500 deja dos líneas, la del error y la de la solicitud, con el mismo id; los cuatro ids inválidos se reemplazan por el UUID también en esta línea; `duracionMs` de un manejador que espera 60 ms queda entre 50 y 5000 (ni segundos ni microsegundos); la ruta con parámetros; el `Authorization`, una cookie, otros encabezados y los cuerpos de la solicitud y de la respuesta no aparecen; 20 solicitudes en paralelo, cada una con su línea; una por un socket real; y la línea trae el código que salió aunque un hook `onSend` lo cambie.
+  - Mutaciones sobre `registrarSolicitud` y el hook: 22 de 22 detectadas (en la primera vuelta quedaba viva poner el hook en `onSend`; la cerró la prueba del código final). 25 corridas seguidas del archivo, sin fallos.
+  - A mano, con la app compilada y sin `flujoLog`: las líneas salen por la salida estándar, una por evento y todas JSON válido, con la salida de errores vacía.
+- Para mirar con atención:
+  - Una solicitud que el cliente corta antes de que termine la respuesta no deja línea: Fastify llama a `onResponse` solo cuando la respuesta terminó de enviarse (comprobado con un socket que se destruye a mitad del manejador). RNF-14.6 habla del código de la respuesta, que ahí no existe. Para verlas habría que registrar algo en `onRequestAbort`.
+  - La ruta se registra como llegó. Si un cliente pone el token en la ruta (en vez del encabezado), queda en el log. No pasa por `limpiarSecretos` porque un `Authorization` de una sola letra le cambiaría a esa letra todas las apariciones en la ruta de cada solicitud suya. La query string, donde suelen ir esos datos, no se registra nunca.
+  - `listen` escribe por su cuenta «Server listening at http://…» (en inglés, sin `idCorrelacion`): es de T22, que decide si lo deja o escribe su propia línea de arranque.
+  - Para el próximo `/sdd-change`: Lógica 11 pasa a decir que el mensaje es «Solicitud terminada», que siempre es `info`, que la ruta es la pedida (con sus parámetros) y que se dejan `time`, `pid` y `hostname` de pino.
