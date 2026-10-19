@@ -1,8 +1,9 @@
 import { decodeJwt, decodeProtectedHeader, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { generarToken, ROLES_CONOCIDOS, verificarToken } from '../../src/auth/tokens.js';
-import type { ConfigTokens } from '../../src/config.js';
+import type { ConfigTokens, Entorno } from '../../src/config.js';
 import { NoAutenticado } from '../../src/errores.js';
+import { main } from '../../src/herramientas/token.js';
 import {
   armarToken,
   base64url,
@@ -492,5 +493,255 @@ describe('generarToken: firma un token que verificarToken acepta (RNF-12.5)', ()
 
     expect(firma).toBe(firmar(`${cabecera}.${cuerpo}`, CONFIG_TOKENS.claveTokens));
     expect(cabecera).toBe(codificar({ alg: 'HS256', typ: 'JWT' }));
+  });
+});
+
+// El comando de desarrollo que genera tokens (RNF-12.5). Las pruebas llaman a `main` como función, con los argumentos y el
+// entorno que recibiría de la línea de comandos. Lo que imprime se junta de console.log (la salida) y console.error (los
+// errores): cada llamada es una entrada de la lista.
+const ENTORNO = {
+  M2_CLAVE_TOKENS: CONFIG_TOKENS.claveTokens,
+  M2_EMISOR_TOKENS: CONFIG_TOKENS.emisorTokens,
+  M2_AUDIENCIA_TOKENS: CONFIG_TOKENS.audienciaTokens,
+};
+
+// Tres partes en base64url separadas por puntos y nada más: ni texto delante, ni espacios, ni saltos de línea.
+const FORMA_DE_TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/;
+
+async function comando(argv: string[], env: Entorno = ENTORNO) {
+  const salida = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  const errores = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  try {
+    const codigo = await main(argv, env);
+    const lineas = (espia: typeof salida) => espia.mock.calls.map((argumentos) => argumentos.join(' '));
+    return { codigo, salida: lineas(salida), errores: lineas(errores) };
+  } finally {
+    salida.mockRestore();
+    errores.mockRestore();
+  }
+}
+
+describe('main, el comando de tokens: imprime un token que verificarToken acepta (RNF-12.5)', () => {
+  it('con --sub, --roles y --vence: imprime solo el token, con ese sub, esos roles y ese vencimiento', async () => {
+    const { codigo, salida, errores } = await comando([
+      '--sub',
+      SUB_DE_PRUEBA,
+      '--roles',
+      'CLIENTE,OPERADOR',
+      '--vence',
+      '60',
+    ]);
+
+    expect(codigo).toBe(0);
+    expect(errores).toEqual([]);
+    expect(salida).toHaveLength(1);
+    const [token] = salida;
+    expect(token).toMatch(FORMA_DE_TOKEN);
+    await expect(verificar(token)).resolves.toStrictEqual({ sub: SUB_DE_PRUEBA, roles: ['CLIENTE', 'OPERADOR'] });
+    expect(decodeJwt(token)).toStrictEqual({
+      iss: CONFIG_TOKENS.emisorTokens,
+      aud: CONFIG_TOKENS.audienciaTokens,
+      sub: SUB_DE_PRUEBA,
+      iat: AHORA,
+      exp: AHORA + 60,
+      roles: ['CLIENTE', 'OPERADOR'],
+    });
+  });
+
+  it.each([
+    ['--vence 60', 60, ['--vence', '60']],
+    ['--vence 1', 1, ['--vence', '1']],
+    ['--vence 86400', 86_400, ['--vence', '86400']],
+    ['sin --vence', 3600, []],
+  ])('%s: el token vence a los %i s, con los 30 s de tolerancia', async (_caso, segundos, vence) => {
+    const {
+      salida: [token],
+    } = await comando(['--sub', SUB_DE_PRUEBA, '--roles', 'CLIENTE', ...vence]);
+
+    expect(decodeJwt(token)).toMatchObject({ iat: AHORA, exp: AHORA + segundos });
+
+    vi.setSystemTime((AHORA + segundos + 29) * 1000);
+    await expect(verificar(token)).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+
+    vi.setSystemTime((AHORA + segundos + 31) * 1000);
+    await rechazo(verificar(token), VENCIDO, token);
+  });
+
+  it.each([
+    ['un rol', 'CLIENTE', ['CLIENTE']],
+    ['dos roles', 'CLIENTE,CONDUCTOR', ['CLIENTE', 'CONDUCTOR']],
+    ['los cuatro roles', 'CLIENTE,CONDUCTOR,OPERADOR,SERVICIO', ['CLIENTE', 'CONDUCTOR', 'OPERADOR', 'SERVICIO']],
+    ['los roles en otro orden', 'SERVICIO,CLIENTE', ['SERVICIO', 'CLIENTE']],
+    ['espacios alrededor de cada rol', ' CLIENTE , OPERADOR ', ['CLIENTE', 'OPERADOR']],
+    ['comas de más', ',CLIENTE,,OPERADOR,', ['CLIENTE', 'OPERADOR']],
+  ])('--roles con %s (valor %j): el token lleva los roles esperados', async (_caso, roles, esperados) => {
+    const { codigo, salida, errores } = await comando(['--sub', SUB_DE_PRUEBA, '--roles', roles]);
+
+    expect(codigo).toBe(0);
+    expect(errores).toEqual([]);
+    expect(decodeJwt(salida[0])).toMatchObject({ roles: esperados });
+    await expect(verificar(salida[0])).resolves.toStrictEqual({ sub: SUB_DE_PRUEBA, roles: esperados });
+  });
+
+  it.each([
+    ['las opciones en otro orden', ['--vence', '60', '--roles', 'CLIENTE', '--sub', SUB_DE_PRUEBA]],
+    ['la forma --opcion=valor', ['--vence=60', '--roles=CLIENTE', `--sub=${SUB_DE_PRUEBA}`]],
+  ])('acepta %s', async (_caso, argv) => {
+    const { codigo, salida } = await comando(argv);
+
+    expect(codigo).toBe(0);
+    await expect(verificar(salida[0])).resolves.toStrictEqual({ sub: SUB_DE_PRUEBA, roles: ['CLIENTE'] });
+    expect(decodeJwt(salida[0])).toMatchObject({ exp: AHORA + 60 });
+  });
+
+  it('firma con la clave, el emisor, la audiencia y el campo de roles del entorno', async () => {
+    const otra: ConfigTokens = {
+      claveTokens: 'otra-clave-de-prueba-de-32-caracteres',
+      emisorTokens: 'otro-emisor',
+      audienciaTokens: 'otra-audiencia',
+      campoRoles: 'permisos',
+    };
+    const env = {
+      M2_CLAVE_TOKENS: otra.claveTokens,
+      M2_EMISOR_TOKENS: otra.emisorTokens,
+      M2_AUDIENCIA_TOKENS: otra.audienciaTokens,
+      M2_CAMPO_ROLES: otra.campoRoles,
+    };
+
+    const { codigo, salida } = await comando(['--sub', SUB_DE_PRUEBA, '--roles', 'OPERADOR'], env);
+
+    expect(codigo).toBe(0);
+    expect(decodeJwt(salida[0])).toMatchObject({ iss: 'otro-emisor', aud: 'otra-audiencia', permisos: ['OPERADOR'] });
+    await expect(verificar(salida[0], otra)).resolves.toStrictEqual({ sub: SUB_DE_PRUEBA, roles: ['OPERADOR'] });
+    await rechazo(verificar(salida[0]), FIRMA, salida[0]);
+  });
+
+  it('un rol que el servicio no reconoce se firma igual y se avisa por la salida de errores', async () => {
+    const { codigo, salida, errores } = await comando(['--sub', SUB_DE_PRUEBA, '--roles', 'cliente,OPERADOR,ADMIN']);
+
+    expect(codigo).toBe(0);
+    expect(errores).toEqual([
+      [
+        'Aviso: el servicio ignora los roles que no reconoce (cliente, ADMIN).',
+        'Los que reconoce, escritos así: CLIENTE, CONDUCTOR, OPERADOR, SERVICIO.',
+      ].join(' '),
+    ]);
+    expect(salida).toHaveLength(1);
+    expect(salida[0]).toMatch(FORMA_DE_TOKEN);
+    expect(decodeJwt(salida[0])).toMatchObject({ roles: ['cliente', 'OPERADOR', 'ADMIN'] });
+    await expect(verificar(salida[0])).resolves.toStrictEqual({ sub: SUB_DE_PRUEBA, roles: ['OPERADOR'] });
+  });
+
+  it('importar el módulo no ejecuta el comando: solo exporta main', () => {
+    expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe('main, el comando de tokens: sin la configuración de tokens (RNF-12.5, RNF-06.2)', () => {
+  const argumentos = ['--sub', SUB_DE_PRUEBA, '--roles', 'CLIENTE'];
+  const ENCABEZADO = 'La configuración de tokens no es válida:';
+
+  it.each([
+    ['M2_CLAVE_TOKENS', undefined],
+    ['M2_CLAVE_TOKENS', ''],
+    ['M2_EMISOR_TOKENS', undefined],
+    ['M2_AUDIENCIA_TOKENS', undefined],
+  ])('sin %s (valor %j): código 1, nombra la variable y no imprime ningún token', async (variable, valor) => {
+    const { codigo, salida, errores } = await comando(argumentos, { ...ENTORNO, [variable]: valor });
+
+    expect(codigo).toBe(1);
+    expect(salida).toEqual([]);
+    expect(errores).toEqual([`${ENCABEZADO}\n  ${variable}: es obligatoria y no tiene valor`]);
+  });
+
+  it('con una clave de menos de 32 caracteres: nombra la variable, dice por qué y no repite la clave', async () => {
+    const clave = 'clave-corta-y-secreta';
+
+    const { codigo, salida, errores } = await comando(argumentos, { ...ENTORNO, M2_CLAVE_TOKENS: clave });
+
+    expect(codigo).toBe(1);
+    expect(salida).toEqual([]);
+    expect(errores).toEqual([`${ENCABEZADO}\n  M2_CLAVE_TOKENS: tiene menos de 32 caracteres`]);
+    expect(errores.join('\n')).not.toContain(clave);
+  });
+
+  it('sin ninguna variable: las informa todas juntas', async () => {
+    const { codigo, salida, errores } = await comando(argumentos, {});
+
+    expect(codigo).toBe(1);
+    expect(salida).toEqual([]);
+    expect(errores).toEqual([
+      [
+        ENCABEZADO,
+        '  M2_CLAVE_TOKENS: es obligatoria y no tiene valor',
+        '  M2_EMISOR_TOKENS: es obligatoria y no tiene valor',
+        '  M2_AUDIENCIA_TOKENS: es obligatoria y no tiene valor',
+      ].join('\n'),
+    ]);
+  });
+});
+
+describe('main, el comando de tokens: argumentos que no sirven (RNF-12.5)', () => {
+  const USO = 'Uso: node dist/herramientas/token.js --sub <texto> --roles <ROL[,ROL…]> [--vence <segundos>]';
+  const NO_VALIDOS = 'Los argumentos no son válidos.';
+  const FALTA_SUB = 'Falta --sub, el identificador de quien llama (el sub del token).';
+  const FALTA_ROLES = 'Falta --roles, al menos un rol (varios, separados por comas).';
+  const VENCE_INVALIDO = '--vence tiene que ser un entero de segundos mayor que 0.';
+  const CON_SUB_Y_ROLES = ['--sub', SUB_DE_PRUEBA, '--roles', 'CLIENTE'];
+
+  it.each([
+    ['sin argumentos', [], [FALTA_SUB, FALTA_ROLES]],
+    ['sin --sub', ['--roles', 'CLIENTE'], [FALTA_SUB]],
+    ['con --sub vacío', ['--sub', '', '--roles', 'CLIENTE'], [FALTA_SUB]],
+    ['con --sub de solo espacios', ['--sub', '  ', '--roles', 'CLIENTE'], [FALTA_SUB]],
+    ['sin --roles', ['--sub', SUB_DE_PRUEBA], [FALTA_ROLES]],
+    ['con --roles vacío', ['--sub', SUB_DE_PRUEBA, '--roles', ''], [FALTA_ROLES]],
+    ['con --roles que son solo comas y espacios', ['--sub', SUB_DE_PRUEBA, '--roles', ' , ,'], [FALTA_ROLES]],
+    ['con --sub vacío y sin --roles', ['--sub', ''], [FALTA_SUB, FALTA_ROLES]],
+    ['con --sub vacío, sin --roles y --vence mal', ['--sub', '', '--vence', 'x'], [FALTA_SUB, FALTA_ROLES, VENCE_INVALIDO]],
+  ])('%s: código 2 con cada motivo y el uso, y ningún token', async (_caso, argv, motivos) => {
+    const { codigo, salida, errores } = await comando(argv);
+
+    expect(codigo).toBe(2);
+    expect(salida).toEqual([]);
+    expect(errores).toEqual([[...motivos, USO].join('\n')]);
+  });
+
+  it.each(['abc', '0', '1.5', '', '60s', '1e3', '+60', ' 60', '0x10', '99999999999999999999'])(
+    '--vence %j no es un entero de segundos mayor que 0: código 2',
+    async (vence) => {
+      const { codigo, salida, errores } = await comando([...CON_SUB_Y_ROLES, '--vence', vence]);
+
+      expect(codigo).toBe(2);
+      expect(salida).toEqual([]);
+      expect(errores).toEqual([`${VENCE_INVALIDO}\n${USO}`]);
+    },
+  );
+
+  it('--vence=-60, que ya venció, tampoco: el vencimiento es de más de 0 segundos', async () => {
+    const { codigo, salida, errores } = await comando([...CON_SUB_Y_ROLES, '--vence=-60']);
+
+    expect(codigo).toBe(2);
+    expect(salida).toEqual([]);
+    expect(errores).toEqual([`${VENCE_INVALIDO}\n${USO}`]);
+  });
+
+  it.each([
+    ['una opción que no existe', [...CON_SUB_Y_ROLES, '--clave', 'secreto-que-no-se-repite']],
+    ['un argumento suelto', [...CON_SUB_Y_ROLES, 'secreto-que-no-se-repite']],
+    ['--sub sin su valor', ['--roles', 'CLIENTE', '--sub']],
+  ])('%s: código 2 con un solo mensaje fijo, sin repetir lo que se pasó', async (_caso, argv) => {
+    const { codigo, salida, errores } = await comando(argv);
+
+    expect(codigo).toBe(2);
+    expect(salida).toEqual([]);
+    expect(errores).toEqual([`${NO_VALIDOS}\n${USO}`]);
+  });
+
+  it('controla los argumentos antes que la configuración', async () => {
+    const { codigo, errores } = await comando(['--roles', 'CLIENTE'], {});
+
+    expect(codigo).toBe(2);
+    expect(errores).toEqual([`${FALTA_SUB}\n${USO}`]);
   });
 });

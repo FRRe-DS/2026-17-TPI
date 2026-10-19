@@ -24,7 +24,7 @@ const NO_VALIDO = 'El token no es válido';
 // La clave de la firma: el texto de la configuración en UTF-8, como lo hace cualquier biblioteca de JWT con un secreto.
 const claveDe = (config: ConfigTokens): Uint8Array => new TextEncoder().encode(config.claveTokens);
 
-const esRolConocido = (rol: string): rol is Rol => (ROLES_CONOCIDOS as readonly string[]).includes(rol);
+export const esRolConocido = (rol: string): rol is Rol => (ROLES_CONOCIDOS as readonly string[]).includes(rol);
 
 // El motivo de un claim que jose rechazó. `invalid` es un exp, nbf o iat que no es un número.
 function motivoDelClaim({ claim, reason }: errors.JWTClaimValidationFailed): string {
