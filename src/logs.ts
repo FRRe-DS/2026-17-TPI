@@ -1,6 +1,6 @@
 // Lo que va a los logs: qué secretos se ocultan, cómo se guarda un error, la línea de cada solicitud y las opciones del
 // logger de Fastify (plan, Lógicas 10 y 11). No importa nada del servicio salvo el tipo de la configuración.
-import type { FastifyBaseLogger, FastifyLoggerOptions, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyBaseLogger, FastifyLoggerOptions, FastifyReply, FastifyRequest, FastifyServerOptions } from 'fastify';
 import type { Writable } from 'node:stream';
 import { inspect } from 'node:util';
 import type { Config } from './config.js';
@@ -155,17 +155,42 @@ export function registrarSolicitudIlegible(
 
 // Fastify tipa el serializador de `err` con la forma de pino (type, message, stack); el nuestro devuelve ErrorRegistrado.
 type SerializadorDeErr = NonNullable<NonNullable<FastifyLoggerOptions['serializers']>['err']>;
+// Las opciones de pino que Fastify acepta en `logger`: Fastify no exporta su tipo con un nombre.
+type OpcionesDePino = Exclude<FastifyServerOptions['logger'], boolean | undefined>;
+type LogMethod = NonNullable<NonNullable<OpcionesDePino['hooks']>['logMethod']>;
+
+// El texto de una línea que registra un error sin texto.
+const TEXTO_DE_UN_ERROR = 'Error';
+
+// Si el primer argumento de una llamada al log es un error, o un objeto con un error bajo `err` y sin `msg`. Sin un texto,
+// pino copia en `msg` el mensaje de ese error tal cual: `msg` no pasa por el serializador de `err`.
+function llevaError(valor: unknown): boolean {
+  if (valor instanceof Error) return true;
+  if (typeof valor !== 'object' || valor === null) return false;
+  const { err, msg } = valor as { err?: unknown; msg?: unknown };
+  return Boolean(err) && msg === undefined;
+}
 
 // Las opciones del logger de Fastify: JSON, una línea por evento, a `flujoLog` o a la salida estándar si no se pasa uno
 // (RNF-14.5). Todo lo que se registre bajo `err`, venga de donde venga, pasa por serializarError con los secretos fijos.
+// Antes de armar cada línea, un error sin texto recibe TEXTO_DE_UN_ERROR, y cada texto de la llamada pasa por
+// limpiarSecretos con los secretos fijos (RNF-19.1). Lo que va dentro de un objeto no es un texto de la llamada: el error lo
+// limpia su serializador, y lo demás se registra como llega.
 export function opcionesLogger(secretosFijos: readonly string[], flujoLog?: Writable) {
   const serializadorDeErr = (valor: unknown) =>
     valor instanceof ErrorConSecretos
       ? serializarError(valor.error, [...secretosFijos, ...valor.secretos])
       : serializarError(valor, secretosFijos);
+  const logMethod: LogMethod = function (args, metodo) {
+    const [primero, segundo, ...resto] = args as unknown[];
+    const completos: unknown[] = llevaError(primero) && segundo === undefined ? [primero, TEXTO_DE_UN_ERROR, ...resto] : args;
+    const limpios = completos.map((arg) => (typeof arg === 'string' ? limpiarSecretos(arg, secretosFijos) : arg));
+    Reflect.apply(metodo, this, limpios);
+  };
   return {
     level: 'info',
     stream: flujoLog,
     serializers: { err: serializadorDeErr as unknown as SerializadorDeErr },
+    hooks: { logMethod },
   };
 }

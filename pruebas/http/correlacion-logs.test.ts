@@ -427,6 +427,43 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
     sinSecretos(logs);
   });
 
+  // Sin un texto, pino copia en msg el mensaje del error tal cual, sin pasar por el serializador.
+  it('un error registrado sin texto lleva uno fijo, y su mensaje no llega a msg', () => {
+    const { app, logs } = crear({});
+
+    app.log.error(new Error(`con ${CLAVE}`));
+    app.log.child({ idCorrelacion: 'hijo-1' }).error({ err: new Error(`con ${URL_BD}`) });
+    app.log.warn({ err: { message: `objeto con ${CONTRASENA_BD}` } });
+    app.log.error({ err: new Error('x'), msg: 'texto propio' });
+    app.log.info({ dato: 1 });
+
+    expect(logs.lineas()).toMatchObject([
+      { level: 50, msg: 'Error', err: { mensaje: 'con [oculto]' } },
+      { level: 50, msg: 'Error', idCorrelacion: 'hijo-1', err: { mensaje: 'con postgres://m2:[oculto]@bd:5432/m2' } },
+      { level: 40, msg: 'Error', err: { mensaje: 'objeto con [oculto]' } },
+      { level: 50, msg: 'texto propio', err: { mensaje: 'x' } },
+      { level: 30, dato: 1 },
+    ]);
+    // Una línea sin error sigue sin texto.
+    expect(logs.lineas()[4]).not.toHaveProperty('msg');
+    sinSecretos(logs);
+  });
+
+  it('los textos de cada línea también pasan por limpiarSecretos', () => {
+    const { app, logs } = crear({});
+
+    app.log.error({ err: new Error('x') }, `falló con ${CLAVE}`);
+    app.log.child({ idCorrelacion: 'hijo-1' }).info(`conectando a ${URL_BD}`);
+    app.log.info('la clave es %s', CLAVE);
+
+    expect(logs.lineas().map((linea) => linea.msg)).toEqual([
+      'falló con [oculto]',
+      'conectando a postgres://m2:[oculto]@bd:5432/m2',
+      'la clave es [oculto]',
+    ]);
+    sinSecretos(logs);
+  });
+
   it('un error que no se puede leer igual da 500 en problem+json y deja una línea mínima', async () => {
     const ilegible = new Error('x');
     Object.defineProperty(ilegible, 'message', {
