@@ -3,18 +3,28 @@ import type { Config } from './config.js';
 import type { Contrato } from './contrato/cargar.js';
 import { registrarOperaciones, type Manejadores } from './contrato/operaciones.js';
 import { crearCompilador } from './contrato/validacion.js';
-import { aProblema } from './errores.js';
+import { aProblema, NoEncontrado } from './errores.js';
 
 export type OpcionesApp = { config: Config; contrato: Contrato; manejadores: Manejadores };
+
+// El cuerpo de una solicitud pesa 1 MiB como máximo (RNF-03.2). Es lo que Fastify hace por defecto, escrito para que se vea.
+const LIMITE_CUERPO = 1024 * 1024;
 
 // La app de Fastify armada desde el contrato: valida con sus esquemas, responde los errores con aProblema y expone solo
 // las operaciones que tienen manejador. No escucha en ningún puerto; eso lo hace el arranque.
 export function construirApp({ config, contrato, manejadores }: OpcionesApp) {
-  const app = Fastify();
+  const app = Fastify({ bodyLimit: LIMITE_CUERPO });
+  // Fastify lee también text/plain; sin ese lector, ese cuerpo da 415 como cualquier otro que no es JSON (RNF-03.2).
+  app.removeContentTypeParser('text/plain');
   app.setValidatorCompiler(crearCompilador(contrato));
   app.setErrorHandler((error, request, reply) => {
     const { codigo, cuerpo, encabezados } = aProblema(error, request.url);
     return reply.code(codigo).headers(encabezados).send(cuerpo);
+  });
+  // Los hooks onRequest corren en el orden en que se registran. Una ruta que no existe da 404 acá, antes de que Fastify lea
+  // el cuerpo: si no, uno de más de 1 MiB daría 413 y un JSON roto, 400 (RNF-03.5).
+  app.addHook('onRequest', async (request) => {
+    if (request.is404) throw new NoEncontrado();
   });
   registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);
   return app;
