@@ -59,3 +59,13 @@ export function armarToken({
   const firmado = `${codificar({ alg, typ: 'JWT', ...cabecera })}.${codificar(cuerpo === undefined ? normal : cuerpo)}`;
   return alg === 'none' ? `${firmado}.` : `${firmado}.${firmar(firmado, clave, alg)}`;
 }
+
+// El encabezado `Authorization: Bearer <token>` con un token armado con `opciones`: válido, con el rol CLIENTE, salvo lo que se
+// pida cambiar. Para pasar como `headers` de `inject`.
+export const bearer = (opciones?: OpcionesToken): { authorization: string } => ({
+  authorization: `Bearer ${armarToken(opciones)}`,
+});
+
+// Un `Authorization` con un token válido que trae los cuatro roles, para las pruebas que no son de autenticación y llaman a una
+// operación protegida: pasa cualquier permiso. El token dura una hora desde que se importa el módulo.
+export const AUTORIZADO = bearer({ claims: { roles: ['CLIENTE', 'CONDUCTOR', 'OPERADOR', 'SERVICIO'] } });

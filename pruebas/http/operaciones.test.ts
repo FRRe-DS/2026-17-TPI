@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import { listarOperaciones, registrarOperaciones, type Manejador } from '../../src/contrato/operaciones.js';
 import { contratoCon, contratoDePrueba, crearApp } from '../ayudas/app.js';
+import { AUTORIZADO } from '../ayudas/tokens.js';
 
 const UUID = '00000000-0000-4000-8000-000000000001';
 const OTRO_UUID = '00000000-0000-4000-8000-000000000002';
@@ -65,7 +66,11 @@ describe('construirApp: solo responden las operaciones con manejador (RNF-03.4)'
 
 describe('construirApp: rutas con {param} y conversión de tipos (RNF-03.2)', () => {
   it('una ruta con {param} llega al manejador con sus parámetros', async () => {
-    const respuesta = await crearApp({ probarParametros: eco }).inject({ method: 'GET', url: URL_PARAMETROS });
+    const respuesta = await crearApp({ probarParametros: eco }).inject({
+      method: 'GET',
+      url: URL_PARAMETROS,
+      headers: AUTORIZADO,
+    });
 
     expect(respuesta.statusCode).toBe(200);
     expect(respuesta.json().params).toEqual({ clienteId: UUID, direccionId: OTRO_UUID });
@@ -73,8 +78,8 @@ describe('construirApp: rutas con {param} y conversión de tipos (RNF-03.2)', ()
 
   it('convierte la query string y completa el valor por defecto del contrato', async () => {
     const app = crearApp({ probarParametros: eco });
-    const sinQuery = await app.inject({ method: 'GET', url: URL_PARAMETROS });
-    const conQuery = await app.inject({ method: 'GET', url: `${URL_PARAMETROS}?pagina=3&etiquetas=a` });
+    const sinQuery = await app.inject({ method: 'GET', url: URL_PARAMETROS, headers: AUTORIZADO });
+    const conQuery = await app.inject({ method: 'GET', url: `${URL_PARAMETROS}?pagina=3&etiquetas=a`, headers: AUTORIZADO });
 
     expect(sinQuery.json().query).toEqual({ pagina: 1 });
     expect(conQuery.json().query).toEqual({ pagina: 3, etiquetas: ['a'] });
@@ -84,7 +89,7 @@ describe('construirApp: rutas con {param} y conversión de tipos (RNF-03.2)', ()
     const respuesta = await crearApp({ probarParametros: eco }).inject({
       method: 'GET',
       url: URL_PARAMETROS,
-      headers: { 'X-Version': '2', 'X-Desconocido': 'algo' },
+      headers: { ...AUTORIZADO, 'X-Version': '2', 'X-Desconocido': 'algo' },
     });
 
     expect(respuesta.statusCode).toBe(200);
@@ -93,7 +98,12 @@ describe('construirApp: rutas con {param} y conversión de tipos (RNF-03.2)', ()
 
   it('el cuerpo válido llega al manejador tal como vino', async () => {
     const cuerpo = { ...CLIENTE, direccion: { calle: 'San Martín 100', piso: 3 } };
-    const respuesta = await crearApp({ probarAlta: eco }).inject({ method: 'POST', url: '/pruebas/clientes', payload: cuerpo });
+    const respuesta = await crearApp({ probarAlta: eco }).inject({
+      method: 'POST',
+      url: '/pruebas/clientes',
+      headers: AUTORIZADO,
+      payload: cuerpo,
+    });
 
     expect(respuesta.statusCode).toBe(200);
     expect(respuesta.json().cuerpo).toEqual(cuerpo);
@@ -175,7 +185,7 @@ describe('construirApp: un dato inválido da 400 con el campo en el detail (RNF-
     const respuesta = await crearApp({ probarParametros: manejador, probarAlta: manejador }).inject({
       method: 'method' in caso ? caso.method : 'GET',
       url,
-      headers: 'headers' in caso ? caso.headers : undefined,
+      headers: { ...AUTORIZADO, ...('headers' in caso ? caso.headers : undefined) },
       payload: 'payload' in caso ? caso.payload : undefined,
     });
 
@@ -199,7 +209,11 @@ describe('construirApp: el encabezado de correlación queda fuera de la validaci
     ['declarado en la ruta, en una operación protegida', 'probarProtegida', '/pruebas/protegida'],
     ['declarado en la ruta, junto con otros parámetros', 'probarParametros', URL_PARAMETROS],
   ])('un X-Request-Id que no cumple el patrón del contrato no da 400 (%s)', async (_caso, operacion, url) => {
-    const respuesta = await crearApp({ [operacion]: eco }).inject({ method: 'GET', url, headers: { 'X-Request-Id': INVALIDO } });
+    const respuesta = await crearApp({ [operacion]: eco }).inject({
+      method: 'GET',
+      url,
+      headers: { ...AUTORIZADO, 'X-Request-Id': INVALIDO },
+    });
 
     expect(respuesta.statusCode).toBe(200);
   });
@@ -208,7 +222,7 @@ describe('construirApp: el encabezado de correlación queda fuera de la validaci
     const respuesta = await crearApp({ probarProtegida: eco }, { config: { encabezadoCorrelacion: 'x-request-id' } }).inject({
       method: 'GET',
       url: '/pruebas/protegida',
-      headers: { 'X-Request-Id': INVALIDO },
+      headers: { ...AUTORIZADO, 'X-Request-Id': INVALIDO },
     });
 
     expect(respuesta.statusCode).toBe(200);
@@ -218,7 +232,7 @@ describe('construirApp: el encabezado de correlación queda fuera de la validaci
     const respuesta = await crearApp({ probarProtegida: eco }, { config: { encabezadoCorrelacion: 'X-Correlation-Id' } }).inject({
       method: 'GET',
       url: '/pruebas/protegida',
-      headers: { 'X-Request-Id': INVALIDO },
+      headers: { ...AUTORIZADO, 'X-Request-Id': INVALIDO },
     });
 
     expect(respuesta.statusCode).toBe(400);
@@ -233,13 +247,18 @@ describe('construirApp: cada ruta guarda en su configuración los permisos de su
     { operacion: 'probarPublica', url: '/pruebas/publica', permisos: { publica: true, roles: [] } },
     { operacion: 'probarParametros', url: URL_PARAMETROS, permisos: { publica: false, roles: [] } },
   ])('$operacion', async ({ operacion, url, permisos }) => {
-    const respuesta = await crearApp({ [operacion]: eco }).inject({ method: 'GET', url });
+    const respuesta = await crearApp({ [operacion]: eco }).inject({ method: 'GET', url, headers: AUTORIZADO });
 
     expect(respuesta.json().permisos).toEqual(permisos);
   });
 
   it('probarAlta, con cuerpo', async () => {
-    const respuesta = await crearApp({ probarAlta: eco }).inject({ method: 'POST', url: '/pruebas/clientes', payload: CLIENTE });
+    const respuesta = await crearApp({ probarAlta: eco }).inject({
+      method: 'POST',
+      url: '/pruebas/clientes',
+      headers: AUTORIZADO,
+      payload: CLIENTE,
+    });
 
     expect(respuesta.json().permisos).toEqual({ publica: false, roles: ['CLIENTE'] });
   });
@@ -284,18 +303,25 @@ describe('construirApp: cada ruta guarda en su configuración los permisos de su
   ])('%s', async (_caso, global, deLaOperacion, permisos) => {
     const operacion = { operationId: 'x', ...(deLaOperacion && { security: deLaOperacion }) };
     const contratoX = contratoCon({ '/x': { get: operacion } }, global && { security: global });
-    const respuesta = await crearApp({ x: eco }, { contrato: contratoX }).inject({ method: 'GET', url: '/x' });
+    const app = crearApp({ x: eco }, { contrato: contratoX });
+    const respuesta = await app.inject({ method: 'GET', url: '/x', headers: AUTORIZADO });
 
     expect(respuesta.json().permisos).toEqual(permisos);
   });
 });
 
+// Estas pruebas miran los esquemas y no la autenticación: sus operaciones son públicas (security: []), salvo la que prueba
+// que el Authorization no se valida como parámetro, que sigue protegida y llama con un token válido.
 describe('construirApp: cómo arma el esquema de los parámetros', () => {
   it('un parámetro de la operación reemplaza al de la ruta con el mismo nombre y lugar', async () => {
     const contratoX = contratoCon({
       '/x': {
         parameters: [{ name: 'limite', in: 'query', schema: { type: 'integer', maximum: 5 } }],
-        get: { operationId: 'x', parameters: [{ name: 'limite', in: 'query', schema: { type: 'integer', maximum: 100 } }] },
+        get: {
+          operationId: 'x',
+          security: [],
+          parameters: [{ name: 'limite', in: 'query', schema: { type: 'integer', maximum: 100 } }],
+        },
       },
     });
     const app = crearApp({ x: eco }, { contrato: contratoX });
@@ -311,6 +337,7 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
       '/x': {
         get: {
           operationId: 'x',
+          security: [],
           parameters: [{ name: 'Idempotency-Key', in: 'header', required: true, schema: { type: 'string', minLength: 1 } }],
         },
       },
@@ -336,7 +363,7 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
       obligatorio('accept', 'query'),
     ];
     const app = crearApp({ x: eco }, { contrato: contratoCon({ '/x': { get: { operationId: 'x', parameters } } }) });
-    const headers = { authorization: 'Bearer otra-cosa' };
+    const headers = AUTORIZADO;
 
     expect((await app.inject({ method: 'GET', url: '/x?accept=nunca', headers })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/x', headers })).json().detail).toBe(
@@ -349,6 +376,7 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
       '/x/{id}': {
         get: {
           operationId: 'x',
+          security: [],
           parameters: [
             { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
             { name: 'id', in: 'query', schema: { type: 'integer' } },
@@ -374,7 +402,7 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
       schema: { type: 'array', items: { $ref: '#/components/schemas/Etiqueta' } },
     };
     const contratoX = contratoCon(
-      { '/x': { get: { operationId: 'x', parameters: [etiquetas] } } },
+      { '/x': { get: { operationId: 'x', security: [], parameters: [etiquetas] } } },
       { components: { schemas: { Etiqueta: { type: 'string', maxLength: 3 } } } },
     );
     const app = crearApp({ x: eco }, { contrato: contratoX });
@@ -390,11 +418,12 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
       {
         '/x~1': {
           parameters: [{ name: 'id', in: 'query', required: true, schema: { type: 'string', format: 'uuid' } }],
-          get: { operationId: 'x' },
+          get: { operationId: 'x', security: [] },
         },
         '/y': {
           get: {
             operationId: 'y',
+            security: [],
             parameters: [{ $ref: '#/paths/~1x~01/parameters/0' }, { $ref: '#/components/parameters/50%25' }],
           },
         },
@@ -416,9 +445,9 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
     const contratoX = contratoCon({
       '/x/{id}': {
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
-        get: { operationId: 'x' },
+        get: { operationId: 'x', security: [] },
       },
-      '/y/{id}': { get: { operationId: 'y', parameters: [{ $ref: '#/paths/~1x~1%7Bid%7D/parameters/0' }] } },
+      '/y/{id}': { get: { operationId: 'y', security: [], parameters: [{ $ref: '#/paths/~1x~1%7Bid%7D/parameters/0' }] } },
     });
     const app = crearApp({ y: eco }, { contrato: contratoX });
 
@@ -430,7 +459,7 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
 
   it('completa el valor por defecto aunque el parámetro y su esquema sean $ref', async () => {
     const contratoX = contratoCon(
-      { '/x': { get: { operationId: 'x', parameters: [{ $ref: '#/components/parameters/Limite' }] } } },
+      { '/x': { get: { operationId: 'x', security: [], parameters: [{ $ref: '#/components/parameters/Limite' }] } } },
       {
         components: {
           parameters: { Limite: { name: 'limite', in: 'query', schema: { $ref: '#/components/schemas/Limite' } } },
@@ -445,12 +474,13 @@ describe('construirApp: cómo arma el esquema de los parámetros', () => {
   });
 });
 
+// Las operaciones son públicas (security: []): lo que se mira es el esquema del cuerpo y no la autenticación.
 describe('construirApp: el cuerpo', () => {
   const ESQUEMA = { type: 'object', required: ['a'], properties: { a: { type: 'string' } } };
 
   it('un cuerpo opcional (sin required: true) puede faltar, pero si llega se valida', async () => {
     const contratoX = contratoCon({
-      '/x': { post: { operationId: 'x', requestBody: { content: { 'application/json': { schema: ESQUEMA } } } } },
+      '/x': { post: { operationId: 'x', security: [], requestBody: { content: { 'application/json': { schema: ESQUEMA } } } } },
     });
     const app = crearApp({ x: eco }, { contrato: contratoX });
 
@@ -460,7 +490,7 @@ describe('construirApp: el cuerpo', () => {
 
   it('un cuerpo que es un $ref a components/requestBodies se valida con su esquema', async () => {
     const contratoX = contratoCon(
-      { '/x': { post: { operationId: 'x', requestBody: { $ref: '#/components/requestBodies/Alta' } } } },
+      { '/x': { post: { operationId: 'x', security: [], requestBody: { $ref: '#/components/requestBodies/Alta' } } } },
       { components: { requestBodies: { Alta: { required: true, content: { 'application/json': { schema: ESQUEMA } } } } } },
     );
     const app = crearApp({ x: eco }, { contrato: contratoX });

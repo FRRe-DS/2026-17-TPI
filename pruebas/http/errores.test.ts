@@ -4,9 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Manejador } from '../../src/contrato/operaciones.js';
 import { contratoCon, crearApp } from '../ayudas/app.js';
 import { escuchar, leerRespuesta, porSocket } from '../ayudas/socket.js';
+import { AUTORIZADO } from '../ayudas/tokens.js';
 
 const MIB = 1024 * 1024;
 const COMO_JSON = { 'content-type': 'application/json' };
+// Para llamar a una operación protegida: estas pruebas no son de autenticación (eso es autenticacion.test.ts).
+const COMO_JSON_AUTORIZADO = { ...COMO_JSON, ...AUTORIZADO };
 const PROBLEMA_JSON = /^application\/problem\+json/;
 const CLIENTE = { nombre: 'Ana', fechaNacimiento: '1990-05-17' };
 const SECRETO = 'postgres://m2:clave-secreta@bd:5432/m2';
@@ -36,7 +39,7 @@ const CASOS: Caso[] = [
   },
   {
     caso: '413: el cuerpo supera 1 MiB',
-    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON, payload: cuerpoDe(MIB + 1) },
+    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON_AUTORIZADO, payload: cuerpoDe(MIB + 1) },
     status: 413,
     title: 'Cuerpo demasiado grande',
     detail: 'El cuerpo supera 1 MiB',
@@ -44,7 +47,12 @@ const CASOS: Caso[] = [
   },
   {
     caso: '415: el cuerpo no es application/json',
-    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: { 'content-type': 'text/plain' }, payload: 'hola' },
+    solicitud: {
+      method: 'POST',
+      url: '/pruebas/clientes?x=1',
+      headers: { 'content-type': 'text/plain', ...AUTORIZADO },
+      payload: 'hola',
+    },
     status: 415,
     title: 'Tipo de contenido no soportado',
     detail: 'El cuerpo tiene que ser application/json',
@@ -52,7 +60,7 @@ const CASOS: Caso[] = [
   },
   {
     caso: '400: el JSON está roto',
-    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON, payload: '{"nombre": ' },
+    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON_AUTORIZADO, payload: '{"nombre": ' },
     status: 400,
     title: 'Solicitud inválida',
     detail: 'El cuerpo no es JSON válido',
@@ -60,7 +68,7 @@ const CASOS: Caso[] = [
   },
   {
     caso: '400: el cuerpo está vacío y dice ser JSON',
-    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON, payload: '' },
+    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON_AUTORIZADO, payload: '' },
     status: 400,
     title: 'Solicitud inválida',
     detail: 'El cuerpo no es JSON válido',
@@ -68,7 +76,12 @@ const CASOS: Caso[] = [
   },
   {
     caso: '400: el JSON trae __proto__',
-    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON, payload: '{"__proto__": {"admin": true}}' },
+    solicitud: {
+      method: 'POST',
+      url: '/pruebas/clientes?x=1',
+      headers: COMO_JSON_AUTORIZADO,
+      payload: '{"__proto__": {"admin": true}}',
+    },
     status: 400,
     title: 'Solicitud inválida',
     detail: 'El cuerpo no es JSON válido',
@@ -76,7 +89,7 @@ const CASOS: Caso[] = [
   },
   {
     caso: '400: falta un campo, y el detail lo nombra',
-    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON, payload: { nombre: 'Ana' } },
+    solicitud: { method: 'POST', url: '/pruebas/clientes?x=1', headers: COMO_JSON_AUTORIZADO, payload: { nombre: 'Ana' } },
     status: 400,
     title: 'Solicitud inválida',
     detail: 'Falta el campo fechaNacimiento en el cuerpo',
@@ -145,7 +158,7 @@ describe('construirApp: una ruta que no existe da 404 antes de leer el cuerpo (R
     expect((await app.inject({ method: 'GET', url: '/no/existe' })).statusCode).toBe(404);
     expect(otro).not.toHaveBeenCalled();
 
-    await app.inject({ method: 'POST', url: '/pruebas/clientes', payload: CLIENTE });
+    await app.inject({ method: 'POST', url: '/pruebas/clientes', headers: AUTORIZADO, payload: CLIENTE });
     expect(otro).toHaveBeenCalledExactlyOnceWith('/pruebas/clientes');
   });
 });
@@ -181,7 +194,7 @@ describe('construirApp: solo se acepta el cuerpo application/json (RNF-03.2)', (
     const respuesta = await crearApp({ probarAlta: eco }).inject({
       method: 'POST',
       url: '/pruebas/clientes',
-      headers: { 'content-type': tipo },
+      headers: { 'content-type': tipo, ...AUTORIZADO },
       payload: JSON.stringify(CLIENTE),
     });
 
@@ -200,7 +213,7 @@ describe('construirApp: solo se acepta el cuerpo application/json (RNF-03.2)', (
     const respuesta = await crearApp({ probarAlta: eco }).inject({
       method: 'POST',
       url: '/pruebas/clientes',
-      headers: { 'content-type': tipo },
+      headers: { 'content-type': tipo, ...AUTORIZADO },
       payload: JSON.stringify(CLIENTE),
     });
 
@@ -212,6 +225,7 @@ describe('construirApp: solo se acepta el cuerpo application/json (RNF-03.2)', (
     const respuesta = await crearApp({ probarAlta: eco }).inject({
       method: 'POST',
       url: '/pruebas/clientes',
+      headers: AUTORIZADO,
       payload: JSON.stringify(CLIENTE),
     });
 
