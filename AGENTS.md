@@ -56,7 +56,7 @@ Si dos fuentes se contradicen, para y pregunta.
 - 🚫 Nunca: editar `contrato/` fuera de una rama `contrato/`, pushear a `main`, desactivar tests o checks para que pase CI, leer `.env`, reescribir historia publicada.
 
 ## Trampas conocidas
-- Hasta que se implemente la spec base (#3) no existen `package.json` ni `docker-compose.yml`: los comandos `npm` y `docker compose` fallan, y CI omite esos pasos con un aviso.
+- Hasta el bloque E de la spec base (#3) no existe `docker-compose.yml`: `docker compose` falla, y el job `contract-test` de CI omite sus pasos con un aviso.
 - `contrato/openapi.yml` solo tiene `info` hasta el contrato v1 (#1): CI omite su lint con un aviso.
 - Node 20 está fuera de soporte: usar Node 24 (`nvm use 24`).
 - `docker` sin sudo, y por lo tanto Testcontainers, exige estar en el grupo `docker`.
