@@ -42,7 +42,7 @@ Depende de: nada. No necesita Docker.
 ## Bloque B — Autenticación y orden de los errores
 Depende de: bloque A.
 
-- [ ] **T13. Validar tokens y generarlos para las pruebas: `verificarToken` y `generarToken` (plan, Lógica 3 y 5).** RNF-12.2, RNF-12.4
+- [x] **T13. Validar tokens y generarlos para las pruebas: `verificarToken` y `generarToken` (plan, Lógica 3 y 5).** RNF-12.2, RNF-12.4
   - Hecho cuando: `pruebas/unitarias/tokens.test.ts` cubre cada motivo de 401 de RNF-12.2 con tokens armados por la prueba (otra clave, otro algoritmo, `alg: none`, sin `exp`, vencido, `nbf` futuro, dentro y fuera de los 30 s de tolerancia, sin `sub` o con `sub` vacío o que no es texto, otro `iss` u otra `aud`, roles que no son una lista), el filtro de roles conocidos y la ida y vuelta de `generarToken`; y ningún `detail` contiene el token.
 - [ ] **T14. Comando de desarrollo que genera un token: `main(argv, env)` en `src/herramientas/token.ts` (plan, Lógica 5).** RNF-12.5
   - Hecho cuando: `pruebas/unitarias/tokens.test.ts` llama a `main` con `--sub`, `--roles CLIENTE,OPERADOR` y `--vence 60`, y `verificarToken` acepta lo que imprime, con ese `sub`, esos roles y ese vencimiento; sin `--vence`, el token vence en 3600 s; y sin la clave configurada, `main` devuelve un código distinto de 0 y nombra la variable sin su valor.

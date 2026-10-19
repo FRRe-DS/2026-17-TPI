@@ -7,16 +7,14 @@ import type { Config } from '../../src/config.js';
 import { cargarContrato, type Contrato } from '../../src/contrato/cargar.js';
 import type { Manejadores } from '../../src/contrato/operaciones.js';
 import { descartarLogs } from './logs.js';
+import { CONFIG_TOKENS } from './tokens.js';
 
 export const contratoDePrueba = cargarContrato(fileURLToPath(new URL('./contrato-prueba.yml', import.meta.url)));
 
 export const CONFIG: Config = {
   urlBd: 'postgres://m2:m2@localhost:5432/m2',
   puerto: 8082,
-  claveTokens: 'clave-de-prueba-de-32-caracteres!',
-  emisorTokens: 'pruebas',
-  audienciaTokens: 'm2',
-  campoRoles: 'roles',
+  ...CONFIG_TOKENS,
   tiempoBdMs: 2000,
   tiempoModulosMs: 2000,
   reintentosModulos: 1,
