@@ -42,6 +42,11 @@ export function construirApp({ config, contrato, manejadores, flujoLog }: Opcion
     frameworkErrors: crearFrameworkErrors(config.encabezadoCorrelacion),
     clientErrorHandler: crearClientErrorHandler(config.encabezadoCorrelacion),
   });
+  // A un Expect que no es 100-continue, Node responde 417 por su cuenta si nadie atiende checkExpectation: sin pasar por
+  // Fastify, sin el encabezado de correlación ni la línea de log. El RFC 9110 deja ignorar una expectativa que el servidor no
+  // conoce, y así la solicitud sigue como cualquier otra. Va en el servidor principal, como el clientError de Fastify:
+  // escuchando en 0.0.0.0 no hay otro.
+  app.server.on('checkExpectation', (req, res) => app.routing(req, res));
   // Fastify lee también text/plain; sin ese lector, ese cuerpo da 415 como cualquier otro que no es JSON (RNF-03.2).
   app.removeContentTypeParser('text/plain');
   app.setValidatorCompiler(crearCompilador(contrato));

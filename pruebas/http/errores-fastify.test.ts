@@ -363,6 +363,40 @@ describe('construirApp: lo que no se puede leer como HTTP, por un socket (RNF-03
   });
 });
 
+// A un Expect que no es 100-continue, si nadie atiende checkExpectation, Node responde 417 solo, sin pasar por Fastify. El
+// RFC 9110 (§10.1.1) deja ignorar una expectativa que el servidor no conoce: la solicitud sigue como cualquier otra.
+describe('construirApp: un Expect desconocido, por un socket (RNF-03.1, RNF-14.4, RNF-14.6)', () => {
+  const conExpect = (linea: string) =>
+    [linea, 'Host: localhost', 'Connection: close', 'Expect: algo', 'X-Request-Id: expect-1', '', ''].join('\r\n');
+
+  it('a una operación la responde como a cualquier otra solicitud', async () => {
+    const { app, logs } = crear();
+    const puerto = await escuchar(app);
+
+    const respuesta = leerRespuesta(await porSocket(puerto, conExpect('GET /pruebas/publica HTTP/1.1')));
+
+    expect(respuesta.estado).toBe('HTTP/1.1 200 OK');
+    expect(respuesta.encabezados[ENCABEZADO]).toBe('expect-1');
+    expect(cuerpoDe(respuesta.resto)).toEqual({ ok: true });
+    expect(deLaSolicitud(logs)).toMatchObject([
+      { idCorrelacion: 'expect-1', metodo: 'GET', ruta: '/pruebas/publica', estado: 200 },
+    ]);
+  });
+
+  it('a una ruta que no existe, 404 en problem+json', async () => {
+    const { app, logs } = crear();
+    const puerto = await escuchar(app);
+
+    const respuesta = leerRespuesta(await porSocket(puerto, conExpect('GET /no/existe HTTP/1.1')));
+
+    expect(respuesta.estado).toBe('HTTP/1.1 404 Not Found');
+    expect(respuesta.encabezados['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.encabezados[ENCABEZADO]).toBe('expect-1');
+    expect(cuerpoDe(respuesta.resto)).toMatchObject({ status: 404, instance: '/no/existe' });
+    expect(deLaSolicitud(logs)).toMatchObject([{ idCorrelacion: 'expect-1', metodo: 'GET', ruta: '/no/existe', estado: 404 }]);
+  });
+});
+
 // El manejador de errores de cliente que la app le dio a Node, con `this` en la app, como lo llama Node.
 type ManejadorDeCliente = (error: Partial<NodeJS.ErrnoException>, socket: Partial<Socket>) => void;
 const manejadorDeCliente = (app: FastifyInstance) => app.server.listeners('clientError')[0] as ManejadorDeCliente;
