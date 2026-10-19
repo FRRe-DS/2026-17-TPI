@@ -124,15 +124,33 @@ export function registrarErrorInterno(log: FastifyBaseLogger, error: unknown, se
   log.error({ err: new ErrorConSecretos(error, secretosDeLaSolicitud) }, 'Error interno');
 }
 
+// El campo con el id de correlación en cada línea del log. En las de una solicitud lo pone `request.log`
+// (requestIdLogLabel de Fastify).
+export const CAMPO_ID_CORRELACION = 'idCorrelacion';
+
+const SOLICITUD_TERMINADA = 'Solicitud terminada';
+
 // Registra la línea de una solicitud que terminó (RNF-14.6): el método, la ruta sin query string, el código de la respuesta y
-// cuánto tardó, en milisegundos desde que Fastify la recibió. El id de correlación lo pone `request.log`, que lo lleva como
-// idCorrelacion. Es una lista cerrada de campos, como la del error: ni encabezados ni cuerpos ni la query string, que puede
+// cuánto tardó, en milisegundos desde que Fastify la recibió. `duracionMs` se pasa para lo que Fastify responde antes de
+// entrar a una ruta, donde su reloj no arranca y `reply.elapsedTime` da 0 (Lógica 9). El id de correlación lo pone
+// `request.log`. Es una lista cerrada de campos, como la del error: ni encabezados ni cuerpos ni la query string, que puede
 // traer datos personales (RNF-19.2).
-export function registrarSolicitud(request: FastifyRequest, reply: FastifyReply): void {
+export function registrarSolicitud(request: FastifyRequest, reply: FastifyReply, duracionMs = reply.elapsedTime): void {
   request.log.info(
-    { metodo: request.method, ruta: request.url.split('?', 1)[0], estado: reply.statusCode, duracionMs: reply.elapsedTime },
-    'Solicitud terminada',
+    { metodo: request.method, ruta: request.url.split('?', 1)[0], estado: reply.statusCode, duracionMs },
+    SOLICITUD_TERMINADA,
   );
+}
+
+// La línea de una solicitud que no se pudo leer como HTTP (Lógica 9): sin el método ni la ruta, que no se llegaron a leer, y
+// con el id de correlación que se generó para la respuesta. `log` es el de la app, que no lleva ningún id.
+export function registrarSolicitudIlegible(
+  log: FastifyBaseLogger,
+  idCorrelacion: string,
+  estado: number,
+  duracionMs: number,
+): void {
+  log.info({ [CAMPO_ID_CORRELACION]: idCorrelacion, estado, duracionMs }, SOLICITUD_TERMINADA);
 }
 
 // Fastify tipa el serializador de `err` con la forma de pino (type, message, stack); el nuestro devuelve ErrorRegistrado.

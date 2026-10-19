@@ -7,12 +7,13 @@ export async function escuchar(app: FastifyInstance): Promise<number> {
   return (app.server.address() as AddressInfo).port;
 }
 
-// Manda `pedido` tal cual por un socket y devuelve todo lo que llega hasta que el servidor cierra la conexión. Con inject
-// no alcanza: la respuesta a HEAD trae el cuerpo que escribió Fastify, aunque Node no lo manda.
-export function porSocket(puerto: number, pedido: string): Promise<string> {
+// Manda `pedido` tal cual por un socket y devuelve todo lo que llega hasta que el servidor cierra la conexión. Con
+// `terminar`, el cliente cierra además su lado después de mandarlo, como uno que no tiene más para mandar. Con inject no
+// alcanza: la respuesta a HEAD trae el cuerpo que escribió Fastify, aunque Node no lo manda.
+export function porSocket(puerto: number, pedido: string, { terminar = false } = {}): Promise<string> {
   return new Promise((resolve) => {
     const partes: Buffer[] = [];
-    const socket = net.connect(puerto, '127.0.0.1', () => socket.write(pedido));
+    const socket = net.connect(puerto, '127.0.0.1', () => (terminar ? socket.end(pedido) : socket.write(pedido)));
     socket.on('data', (parte: Buffer) => partes.push(parte));
     // Un RST también cierra la conexión: lo que importa es lo que llegó antes.
     socket.on('error', () => {});
