@@ -94,3 +94,29 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - `FST_ERR_CTP_INVALID_CONTENT_LENGTH` y cualquier `HPE_*` que no sea el desborde de encabezados se tratan como «HTTP que no se puede leer» (400), aunque la tabla no los nombra: un 500 para un error de quien llama contradiría RNF-03.2.
   - `instance` es la ruta tal como llegó (con sus `%xx`), sin la query string; para una URL mal codificada repite la ruta mala. Un campo de más con un nombre larguísimo vuelve entero en el `detail` (como mucho 1 MiB, el tope del cuerpo).
   - Para T4: con `module: nodenext`, `import Ajv2020 from 'ajv/dist/2020.js'` y `import addFormats from 'ajv-formats'` no se pueden construir ni invocar para TypeScript; hay que usar el `.default` de cada uno (existe en ejecución), como en `problemas.test.ts`. Y conviene no pasar `strict: true`: con Ajv por defecto compilan un `required` en una rama de `allOf` sin `type: object`, un `required` sin `properties` y una unión de tipos que no sea con `null` (`strictTypes` solo avisa en el log), pero con `strict: true` ninguno de los tres compila (probado con Ajv 8.20.0).
+
+### T4 — Cargar el contrato y compilar sus esquemas con Ajv 2020 · commit `003/T4`
+- Qué cambió:
+  - `src/contrato/cargar.ts`: `cargarContrato(ruta?)` lee `contrato/openapi.yml`, u otro archivo para el script de la prueba de contrato, y devuelve el documento como objeto (`Contrato`). Falla con un error que nombra el archivo y dice el motivo si el archivo falta, no es YAML válido, tiene una clave repetida, deja un aviso de YAML o no es un objeto. `RUTA_CONTRATO` es la ruta absoluta del contrato del repo.
+  - `src/contrato/validacion.ts`: `crearCompilador(contrato)` devuelve el compilador para `app.setValidatorCompiler`. Arma dos instancias de Ajv 2020 con `ajv-formats` y el contrato cargado con el id `ID_CONTRATO` (`contrato`): una convierte tipos y atiende `params`, `querystring` y `headers`; la otra no convierte y atiende el cuerpo y cualquier parte desconocida.
+  - `pruebas/ayudas/contrato-prueba.yml`: contrato de prueba con las convenciones del borrador v1 y una operación por cada caso que piden las pruebas del plan (T4, T6, T7, T8, T15, T16, T19, T21 y T23), para que los bloques B y C no tengan que editarlo a la vez. Pasa el lint de Redocly; solo quedan avisos de estilo (licencia y respuestas 4xx).
+- Por qué así:
+  - **El vocabulario suma los campos de primer nivel de OpenAPI 3.1** (`openapi`, `info`, `jsonSchemaDialect`, `servers`, `paths`, `webhooks`, `components`, `security` y `tags`) a las cuatro palabras de Lógica 7. Antes de resolver el primer `$ref` hacia adentro del contrato, Ajv compila el documento entero como esquema: con solo las cuatro del plan, todo `$ref` fallaba con «unknown keyword: "openapi"». Es el mismo principio del plan (que el modo estricto no rechace palabras de OpenAPI), aplicado a la raíz.
+  - `coerceTypes: 'array'`, como el compilador por defecto de Fastify: además de convertir texto a número o booleano, pasa un valor solo a lista cuando el esquema pide una lista (`?etiquetas=a`).
+  - Sin `removeAdditional`: un campo de más se rechaza con 400 en vez de borrarse en silencio, que es lo que espera la prueba de contrato (`negative_data_rejection`).
+  - `logger: false`: Ajv no escribe avisos sueltos en la consola (RNF-14.5). Lo que el modo estricto rechaza, como una palabra o un formato desconocido, igual hace fallar la compilación. Sigue sin `strict: true` (ver T3).
+  - Un aviso de YAML también corta la carga: el contrato no diría lo que parece decir. `parseDocument` junta errores y avisos en vez de escribirlos en la consola, como hace `parse`.
+- Cómo se conecta: T6 (`registrarOperaciones`) carga el contrato con `cargarContrato`, le pasa `crearCompilador(contrato)` a `app.setValidatorCompiler` y arma los esquemas de cada ruta como `$ref` a `ID_CONTRATO`. Los errores de validación que deja Ajv son los que `aProblema` (T3) traduce a un 400 en español.
+- Tests: `pruebas/unitarias/validacion.test.ts` (59).
+  - Carga y compila el contrato de `main`, que solo tiene `info`, y cada falla de lectura nombra el archivo.
+  - Compila un `$ref` a `components` y otro a un esquema definido dentro de `paths`, con el puntero escapado.
+  - Rechaza un `uuid` y fechas inválidas, conoce los 11 formatos del plan y falla con uno desconocido.
+  - Convierte tipos en `params`, `querystring` y `headers` (también detrás de un `$ref`), pero no en el cuerpo.
+  - Acepta `example` y las demás palabras de OpenAPI, y falla con una palabra mal escrita.
+  - Aplica los valores por defecto, informa un solo error, rechaza el campo de más, no escribe en la consola y deja errores que `aProblema` entiende.
+  - Se comprobó además: 43 de 43 mutaciones del código detectadas; el borrador v1 se carga sin avisos y compila completo (28 esquemas de `components`, 39 parámetros y 8 cuerpos); con un Fastify real, cada parte de la solicitud se convierte o se rechaza como corresponde.
+- Para mirar con atención:
+  - Para T6: escapar cada segmento del puntero (`~` por `~0`, `/` por `~1` y después `encodeURIComponent`, que codifica `{` y `}`). Para un parámetro con `$ref`, buscar `name` e `in` en `components/parameters` y apuntar a su `/schema`. Copiar el `default` al lado del `$ref`, porque Ajv no aplica el que queda detrás. Pasar a minúscula los nombres de los encabezados, porque con un compilador propio Fastify no lo hace.
+  - Una extensión `x-…` en la raíz del contrato o dentro de un esquema hace fallar el arranque en modo estricto: habría que sumarla al vocabulario. El borrador v1 no tiene ninguna.
+  - `RUTA_CONTRATO` es relativa al módulo compilado: en la imagen (T26), `contrato/` tiene que quedar al lado de `dist/`.
+  - Con `logger: false` tampoco se ven los avisos de `strictTypes`, como un `properties` sin `type: object`. El borrador v1 no genera ninguno.

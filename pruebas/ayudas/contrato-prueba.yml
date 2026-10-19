@@ -1,0 +1,211 @@
+# Contrato de prueba: no es el del módulo (ese es contrato/openapi.yml). Sigue las convenciones del borrador del
+# contrato v1 (PR #16) y tiene una operación por cada caso que necesitan las pruebas de la spec 003 (plan, Pruebas):
+# la validación (T4), el registro de operaciones (T6), los errores (T7 y T8), los permisos (T15 y T16), la base
+# (T19 y T21) y la parada (T23). Cada prueba le da a cada operación el manejador que necesita.
+openapi: 3.1.0
+info:
+  title: M2 Clientes, contrato de prueba
+  version: 0.0.0
+  description: Operaciones que solo existen para probar la base del servicio.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+paths:
+  /pruebas/protegida:
+    parameters:
+      - $ref: '#/components/parameters/XRequestId'
+    get:
+      operationId: probarProtegida
+      summary: Exige un token con el rol CLIENTE o el rol OPERADOR.
+      security:
+        - bearerAuth: [CLIENTE, OPERADOR]
+      responses:
+        '200':
+          $ref: '#/components/responses/Bien'
+
+  /pruebas/sin-roles:
+    get:
+      operationId: probarSinRoles
+      summary: No declara security, así que usa la global, que no nombra roles; vale cualquier rol conocido.
+      responses:
+        '200':
+          $ref: '#/components/responses/Bien'
+
+  /pruebas/publica:
+    get:
+      operationId: probarPublica
+      summary: No exige token.
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Bien'
+
+  /pruebas/clientes:
+    get:
+      operationId: probarListado
+      summary: Comparte la ruta con probarAlta, para que la ruta tenga dos métodos.
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Bien'
+    post:
+      operationId: probarAlta
+      summary: Exige el rol CLIENTE y un cuerpo que cumpla ClienteNuevo.
+      security:
+        - bearerAuth: [CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClienteNuevo'
+      responses:
+        '201':
+          $ref: '#/components/responses/Bien'
+
+  /pruebas/clientes/{clienteId}/direcciones/{direccionId}:
+    parameters:
+      - $ref: '#/components/parameters/XRequestId'
+      - $ref: '#/components/parameters/ClienteId'
+      - name: direccionId
+        in: path
+        required: true
+        description: Su esquema está definido dentro de paths, como direccionId en el borrador del contrato v1.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: probarParametros
+      summary: Tiene parámetros de ruta, de query string y de encabezado, y exige token sin nombrar roles.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Pagina'
+        - name: etiquetas
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+              maxLength: 20
+        - name: X-Version
+          in: header
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          $ref: '#/components/responses/Bien'
+
+  /pruebas/duplicados:
+    post:
+      operationId: probarAltaDuplicada
+      summary: Su manejador inserta en una tabla con restricción única; la segunda vez, 409.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Codigo'
+      responses:
+        '201':
+          $ref: '#/components/responses/Bien'
+
+  /pruebas/falla:
+    get:
+      operationId: probarFalla
+      summary: Su manejador lanza un error no previsto.
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Bien'
+
+  /pruebas/tarda:
+    get:
+      operationId: probarTarda
+      summary: Su manejador tarda lo que pida la prueba.
+      security: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Bien'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9._-]{1,128}$'
+    ClienteId:
+      name: clienteId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Pagina:
+      name: pagina
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+  responses:
+    Bien:
+      description: La operación salió bien.
+      content:
+        application/json:
+          schema:
+            type: object
+
+  schemas:
+    ClienteNuevo:
+      type: object
+      additionalProperties: false
+      required: [nombre, fechaNacimiento]
+      properties:
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Ana
+        fechaNacimiento:
+          type: string
+          format: date
+        direccion:
+          $ref: '#/components/schemas/Direccion'
+      example:
+        nombre: Ana
+        fechaNacimiento: '1990-05-17'
+    Direccion:
+      type: object
+      additionalProperties: false
+      required: [calle]
+      properties:
+        calle:
+          type: string
+          minLength: 1
+        piso:
+          type: integer
+          minimum: 0
+    Codigo:
+      type: object
+      additionalProperties: false
+      required: [codigo]
+      properties:
+        codigo:
+          type: string
+          minLength: 1
+          maxLength: 20
