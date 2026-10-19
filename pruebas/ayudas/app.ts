@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
+import type { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { afterEach } from 'vitest';
 import { construirApp } from '../../src/app.js';
 import type { Config } from '../../src/config.js';
 import { cargarContrato, type Contrato } from '../../src/contrato/cargar.js';
 import type { Manejadores } from '../../src/contrato/operaciones.js';
+import { descartarLogs } from './logs.js';
 
 export const contratoDePrueba = cargarContrato(fileURLToPath(new URL('./contrato-prueba.yml', import.meta.url)));
 
@@ -34,13 +36,18 @@ afterEach(async () => {
   await Promise.all(abiertas.splice(0).map((app) => app.close()));
 });
 
-// La app de una prueba: con el contrato de prueba, salvo que se pase otro, y CONFIG con los cambios que se pidan. Se
-// cierra sola al terminar cada prueba (este módulo registra el afterEach en el archivo que lo importa).
-export function crearApp(manejadores: Manejadores, opciones: { contrato?: Contrato; config?: Partial<Config> } = {}) {
+// La app de una prueba: con el contrato de prueba, salvo que se pase otro, y CONFIG con los cambios que se pidan. El log
+// se descarta, salvo que se pase un flujo (capturarLogs). Se cierra sola al terminar cada prueba (este módulo registra el
+// afterEach en el archivo que lo importa).
+export function crearApp(
+  manejadores: Manejadores,
+  opciones: { contrato?: Contrato; config?: Partial<Config>; flujoLog?: Writable } = {},
+) {
   const app = construirApp({
     config: { ...CONFIG, ...opciones.config },
     contrato: opciones.contrato ?? contratoDePrueba,
     manejadores,
+    flujoLog: opciones.flujoLog ?? descartarLogs,
   });
   abiertas.push(app);
   return app;

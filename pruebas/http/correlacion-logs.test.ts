@@ -1,7 +1,9 @@
 import type { InjectOptions } from 'fastify';
 import { describe, expect, it } from 'vitest';
-import type { Manejador } from '../../src/contrato/operaciones.js';
-import { crearApp } from '../ayudas/app.js';
+import type { Manejador, Manejadores } from '../../src/contrato/operaciones.js';
+import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
+import { CONFIG, crearApp } from '../ayudas/app.js';
+import { capturarLogs } from '../ayudas/logs.js';
 import { escuchar, leerRespuesta, porSocket } from '../ayudas/socket.js';
 
 const ENCABEZADO = 'x-request-id';
@@ -208,5 +210,237 @@ describe('construirApp: el identificador de correlación por un socket (RNF-14.3
 
     expect(respuesta.estado).toBe('HTTP/1.1 405 Method Not Allowed');
     expect(respuesta.encabezados[ENCABEZADO]).toBe('head-1');
+  });
+});
+
+describe('construirApp: un error no previsto queda en el log, con su id y sin secretos (RNF-03.3, RNF-19.1)', () => {
+  const CONTRASENA_BD = 'contrasena-de-la-bd';
+  const URL_BD = `postgres://m2:${CONTRASENA_BD}@bd:5432/m2`;
+  const CLAVE = CONFIG.claveTokens;
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYmMifQ.firma-del-token';
+  const SECRETOS = [CLAVE, CONTRASENA_BD, TOKEN];
+  const CON_TOKEN = { authorization: `Bearer ${TOKEN}` };
+  const CLIENTE = { nombre: 'Ana', fechaNacimiento: '1990-05-17' };
+
+  // Una app con el log capturado y la contraseña de la base de este grupo de pruebas.
+  const crear = (manejadores: Manejadores) => {
+    const logs = capturarLogs();
+    return { app: crearApp(manejadores, { flujoLog: logs.flujo, config: { urlBd: URL_BD } }), logs };
+  };
+  const errores = (logs: ReturnType<typeof capturarLogs>) => logs.lineas().filter((linea) => linea.level >= 50);
+  const lanzando = (valor: unknown): Manejador => async () => {
+    throw valor;
+  };
+  const sinSecretos = (logs: ReturnType<typeof capturarLogs>) => {
+    for (const secreto of SECRETOS) expect(logs.texto()).not.toContain(secreto);
+  };
+
+  it('un 500 cuyo mensaje trae la clave, la contraseña de la base y el token deja el error en el log', async () => {
+    const { app, logs } = crear({ probarFalla: lanzando(new Error(`falló con ${CLAVE}, ${URL_BD} y ${TOKEN}`)) });
+
+    const respuesta = await app.inject({
+      method: 'GET',
+      url: '/pruebas/falla',
+      headers: { ...CON_TOKEN, [ENCABEZADO]: 'cliente-500' },
+    });
+
+    expect(respuesta.statusCode).toBe(500);
+    expect(respuesta.json().detail).toBe('Ocurrió un error interno');
+    const [linea, ...otras] = errores(logs);
+    expect(otras).toEqual([]);
+    expect(linea).toMatchObject({ level: 50, msg: 'Error interno', idCorrelacion: 'cliente-500' });
+    expect(linea.err).toMatchObject({
+      tipo: 'Error',
+      mensaje: 'falló con [oculto], postgres://m2:[oculto]@bd:5432/m2 y [oculto]',
+    });
+    expect(linea.err?.traza).toMatch(
+      /^Error: falló con \[oculto\], postgres:\/\/m2:\[oculto\]@bd:5432\/m2 y \[oculto\]\n\s+at /,
+    );
+    sinSecretos(logs);
+  });
+
+  it('sin un id en la solicitud, la línea trae el UUID que devuelve la respuesta', async () => {
+    const { app, logs } = crear({ probarFalla: lanzando(new Error('falló')) });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/falla' });
+
+    expect(respuesta.headers[ENCABEZADO]).toMatch(UUID_V4);
+    expect(errores(logs)).toMatchObject([{ idCorrelacion: respuesta.headers[ENCABEZADO] }]);
+  });
+
+  it('con un id inválido, la línea trae el UUID que lo reemplazó y no lo que llegó', async () => {
+    const { app, logs } = crear({ probarFalla: lanzando(new Error('falló')) });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/falla', headers: { [ENCABEZADO]: 'dos palabras' } });
+
+    expect(errores(logs)).toMatchObject([{ idCorrelacion: respuesta.headers[ENCABEZADO] }]);
+    expect(logs.texto()).not.toContain('dos palabras');
+  });
+
+  it.each([
+    ['un texto', `texto con ${CLAVE} y ${TOKEN}`, { tipo: 'string', mensaje: 'texto con [oculto] y [oculto]' }],
+    ['un número', 42, { tipo: 'number', mensaje: '42' }],
+  ])('si se lanza %s en vez de un error, también queda en el log, sin secretos', async (_caso, valor, esperado) => {
+    const { app, logs } = crear({ probarFalla: lanzando(valor) });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/falla', headers: CON_TOKEN });
+
+    expect(respuesta.statusCode).toBe(500);
+    expect(errores(logs)).toMatchObject([{ msg: 'Error interno', err: esperado }]);
+    sinSecretos(logs);
+  });
+
+  it('si se lanza un objeto, queda en el log con su contenido y sin secretos', async () => {
+    const { app, logs } = crear({ probarFalla: lanzando({ estado: 'roto', clave: CLAVE, anidado: { token: TOKEN } }) });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/falla', headers: CON_TOKEN });
+
+    expect(respuesta.statusCode).toBe(500);
+    const [linea] = errores(logs);
+    expect(linea.err).toMatchObject({ tipo: 'object', mensaje: expect.stringContaining("estado: 'roto'") });
+    sinSecretos(logs);
+  });
+
+  it('un error de pg guarda la tabla, la columna y la restricción, pero no detail ni where', async () => {
+    const errorDePg = Object.assign(new Error('null value in column "email" violates not-null constraint'), {
+      code: '23502',
+      severity: 'ERROR',
+      table: 'clientes',
+      column: 'email',
+      constraint: 'clientes_email_key',
+      detail: 'Failing row contains (7, Ana, ana@example.com).',
+      where: 'COPY clientes, line 1: "7,Ana,ana@example.com"',
+    });
+    const { app, logs } = crear({ probarFalla: lanzando(errorDePg) });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/falla' });
+
+    expect(respuesta.statusCode).toBe(500);
+    const [linea] = errores(logs);
+    expect(linea.err).toMatchObject({
+      codigo: '23502',
+      tabla: 'clientes',
+      columna: 'email',
+      restriccion: 'clientes_email_key',
+    });
+    expect(Object.keys(linea.err ?? {}).sort()).toEqual([
+      'codigo',
+      'columna',
+      'mensaje',
+      'restriccion',
+      'tabla',
+      'tipo',
+      'traza',
+    ]);
+    expect(logs.texto()).not.toContain('ana@example.com');
+    expect(logs.texto()).not.toContain('Failing row');
+  });
+
+  it('la causa del error también queda en el log, sin secretos', async () => {
+    const causa = Object.assign(new Error(`connect ECONNREFUSED, token ${TOKEN}`), { code: 'ECONNREFUSED' });
+    const { app, logs } = crear({ probarFalla: lanzando(new TypeError('fetch failed', { cause: causa })) });
+
+    await app.inject({ method: 'GET', url: '/pruebas/falla', headers: CON_TOKEN });
+
+    const [linea] = errores(logs);
+    expect(linea.err).toMatchObject({
+      tipo: 'TypeError',
+      mensaje: 'fetch failed',
+      causa: { tipo: 'Error', codigo: 'ECONNREFUSED', mensaje: 'connect ECONNREFUSED, token [oculto]' },
+    });
+    sinSecretos(logs);
+  });
+
+  it('el token que no tiene la forma Bearer también se oculta', async () => {
+    const { app, logs } = crear({ probarFalla: lanzando(new Error('llegó Basic dXN1YXJpbzpjbGF2ZQ== y nada más')) });
+
+    await app.inject({ method: 'GET', url: '/pruebas/falla', headers: { authorization: 'Basic dXN1YXJpbzpjbGF2ZQ==' } });
+
+    expect(errores(logs)).toMatchObject([{ err: { mensaje: 'llegó [oculto] y nada más' } }]);
+    expect(logs.texto()).not.toContain('dXN1YXJpbzpjbGF2ZQ==');
+  });
+
+  const POR_CLIENTE = { ...COMO_JSON, ...CON_TOKEN };
+  const TEXTO_PLANO = { 'content-type': 'text/plain', ...CON_TOKEN };
+  it.each([
+    ['404: la ruta no existe', 404, { method: 'GET', url: '/no/existe' }],
+    ['405: la ruta no tiene el método', 405, { method: 'DELETE', url: '/pruebas/publica' }],
+    ['400: un campo no cumple el contrato', 400, { method: 'POST', url: '/pruebas/clientes', payload: { nombre: 'Ana' } }],
+    ['415: el cuerpo no es JSON', 415, { method: 'POST', url: '/pruebas/clientes', payload: 'x', headers: TEXTO_PLANO }],
+    ['409: el manejador lanza un Conflicto', 409, { method: 'POST', url: '/pruebas/clientes', payload: CLIENTE }],
+    ['503: el manejador lanza BaseNoDisponible', 503, { method: 'GET', url: '/pruebas/falla' }],
+  ] as const)('%s: no es un error imprevisto y no se registra como error', async (_caso, estado, solicitud) => {
+    const { app, logs } = crear({
+      probarPublica: bien,
+      probarAlta: lanzando(new Conflicto()),
+      probarFalla: lanzando(new BaseNoDisponible()),
+    });
+
+    const respuesta = await app.inject({ headers: POR_CLIENTE, ...solicitud });
+
+    expect(respuesta.statusCode).toBe(estado);
+    expect(errores(logs)).toEqual([]);
+  });
+
+  it('el log no trae nada de la solicitud: ni el cuerpo, ni la query string, ni los encabezados', async () => {
+    const { app, logs } = crear({ probarAlta: lanzando(new Error('falló')), probarPublica: bien });
+    const privados = ['Ana', '1990-05-17', '12345678', 'secreto-en-la-query', 'authorization', 'Bearer'];
+
+    await app.inject({
+      method: 'POST',
+      url: '/pruebas/clientes?dni=12345678&token=secreto-en-la-query',
+      headers: { ...COMO_JSON, ...CON_TOKEN },
+      payload: CLIENTE,
+    });
+    await app.inject({ method: 'GET', url: '/pruebas/publica?dni=12345678', headers: CON_TOKEN });
+
+    expect(errores(logs)).toHaveLength(1);
+    for (const privado of privados) expect(logs.texto()).not.toContain(privado);
+    sinSecretos(logs);
+  });
+
+  it('no hay líneas del log por defecto de Fastify, que traen la URL con su query string', async () => {
+    const { app, logs } = crear({ probarPublica: bien });
+
+    await app.inject({ method: 'GET', url: '/pruebas/publica?dni=12345678' });
+    await app.inject({ method: 'GET', url: '/no/existe?dni=12345678' });
+
+    const mensajes = logs.lineas().map((linea) => linea.msg);
+    expect(mensajes).not.toContain('incoming request');
+    expect(mensajes).not.toContain('request completed');
+    expect(mensajes).not.toContain('Route GET:/no/existe?dni=12345678 not found');
+    expect(logs.texto()).not.toContain('12345678');
+  });
+
+  it('el logger limpia la clave y la contraseña de cualquier error que se registre', () => {
+    const { app, logs } = crear({});
+
+    app.log.error({ err: new Error(`con ${CLAVE} y ${URL_BD}`) }, 'otro error');
+    app.log.child({ idCorrelacion: 'hijo-1' }).error({ err: `texto con ${CLAVE}` }, 'otro texto');
+    app.log.error({ err: { message: `objeto con ${CONTRASENA_BD}` } }, 'otro objeto');
+
+    expect(logs.lineas()).toMatchObject([
+      { msg: 'otro error', err: { mensaje: 'con [oculto] y postgres://m2:[oculto]@bd:5432/m2' } },
+      { msg: 'otro texto', idCorrelacion: 'hijo-1', err: { tipo: 'string', mensaje: 'texto con [oculto]' } },
+      { msg: 'otro objeto', err: { mensaje: 'objeto con [oculto]' } },
+    ]);
+    sinSecretos(logs);
+  });
+
+  it('un error que no se puede leer igual da 500 en problem+json y deja una línea mínima', async () => {
+    const ilegible = new Error('x');
+    Object.defineProperty(ilegible, 'message', {
+      get() {
+        throw new Error(`no se puede leer ${CLAVE}`);
+      },
+    });
+    const { app, logs } = crear({ probarFalla: lanzando(ilegible) });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/falla' });
+
+    expect(respuesta.statusCode).toBe(500);
+    expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(errores(logs)).toMatchObject([{ err: { tipo: 'desconocido', mensaje: 'El error no se pudo serializar' } }]);
+    sinSecretos(logs);
   });
 });
