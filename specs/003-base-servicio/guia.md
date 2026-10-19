@@ -223,3 +223,26 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - La función que devuelve `prepararRutas405` tiene que ser lo último que registra rutas en `construirApp`. Una ruta registrada después queda sin 405, y si tiene la URL de otra, choca con su comodín al arrancar (`FST_ERR_DUPLICATED_ROUTE`).
   - Para un próximo `/sdd-change` de la 003: el plan (Lógica 8) y la spec («como `TRACE`») suponen que Fastify 5 no trae TRACE; en 5.12.7 viene, igual que QUERY.
   - Un OPTIONS de preflight de CORS a una ruta que no lo declara da 405. CORS no está en esta spec.
+
+### T9 — Tomar o generar el identificador de correlación y devolverlo en cada respuesta · commit `003/T9`
+- Qué cambió:
+  - `src/correlacion.ts` (nuevo): `idCorrelacion(valor)` devuelve el valor si es un texto de 1 a 128 caracteres de letras, números, `.`, `_` y `-`; si no, un UUID nuevo (`randomUUID`).
+  - `src/app.ts`: `Fastify({ genReqId, requestIdHeader: false })`. `genReqId` llama a `idCorrelacion` con el encabezado configurado, buscado en minúscula, así que `request.id` es el identificador de correlación de la solicitud. Un hook `onSend` pone ese `request.id` en el encabezado configurado de cada respuesta.
+  - `pruebas/ayudas/socket.ts` (nuevo): `escuchar`, `porSocket` y `leerRespuesta`, que T8 tenía dentro de `errores.test.ts`. T9 también los usa; `errores.test.ts` los importa y conserva sus 148 pruebas.
+- Por qué así:
+  - Lo que llega se valida porque vuelve en las respuestas y va a los logs. Un valor que no cumple no da 400: se reemplaza (RNF-14.3), y T6 ya lo dejó fuera del esquema del contrato. Con `requestIdHeader` Fastify tomaría el valor tal cual (el plan lo descartó); en Fastify 5 ya es `false` por defecto, y se escribe para que se vea.
+  - Un encabezado repetido llega unido por Node con «, » (comprobado con un servidor real: `abc` y `abc` llegan como `abc, abc`), que no cumple el patrón y da un UUID. Una lista (que Node no entrega para este encabezado, pero el tipo de `headers` permite) también.
+  - `onSend` y no `onRequest`: corre al final para toda respuesta, también la que responde un hook `onRequest` o el manejador de errores (404, 405, 413, 415, 400 y 500 hoy; 401, 403 y 503 más adelante), y no depende del orden en que se registren los hooks.
+  - El encabezado de la respuesta lleva el nombre configurado (`X-Request-Id` por defecto). Fastify lo manda en minúscula (comprobado en el cable con la app compilada), y los clientes HTTP no distinguen mayúsculas.
+- Cómo se conecta:
+  - T11: la línea de log toma `request.id` (opción `requestIdLogLabel: 'idCorrelacion'`), que ya es el id validado.
+  - T12: lo que Fastify contesta antes de crear la solicitud no pasa por `onSend`; ahí se pone el encabezado a mano, con `request.id`.
+  - T15, T16, T20 y T23 (401, 403, `/health` y 503) lo heredan sin hacer nada. T24: el cliente de módulos manda `request.id` en el mismo encabezado (RNF-14.7).
+- Tests:
+  - `pruebas/unitarias/correlacion.test.ts` (44): el id válido, con los límites de 1 y 128 caracteres y cada clase de carácter; ausente, vacío, de 129 y de 10000 caracteres, repetido (unido y como lista) y con otros caracteres (espacios, símbolos, acentos, emoji, saltos de línea); y uno distinto cada vez.
+  - `pruebas/http/correlacion-logs.test.ts` (58): una respuesta buena y siete errores (400 por validación, 400 por JSON roto, 404, 405, 413, 415 y 500), cada una con un id válido (respetado), cuatro inválidos (reemplazados) y sin id; 128 y 129 caracteres; ids distintos y en paralelo; `request.id` en el manejador; el `request-id` de Fastify ignorado; otro nombre configurado; y, por un socket, un id repetido (UUID) frente a uno solo (respetado) y HEAD.
+  - 654 pruebas en total. Mutaciones sobre `src/correlacion.ts` y `src/app.ts`: 36 de 38 detectadas. Las 2 vivas son equivalentes: quitar `requestIdHeader: false` (es el valor por defecto) y poner el hook en `onRequest`, registrado donde hoy está el de `onSend` (hoy da lo mismo; `onSend` no depende de que ese hook se registre antes que los que responden).
+- Para mirar con atención:
+  - `correlacion-logs.test.ts` tiene hoy solo la parte de correlación: T10 y T11 le suman las de logs, y el nombre ya las incluye.
+  - Si `M2_ENCABEZADO_CORRELACION` no es el nombre que el contrato declara (`X-Request-Id`), el del contrato deja de ser el de correlación y se valida con su patrón como cualquier encabezado (la regla de T6 es por nombre). Con el contrato v1 y la configuración por defecto coinciden.
+  - La respuesta a una solicitud que Fastify no llega a crear (URL mal codificada, HTTP que no se puede leer) no trae el encabezado hasta T12.
