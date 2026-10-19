@@ -9,6 +9,7 @@
   },
   "scripts": {
     "contrato:tipos": "openapi-typescript contrato/openapi.yml -o src/generado/contrato.ts",
+    "contrato:test": "npm run build && node scripts/contrato-test.mjs",
     "prebuild": "npm run contrato:tipos",
     "build": "tsc -p tsconfig.build.json",
     "prelint": "npm run contrato:tipos",

@@ -120,3 +120,30 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Una extensión `x-…` en la raíz del contrato o dentro de un esquema hace fallar el arranque en modo estricto: habría que sumarla al vocabulario. El borrador v1 no tiene ninguna.
   - `RUTA_CONTRATO` es relativa al módulo compilado: en la imagen (T26), `contrato/` tiene que quedar al lado de `dist/`.
   - Con `logger: false` tampoco se ven los avisos de `strictTypes`, como un `properties` sin `type: object`. El borrador v1 no genera ninguno.
+
+### T5 — Listar las operaciones implementadas y pendientes, y los pasos 1 a 3 de la prueba de contrato · commit `003/T5`
+- Qué cambió:
+  - `src/contrato/operaciones.ts`: `listarOperaciones(contrato, manejadores)` recorre `paths` en el orden del archivo y devuelve `{ implementadas, pendientes }`. Cada operación es `{ operationId, metodo, ruta }`: el método en mayúsculas y la ruta como está en el contrato, con `{param}`. Una operación sin `operationId`, o con uno que no es texto, queda pendiente y sin `operationId`, porque los manejadores se buscan por ese nombre.
+  - `src/operaciones/index.ts`: `manejadores`, vacío por ahora. El script lo lee ya compilado desde `dist/`, así que tenía que existir; T20 le suma `verificarSalud` y T6 le pone el tipo del manejador (hoy el valor es `unknown`).
+  - `scripts/contrato-test.mjs`: pasos 1 a 3 del plan. Lee el contrato (`contrato/openapi.yml` o el de `--contrato <ruta>`) y los manejadores compilados, escribe una línea `implementada` o `pendiente` por operación y un total. Sin implementadas escribe «No hay operaciones implementadas del contrato: nada para probar» y termina con 0; las pendientes nunca lo hacen fallar (RNF-07.2).
+  - `package.json`: el script `contrato:test` es `npm run build && node scripts/contrato-test.mjs`. Los argumentos que van después de `--` llegan al script.
+  - `eslint.config.mjs`: ESLint también revisa `scripts/contrato-test.mjs`, y solo ese: el resto de `scripts/` es del arnés. Los globales de Node (`console`, `process` y `URL`) están declarados a mano, para no sumar el paquete `globals`.
+- Por qué así:
+  - `Object.hasOwn` y no `in`: un `operationId` como `toString` no tiene que encontrar el método de `Object.prototype` y figurar como implementado.
+  - Solo cuentan los ocho métodos de OpenAPI. `parameters`, `summary`, `servers`, `$ref` y las extensiones `x-…` no son operaciones, aunque tengan un `operationId` adentro.
+  - Es tolerante con la estructura: un `paths` ausente o que no es un objeto, y una ruta o un método con un valor que no es un objeto, se saltan. Esos errores los marca el lint del contrato (Redocly), no esta función.
+  - Con operaciones implementadas, el script las lista, avisa que la prueba con Schemathesis llega con T29 y termina con 0 (plan, Contrato). T20 lo comprueba con el contrato de salud; T29 cambia el aviso por los pasos 4 a 6.
+  - Códigos de salida: 0 si salió bien, 1 si no pudo leer el contrato o los módulos compilados, y 2 si los argumentos están mal. Cuando T29 llame a Schemathesis, su código reemplaza al 0.
+- Cómo se conecta: T6 (`registrarOperaciones`) separa lo que registra con `listarOperaciones` y devuelve las mismas listas. T22 (el arranque) las escribe en el log. El job `contract-test` de CI corre `npm run contrato:test` apenas exista `docker-compose.yml`.
+- Tests: `pruebas/unitarias/contrato-test.test.ts` (43).
+  - Contrato sin operaciones: `paths` ausente, `null`, vacío, lista o texto, una ruta sin métodos y el contrato de `main`.
+  - Pendientes e implementadas, con el contrato de prueba: orden del archivo, dos métodos en la misma ruta, un manejador que no corresponde a ninguna operación, un `operationId` que no es texto y los miembros heredados de `Object`.
+  - Qué cuenta como operación: los ocho métodos y las claves que no lo son.
+  - El script no tiene prueba en Vitest, porque necesita `dist/`. Se comprobó corriendo los comandos del «Hecho cuando», los argumentos mal, un contrato que falta o está roto, la corrida desde otra carpeta y la rama con operaciones implementadas, con manejadores temporales en `dist/`.
+  - 27 de 27 mutaciones de `listarOperaciones` detectadas. La regla de ESLint se probó con errores puestos a propósito en el script.
+- Para mirar con atención:
+  - Ninguna prueba afirma qué operaciones tiene el contrato de `main`, para que no se rompa cuando se mergee el v1. Solo comprueban que se puede listar.
+  - La prueba que usa los `manejadores` reales con el contrato de prueba espera cero implementadas: si alguien registra un manejador con un `operationId` de `probar…`, falla, y es lo esperado.
+  - Un manejador cuyo `operationId` no está en el contrato no se avisa ni hace fallar nada. Si el grupo lo quiere, es una regla nueva para T6 o T22, con su requisito en la spec.
+  - El script lee `dist/`, que puede estar vencido: `npm run contrato:test` siempre compila antes, y `node scripts/contrato-test.mjs` a mano no lo hace.
+  - Fuera de la raíz del repositorio, la línea «Contrato:» muestra la ruta relativa a la carpeta desde la que se corre, por ejemplo `../home/…`.
