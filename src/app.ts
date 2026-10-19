@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import type { Config } from './config.js';
 import type { Contrato } from './contrato/cargar.js';
-import { registrarOperaciones, type Manejadores } from './contrato/operaciones.js';
+import { prepararRutas405, registrarOperaciones, type Manejadores } from './contrato/operaciones.js';
 import { crearCompilador } from './contrato/validacion.js';
 import { aProblema, NoEncontrado } from './errores.js';
 
@@ -11,9 +11,11 @@ export type OpcionesApp = { config: Config; contrato: Contrato; manejadores: Man
 const LIMITE_CUERPO = 1024 * 1024;
 
 // La app de Fastify armada desde el contrato: valida con sus esquemas, responde los errores con aProblema y expone solo
-// las operaciones que tienen manejador. No escucha en ningún puerto; eso lo hace el arranque.
+// las operaciones que tienen manejador; a una ruta que no existe responde 404, y a un método que la ruta no tiene, 405.
+// No escucha en ningún puerto; eso lo hace el arranque.
 export function construirApp({ config, contrato, manejadores }: OpcionesApp) {
-  const app = Fastify({ bodyLimit: LIMITE_CUERPO });
+  // Sin el HEAD que Fastify suma a cada GET: un HEAD que el contrato no declara da 405, como otro método (Lógica 8).
+  const app = Fastify({ bodyLimit: LIMITE_CUERPO, exposeHeadRoutes: false });
   // Fastify lee también text/plain; sin ese lector, ese cuerpo da 415 como cualquier otro que no es JSON (RNF-03.2).
   app.removeContentTypeParser('text/plain');
   app.setValidatorCompiler(crearCompilador(contrato));
@@ -26,6 +28,9 @@ export function construirApp({ config, contrato, manejadores }: OpcionesApp) {
   app.addHook('onRequest', async (request) => {
     if (request.is404) throw new NoEncontrado();
   });
+  const registrarRutas405 = prepararRutas405(app);
   registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);
+  // Al final, con todas las rutas ya registradas.
+  registrarRutas405();
   return app;
 }

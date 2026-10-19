@@ -1,4 +1,6 @@
-import type { InjectOptions } from 'fastify';
+import type { FastifyInstance, InjectOptions } from 'fastify';
+import { METHODS } from 'node:http';
+import net, { type AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import type { Manejador } from '../../src/contrato/operaciones.js';
 import { contratoCon, crearApp } from '../ayudas/app.js';
@@ -114,14 +116,15 @@ describe('construirApp: cada error genérico sale en problem+json (RNF-03.1, RNF
   });
 });
 
-describe('construirApp: una ruta que no existe da 404 antes de leer el cuerpo (RNF-03.5)', () => {
-  const CUERPOS = [
-    ['de más de 1 MiB', COMO_JSON, cuerpoDe(MIB + 1)],
-    ['que no es JSON', { 'content-type': 'text/plain' }, 'hola'],
-    ['con el JSON roto', COMO_JSON, '{"nombre": '],
-    ['vacío, que dice ser JSON', COMO_JSON, ''],
-  ] as const;
+// Cuerpos que darían 413, 415 o 400 si se leyeran: el 404 y el 405 tienen que salir antes.
+const CUERPOS = [
+  ['de más de 1 MiB', COMO_JSON, cuerpoDe(MIB + 1)],
+  ['que no es JSON', { 'content-type': 'text/plain' }, 'hola'],
+  ['con el JSON roto', COMO_JSON, '{"nombre": '],
+  ['vacío, que dice ser JSON', COMO_JSON, ''],
+] as const;
 
+describe('construirApp: una ruta que no existe da 404 antes de leer el cuerpo (RNF-03.5)', () => {
   describe.each(['POST', 'PUT', 'PATCH', 'DELETE'] as const)('%s', (method) => {
     it.each(CUERPOS)('con un cuerpo %s', async (_caso, headers, payload) => {
       const respuesta = await crearApp({ probarAlta: eco }).inject({ method, url: '/no/existe', headers, payload });
@@ -252,5 +255,146 @@ describe('construirApp: un error no previsto da 500 sin mostrar nada interno (RN
       instance: '/pruebas/falla',
     });
     expect(JSON.stringify(respuesta.headers)).not.toContain('clave-secreta');
+  });
+});
+
+// Todos los métodos que Node reconoce, menos CONNECT, que Node atiende aparte (Lógica 8).
+const METODOS = METHODS.filter((metodo) => metodo !== 'CONNECT');
+
+const PROBLEMA_405 = {
+  type: 'about:blank',
+  title: 'Método no permitido',
+  status: 405,
+  detail: 'La ruta solo admite los métodos de Allow',
+};
+
+describe('construirApp: un método que la ruta no tiene da 405 con Allow (RNF-03.2)', () => {
+  it.each(METODOS.filter((metodo) => metodo !== 'GET'))('%s a una ruta que solo tiene GET', async (method) => {
+    const respuesta = await crearApp({ probarPublica: eco }).inject({ method, url: '/pruebas/publica?x=1' });
+
+    expect(respuesta.statusCode).toBe(405);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.headers.allow).toBe('GET');
+    expect(respuesta.json()).toEqual({ ...PROBLEMA_405, instance: '/pruebas/publica' });
+  });
+
+  it.each(['PUT', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'QUERY', 'PROPFIND'])(
+    '%s a una ruta con GET y POST: Allow trae los dos',
+    async (method) => {
+      const respuesta = await crearApp({ probarListado: eco, probarAlta: eco }).inject({ method, url: '/pruebas/clientes' });
+
+      expect(respuesta.statusCode).toBe(405);
+      expect(respuesta.headers.allow).toBe('GET, POST');
+    },
+  );
+
+  it('una operación del contrato sin manejador no cuenta en Allow', async () => {
+    const respuesta = await crearApp({ probarAlta: eco }).inject({ method: 'GET', url: '/pruebas/clientes' });
+
+    expect(respuesta.statusCode).toBe(405);
+    expect(respuesta.headers.allow).toBe('POST');
+  });
+
+  it.each(METODOS)('%s a una ruta que no existe sigue dando 404', async (method) => {
+    const respuesta = await crearApp({ probarPublica: eco }).inject({ method, url: '/no/existe' });
+
+    expect(respuesta.statusCode).toBe(404);
+    expect(respuesta.json().detail).toBe('No existe la ruta pedida');
+  });
+
+  it('una operación HEAD o TRACE del contrato se registra, y Allow va en orden alfabético', async () => {
+    const contratoX = contratoCon({
+      '/x': {
+        trace: { operationId: 't', security: [] },
+        get: { operationId: 'g', security: [] },
+        head: { operationId: 'h', security: [] },
+      },
+    });
+    const marca = (manejador: string): Manejador => async () => ({ manejador });
+    const app = crearApp({ g: marca('g'), h: marca('h'), t: marca('t') }, { contrato: contratoX });
+
+    expect((await app.inject({ method: 'GET', url: '/x' })).json()).toEqual({ manejador: 'g' });
+    expect((await app.inject({ method: 'HEAD', url: '/x' })).json()).toEqual({ manejador: 'h' });
+    expect((await app.inject({ method: 'TRACE', url: '/x' })).json()).toEqual({ manejador: 't' });
+    const otro = await app.inject({ method: 'POST', url: '/x' });
+    expect(otro.statusCode).toBe(405);
+    expect(otro.headers.allow).toBe('GET, HEAD, TRACE');
+  });
+});
+
+describe('construirApp: el 405 sale antes de leer el cuerpo y de validar los datos (RNF-03.5)', () => {
+  const CON_CUERPO = ['POST', 'PUT', 'PATCH', 'DELETE', 'QUERY', 'PROPFIND'] as const;
+
+  describe.each(CON_CUERPO)('%s a una ruta que solo tiene GET', (method) => {
+    it.each(CUERPOS)('con un cuerpo %s', async (_caso, headers, payload) => {
+      const respuesta = await crearApp({ probarPublica: eco }).inject({ method, url: '/pruebas/publica', headers, payload });
+
+      expect(respuesta.statusCode).toBe(405);
+      expect(respuesta.headers.allow).toBe('GET');
+    });
+  });
+
+  it('con parámetros de ruta que no cumplen el contrato', async () => {
+    const respuesta = await crearApp({ probarParametros: eco }).inject({
+      method: 'POST',
+      url: '/pruebas/clientes/no-es-uuid/direcciones/tampoco',
+    });
+
+    expect(respuesta.statusCode).toBe(405);
+    expect(respuesta.headers.allow).toBe('GET');
+  });
+});
+
+// Pone la app a escuchar en un puerto libre de 127.0.0.1 y devuelve el puerto. crearApp la cierra al terminar la prueba.
+async function escuchar(app: FastifyInstance): Promise<number> {
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  return (app.server.address() as AddressInfo).port;
+}
+
+// Manda `pedido` tal cual por un socket y devuelve todo lo que llega hasta que el servidor cierra la conexión. Con inject
+// no alcanza: la respuesta a HEAD trae el cuerpo que escribió Fastify, aunque Node no lo manda.
+function porSocket(puerto: number, pedido: string): Promise<string> {
+  return new Promise((resolve) => {
+    const partes: Buffer[] = [];
+    const socket = net.connect(puerto, '127.0.0.1', () => socket.write(pedido));
+    socket.on('data', (parte: Buffer) => partes.push(parte));
+    // Un RST también cierra la conexión: lo que importa es lo que llegó antes.
+    socket.on('error', () => {});
+    socket.on('close', () => resolve(Buffer.concat(partes).toString('latin1')));
+  });
+}
+
+// Separa una respuesta HTTP cruda en la línea de estado, los encabezados (con el nombre en minúscula) y lo que vino después.
+function leerRespuesta(cruda: string) {
+  const fin = cruda.indexOf('\r\n\r\n');
+  if (fin === -1) throw new Error(`no llegó una respuesta HTTP completa: ${JSON.stringify(cruda)}`);
+  const [estado, ...lineas] = cruda.slice(0, fin).split('\r\n');
+  const encabezados = Object.fromEntries(
+    lineas.map((linea) => [linea.slice(0, linea.indexOf(':')).toLowerCase(), linea.slice(linea.indexOf(':') + 1).trim()]),
+  );
+  return { estado, encabezados, resto: cruda.slice(fin + 4) };
+}
+
+describe('construirApp: HEAD y CONNECT por un socket (RNF-03.1, casos límite de la spec)', () => {
+  const head = (url: string) => `HEAD ${url} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`;
+
+  it('a HEAD, 405 con Allow y sin cuerpo; a una ruta que no existe, 404 sin cuerpo', async () => {
+    const puerto = await escuchar(crearApp({ probarPublica: eco }));
+
+    const sinMetodo = leerRespuesta(await porSocket(puerto, head('/pruebas/publica')));
+    expect(sinMetodo.estado).toBe('HTTP/1.1 405 Method Not Allowed');
+    expect(sinMetodo.encabezados.allow).toBe('GET');
+    expect(sinMetodo.encabezados['content-type']).toMatch(PROBLEMA_JSON);
+    expect(sinMetodo.resto).toBe('');
+
+    const noExiste = leerRespuesta(await porSocket(puerto, head('/no/existe')));
+    expect(noExiste.estado).toBe('HTTP/1.1 404 Not Found');
+    expect(noExiste.resto).toBe('');
+  });
+
+  it('CONNECT: Node cierra la conexión sin responder', async () => {
+    const puerto = await escuchar(crearApp({ probarPublica: eco }));
+
+    expect(await porSocket(puerto, 'CONNECT /pruebas/publica HTTP/1.1\r\nHost: localhost\r\n\r\n')).toBe('');
   });
 });

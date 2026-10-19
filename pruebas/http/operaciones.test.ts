@@ -48,8 +48,7 @@ describe('construirApp: solo responden las operaciones con manejador (RNF-03.4)'
     const alta = vi.fn(eco);
     const respuesta = await crearApp({ probarAlta: alta }).inject({ method: 'GET', url: '/pruebas/clientes' });
 
-    // 404, o 405 cuando la app sume las rutas 405 (Lógica 8).
-    expect([404, 405]).toContain(respuesta.statusCode);
+    expect(respuesta.statusCode).toBe(405);
     expect(alta).not.toHaveBeenCalled();
   });
 

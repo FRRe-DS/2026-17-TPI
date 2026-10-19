@@ -195,3 +195,31 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Con `inject`, la respuesta a un HEAD trae cuerpo (light-my-request guarda lo que Fastify escribe, y Node lo descarta recién en un socket real). Para T8, «a HEAD, sin cuerpo» no se puede comprobar con `inject`: hace falta un socket (`listen` en el puerto 0 y `node:http`).
   - `crearApp` registra un `afterEach` al importarse. Una prueba que necesite cerrar la app antes o reabrirla tiene que usar `construirApp` directo.
   - `request.is404` ya está confirmado: cuando haya un `/sdd-change` de la 003, sale de «Para confirmar al implementar» del plan y pasa a «Trampas verificadas».
+
+### T8 — Responder 405 con `Allow` a todo método de Node que la ruta no tiene · commit `003/T8`
+- Qué cambió:
+  - `src/contrato/operaciones.ts` suma `prepararRutas405(app)`. Le agrega a Fastify con `addHttpMethod` los 25 métodos de `http.METHODS` que no trae (todos menos CONNECT), anota con un hook `onRoute` los métodos de cada ruta que se registra y devuelve una función que, llamada al final, le suma a cada ruta una comodín con los métodos que le faltan. La comodín lanza `MetodoNoPermitido` (T3) en su `onRequest`, con `Allow` en orden alfabético.
+  - `src/app.ts`: `exposeHeadRoutes: false`. `construirApp` llama a `prepararRutas405` antes de registrar las operaciones y a la función que devuelve al final.
+  - `pruebas/http/errores.test.ts`: 103 pruebas nuevas. `CUERPOS` pasó al nivel del módulo, porque lo usan el 404 y el 405. En `pruebas/http/operaciones.test.ts`, la prueba del método sin manejador ahora exige 405 (aceptaba 404 o 405).
+- Por qué así:
+  - Fastify 5.12.7 ya trae TRACE (sin cuerpo) y QUERY (con cuerpo, RFC 10008). El plan dice que Fastify 5 quitó TRACE y que QUERY se agrega con `hasBody: true`; eso quedó viejo, y su regla («los métodos de `http.METHODS` que Fastify no trae») da igual el resultado buscado. Se agregan solo los que faltan: `addHttpMethod` con uno que ya existe deja el aviso FSTDEP025 (en Fastify 6, un error) y le cambia `hasBody` (con POST, Fastify rechazaría después el esquema del cuerpo).
+  - CONNECT queda afuera: Node no se lo pasa a Fastify (emite `connect` y no `request`) y, sin un oyente, cierra la conexión sin responder. Está comprobado por un socket.
+  - `exposeHeadRoutes: false`: sin eso, cada GET tenía un HEAD automático que daba 200, y un contrato con GET y HEAD en la misma ruta ni siquiera se podía registrar (`FST_ERR_DUPLICATED_ROUTE`). Ahora una operación HEAD del contrato se registra con su manejador. La nota de T6 que decía que TRACE pedía `addHttpMethod` estaba mal: ya venía.
+  - La comodín responde en su `onRequest`, antes de leer el cuerpo y de validar. Un cuerpo de más de 1 MiB, de otro tipo o con JSON roto, o parámetros que no cumplen el contrato, siguen dando 405 (RNF-03.5). Su manejador es la misma función, porque Fastify exige uno, y no llega a correr.
+  - `Allow` va en orden alfabético, para no depender del orden del contrato. Una operación del contrato sin manejador no cuenta: `GET /pruebas/clientes` sin `probarListado` da 405 con `Allow: POST`. Una ruta sin ninguna operación con manejador no existe: da 404.
+- Cómo se conecta:
+  - El 404 de T7 sigue igual para toda ruta inexistente, con cualquier método: las comodines son rutas reales, con `is404` falso.
+  - T15 y T16: el `onRequest` de la comodín corre después de los hooks globales, así que el hook de permisos tiene que dejar pasar las rutas sin `config.permisos` (las comodines no lo tienen). Si les exige token, un método equivocado sin token daría 401 en vez de 405, contra RNF-03.5.
+  - T20: `/health` se registra antes de llamar a la función del final y recibe su comodín (`POST /health` → 405 con `Allow: GET`).
+- Tests: `pruebas/http/errores.test.ts` suma 103:
+  - los 33 métodos que `/pruebas/publica` no tiene → 405 en problem+json con `Allow: GET` e `instance` sin la query string;
+  - siete métodos a una ruta con GET y POST → `Allow: GET, POST`; una operación sin manejador no cuenta;
+  - los 34 métodos a una ruta inexistente → 404;
+  - operaciones HEAD y TRACE del contrato con sus manejadores, y `Allow: GET, HEAD, TRACE` aunque el contrato las declara en otro orden;
+  - 405 antes del cuerpo (seis métodos por cuatro cuerpos) y antes de validar los parámetros;
+  - por un socket, HEAD da 405 con `Allow` y 404 sin un byte de cuerpo, y CONNECT se cierra sin respuesta.
+  - 552 pruebas en total, sin avisos de Fastify. Mutaciones sobre `prepararRutas405` y `construirApp`: 16 de 21 detectadas. Las 5 vivas son equivalentes: sumar CONNECT (Node no se lo pasa a Fastify); que los métodos sumados lean cuerpo (solo los usan las comodines, que responden antes); anotar también las comodines (la marca es defensiva: `permitidos` y los métodos de la comodín se calculan antes de registrarla); sacar `.flat()` (hoy ninguna ruta se registra con varios métodos); y responder en `preParsing` (también corre después de los hooks globales y antes del cuerpo).
+- Para mirar con atención:
+  - La función que devuelve `prepararRutas405` tiene que ser lo último que registra rutas en `construirApp`. Una ruta registrada después queda sin 405, y si tiene la URL de otra, choca con su comodín al arrancar (`FST_ERR_DUPLICATED_ROUTE`).
+  - Para un próximo `/sdd-change` de la 003: el plan (Lógica 8) y la spec («como `TRACE`») suponen que Fastify 5 no trae TRACE; en 5.12.7 viene, igual que QUERY.
+  - Un OPTIONS de preflight de CORS a una ruta que no lo declara da 405. CORS no está en esta spec.

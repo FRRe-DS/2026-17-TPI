@@ -1,4 +1,6 @@
 import type { FastifyInstance, HTTPMethods, RouteHandlerMethod } from 'fastify';
+import { METHODS } from 'node:http';
+import { MetodoNoPermitido } from '../errores.js';
 import type { Contrato } from './cargar.js';
 import { ID_CONTRATO } from './validacion.js';
 
@@ -221,4 +223,41 @@ export function registrarOperaciones(
     }
   }
   return operaciones;
+}
+
+// Lógica 8 (RNF-03.2). Suma a Fastify los métodos de Node que no trae, salvo CONNECT (Node lo atiende aparte y, sin un
+// oyente de connect, cierra la conexión), y anota los métodos de cada ruta que se registre desde ahora. La función que
+// devuelve, llamada al terminar de registrar, le suma a cada ruta una comodín con los métodos que le faltan, que responde
+// 405 con Allow en su onRequest, antes de leer el cuerpo. Una ruta registrada después queda sin 405, y si tiene la URL de
+// otra, choca con su comodín.
+export function prepararRutas405(app: FastifyInstance): () => void {
+  for (const metodo of METHODS) {
+    if (metodo !== 'CONNECT' && !app.supportedMethods.includes(metodo)) app.addHttpMethod(metodo);
+  }
+  const metodosPorRuta = new Map<string, Set<string>>();
+  let comodinesRegistradas = false;
+  app.addHook('onRoute', ({ url, method }) => {
+    // Las comodines no se anotan: sus métodos no son los de la ruta.
+    if (comodinesRegistradas) return;
+    const metodos = metodosPorRuta.get(url) ?? new Set<string>();
+    for (const metodo of [method].flat()) metodos.add(metodo);
+    metodosPorRuta.set(url, metodos);
+  });
+
+  return () => {
+    comodinesRegistradas = true;
+    for (const [url, metodos] of metodosPorRuta) {
+      const permitidos = [...metodos].sort();
+      const responder405 = async () => {
+        throw new MetodoNoPermitido(permitidos);
+      };
+      // Fastify exige un manejador. No llega a correr, porque el onRequest responde antes; si corriera, respondería lo mismo.
+      app.route({
+        method: app.supportedMethods.filter((metodo) => !metodos.has(metodo)) as HTTPMethods[],
+        url,
+        onRequest: responder405,
+        handler: responder405,
+      });
+    }
+  };
 }
