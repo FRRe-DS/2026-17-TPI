@@ -43,7 +43,7 @@ Ninguno: esta spec no agrega funcionalidad de negocio. Los RF-2.x llegan con las
   - La respuesta a un `HEAD` va sin cuerpo, porque HTTP no lo permite.
   - Si la solicitud no se pudo leer, el cuerpo va sin `instance`.
 - RNF-03.2: EL SISTEMA usa `type: "about:blank"` en los errores genéricos, que son los que no tienen un `type` propio en el contrato, con estos códigos:
-  - 400: la solicitud no se puede leer como HTTP, la URL está mal codificada, un parámetro de la ruta supera los 100 caracteres, el cuerpo no es JSON válido, o los datos no cumplen el esquema de la operación (en este último caso, el `detail` nombra el campo con problemas);
+  - 400: la solicitud no se puede leer como HTTP, la ruta de la URL está mal codificada, un parámetro de la ruta supera los 100 caracteres, el cuerpo no es JSON válido, o los datos no cumplen el esquema de la operación (en este último caso, el `detail` nombra el campo con problemas);
   - 401: falta autenticación válida (RNF-12.2);
   - 403: falta permiso (RNF-12.3);
   - 404: no hay una operación expuesta con esa ruta;
@@ -58,7 +58,7 @@ Ninguno: esta spec no agrega funcionalidad de negocio. Los RF-2.x llegan con las
 - RNF-03.3: SI ocurre un error no previsto, ENTONCES EL SISTEMA responde 500 sin mensajes internos, trazas de pila ni consultas a la base, y registra el error completo en el log con el identificador de correlación, quitando lo que prohíbe RNF-19.1.
 - RNF-03.4: EL SISTEMA expone solo las operaciones de `contrato/openapi.yml` y, como excepción temporal registrada en un ADR, `GET /health`.
 - RNF-03.5: SI una solicitud tiene más de un problema, ENTONCES EL SISTEMA responde por el primero de este orden:
-  1. la solicitud no se puede leer, su URL está mal codificada o un parámetro de la ruta es demasiado largo (400, 408 o 431);
+  1. la solicitud no se puede leer, la ruta de su URL está mal codificada o un parámetro de la ruta es demasiado largo (400, 408 o 431);
   2. el servicio se está deteniendo (503);
   3. 404 o 405;
   4. 401;
@@ -78,7 +78,7 @@ Ninguno: esta spec no agrega funcionalidad de negocio. Los RF-2.x llegan con las
 ### Datos
 - RNF-05.1: EL SISTEMA guarda sus datos solo en su propia base de datos, y el esquema solo cambia mediante migraciones versionadas en el repositorio.
 - RNF-05.2: CUANDO arranca, EL SISTEMA aplica en orden las migraciones pendientes antes de aceptar solicitudes, sin repetir las ya aplicadas y una sola vez cada una, aunque dos procesos arranquen al mismo tiempo.
-- RNF-05.3: SI la base no responde al arrancar, una migración falla o las migraciones no terminan en 60 segundos, ENTONCES EL SISTEMA no arranca: termina con un código distinto de 0, registra el motivo sin mostrar credenciales y no deja ninguna migración a medias.
+- RNF-05.3: SI la base no responde al arrancar, una migración falla o las migraciones no terminan en 60 segundos, ENTONCES EL SISTEMA no arranca: termina con un código distinto de 0, registra el motivo sin mostrar la contraseña de la base y no deja ninguna migración a medias.
 
 ### Configuración
 - RNF-06.1: EL SISTEMA toma su configuración de estas variables de entorno, y usa el valor por defecto cuando una opcional no está definida:
@@ -100,7 +100,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 
 - RNF-06.2: SI al arrancar falta una variable obligatoria o alguna tiene un valor inválido, ENTONCES EL SISTEMA no arranca, termina con un código distinto de 0 y registra el nombre de cada variable con problemas, sin mostrar su valor. Un valor es inválido si:
   - el puerto no es un entero entre 1 y 65535;
-  - un tiempo no es un entero mayor que 0;
+  - un tiempo no es un entero entre 1 y 2147483647;
   - los reintentos no son un entero entre 0 y 5;
   - la conexión a la base no es una URL `postgres://` o `postgresql://`;
   - la clave tiene menos de 32 caracteres;
@@ -145,7 +145,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 ### CI, privacidad y documentación
 - RNF-17.1: CUANDO se abre o actualiza un pull request hacia `main`, EL SISTEMA ejecuta en CI el build, el lint del código, las pruebas unitarias y de integración y la prueba de contrato, sin omitir ninguno.
 - RNF-17.2: SI alguno de esos pasos falla, ENTONCES EL SISTEMA impide mergear el PR (la regla «Protección de main» ya exige esos checks).
-- RNF-19.1: EL SISTEMA nunca escribe en los logs el token, el encabezado `Authorization`, la clave de firma ni las credenciales de la base.
+- RNF-19.1: EL SISTEMA nunca escribe en los logs el token, el encabezado `Authorization`, la clave de firma ni la contraseña de la base.
 - RNF-19.2: EL SISTEMA no registra en los logs los cuerpos de las solicitudes ni de las respuestas, las query strings ni otros encabezados que el de correlación.
 - RNF-20.1: EL SISTEMA incluye en el repositorio un README que explica qué hace el servicio, cómo levantarlo, cómo correr las pruebas, cómo generar un token de prueba y qué variables usa, con un diagrama del servicio, su base de datos y los módulos con los que habla.
 
@@ -158,7 +158,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - Operaciones de otros módulos que consume: ninguna todavía. El cliente para otros módulos se prueba contra un servidor de prueba, y los mocks de M1 y M6 se suman cuando #2 publique sus contratos.
 - Supuestos mientras no haya acuerdos. Si un acuerdo dice otra cosa, se ajusta con /sdd-change:
   - Token (#9): HS256 con una clave por entorno, con emisor, audiencia y campo de roles configurables. `sub` identifica a la persona en M1; cómo se relaciona con el cliente de M2 lo define la spec del perfil (#4).
-  - Convenciones que el borrador del contrato v1 (#1, PR #16) propone al Grupo 1, que implementa el mismo módulo, y al consorcio: errores problem+json con `about:blank` para los genéricos, `GET /health`, `X-Request-Id`, rol SERVICIO, puerto 8082 y 2 s de espera entre módulos. El borrador todavía difiere de esta spec en tres puntos, a corregir en el PR #16: responde 400 a un `X-Request-Id` inválido (acá se reemplaza, RNF-14.3), sus `title` están en inglés (acá, en español, RNF-03.1) y no lista el 405 entre los genéricos (RNF-03.2).
+  - Convenciones que el borrador del contrato v1 (#1, PR #16) propone al Grupo 1, que implementa el mismo módulo, y al consorcio: errores problem+json con `about:blank` para los genéricos, `GET /health`, `X-Request-Id`, rol SERVICIO, puerto 8082 y 2 s de espera entre módulos. El borrador ya corrigió las tres diferencias que tenía con esta spec (el 400 por un `X-Request-Id` inválido, los `title` en inglés y el 405 que faltaba). Quedan dos, pedidas en el PR #16 el 2026-10-20: el `title` del 403, que dice «Prohibido» y el servicio responde «Sin permiso», y la lista `errores` por campo en los 400, que esta spec no da porque el `detail` nombra el campo con problemas (RNF-03.2).
 
 ## Casos límite
 - **Token con varios roles:** alcanza con que uno esté permitido para la operación.
@@ -171,11 +171,16 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - **`HEAD` a una ruta que no lo tiene:** 405 con `Allow`, sin cuerpo.
 - **`CONNECT`:** Node cierra la conexión sin responder.
 - **Solicitud que no se puede leer** (HTTP mal formado, encabezados de más de 16 KiB, o que no termina de llegar a tiempo): 400, 431 o 408 en problem+json, sin `instance`, con un `X-Request-Id` nuevo, y la conexión se cierra. Su línea de log va sin método ni ruta.
-- **URL mal codificada o parámetro de ruta de más de 100 caracteres:** 400 en problem+json.
+- **Pedido HTTP/1.1 sin `Host`:** lo responde Node antes que el servicio, con 400 sin cuerpo, sin `X-Request-Id` y sin línea de log (ver Decisiones).
+- **`Expect` desconocido** (`Expect: algo`): se ignora, y la solicitud sigue como cualquier otra.
+- **El cliente corta la conexión a mitad del cuerpo, o manda un cuerpo `chunked` mal formado:** no queda como error interno en el log. Si la conexión sigue abierta, recibe el 400 de una solicitud que no se pudo leer.
+- **Ruta mal codificada** (`/clientes/%zz`) **o parámetro de ruta de más de 100 caracteres:** 400 en problem+json.
+- **Query string mal codificada** (`?nombre=%zz`): no da 400 por sí sola. El valor llega como está escrito, y lo valida el esquema de la operación.
 - **Solicitud que llega durante la parada** por una conexión ya abierta: 503, antes que cualquier otro error.
 - **Solicitud sin token y con un cuerpo inválido:** 401, por el orden de RNF-03.5.
 - **La base se cae con el servicio corriendo:** `GET /health` y las operaciones que consultan la base responden 503 en 2 s como máximo. Cuando la base vuelve, responden normalmente sin reiniciar el servicio.
 - **La base no responde al arrancar, una migración falla o las migraciones no terminan en 60 s:** el servicio no arranca, y `docker compose up --wait` termina con error en menos de 2 minutos, con el motivo en `docker compose logs`.
+- **Un tiempo de espera de más de 2147483647 ms:** el servicio no arranca y nombra la variable, sin mostrar su valor.
 - **Dos procesos aplican las migraciones a la vez:** cada migración se aplica una sola vez; el segundo espera al primero, dentro de sus 60 s.
 - **Migración mergeada después de otra con fecha más nueva:** se aplica igual, también en una base que ya tiene la más nueva.
 - **`X-Request-Id` ausente, vacío, repetido, de más de 128 caracteres o con otros caracteres:** el servicio genera un UUID, y el valor recibido no llega a los logs.
@@ -248,10 +253,16 @@ Se tomaron al clarificar, el 2026-10-15: el responsable delegó la resolución, 
 - **Ramas al día con `main`:** no se exige. El CI sobre `main` detecta si dos PR rompen algo al juntarse.
 - **Revisión independiente del 2026-10-18, antes del PR de spec:**
   - Los errores que el framework responde antes de leer la solicitud (HTTP mal formado, encabezados demasiado grandes, solicitud que no termina de llegar, URL mal codificada o parámetro de ruta largo) también van en problem+json. Se suman 408 y 431 a los genéricos, y el parámetro largo da 400 y no 414, que el contrato no documenta.
-  - 405 para todo método que Node reconoce, también los que el framework no trae por defecto, como `TRACE`.
+  - 405 para todo método que Node reconoce, también los que el framework no trae por defecto, como `PROPFIND`.
   - Parada: 503 a lo que llega mientras se detiene, y a los 8 s se corta lo que siga en curso. Sale igual con código 0: el límite de 10 s manda, y otro código haría parecer una falla una parada pedida.
   - Migraciones: un plazo de 60 s para toda la fase, y se aplican aunque se mergeen fuera del orden de sus fechas, porque #4 a #8 van en paralelo.
   - Un `sub` vacío o que no es texto da 401; una operación sin roles en el contrato admite cualquier rol conocido; un nombre de encabezado de correlación inválido impide arrancar.
+- **Cambio del 2026-10-20**, con lo que apareció al implementar los bloques A y B:
+  - Los tiempos tienen un tope de 2147483647 ms (2³¹ − 1). Desde 2³¹ ms, unos 24,9 días, los temporizadores de Node disparan casi al instante, y con un tiempo así toda consulta daría 503. Es un límite de la plataforma y no una política: cualquier tiempo razonable sigue valiendo. El responsable delegó la decisión el 2026-10-19.
+  - Un pedido HTTP/1.1 sin `Host` queda como excepción de RNF-03.1, RNF-14.4 y RNF-14.6: lo responde Node con el 400 que pide el RFC 9112. Ningún cliente HTTP real omite `Host`, y apagar esa validación de Node obligaría a reimplementarla. Un `Expect` desconocido, en cambio, se ignora, como permite el RFC 9110: así Node no responde un 417 fuera de problem+json. Lo decidió el responsable el 2026-10-19.
+  - Que el cliente corte a mitad del cuerpo es un problema de la solicitud, no un error interno, y no se registra como tal (RNF-03.3). Un corte de la base o de otro módulo sigue siendo un error del servicio. Lo decidió el responsable el 2026-10-19.
+  - «URL mal codificada» (RNF-03.2 y RNF-03.5) es la ruta. En la query string, lo que no se puede decodificar llega como está escrito, y el esquema de cada parámetro ya valida su valor: un número, una fecha o un UUID mal escritos dan 400. Lo decidió el responsable el 2026-10-20.
+  - De la base, se oculta en los logs la contraseña (RNF-05.3 y RNF-19.1). El usuario no es secreto: va en la URL de ejemplo, y ocultar un nombre corto como `m2`, que es también el de la base, desfiguraría los mensajes. Lo decidió el responsable el 2026-10-20.
 
 ## Dudas abiertas
 Ninguna. Lo que depende de terceros quedó como supuesto en «Contrato y dependencias».
