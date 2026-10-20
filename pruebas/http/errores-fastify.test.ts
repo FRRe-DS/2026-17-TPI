@@ -163,7 +163,14 @@ describe('construirApp: la URL mal codificada y el parámetro de ruta largo, 400
       }),
       deriveConstraint: (_req: unknown, _ctx: unknown, done: (error: Error) => void) => done(new Error('la restricción falló')),
     } as unknown as Parameters<FastifyInstance['addConstraintStrategy']>[0]);
-    app.route({ method: 'GET', url: '/con-restriccion', constraints: { falla: 'x' }, handler: bien });
+    // Toda ruta declara sus permisos (Lógica 4). Los de esta no se llegan a mirar: la restricción falla antes que los hooks.
+    app.route({
+      method: 'GET',
+      url: '/con-restriccion',
+      constraints: { falla: 'x' },
+      config: { permisos: { publica: true, roles: [] } },
+      handler: bien,
+    });
 
     const respuesta = await app.inject({ method: 'GET', url: `/con-restriccion${QUERY}`, headers: { [ENCABEZADO]: 'id-500' } });
 

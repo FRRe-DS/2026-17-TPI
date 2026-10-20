@@ -253,6 +253,53 @@ describe('autenticación: una operación con security: [] no pide token (RNF-12.
   });
 });
 
+describe('autenticación: una ruta que no declara sus permisos no se registra (RNF-12.1)', () => {
+  type App = ReturnType<typeof crearApp>;
+  const PUBLICA = { permisos: { publica: true, roles: [] } };
+
+  // Rutas registradas a mano, fuera del contrato, como GET /health cuando no está en él (plan, Lógica 4).
+  const SIN_PERMISOS: [string, (app: App) => unknown, string][] = [
+    ['con app.route, sin config', (app) => app.route({ method: 'GET', url: '/a-mano', handler: quien }), 'GET'],
+    ['con app.route, con config y sin permisos', (app) => app.route({ method: 'GET', url: '/a-mano', config: {}, handler: quien }), 'GET'],
+    ['con app.route y dos métodos', (app) => app.route({ method: ['GET', 'POST'], url: '/a-mano', handler: quien }), 'GET, POST'],
+    ['con el atajo app.get', (app) => app.get('/a-mano', quien), 'GET'],
+  ];
+
+  it.each(SIN_PERMISOS)('%s: falla con el método y la URL, y la ruta no queda registrada', async (_caso, registrar, metodos) => {
+    const app = crearApp(MANEJADORES);
+
+    expect(() => registrar(app)).toThrow(
+      expect.objectContaining({ message: `La ruta ${metodos} /a-mano no declara sus permisos` }),
+    );
+    expect((await pedir('/a-mano', undefined, app)).statusCode).toBe(404);
+  });
+
+  it('una que se declara pública se registra y responde sin token, sin identidad', async () => {
+    const app = crearApp(MANEJADORES);
+    app.route({ method: 'GET', url: '/a-mano', config: PUBLICA, handler: quien });
+
+    const respuesta = await pedir('/a-mano', undefined, app);
+
+    expect(respuesta.statusCode).toBe(200);
+    expect(respuesta.json()).toEqual({ identidad: null });
+  });
+
+  it('una que pide un rol se registra y lo exige como una operación del contrato: 401, 403 y 200', async () => {
+    const app = crearApp(MANEJADORES);
+    const permisos = { publica: false, roles: ['OPERADOR'] };
+    app.route({ method: 'GET', url: '/a-mano', config: { permisos }, handler: quien });
+
+    const sinToken = await pedir('/a-mano', undefined, app);
+    const conOtroRol = await pedir('/a-mano', bearer({ claims: { roles: ['CLIENTE'] } }).authorization, app);
+    const conSuRol = await pedir('/a-mano', bearer({ claims: { sub: SUB, roles: ['OPERADOR'] } }).authorization, app);
+
+    esProblema(sinToken, 401, 'No autenticado', FALTA, '/a-mano');
+    esProblema(conOtroRol, 403, 'Sin permiso', 'El rol del token no permite esta operación', '/a-mano');
+    expect(conSuRol.statusCode).toBe(200);
+    expect(conSuRol.json()).toEqual({ identidad: { sub: SUB, roles: ['OPERADOR'] } });
+  });
+});
+
 describe('autenticación: la identidad es de cada solicitud', () => {
   it('dos solicitudes a la vez a la misma operación no mezclan sus identidades', async () => {
     const app = crearApp({
