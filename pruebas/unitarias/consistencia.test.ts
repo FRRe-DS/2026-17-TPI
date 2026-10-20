@@ -19,6 +19,9 @@ function versionesDe(ruta: string, seccion: Seccion): [string, string][] {
 
 const raiz = new URL('../../', import.meta.url);
 const paquete = JSON.parse(readFileSync(new URL('package.json', raiz), 'utf8')) as Record<string, Seccion | undefined>;
+const bloqueo = JSON.parse(readFileSync(new URL('package-lock.json', raiz), 'utf8')) as {
+  packages: { [ruta: string]: { engines?: { node?: string } } | undefined };
+};
 
 const SECCIONES = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'overrides'];
 
@@ -35,6 +38,21 @@ describe('package.json (RNF-01.1)', () => {
   it('ninguna dependencia usa rangos ni etiquetas', () => {
     const rangos = declaradas.filter(([, version]) => esRango(version)).map(([ruta, version]) => `${ruta}: ${version}`);
     expect(rangos).toEqual([]);
+  });
+});
+
+// El comando de tokens usa import.meta.main, que existe desde Node 24.2.0 (plan, Versiones a fijar). Con `^24`, en
+// Node 24.0 o 24.1 no imprime nada y sale con 0.
+const ENGINES_NODE = '^24.2.0';
+
+describe('engines.node (RNF-01.1)', () => {
+  it('package.json pide Node 24.2.0 o más nuevo de la serie 24', () => {
+    expect(paquete.engines?.node).toBe(ENGINES_NODE);
+  });
+
+  // npm install y npm ci copian engines de package.json al paquete raíz del lock, que es la entrada "".
+  it('package-lock.json lo repite en el paquete raíz', () => {
+    expect(bloqueo.packages['']?.engines?.node).toBe(ENGINES_NODE);
   });
 });
 

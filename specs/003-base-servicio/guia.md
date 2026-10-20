@@ -7,7 +7,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
 
 ### T1 — Crear el proyecto · commit `003/T1`
 - Qué cambió:
-  - [package.json](../../package.json): nombre `m2-clientes`, versión `0.1.0`, módulos ES (`"type": "module"`), `engines.node` en `^24`, todas las dependencias de «Versiones a fijar» del plan con versión exacta (las que usa el servicio en `dependencies`; las de compilación, lint y pruebas en `devDependencies`) y los scripts `contrato:tipos`, `build`, `lint` y `test`. Los `prebuild`, `prelint` y `pretest` corren `contrato:tipos` solos, así que los tipos siempre están al día.
+  - [package.json](../../package.json): nombre `m2-clientes`, versión `0.1.0`, módulos ES (`"type": "module"`), `engines.node` en `^24` (T34 lo subió a `^24.2.0`), todas las dependencias de «Versiones a fijar» del plan con versión exacta (las que usa el servicio en `dependencies`; las de compilación, lint y pruebas en `devDependencies`) y los scripts `contrato:tipos`, `build`, `lint` y `test`. Los `prebuild`, `prelint` y `pretest` corren `contrato:tipos` solos, así que los tipos siempre están al día.
   - [package-lock.json](../../package-lock.json): fija también las dependencias de las dependencias. Es lo que instala `npm ci`, en CI y en el `Dockerfile` (T26).
   - [tsconfig.json](../../tsconfig.json) (editor, lint y pruebas; no emite) y [tsconfig.build.json](../../tsconfig.build.json) (solo `src/`, compila a `dist/`).
   - [eslint.config.mjs](../../eslint.config.mjs): typescript-eslint sobre los `.ts`, sin `dist/` ni `src/generado/`.
@@ -512,3 +512,24 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Si el cliente corta antes de que la app empiece a leer el cuerpo (por ejemplo, mientras se verifica el token), Node no le avisa el error a nadie. Fastify después espera un cuerpo que no llega: no responde, no pasa por el manejador de errores y no deja línea. Se comprobó con un hook que demora la lectura. No es un error del servicio y T33 no lo cambia; por eso las pruebas esperan a que la app esté leyendo antes de cortar.
   - El 400 de `responderProblema` lleva `instance` y el id de la solicitud, a diferencia del de `clientErrorHandler`. Como casi nunca sale, quedó como cualquier otra respuesta del manejador, que es lo que dice el plan.
   - Las pruebas miran la app desde afuera con un oyente extra de `request` en el servidor, `readableFlowing` y hooks onSend, onRequest y preHandler propios. Si Fastify cambia cómo lee el cuerpo, puede que haya que ajustarlas.
+
+### T34 — Pedir Node 24.2 o más nuevo · commit `003/T34`
+- Qué cambió:
+  - [package.json](../../package.json) y [package-lock.json](../../package-lock.json): `engines.node` pasa de `^24` a `^24.2.0`. En el lock es la entrada del paquete raíz (`packages[""]`), y es la única línea que cambia.
+  - El lock se editó a mano y se comprobó que es lo que escribe npm: con el lock anterior y el `package.json` nuevo, `npm install --package-lock-only` (en una carpeta aparte, sin scripts) da un archivo idéntico.
+- Por qué así:
+  - El comando de tokens ([src/herramientas/token.ts](../../src/herramientas/token.ts), T14) corre solo cuando es el punto de entrada del proceso, y lo averigua con `import.meta.main`, que existe desde Node 24.2.0 (plan, Lógica 5 y Versiones a fijar). Con `^24`, `engines` también admitía 24.0 y 24.1: ahí el comando no imprime nada y sale con 0, sin avisar que no hizo nada. Lo señaló la revisión del bloque B (RNF-01.1).
+  - `^24.2.0` acepta de 24.2.0 en adelante dentro de la serie 24, y no Node 25 ni los que siguen: el stack es Node 24 LTS. Con el semver de npm, 23.99.0, 24.0.0, 24.1.9 y 25.0.0 no lo cumplen; 24.2.0, 24.15.0 y 24.22.0 sí.
+  - Descartado: comparar `import.meta.url` con `process.argv[1]`, que anda en todo Node 24 pero no reconoce el archivo si se ejecuta por un enlace simbólico (plan, Decisiones).
+- Cómo se conecta:
+  - `consistencia.test.ts` (T1) ya impedía los rangos en las dependencias. `engines` queda fuera de esa regla, porque no es una dependencia y sí lleva `^`; el bloque nuevo es el que lo cuida.
+  - Las versiones de Node que ya usa el proyecto cumplen el rango y no cambian: `node-version: 24` en `ci.yml` (setup-node toma el último 24.x) y la imagen `node:24.22.0-trixie-slim` del plan, que llega con el `Dockerfile` de T26.
+- Tests:
+  - [pruebas/unitarias/consistencia.test.ts](../../pruebas/unitarias/consistencia.test.ts), 2 pruebas nuevas (20 en el archivo; 1484 en total): `package.json` declara `engines.node` en `^24.2.0` (1) y `package-lock.json` lo repite en el paquete raíz (1). La constante `ENGINES_NODE` guarda el valor, con el motivo al lado.
+  - Rojo primero: las 2 fallaban, con `^24` recibido; las otras 18 pasaban.
+  - Ya en verde, se rompieron los dos archivos a propósito de 7 maneras (corre solo este archivo) y cada una hizo fallar la prueba del archivo roto, y solo esa: en `package.json`, `^24`, `^24.1.0`, `>=24.2.0` (que admitiría Node 25) y sin la clave `engines`; en el lock, `^24`, `^24.1.0` y sin la clave `engines`.
+  - Con Node v24.15.0: `npm ci` (sin avisos de `engines`), `npm run build`, `npm test` (1484), `npm run lint`, `tsc -p tsconfig.json` (que sí tipa `pruebas/`), `npm run contrato:test` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - `engines` avisa pero no frena. Se probó en una carpeta aparte con un `engines` imposible (`>=99.0.0`) en el proyecto raíz: `npm ci` imprime `EBADENGINE`, instala igual y sale con 0; con `--engine-strict`, falla con código 1. Este repo no tiene `.npmrc` con `engine-strict` y T34 no lo pide: quien use Node 24.0 o 24.1 ve el aviso de npm, y si lo ignora, el comando de tokens sigue sin imprimir nada.
+  - El mínimo está escrito en `package.json`, en el lock y en `ENGINES_NODE` (más el plan). Si sube, cambian los tres; el lock se puede regenerar con `npm install --package-lock-only` y comparar, como arriba.
+  - La prueba compara texto y no calcula versiones: un rango equivalente escrito distinto (por ejemplo `>=24.2.0 <25`) la haría fallar aunque diga lo mismo. Es a propósito, porque el plan fija este texto.
