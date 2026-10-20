@@ -15,6 +15,9 @@ info:
     M2 Clientes necesita de M1 Identidad y Acceso. Es una propuesta para el
     consorcio (issue #9), no un contrato publicado.
   version: 0.1.0-borrador
+  license:
+    name: MIT
+    identifier: MIT
 
 servers:
   - url: /
@@ -39,6 +42,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JWKS'
+        '404':
+          description: >-
+            El endpoint no publica claves públicas en este entorno (por ejemplo,
+            mientras M1 opere con HS256 y clave simétrica compartida).
 
 components:
   securitySchemes:
@@ -48,8 +55,9 @@ components:
       bearerFormat: JWT
       description: |
         Token JWT firmado por M1 con HS256 (TP1) o con clave asimétrica
-        (cuando M1 exista). Claims obligatorios: sub, iss, aud, iat, exp y
-        roles (lista de textos). Algoritmo aceptado: solo HS256 en TP1.
+        (cuando M1 exista). Algoritmo aceptado en TP1: solo HS256.
+        Claims obligatorios: sub, iss, aud, exp y roles (lista de textos).
+        Claims opcionales: iat y nbf.
 
   schemas:
     JWKS:
@@ -65,7 +73,7 @@ components:
 
     JWK:
       type: object
-      description: Una clave pública del JWKS (RFC 7517).
+      description: Una clave pública del JWKS (RFC 7517 y RFC 7518).
       required:
         - kty
         - kid
@@ -74,9 +82,13 @@ components:
       properties:
         kty:
           type: string
-          description: Tipo de clave (por ejemplo, RSA o EC).
+          description: Tipo de familia criptográfica de la clave (RSA o EC).
+          enum:
+            - RSA
+            - EC
           examples:
             - RSA
+            - EC
         kid:
           type: string
           description: Identificador de la clave, para elegir cuál valida cada token.
@@ -84,14 +96,18 @@ components:
             - m1-2026-001
         use:
           type: string
-          description: Uso de la clave.
+          description: Uso de la clave (firma de tokens).
           enum:
             - sig
         alg:
           type: string
-          description: Algoritmo de firma.
+          description: Algoritmo de firma esperado.
+          enum:
+            - RS256
+            - ES256
           examples:
             - RS256
+            - ES256
         n:
           type: string
           description: Módulo RSA en Base64url (solo si kty es RSA).
@@ -100,6 +116,21 @@ components:
           description: Exponente RSA en Base64url (solo si kty es RSA).
           examples:
             - AQAB
+        crv:
+          type: string
+          description: Curva criptográfica (solo si kty es EC, ej. P-256).
+          enum:
+            - P-256
+            - P-384
+            - P-521
+          examples:
+            - P-256
+        x:
+          type: string
+          description: Coordenada X en Base64url (solo si kty es EC).
+        y:
+          type: string
+          description: Coordenada Y en Base64url (solo si kty es EC).
 
     TokenPayload:
       type: object
@@ -111,7 +142,6 @@ components:
         - sub
         - iss
         - aud
-        - iat
         - exp
         - roles
       properties:
@@ -119,32 +149,51 @@ components:
           type: string
           minLength: 1
           description: |
-            Identificador único de la persona en M1. En M2, se usa como
-            clienteId o se mapea a él.
+            Identificador único de quien llama. Para usuarios, suele ser un UUID
+            (en M2, su relación con el clienteId la define la spec del perfil #4).
+            Para llamadas entre servicios con rol SERVICIO, identifica al módulo
+            emisor (por ejemplo, "m9-reservas").
           examples:
             - 550e8400-e29b-41d4-a716-446655440000
+            - m9-reservas
         iss:
           type: string
-          description: Emisor del token. Cada módulo lo valida contra su configuración.
+          description: Emisor del token. Se propone "m1-identidad" para todo el consorcio.
           examples:
             - m1-identidad
         aud:
-          type: string
-          description: Audiencia del token.
-          examples:
-            - plataforma-movilidad
-        iat:
-          type: integer
-          description: Momento de emisión (Unix timestamp, segundos).
+          description: |
+            Audiencia del token. Puede ser un texto (si está dirigido a un solo módulo
+            o audiencia compartida) o una lista de textos (si un módulo llama a varios
+            con el mismo token, como hace M9 con M2, M5 y M8). Cada módulo receptor
+            exige que su audiencia esté incluida.
+          oneOf:
+            - type: string
+              description: Audiencia individual o compartida.
+              examples:
+                - m2-clientes
+                - plataforma-movilidad
+            - type: array
+              items:
+                type: string
+              description: Lista de módulos destinatarios.
+              examples:
+                - - m2-clientes
+                  - m5-facturacion
+                  - m8-notificaciones
         exp:
           type: integer
-          description: Momento de expiración (Unix timestamp, segundos).
+          description: |
+            Momento de expiración (Unix timestamp en segundos, NumericDate RFC 7519).
+            Obligatorio: todo token debe vencer. Se valida con 30 s de tolerancia de reloj.
+          examples:
+            - 1761003600
         roles:
           type: array
           items:
             type: string
           description: |
-            Roles de la persona. Los que reconoce M2 son CLIENTE, CONDUCTOR,
+            Roles de la persona o servicio. Los que reconoce M2 son CLIENTE, CONDUCTOR,
             OPERADOR y SERVICIO; los demás se ignoran. Cada módulo puede
             reconocer otros.
           examples:
@@ -152,11 +201,20 @@ components:
             - - CONDUCTOR
             - - OPERADOR
             - - SERVICIO
+        iat:
+          type: integer
+          description: |
+            Momento de emisión (Unix timestamp en segundos, NumericDate RFC 7519).
+            Opcional para M2: M2 no rechaza un token si falta este claim.
+          examples:
+            - 1761000000
         nbf:
           type: integer
           description: |
-            No válido antes de (Unix timestamp, segundos). Opcional; si está
-            presente, se valida con 30 s de tolerancia de reloj.
+            No válido antes de (Unix timestamp en segundos, NumericDate RFC 7519).
+            Opcional; si está presente, se valida con 30 s de tolerancia de reloj.
+          examples:
+            - 1761000000
 
 security:
   - bearerJWT: []
