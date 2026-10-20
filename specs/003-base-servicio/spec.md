@@ -166,6 +166,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - **Token sin `exp`, vencido o con `nbf` en el futuro:** 401, con 30 s de tolerancia de reloj.
 - **Token firmado con otro algoritmo o sin firma (`alg: none`):** 401.
 - **`GET /health` con un token, válido o no:** 200; el token se ignora.
+- **Ruta registrada sin declarar si es pública y qué roles admite** (un olvido al programarla): nunca queda abierta. El servicio no arranca con una ruta así, y si alguna escapa a ese control, pide token con cualquier rol conocido, como una operación cuyo contrato no nombra roles (RNF-12.1 y RNF-12.3).
 - **Ruta inexistente:** 404 en problem+json, con o sin token.
 - **Método que la ruta no tiene** (`POST /health`, `OPTIONS /health`, `TRACE /health` o cualquier otro que Node reconozca): 405 en problem+json con `Allow: GET`, con o sin token.
 - **`HEAD` a una ruta que no lo tiene:** 405 con `Allow`, sin cuerpo.
@@ -174,6 +175,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - **Pedido HTTP/1.1 sin `Host`:** lo responde Node antes que el servicio, con 400 sin cuerpo, sin `X-Request-Id` y sin línea de log (ver Decisiones).
 - **`Expect` desconocido** (`Expect: algo`): se ignora, y la solicitud sigue como cualquier otra.
 - **El cliente corta la conexión a mitad del cuerpo, o manda un cuerpo `chunked` mal formado:** no queda como error interno en el log. Si la conexión sigue abierta, recibe el 400 de una solicitud que no se pudo leer.
+- **El cliente ya se fue cuando el servicio falla por un corte de su propia conexión con la base o con otro módulo:** es un error del servicio, no un corte del cliente, también si la solicitud no tiene cuerpo o si su cuerpo todavía no terminó de llegar. Sigue el camino de cualquier error: uno no previsto da 500 y deja su línea de error en el log (RNF-03.3), aunque la respuesta ya no llegue a nadie.
 - **Ruta mal codificada** (`/clientes/%zz`) **o parámetro de ruta de más de 100 caracteres:** 400 en problem+json.
 - **Query string mal codificada** (`?nombre=%zz`): no da 400 por sí sola. El valor llega como está escrito, y lo valida el esquema de la operación.
 - **Solicitud que llega durante la parada** por una conexión ya abierta: 503, antes que cualquier otro error.
@@ -263,6 +265,9 @@ Se tomaron al clarificar, el 2026-10-15: el responsable delegó la resolución, 
   - Que el cliente corte a mitad del cuerpo es un problema de la solicitud, no un error interno, y no se registra como tal (RNF-03.3). Un corte de la base o de otro módulo sigue siendo un error del servicio. Lo decidió el responsable el 2026-10-19.
   - «URL mal codificada» (RNF-03.2 y RNF-03.5) es la ruta. En la query string, lo que no se puede decodificar llega como está escrito, y el esquema de cada parámetro ya valida su valor: un número, una fecha o un UUID mal escritos dan 400. Lo decidió el responsable el 2026-10-20.
   - De la base, se oculta en los logs la contraseña (RNF-05.3 y RNF-19.1). El usuario no es secreto: va en la URL de ejemplo, y ocultar un nombre corto como `m2`, que es también el de la base, desfiguraría los mensajes. Lo decidió el responsable el 2026-10-20.
+- **Segundo cambio del 2026-10-20**, con lo que encontró la revisión independiente del bloque F. Lo aprobó el responsable el 2026-10-20:
+  - Cuenta como corte del cliente solo el que corta su propia solicitud mientras llega. Una solicitud sin cuerpo no la lee nadie, y Node la da por cortada en cuanto el cliente se va, aunque haya llegado entera. Con el criterio del bloque F, un corte de la base o de otro módulo que coincidía con eso se tomaba como del cliente y no quedaba en el log, contra la decisión del 2026-10-19 (RNF-03.3).
+  - Una ruta sin permisos declarados nunca queda abierta. Desde el bloque F, el servicio no arranca con una así, pero ese control solo ve las rutas que se registran después de él. Como segunda capa, una ruta sin permisos pide token como cualquier operación protegida: los bloques que siguen suman rutas, y un olvido no puede abrir ninguna (RNF-12.1).
 
 ## Dudas abiertas
 Ninguna. Lo que depende de terceros quedó como supuesto en «Contrato y dependencias».

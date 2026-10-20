@@ -5,9 +5,9 @@ Spec: [spec.md](spec.md) · Plan: [plan.md](plan.md) · Issue: #3
 Tareas de 20-30 minutos, en orden de dependencia. Cada una empieza por sus pruebas en rojo y sigue el plan: el cómo está en la sección que nombra.
 
 Cómo se implementan (lo decidió el integrador el 2026-10-18):
-- Un PR de implementación por bloque, cada uno desde su rama (`impl/003-bloque-a`, `impl/003-bloque-b`, …). Cuando A esté en `main`, B, C y D pueden avanzar en paralelo; E va al final. F, que sumó el cambio del 2026-10-20, va antes que C y D.
-- En los PR de A a D, la validación cubre solo los requisitos de las tareas del bloque, y la spec sigue «aprobada». La validación completa (Visión general de la guía, Estado «implementada» y commit `003/V`) va en el PR del bloque E.
-- T4, T6, T8, T12, T16, T18, T21, T23, T33 y T35 son delicadas (contrato, orden interno de Fastify, concurrencia y red) y van con el modelo más capaz: Opus en Claude Code. Las demás, con Sonnet.
+- Un PR de implementación por bloque, cada uno desde su rama (`impl/003-bloque-a`, `impl/003-bloque-b`, …). Cuando A esté en `main`, B, C y D pueden avanzar en paralelo; E va al final. F, que sumó el cambio del 2026-10-20, va antes que C y D. G, que sumó el segundo cambio del 2026-10-20, va después de F y antes que E; con C y D, en cualquier orden.
+- En los PR de A a D, F y G, la validación cubre solo los requisitos de las tareas del bloque, y la spec sigue «aprobada». La validación completa (Visión general de la guía, Estado «implementada» y commit `003/V`) va en el PR del bloque E.
+- T4, T6, T8, T12, T16, T18, T21, T23, T33, T35, T36 y T37 son delicadas (contrato, orden interno de Fastify, concurrencia y red) y van con el modelo más capaz: Opus en Claude Code. Las demás, con Sonnet.
 - Si dos bloques en paralelo chocan al integrar `main` (`guia.md`, `tasks.md` o `src/app.ts`), se conservan los cambios de los dos lados.
 - Si el contrato v1 (#1) se mergea antes del bloque E: `/health` pasa a registrarse desde el contrato, `npm run contrato:test` avisa que la prueba con Schemathesis llega con T29, y, si el v1 final volviera a validar el `X-Request-Id` en la solicitud (plan, Trampas verificadas), se resuelve antes de cerrar E.
 
@@ -78,7 +78,7 @@ Depende de: bloque A (del código, usa solo lo de T3).
   - Hecho cuando: `pruebas/modulos/cliente.test.ts` comprueba que un GET se reintenta una vez a los 200 ms ante un 5xx, una conexión rechazada, un corte o una respuesta que no es JSON; que un POST no se reintenta; que al final da 503 nombrando el módulo; y que, con los valores por defecto, todo termina en no más de 4,2 s.
 
 ## Bloque E — Contenedores, prueba de contrato, CI y README
-Depende de: bloques B y C. Su PR cierra la spec, así que va después de D y de F.
+Depende de: bloques B y C. Su PR cierra la spec, así que va después de D, de F y de G.
 
 - [ ] **T26. Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.2
   - Hecho cuando: `docker build -t m2-clientes:0.1.0 .` termina bien; `docker run --rm --entrypoint whoami m2-clientes:0.1.0` imprime `node`; y `pruebas/unitarias/consistencia.test.ts` comprueba que el `Dockerfile` usa imágenes con versión exacta, nunca `latest`, e instala con `npm ci`.
@@ -104,3 +104,11 @@ Depende de: bloques A y B. Va antes que C y D: T32 pone el tope de los tiempos q
   - Hecho cuando: `package.json` y `package-lock.json` declaran `"node": "^24.2.0"` en `engines`; `pruebas/unitarias/consistencia.test.ts` lo comprueba en los dos; y `npm ci`, `npm run build` y `npm test` pasan con Node 24.
 - [x] **T35. No dejar registrar una ruta sin permisos declarados: `onRoute` en `registrarPermisos` y comodines del 405 públicas (plan, Lógica 4 y 8).** RNF-12.1, RNF-03.5
   - Hecho cuando: `pruebas/http/autenticacion.test.ts` comprueba que registrar a mano una ruta sin `config.permisos` falla con «La ruta <método> <url> no declara sus permisos», y que una con `config.permisos` se registra; y `pruebas/http/precedencia.test.ts` y `errores.test.ts` siguen dando 405 a un método que la ruta no tiene, con o sin token, y 404 a una ruta que no existe.
+
+## Bloque G — Segundo cambio del 2026-10-20: el corte del cliente en una solicitud sin cuerpo y la ruta sin permisos
+Depende de: bloque F (T36 corrige `cortoElCliente`, de T33, y T37 el hook de permisos, de T35). Va antes que E; con C y D, en cualquier orden.
+
+- [ ] **T36. Reconocer el corte del cliente por el error de su solicitud: `cortoElCliente` compara con `request.raw.errored` (plan, Lógica 6).** RNF-03.3, RNF-03.2
+  - Hecho cuando: `pruebas/http/errores-fastify.test.ts`, por un socket y con el cliente ya ido, comprueba que un `ECONNRESET` del servicio da 500 y deja su línea «Error interno» en un `GET` sin cuerpo (`/pruebas/publica`, lanzado en `preHandler`) y en un alta con el cuerpo a medias (lanzado en `onRequest`); que las pruebas de T33 siguen pasando (los cortes y el `chunked` mal formado sin línea de error, y el `ECONNRESET` con el cuerpo leído con la suya); y que el comentario de `cortoElCliente` explica el criterio nuevo.
+- [ ] **T37. Pedir token a una ruta sin permisos declarados: el `onRequest` de `registrarPermisos` la trata como protegida (plan, Lógica 4).** RNF-12.1, RNF-12.3
+  - Hecho cuando: `pruebas/http/autenticacion.test.ts` comprueba que una ruta registrada antes de `registrarPermisos`, que el `onRoute` no ve, da 401 con `WWW-Authenticate: Bearer` sin token y 403 con un token sin roles conocidos, y que con cualquier rol conocido llega al manejador con el `sub` y los roles; que las pruebas de 404 y 405, con y sin token, siguen pasando; y que el comentario del hook explica la segunda capa.
