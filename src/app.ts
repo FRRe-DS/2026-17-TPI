@@ -69,7 +69,8 @@ export function construirApp({ config, contrato, manejadores, flujoLog }: Opcion
   app.addHook('onRequest', async (request) => {
     if (request.is404) throw new NoEncontrado();
   });
-  // Después del 404 y antes de leer el cuerpo: el 401 y el 403 van antes que cualquier error del cuerpo (RNF-03.5).
+  // Después del 404 y antes de leer el cuerpo: el 401 y el 403 van antes que cualquier error del cuerpo (RNF-03.5). Y antes de
+  // registrar cualquier ruta: desde acá, una que no declara sus permisos no se registra (Lógica 4).
   registrarPermisos(app, config);
   const registrarRutas405 = prepararRutas405(app);
   registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);

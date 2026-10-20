@@ -252,9 +252,12 @@ export function prepararRutas405(app: FastifyInstance): () => void {
         throw new MetodoNoPermitido(permitidos);
       };
       // Fastify exige un manejador. No llega a correr, porque el onRequest responde antes; si corriera, respondería lo mismo.
+      // La comodín se declara pública: el hook de permisos no le pide token, y el 405 sale con o sin él, antes que el 401 y
+      // el 403 (RNF-03.5; Lógica 4).
       app.route({
         method: app.supportedMethods.filter((metodo) => !metodos.has(metodo)) as HTTPMethods[],
         url,
+        config: { permisos: { publica: true, roles: [] } },
         onRequest: responder405,
         handler: responder405,
       });

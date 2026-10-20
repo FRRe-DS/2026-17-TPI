@@ -46,13 +46,9 @@ const enteroEntre = (minimo: number, maximo: number): Regla<number> => ({
   },
 });
 
-const enteroPositivo: Regla<number> = {
-  motivo: 'no es un entero mayor que 0',
-  convertir: (texto) => {
-    const numero = aEntero(texto);
-    return numero !== undefined && numero > 0 ? numero : undefined;
-  },
-};
+// Los tiempos van de 1 ms hasta 2³¹ − 1, el mayor que aceptan los temporizadores de Node: con uno más, `setTimeout` y
+// `AbortSignal.timeout` disparan casi al instante y toda consulta daría 503 (RNF-06.2).
+const tiempoEnMs = enteroEntre(1, 2147483647);
 
 const urlPostgres: Regla<string> = {
   motivo: 'no es una URL postgres:// o postgresql://',
@@ -133,8 +129,8 @@ export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
     urlBd: lector.obligatoria('M2_URL_BD', urlPostgres),
     puerto: lector.opcional('M2_PUERTO', 8082, enteroEntre(1, 65535)),
     ...leerTokens(lector),
-    tiempoBdMs: lector.opcional('M2_TIEMPO_BD_MS', 2000, enteroPositivo),
-    tiempoModulosMs: lector.opcional('M2_TIEMPO_MODULOS_MS', 2000, enteroPositivo),
+    tiempoBdMs: lector.opcional('M2_TIEMPO_BD_MS', 2000, tiempoEnMs),
+    tiempoModulosMs: lector.opcional('M2_TIEMPO_MODULOS_MS', 2000, tiempoEnMs),
     reintentosModulos: lector.opcional('M2_REINTENTOS_MODULOS', 1, enteroEntre(0, 5)),
     encabezadoCorrelacion: lector.opcional('M2_ENCABEZADO_CORRELACION', 'X-Request-Id', nombreDeEncabezado),
   });

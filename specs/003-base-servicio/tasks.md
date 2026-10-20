@@ -96,11 +96,11 @@ Depende de: bloques B y C. Su PR cierra la spec, así que va después de D y de 
 ## Bloque F — Cambio del 2026-10-20: tope de los tiempos, corte del cliente, versión de Node y rutas sin permisos
 Depende de: bloques A y B. Va antes que C y D: T32 pone el tope de los tiempos que usan T19 y T24, y T33 a T35 cambian código de A y B.
 
-- [ ] **T32. Poner el tope a los dos tiempos: `enteroEntre(1, 2147483647)` en `src/config.ts` (plan, Lógica 1).** RNF-06.2
+- [x] **T32. Poner el tope a los dos tiempos: `enteroEntre(1, 2147483647)` en `src/config.ts` (plan, Lógica 1).** RNF-06.2
   - Hecho cuando: `pruebas/unitarias/config.test.ts` acepta 2147483647 y rechaza 2147483648 en `M2_TIEMPO_BD_MS` y en `M2_TIEMPO_MODULOS_MS`, con el motivo «no es un entero entre 1 y 2147483647» y sin el valor; y los demás valores inválidos de los tiempos (0, negativos, decimales y texto) dan ese mismo motivo.
-- [ ] **T33. No registrar como error interno el corte del cliente al leer el cuerpo: `responderProblema` lo responde como 400 (plan, Lógica 6).** RNF-03.3, RNF-03.2
+- [x] **T33. No registrar como error interno el corte del cliente al leer el cuerpo: `responderProblema` lo responde como 400 (plan, Lógica 6).** RNF-03.3, RNF-03.2
   - Hecho cuando: `pruebas/http/errores-fastify.test.ts`, por un socket, comprueba que un cliente que corta a mitad del cuerpo y uno que manda un `chunked` mal formado no dejan ninguna línea de nivel `error` en el log, y que el del `chunked` sigue recibiendo el 400 en problem+json; y que un manejador que lanza un `ECONNRESET` con el cuerpo ya leído sigue dando 500 y deja su línea de error.
-- [ ] **T34. Pedir Node 24.2 o más nuevo: `engines.node` en `^24.2.0` (plan, Versiones a fijar).** RNF-01.1
+- [x] **T34. Pedir Node 24.2 o más nuevo: `engines.node` en `^24.2.0` (plan, Versiones a fijar).** RNF-01.1
   - Hecho cuando: `package.json` y `package-lock.json` declaran `"node": "^24.2.0"` en `engines`; `pruebas/unitarias/consistencia.test.ts` lo comprueba en los dos; y `npm ci`, `npm run build` y `npm test` pasan con Node 24.
-- [ ] **T35. No dejar registrar una ruta sin permisos declarados: `onRoute` en `registrarPermisos` y comodines del 405 públicas (plan, Lógica 4 y 8).** RNF-12.1, RNF-03.5
+- [x] **T35. No dejar registrar una ruta sin permisos declarados: `onRoute` en `registrarPermisos` y comodines del 405 públicas (plan, Lógica 4 y 8).** RNF-12.1, RNF-03.5
   - Hecho cuando: `pruebas/http/autenticacion.test.ts` comprueba que registrar a mano una ruta sin `config.permisos` falla con «La ruta <método> <url> no declara sus permisos», y que una con `config.permisos` se registra; y `pruebas/http/precedencia.test.ts` y `errores.test.ts` siguen dando 405 a un método que la ruta no tiene, con o sin token, y 404 a una ruta que no existe.

@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": "^24"
+    "node": "^24.2.0"
   },
   "scripts": {
     "contrato:tipos": "openapi-typescript contrato/openapi.yml -o src/generado/contrato.ts",
