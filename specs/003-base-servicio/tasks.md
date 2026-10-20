@@ -5,11 +5,11 @@ Spec: [spec.md](spec.md) · Plan: [plan.md](plan.md) · Issue: #3
 Tareas de 20-30 minutos, en orden de dependencia. Cada una empieza por sus pruebas en rojo y sigue el plan: el cómo está en la sección que nombra.
 
 Cómo se implementan (lo decidió el integrador el 2026-10-18):
-- Un PR de implementación por bloque, cada uno desde su rama (`impl/003-bloque-a`, `impl/003-bloque-b`, …). Cuando A esté en `main`, B, C y D pueden avanzar en paralelo; E va al final.
+- Un PR de implementación por bloque, cada uno desde su rama (`impl/003-bloque-a`, `impl/003-bloque-b`, …). Cuando A esté en `main`, B, C y D pueden avanzar en paralelo; E va al final. F, que sumó el cambio del 2026-10-20, va antes que C y D.
 - En los PR de A a D, la validación cubre solo los requisitos de las tareas del bloque, y la spec sigue «aprobada». La validación completa (Visión general de la guía, Estado «implementada» y commit `003/V`) va en el PR del bloque E.
-- T4, T6, T8, T12, T16, T18, T21 y T23 son delicadas (contrato, orden interno de Fastify, concurrencia y red) y van con el modelo más capaz: Opus en Claude Code. Las demás, con Sonnet.
+- T4, T6, T8, T12, T16, T18, T21, T23, T33 y T35 son delicadas (contrato, orden interno de Fastify, concurrencia y red) y van con el modelo más capaz: Opus en Claude Code. Las demás, con Sonnet.
 - Si dos bloques en paralelo chocan al integrar `main` (`guia.md`, `tasks.md` o `src/app.ts`), se conservan los cambios de los dos lados.
-- Si el contrato v1 (#1) se mergea antes del bloque E: `/health` pasa a registrarse desde el contrato, `npm run contrato:test` avisa que la prueba con Schemathesis llega con T29, y la diferencia del `X-Request-Id` (plan, Trampas verificadas) se resuelve antes de cerrar E.
+- Si el contrato v1 (#1) se mergea antes del bloque E: `/health` pasa a registrarse desde el contrato, `npm run contrato:test` avisa que la prueba con Schemathesis llega con T29, y, si el v1 final volviera a validar el `X-Request-Id` en la solicitud (plan, Trampas verificadas), se resuelve antes de cerrar E.
 
 ## Bloque A — Proyecto, contrato, errores y logs
 Depende de: nada. No necesita Docker.
@@ -78,7 +78,7 @@ Depende de: bloque A (del código, usa solo lo de T3).
   - Hecho cuando: `pruebas/modulos/cliente.test.ts` comprueba que un GET se reintenta una vez a los 200 ms ante un 5xx, una conexión rechazada, un corte o una respuesta que no es JSON; que un POST no se reintenta; que al final da 503 nombrando el módulo; y que, con los valores por defecto, todo termina en no más de 4,2 s.
 
 ## Bloque E — Contenedores, prueba de contrato, CI y README
-Depende de: bloques B y C. Su PR cierra la spec, así que va después de D.
+Depende de: bloques B y C. Su PR cierra la spec, así que va después de D y de F.
 
 - [ ] **T26. Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.2
   - Hecho cuando: `docker build -t m2-clientes:0.1.0 .` termina bien; `docker run --rm --entrypoint whoami m2-clientes:0.1.0` imprime `node`; y `pruebas/unitarias/consistencia.test.ts` comprueba que el `Dockerfile` usa imágenes con versión exacta, nunca `latest`, e instala con `npm ci`.
@@ -92,3 +92,15 @@ Depende de: bloques B y C. Su PR cierra la spec, así que va después de D.
   - Hecho cuando: `ci.yml` ya no tiene condiciones sobre `package.json` ni `docker-compose.yml`; los pasos de `build-test` y `contract-test`, corridos a mano en local y en el mismo orden, pasan, incluido el de parada (menos de 10 s y código 0); `gh api` muestra que la regla «Protección de main» sigue exigiendo los cuatro checks; y la trampa de AGENTS.md sobre el proyecto y el compose que faltaban ya no está.
 - [ ] **T31. README del servicio con diagrama (plan, Configuración, contenedores y CI).** RNF-20.1
   - Hecho cuando: el README explica qué hace el servicio y con qué stack, cómo levantarlo, cómo correr las pruebas, cómo generar un token y qué variables usa, con la nota sobre `M2_URL_BD`, `POSTGRES_*` y el volumen; incluye un diagrama Mermaid del servicio, su base y M1, M5, M6 y M9; y cada comando del README se probó tal cual está escrito.
+
+## Bloque F — Cambio del 2026-10-20: tope de los tiempos, corte del cliente, versión de Node y rutas sin permisos
+Depende de: bloques A y B. Va antes que C y D: T32 pone el tope de los tiempos que usan T19 y T24, y T33 a T35 cambian código de A y B.
+
+- [ ] **T32. Poner el tope a los dos tiempos: `enteroEntre(1, 2147483647)` en `src/config.ts` (plan, Lógica 1).** RNF-06.2
+  - Hecho cuando: `pruebas/unitarias/config.test.ts` acepta 2147483647 y rechaza 2147483648 en `M2_TIEMPO_BD_MS` y en `M2_TIEMPO_MODULOS_MS`, con el motivo «no es un entero entre 1 y 2147483647» y sin el valor; y los demás valores inválidos de los tiempos (0, negativos, decimales y texto) dan ese mismo motivo.
+- [ ] **T33. No registrar como error interno el corte del cliente al leer el cuerpo: `responderProblema` lo responde como 400 (plan, Lógica 6).** RNF-03.3, RNF-03.2
+  - Hecho cuando: `pruebas/http/errores-fastify.test.ts`, por un socket, comprueba que un cliente que corta a mitad del cuerpo y uno que manda un `chunked` mal formado no dejan ninguna línea de nivel `error` en el log, y que el del `chunked` sigue recibiendo el 400 en problem+json; y que un manejador que lanza un `ECONNRESET` con el cuerpo ya leído sigue dando 500 y deja su línea de error.
+- [ ] **T34. Pedir Node 24.2 o más nuevo: `engines.node` en `^24.2.0` (plan, Versiones a fijar).** RNF-01.1
+  - Hecho cuando: `package.json` y `package-lock.json` declaran `"node": "^24.2.0"` en `engines`; `pruebas/unitarias/consistencia.test.ts` lo comprueba en los dos; y `npm ci`, `npm run build` y `npm test` pasan con Node 24.
+- [ ] **T35. No dejar registrar una ruta sin permisos declarados: `onRoute` en `registrarPermisos` y comodines del 405 públicas (plan, Lógica 4 y 8).** RNF-12.1, RNF-03.5
+  - Hecho cuando: `pruebas/http/autenticacion.test.ts` comprueba que registrar a mano una ruta sin `config.permisos` falla con «La ruta <método> <url> no declara sus permisos», y que una con `config.permisos` se registra; y `pruebas/http/precedencia.test.ts` y `errores.test.ts` siguen dando 405 a un método que la ruta no tiene, con o sin token, y 404 a una ruta que no existe.
