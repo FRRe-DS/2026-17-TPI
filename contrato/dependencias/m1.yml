@@ -1,0 +1,162 @@
+# Contrato de dependencia: M1 Identidad y Acceso
+#
+# Lo que M2 Clientes necesita de M1, como propuesta para el consorcio.
+# Mientras M1 no exista como servicio, M2 valida tokens con una clave
+# simétrica por entorno (HS256) y los tests generan sus propios tokens.
+#
+# Origen: propuesta del Grupo 17 (M2 Clientes), issue #9.
+# Estado: borrador, pendiente de acuerdo con el consorcio.
+
+openapi: 3.1.0
+info:
+  title: M1 Identidad y Acceso — lo que necesita M2
+  description: |
+    Contrato desde el consumidor: las operaciones y el formato de token que
+    M2 Clientes necesita de M1 Identidad y Acceso. Es una propuesta para el
+    consorcio (issue #9), no un contrato publicado.
+  version: 0.1.0-borrador
+
+servers:
+  - url: /
+    description: URL relativa; la base se configura por entorno.
+
+paths:
+  /.well-known/jwks.json:
+    get:
+      operationId: obtenerClaves
+      summary: Claves públicas de firma de tokens (JWKS)
+      description: |
+        Devuelve el JSON Web Key Set con las claves públicas que los módulos
+        usan para validar la firma de los tokens JWT. Mientras M1 use HS256
+        con clave simétrica compartida, este endpoint no es necesario: cada
+        módulo conoce la clave por entorno. Se incluye como propuesta para
+        cuando M1 migre a firma asimétrica (RS256 o ES256).
+      security: []
+      responses:
+        '200':
+          description: JWKS con las claves vigentes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JWKS'
+
+components:
+  securitySchemes:
+    bearerJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token JWT firmado por M1 con HS256 (TP1) o con clave asimétrica
+        (cuando M1 exista). Claims obligatorios: sub, iss, aud, iat, exp y
+        roles (lista de textos). Algoritmo aceptado: solo HS256 en TP1.
+
+  schemas:
+    JWKS:
+      type: object
+      description: JSON Web Key Set (RFC 7517).
+      required:
+        - keys
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/JWK'
+
+    JWK:
+      type: object
+      description: Una clave pública del JWKS (RFC 7517).
+      required:
+        - kty
+        - kid
+        - use
+        - alg
+      properties:
+        kty:
+          type: string
+          description: Tipo de clave (por ejemplo, RSA o EC).
+          examples:
+            - RSA
+        kid:
+          type: string
+          description: Identificador de la clave, para elegir cuál valida cada token.
+          examples:
+            - m1-2026-001
+        use:
+          type: string
+          description: Uso de la clave.
+          enum:
+            - sig
+        alg:
+          type: string
+          description: Algoritmo de firma.
+          examples:
+            - RS256
+        n:
+          type: string
+          description: Módulo RSA en Base64url (solo si kty es RSA).
+        e:
+          type: string
+          description: Exponente RSA en Base64url (solo si kty es RSA).
+          examples:
+            - AQAB
+
+    TokenPayload:
+      type: object
+      description: |
+        Estructura del payload del JWT que emite M1. No es un esquema que
+        se valide en runtime (el token se valida por firma), sino la
+        documentación del contrato entre M1 y los demás módulos.
+      required:
+        - sub
+        - iss
+        - aud
+        - iat
+        - exp
+        - roles
+      properties:
+        sub:
+          type: string
+          minLength: 1
+          description: |
+            Identificador único de la persona en M1. En M2, se usa como
+            clienteId o se mapea a él.
+          examples:
+            - 550e8400-e29b-41d4-a716-446655440000
+        iss:
+          type: string
+          description: Emisor del token. Cada módulo lo valida contra su configuración.
+          examples:
+            - m1-identidad
+        aud:
+          type: string
+          description: Audiencia del token.
+          examples:
+            - plataforma-movilidad
+        iat:
+          type: integer
+          description: Momento de emisión (Unix timestamp, segundos).
+        exp:
+          type: integer
+          description: Momento de expiración (Unix timestamp, segundos).
+        roles:
+          type: array
+          items:
+            type: string
+          description: |
+            Roles de la persona. Los que reconoce M2 son CLIENTE, CONDUCTOR,
+            OPERADOR y SERVICIO; los demás se ignoran. Cada módulo puede
+            reconocer otros.
+          examples:
+            - - CLIENTE
+            - - CONDUCTOR
+            - - OPERADOR
+            - - SERVICIO
+        nbf:
+          type: integer
+          description: |
+            No válido antes de (Unix timestamp, segundos). Opcional; si está
+            presente, se valida con 30 s de tolerancia de reloj.
+
+security:
+  - bearerJWT: []
