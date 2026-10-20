@@ -19,7 +19,7 @@ const aviso = (donde, msg) => avisos.push(`${donde}: ${msg}`);
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
-const leer = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null);
+const leer = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n') : null);
 const git = (cmd) => execSync(`git ${cmd}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
 
 function secciones(texto) {
