@@ -5,10 +5,13 @@ import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
 import { CONFIG, crearApp } from '../ayudas/app.js';
 import { capturarLogs } from '../ayudas/logs.js';
 import { escuchar, leerRespuesta, porSocket } from '../ayudas/socket.js';
+import { AUTORIZADO } from '../ayudas/tokens.js';
 
 const ENCABEZADO = 'x-request-id';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const COMO_JSON = { 'content-type': 'application/json' };
+// Para llamar a una operación protegida: estas pruebas no son de autenticación (eso es autenticacion.test.ts).
+const COMO_JSON_AUTORIZADO = { ...COMO_JSON, ...AUTORIZADO };
 
 const bien: Manejador = async () => ({ ok: true });
 const falla: Manejador = async () => {
@@ -27,12 +30,12 @@ const PEDIDOS: Pedido[] = [
   {
     caso: '400: un campo no cumple el contrato',
     estado: 400,
-    solicitud: { method: 'POST', url: '/pruebas/clientes', headers: COMO_JSON, payload: { nombre: 'Ana' } },
+    solicitud: { method: 'POST', url: '/pruebas/clientes', headers: COMO_JSON_AUTORIZADO, payload: { nombre: 'Ana' } },
   },
   {
     caso: '400: el JSON está roto',
     estado: 400,
-    solicitud: { method: 'POST', url: '/pruebas/clientes', headers: COMO_JSON, payload: '{"nombre": ' },
+    solicitud: { method: 'POST', url: '/pruebas/clientes', headers: COMO_JSON_AUTORIZADO, payload: '{"nombre": ' },
   },
   { caso: '404: la ruta no existe', estado: 404, solicitud: { method: 'GET', url: '/no/existe' } },
   { caso: '405: la ruta no tiene el método', estado: 405, solicitud: { method: 'DELETE', url: '/pruebas/publica' } },
@@ -42,14 +45,19 @@ const PEDIDOS: Pedido[] = [
     solicitud: {
       method: 'POST',
       url: '/pruebas/clientes',
-      headers: COMO_JSON,
+      headers: COMO_JSON_AUTORIZADO,
       payload: `{"a":"${'a'.repeat(1024 * 1024)}"}`,
     },
   },
   {
     caso: '415: el cuerpo no es JSON',
     estado: 415,
-    solicitud: { method: 'POST', url: '/pruebas/clientes', headers: { 'content-type': 'text/plain' }, payload: 'hola' },
+    solicitud: {
+      method: 'POST',
+      url: '/pruebas/clientes',
+      headers: { 'content-type': 'text/plain', ...AUTORIZADO },
+      payload: 'hola',
+    },
   },
   { caso: '500: un manejador falla', estado: 500, solicitud: { method: 'GET', url: '/pruebas/falla' } },
 ];
@@ -218,7 +226,9 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
   const URL_BD = `postgres://m2:${CONTRASENA_BD}@bd:5432/m2`;
   const CLAVE = CONFIG.claveTokens;
   const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYmMifQ.firma-del-token';
-  const SECRETOS = [CLAVE, CONTRASENA_BD, TOKEN];
+  // El token válido de AUTORIZADO, sin el esquema: lo llevan las solicitudes a operaciones protegidas, y tampoco va al log.
+  const TOKEN_AUTORIZADO = AUTORIZADO.authorization.replace(/^Bearer /, '');
+  const SECRETOS = [CLAVE, CONTRASENA_BD, TOKEN, TOKEN_AUTORIZADO];
   const CON_TOKEN = { authorization: `Bearer ${TOKEN}` };
   const CLIENTE = { nombre: 'Ana', fechaNacimiento: '1990-05-17' };
 
@@ -360,8 +370,8 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
     expect(logs.texto()).not.toContain('dXN1YXJpbzpjbGF2ZQ==');
   });
 
-  const POR_CLIENTE = { ...COMO_JSON, ...CON_TOKEN };
-  const TEXTO_PLANO = { 'content-type': 'text/plain', ...CON_TOKEN };
+  const POR_CLIENTE = COMO_JSON_AUTORIZADO;
+  const TEXTO_PLANO = { 'content-type': 'text/plain', ...AUTORIZADO };
   it.each([
     ['404: la ruta no existe', 404, { method: 'GET', url: '/no/existe' }],
     ['405: la ruta no tiene el método', 405, { method: 'DELETE', url: '/pruebas/publica' }],
@@ -389,7 +399,7 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
     await app.inject({
       method: 'POST',
       url: '/pruebas/clientes?dni=12345678&token=secreto-en-la-query',
-      headers: { ...COMO_JSON, ...CON_TOKEN },
+      headers: COMO_JSON_AUTORIZADO,
       payload: CLIENTE,
     });
     await app.inject({ method: 'GET', url: '/pruebas/publica?dni=12345678', headers: CON_TOKEN });
@@ -593,7 +603,7 @@ describe('construirApp: una línea por solicitud en el log (RNF-14.5, RNF-14.6, 
     const { app, logs } = crear({ probarParametros: bien });
     const ruta = `/pruebas/clientes/${CLIENTE_ID}/direcciones/${DIRECCION_ID}`;
 
-    await app.inject({ method: 'GET', url: `${ruta}?pagina=2` });
+    await app.inject({ method: 'GET', url: `${ruta}?pagina=2`, headers: AUTORIZADO });
 
     expect(deLaSolicitud(logs)).toMatchObject([{ metodo: 'GET', ruta }]);
   });

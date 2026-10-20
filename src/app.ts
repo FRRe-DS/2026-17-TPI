@@ -1,5 +1,6 @@
 import Fastify, { LogController } from 'fastify';
 import type { Writable } from 'node:stream';
+import { registrarPermisos } from './auth/permisos.js';
 import type { Config } from './config.js';
 import type { Contrato } from './contrato/cargar.js';
 import { prepararRutas405, registrarOperaciones, type Manejadores } from './contrato/operaciones.js';
@@ -17,7 +18,8 @@ const LIMITE_CUERPO = 1024 * 1024;
 
 // La app de Fastify armada desde el contrato: valida con sus esquemas, responde los errores con aProblema (también los que
 // Fastify y Node contestan antes de entrar a una ruta) y expone solo las operaciones que tienen manejador; a una ruta que no
-// existe responde 404, y a un método que la ruta no tiene, 405.
+// existe responde 404, y a un método que la ruta no tiene, 405. Exige el token y el rol que pide la security de cada
+// operación: 401 y 403.
 // Cada solicitud lleva un identificador de correlación y cada respuesta lo devuelve; cada solicitud que termina deja una
 // línea en el log, y un error no previsto, su detalle.
 // No escucha en ningún puerto; eso lo hace el arranque.
@@ -67,6 +69,8 @@ export function construirApp({ config, contrato, manejadores, flujoLog }: Opcion
   app.addHook('onRequest', async (request) => {
     if (request.is404) throw new NoEncontrado();
   });
+  // Después del 404 y antes de leer el cuerpo: el 401 y el 403 van antes que cualquier error del cuerpo (RNF-03.5).
+  registrarPermisos(app, config);
   const registrarRutas405 = prepararRutas405(app);
   registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);
   // Al final, con todas las rutas ya registradas.

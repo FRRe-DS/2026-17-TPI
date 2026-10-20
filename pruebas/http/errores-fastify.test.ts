@@ -8,6 +8,7 @@ import type { Manejador } from '../../src/contrato/operaciones.js';
 import { crearApp } from '../ayudas/app.js';
 import { capturarLogs } from '../ayudas/logs.js';
 import { escuchar, leerRespuesta, porSocket } from '../ayudas/socket.js';
+import { AUTORIZADO } from '../ayudas/tokens.js';
 
 const ENCABEZADO = 'x-request-id';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -68,7 +69,7 @@ describe('construirApp: la URL mal codificada y el parámetro de ruta largo, 400
   it('un parámetro de 100 caracteres no es largo: sigue a la validación del contrato', async () => {
     const url = `/pruebas/clientes/${'a'.repeat(100)}/direcciones/${DIRECCION_ID}`;
 
-    const respuesta = await crearApp(MANEJADORES).inject({ method: 'GET', url });
+    const respuesta = await crearApp(MANEJADORES).inject({ method: 'GET', url, headers: AUTORIZADO });
 
     expect(respuesta.statusCode).toBe(400);
     expect(respuesta.json()).toEqual({
