@@ -486,3 +486,29 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - El mínimo sigue siendo 1 ms: la spec no pide otro y no se agregó.
   - El tope está escrito en `src/config.ts` y en `config.test.ts`, además de la spec y el plan: si cambia, cambian los cuatro. También el README (T31) y `ejemplo.env` (T26) tienen que decir «entero entre 1 y 2147483647» para los dos tiempos.
   - Una variable de tiempo nueva (por ejemplo, un plazo propio de la parada) tiene que usar `tiempoEnMs`; con otro `enteroEntre` vuelve el problema de los temporizadores.
+
+### T33 — No registrar como error interno el corte del cliente al leer el cuerpo · commit `003/T33`
+- Qué cambió:
+  - [src/errores-fastify.ts](../../src/errores-fastify.ts): `responderProblema` pregunta primero a `cortoElCliente(error, request)` si el error es el corte del cliente, es decir, un `ECONNRESET` con la solicitud cortada antes de terminar de leerse (`request.raw.readableAborted`). Si lo es, responde `SolicitudIlegible` (400, «La solicitud no se pudo leer») y no lo registra como error interno. Cualquier otro error sigue igual.
+- Por qué así:
+  - Cuando el cliente corta la conexión, cierra su lado o manda un `chunked` mal formado mientras la app lee el cuerpo, Node destruye la solicitud con `ECONNRESET` («aborted») y Fastify se lo pasa al manejador de errores. Hasta T33 eso daba 500 y una línea de nivel error, «Error interno»: un problema del cliente aparecía como una falla del servicio (RNF-03.3; lo decidió el responsable el 2026-10-19, en la spec).
+  - Se reconoce por la solicitud y no solo por el código (plan, Lógica 6 y Decisiones): un `ECONNRESET` de la base o de otro módulo llega con la solicitud ya leída y sigue siendo un 500 que queda en el log. Descartado: convertir todo `ECONNRESET` en 400, que escondería esos errores.
+  - `readableAborted` y no `destroyed`: una solicitud que se terminó de leer también figura como destruida, así que con `destroyed` el `ECONNRESET` de un manejador quedaba escondido (lo mostraron las mutaciones). `aborted` dice lo mismo que `readableAborted` en una solicitud HTTP, pero está deprecado desde Node 17.
+  - El 400 casi nunca sale, porque la conexión ya se cerró. Si sigue abierta (el cliente cerró su lado o mandó el `chunked` mal formado), Node avisa antes a `clientErrorHandler` (T12), que responde el 400 sin `instance` y con un id nuevo, y cierra el socket: ese es el 400 que recibe el cliente.
+- Cómo se conecta:
+  - `responderProblema` es el manejador de errores de la app (`setErrorHandler` en `construirApp`) y también lo llama `frameworkErrors` (T12). Esas solicitudes no están cortadas, así que no cambian.
+  - Una solicitud cortada no deja la línea «Solicitud terminada»: la respuesta no termina de enviarse y Fastify no llama a `onResponse` (Lógica 11). Las que responde `clientErrorHandler` dejan la suya, sin método ni ruta, como en T12.
+- Tests:
+  - [pruebas/http/errores-fastify.test.ts](../../pruebas/http/errores-fastify.test.ts), 6 pruebas nuevas por un socket, contra `probarAlta` con un token válido (54 en el archivo; 1482 en total):
+    - el cliente corta con un RST, cierra su lado o manda un `chunked` mal formado a mitad del cuerpo: ninguna línea de nivel error, y la app intentó responder el 400 de una solicitud que no se pudo leer, con `instance`. En los dos casos con la conexión abierta, el cliente recibe el 400 en problem+json (3);
+    - un manejador que lanza `ECONNRESET` con el cuerpo ya leído da 500 en problem+json y deja su línea de error con el id de la respuesta (1);
+    - con el cliente ya ido, otro error antes de leer el cuerpo (un hook onRequest que falla) y un `ECONNRESET` con el cuerpo ya leído (un preHandler que lo lanza) siguen dando 500 y dejan su línea (2).
+  - Las pruebas esperan a que la app esté leyendo el cuerpo (la solicitud fluye: `readableFlowing`) y recién entonces cortan. Lo que la app intentó responder se toma con un hook onSend, que corre aunque la conexión ya esté cerrada.
+  - Rojo primero: sin el cambio fallaban las 3 del corte, que dejaban la línea «Error interno» (con `ECONNRESET` y «aborted») e intentaban un 500. Las 3 del 500 pasaban antes y pasan ahora: fijan lo que no tiene que cambiar.
+  - 25 corridas seguidas del bloque nuevo, sin fallas.
+  - Ya en verde, se rompió el código a propósito de 6 maneras (corre este archivo) y se detectaron 5: todo `ECONNRESET` tomado como corte (2 fallan), todo error con la solicitud cortada tomado como corte (1), `destroyed` en vez de `readableAborted` (2), el corte en 400 pero registrado como error (3) y el corte sin registrar pero en 500 (3). Viva: `aborted` en vez de `readableAborted`, que es equivalente.
+  - Con Node v24.15.0: `npm test` (1482), `npm run lint`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - Si el cliente corta antes de que la app empiece a leer el cuerpo (por ejemplo, mientras se verifica el token), Node no le avisa el error a nadie. Fastify después espera un cuerpo que no llega: no responde, no pasa por el manejador de errores y no deja línea. Se comprobó con un hook que demora la lectura. No es un error del servicio y T33 no lo cambia; por eso las pruebas esperan a que la app esté leyendo antes de cortar.
+  - El 400 de `responderProblema` lleva `instance` y el id de la solicitud, a diferencia del de `clientErrorHandler`. Como casi nunca sale, quedó como cualquier otra respuesta del manejador, que es lo que dice el plan.
+  - Las pruebas miran la app desde afuera con un oyente extra de `request` en el servidor, `readableFlowing` y hooks onSend, onRequest y preHandler propios. Si Fastify cambia cómo lee el cuerpo, puede que haya que ajustarlas.

@@ -1,6 +1,6 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { once } from 'node:events';
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
 import net, { type Socket } from 'node:net';
 import { describe, expect, it, vi, type MockInstance } from 'vitest';
 import type { Config } from '../../src/config.js';
@@ -361,6 +361,172 @@ describe('construirApp: lo que no se puede leer como HTTP, por un socket (RNF-03
     expect(delServidor).toHaveLength(1);
     expect(delServidor[0]?.escrituras).not.toHaveBeenCalled();
     expect(deLaSolicitud(logs)).toEqual([]);
+  });
+});
+
+// Un POST a probarAlta con un token válido y los encabezados que se pasen, más la línea en blanco que los cierra: el
+// cuerpo, entero o no, va después.
+const altaCon = (...encabezados: string[]) =>
+  [
+    'POST /pruebas/clientes HTTP/1.1',
+    'Host: localhost',
+    `Authorization: ${AUTORIZADO.authorization}`,
+    'Content-Type: application/json',
+    ...encabezados,
+    '',
+    '',
+  ].join('\r\n');
+
+const deNivelError = (logs: Logs) => logs.lineas().filter((linea) => linea.level >= 50);
+
+// Manda `inicio` (los encabezados y el principio del cuerpo), espera a que la app esté leyendo el cuerpo y recién entonces
+// corta con `cortar`. Si el corte llegara antes, Fastify todavía no escucharía la solicitud y Node no le avisaría a nadie:
+// la prueba pasaría sin llegar al manejador de errores. Devuelve lo que llegó por el socket y lo que la app intentó
+// responder, que pasa por onSend aunque la conexión ya se haya cerrado; para entonces el manejador de errores ya corrió.
+async function cortarMientrasLee(app: FastifyInstance, inicio: string, cortar: (cliente: Socket) => void) {
+  const solicitudes: IncomingMessage[] = [];
+  const intentadas: { estado: number; cuerpo: unknown }[] = [];
+  app.server.on('request', (solicitud: IncomingMessage) => solicitudes.push(solicitud));
+  app.addHook('onSend', async (_request, reply, payload) => {
+    intentadas.push({ estado: reply.statusCode, cuerpo: JSON.parse(String(payload)) });
+  });
+  const puerto = await escuchar(app);
+  const cliente = net.connect(puerto, '127.0.0.1');
+  const partes: Buffer[] = [];
+  cliente.on('data', (parte: Buffer) => partes.push(parte));
+  cliente.on('error', () => {});
+  const cerrado = new Promise((resolve) => cliente.on('close', resolve));
+  await once(cliente, 'connect');
+  cliente.write(inicio);
+  // Fastify lee el cuerpo con un oyente de 'data': recién entonces la solicitud fluye.
+  await vi.waitFor(() => expect(solicitudes[0]?.readableFlowing).toBe(true));
+  cortar(cliente);
+  await cerrado;
+  await vi.waitFor(() => expect(intentadas).toHaveLength(1));
+  expect(solicitudes).toHaveLength(1);
+  return { recibido: Buffer.concat(partes).toString('latin1'), intentada: intentadas[0] };
+}
+
+// Si el cliente corta mientras se lee el cuerpo, Node corta la solicitud con ECONNRESET y Fastify se lo pasa al manejador de
+// errores. Es una solicitud que no se pudo leer, no un error del servicio: un 400 que no se registra como error interno
+// (RNF-03.3). Casi nunca sale, porque la conexión ya se cerró; si sigue abierta, el 400 que llega es el del manejador de
+// errores de cliente, como a cualquier HTTP que no se puede leer.
+describe('construirApp: el cliente corta mientras se lee el cuerpo, por un socket (RNF-03.2, RNF-03.3)', () => {
+  // Content-Length de 50 y solo los primeros bytes del cuerpo.
+  const A_MEDIAS = `${altaCon('Content-Length: 50')}{"nombre":`;
+  const CORTE = { estado: 400, cuerpo: { ...NO_SE_PUDO_LEER, instance: '/pruebas/clientes' } };
+
+  it('si corta la conexión (RST), la app responde 400 y no queda ninguna línea de error', async () => {
+    const { app, logs } = crear();
+
+    const { recibido, intentada } = await cortarMientrasLee(app, A_MEDIAS, (cliente) => cliente.resetAndDestroy());
+
+    expect(recibido).toBe('');
+    expect(intentada).toEqual(CORTE);
+    expect(deNivelError(logs)).toEqual([]);
+  });
+
+  it('si cierra su lado, recibe el 400 de una solicitud que no se pudo leer y no queda ninguna línea de error', async () => {
+    const { app, logs } = crear();
+
+    const { recibido, intentada } = await cortarMientrasLee(app, A_MEDIAS, (cliente) => cliente.end());
+
+    const respuesta = leerRespuesta(recibido);
+    expect(respuesta.estado).toBe('HTTP/1.1 400 Bad Request');
+    expect(respuesta.encabezados['content-type']).toMatch(PROBLEMA_JSON);
+    expect(cuerpoDe(respuesta.resto)).toEqual(NO_SE_PUDO_LEER);
+    expect(intentada).toEqual(CORTE);
+    expect(deNivelError(logs)).toEqual([]);
+  });
+
+  it('si manda un chunked mal formado, recibe el 400 en problem+json y no queda ninguna línea de error', async () => {
+    const { app, logs } = crear();
+    // Un primer trozo bien formado (0x0a = 10 bytes), para que la app empiece a leer, y después un tamaño que no es
+    // hexadecimal.
+    const inicio = `${altaCon('Transfer-Encoding: chunked')}a\r\n{"nombre":\r\n`;
+
+    const { recibido, intentada } = await cortarMientrasLee(app, inicio, (cliente) => cliente.write('zz\r\n'));
+
+    const respuesta = leerRespuesta(recibido);
+    expect(respuesta.estado).toBe('HTTP/1.1 400 Bad Request');
+    expect(respuesta.encabezados['content-type']).toMatch(PROBLEMA_JSON);
+    expect(cuerpoDe(respuesta.resto)).toEqual(NO_SE_PUDO_LEER);
+    expect(intentada).toEqual(CORTE);
+    expect(deNivelError(logs)).toEqual([]);
+  });
+
+  // Un ECONNRESET de la base o de otro módulo llega con la solicitud ya leída: es un error del servicio.
+  it('un manejador que lanza ECONNRESET con el cuerpo ya leído sigue dando 500 y deja su línea de error', async () => {
+    const logs = capturarLogs();
+    const reset: Manejador = async () => {
+      throw Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+    };
+    const puerto = await escuchar(crearApp({ ...MANEJADORES, probarAlta: reset }, { flujoLog: logs.flujo }));
+    const cuerpo = JSON.stringify({ nombre: 'Ana', fechaNacimiento: '1990-05-01' });
+
+    const respuesta = leerRespuesta(
+      await porSocket(puerto, `${altaCon(`Content-Length: ${cuerpo.length}`, 'Connection: close')}${cuerpo}`),
+    );
+
+    expect(respuesta.estado).toBe('HTTP/1.1 500 Internal Server Error');
+    expect(respuesta.encabezados['content-type']).toMatch(PROBLEMA_JSON);
+    expect(cuerpoDe(respuesta.resto)).toEqual({
+      type: 'about:blank',
+      title: 'Error interno',
+      status: 500,
+      detail: 'Ocurrió un error interno',
+      instance: '/pruebas/clientes',
+    });
+    expect(deNivelError(logs)).toMatchObject([
+      { msg: 'Error interno', idCorrelacion: respuesta.encabezados[ENCABEZADO], err: { codigo: 'ECONNRESET' } },
+    ]);
+  });
+
+  // Lo que se reconoce es el ECONNRESET de una solicitud que se cortó antes de terminar de leerse. Cualquier otro error que
+  // llega cuando el cliente ya se fue sigue siendo un error del servicio: un hook en `etapa` espera a que el cliente corte y
+  // recién entonces lanza `error`.
+  async function fallarDespuesDelCorte(etapa: 'onRequest' | 'preHandler', error: Error, pedido: string) {
+    const { app, logs } = crear();
+    const intentadas: number[] = [];
+    let esperando = false;
+    const esperarYFallar = async (request: FastifyRequest) => {
+      const cerrada = new Promise((resolve) => request.raw.on('close', resolve));
+      esperando = true;
+      await cerrada;
+      throw error;
+    };
+    if (etapa === 'onRequest') app.addHook('onRequest', esperarYFallar);
+    else app.addHook('preHandler', esperarYFallar);
+    app.addHook('onSend', async (_request, reply) => {
+      intentadas.push(reply.statusCode);
+    });
+    const puerto = await escuchar(app);
+    const cliente = net.connect(puerto, '127.0.0.1');
+    cliente.on('error', () => {});
+    await once(cliente, 'connect');
+    cliente.write(pedido);
+    await vi.waitFor(() => expect(esperando).toBe(true));
+
+    cliente.resetAndDestroy();
+
+    await vi.waitFor(() => expect(intentadas).toEqual([500]));
+    return deNivelError(logs);
+  }
+
+  it('otro error que llega con la solicitud ya cortada, antes de leer el cuerpo, sigue dando 500 y deja su línea', async () => {
+    const errores = await fallarDespuesDelCorte('onRequest', new Error('falla después del corte'), A_MEDIAS);
+
+    expect(errores).toMatchObject([{ msg: 'Error interno', err: { mensaje: 'falla después del corte' } }]);
+  });
+
+  // Es el caso de la base que se corta mientras el cliente ya se fue: la solicitud está destruida, pero se terminó de leer.
+  it('un ECONNRESET que llega con el cuerpo ya leído, aunque el cliente se haya ido, sigue dando 500 y deja su línea', async () => {
+    const cuerpo = JSON.stringify({ nombre: 'Ana', fechaNacimiento: '1990-05-01' });
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+    const errores = await fallarDespuesDelCorte('preHandler', reset, `${altaCon(`Content-Length: ${cuerpo.length}`)}${cuerpo}`);
+
+    expect(errores).toMatchObject([{ msg: 'Error interno', err: { codigo: 'ECONNRESET' } }]);
   });
 });
 
