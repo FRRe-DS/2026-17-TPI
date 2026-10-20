@@ -9,8 +9,9 @@ info:
     publicado en el repositorio de la cátedra.
 
     Convenciones:
-    - Autenticación: `Authorization: Bearer <JWT>` emitido por M1. El `sub` del
-      token es el `clienteId`. Los roles salen del token (CLIENTE, OPERADOR,
+    - Autenticación: `Authorization: Bearer <JWT>` emitido por M1. En los
+      tokens de CLIENTE el `sub` es el `clienteId`; en los de SERVICIO, el `sub`
+      nombra al módulo que consulta (no es un `clienteId`). Los roles salen del token (CLIENTE, OPERADOR,
       SERVICIO) y cada operación declara los que admite en `security`, como
       roles de OpenAPI 3.1 (`bearerAuth: [CLIENTE, OPERADOR]`). `GET /health`
       no exige token.
@@ -849,9 +850,10 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        Token emitido por M1. `sub` = `clienteId`; los roles (CLIENTE,
-        OPERADOR, SERVICIO) van en el token y cada operación declara en
-        `security` los que admite.
+        Token emitido por M1. En los tokens de CLIENTE, `sub` = `clienteId`; en
+        los de SERVICIO, `sub` nombra al módulo que consulta. Los roles
+        (CLIENTE, OPERADOR, SERVICIO) van en el token y cada operación declara
+        en `security` los que admite.
 
   parameters:
     XRequestId:
@@ -1080,22 +1082,11 @@ components:
         instance:
           type: string
           format: uri-reference
-        errores:
-          type: array
-          description: Detalle por campo cuando falla la validación (400).
-          items:
-            type: object
-            required: [campo, mensaje]
-            properties:
-              campo:
-                type: string
-              mensaje:
-                type: string
 
     ProblemaGenerico:
       description: |
         Error genérico; el `title` es la frase del código HTTP en español:
-        `Solicitud inválida` (400), `No autenticado` (401), `Prohibido` (403),
+        `Solicitud inválida` (400), `No autenticado` (401), `Sin permiso` (403),
         `No encontrado` (404), `Método no permitido` (405), `Cuerpo demasiado
         grande` (413), `Tipo de contenido no soportado` (415), `Error interno`
         (500) y `Servicio no disponible` (503).
@@ -1279,10 +1270,6 @@ components:
         creadoEn:
           type: string
           format: date-time
-        usadoEn:
-          type: string
-          format: date-time
-          description: Último uso como origen o destino.
 
     PaginaDirecciones:
       allOf:
