@@ -472,7 +472,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Reusa `enteroEntre`, la regla de los puertos y de los reintentos: el motivo sale de los dos números, como en la tabla de Lógica 1, sin escribir un texto aparte.
   - La regla tiene nombre y se usa en los dos tiempos, en vez de repetir `enteroEntre(1, 2147483647)` en cada línea: el tope y el motivo de su existencia quedan escritos una sola vez.
 - Cómo se conecta:
-  - Cambia solo `cargarConfig` (T2). T19 (la base) y T24 (el cliente de módulos) son las primeras tareas que leen `tiempoBdMs` y `tiempoModulosMs`, y ya reciben un valor que los temporizadores de Node aguantan; por eso el bloque F va antes que C y D.
+  - Cambia solo `cargarConfig` (T2). `tiempoBdMs` se lee desde T17 (el tiempo de conexión de `migrar`) y `tiempoModulosMs`, desde T24 (el cliente de módulos): ya reciben un valor que los temporizadores de Node aguantan, y por eso el bloque F va antes que C y D.
   - Cierra lo que T2 dejó anotado en «Para mirar con atención»: un tiempo enorme era válido y rompía sin avisar.
 - Tests:
   - [pruebas/unitarias/config.test.ts](../../pruebas/unitarias/config.test.ts), 16 pruebas nuevas (88 en el archivo; 1476 en total):
@@ -484,7 +484,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Con Node v24.15.0: `npm test` (1476), `npm run lint`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` pasan.
 - Para mirar con atención:
   - El mínimo sigue siendo 1 ms: la spec no pide otro y no se agregó.
-  - El tope está escrito en `src/config.ts` y en `config.test.ts`, además de la spec y el plan: si cambia, cambian los cuatro. También el README (T31) y `ejemplo.env` (T26) tienen que decir «entero entre 1 y 2147483647» para los dos tiempos.
+  - El tope está escrito en `src/config.ts` y en `config.test.ts`, además de la spec y el plan: si cambia, cambian los cuatro. También el README (T31) y `ejemplo.env` (T27) tienen que decir «entero entre 1 y 2147483647» para los dos tiempos.
   - Una variable de tiempo nueva (por ejemplo, un plazo propio de la parada) tiene que usar `tiempoEnMs`; con otro `enteroEntre` vuelve el problema de los temporizadores.
 
 ### T33 — No registrar como error interno el corte del cliente al leer el cuerpo · commit `003/T33`
