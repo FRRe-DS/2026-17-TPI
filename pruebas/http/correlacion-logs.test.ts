@@ -226,7 +226,9 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
   const URL_BD = `postgres://m2:${CONTRASENA_BD}@bd:5432/m2`;
   const CLAVE = CONFIG.claveTokens;
   const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYmMifQ.firma-del-token';
-  const SECRETOS = [CLAVE, CONTRASENA_BD, TOKEN];
+  // El token válido de AUTORIZADO, sin el esquema: lo llevan las solicitudes a operaciones protegidas, y tampoco va al log.
+  const TOKEN_AUTORIZADO = AUTORIZADO.authorization.replace(/^Bearer /, '');
+  const SECRETOS = [CLAVE, CONTRASENA_BD, TOKEN, TOKEN_AUTORIZADO];
   const CON_TOKEN = { authorization: `Bearer ${TOKEN}` };
   const CLIENTE = { nombre: 'Ana', fechaNacimiento: '1990-05-17' };
 
