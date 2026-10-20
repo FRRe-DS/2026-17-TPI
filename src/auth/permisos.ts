@@ -24,7 +24,8 @@ export function autorizar(rolesDelToken: readonly string[], rolesDeLaOperacion: 
 // (`registrarOperaciones`), y deja en `request.identidad` quién llama (RNF-12.1, RNF-12.3, RNF-12.4). Es un `onRequest`
 // global: corre antes de leer el cuerpo, así que el 401 y el 403 van antes de cualquier error del cuerpo (RNF-03.5). Se
 // registra después del hook del 404, en el orden del plan (Lógica 8); el 405 no pide token porque las comodín se declaran
-// públicas (`prepararRutas405`). Toda ruta que se registre después tiene que declarar sus permisos (Lógica 4).
+// públicas (`prepararRutas405`). Toda ruta que se registre después tiene que declarar sus permisos, y una registrada antes
+// que no los declara pide token (Lógica 4).
 export function registrarPermisos(app: FastifyInstance, config: ConfigTokens): void {
   // null y no un objeto: Fastify no admite un valor por referencia, que compartirían todas las solicitudes. Cada una recibe
   // el suyo en el hook.
@@ -38,12 +39,13 @@ export function registrarPermisos(app: FastifyInstance, config: ConfigTokens): v
   });
   app.addHook('onRequest', async (request) => {
     const { permisos } = request.routeOptions.config;
-    // Solo llega sin permisos una solicitud a una ruta que no existe: el manejador del 404 no pasa por onRoute, y el hook
-    // anterior ya le respondió.
-    if (permisos === undefined || permisos.publica) return;
+    // Segunda capa: una ruta registrada antes que registrarPermisos no pasó por el onRoute y puede no declarar sus permisos;
+    // se la trata como protegida, con cualquier rol conocido, como una operación cuyo contrato no nombra roles (RNF-12.1,
+    // RNF-12.3). El 404 tampoco los declara, pero no llega acá: el hook anterior ya le respondió.
+    if (permisos?.publica) return;
 
     const identidad = await verificarToken(request.headers.authorization, config);
-    autorizar(identidad.roles, permisos.roles);
+    autorizar(identidad.roles, permisos?.roles ?? []);
     request.identidad = identidad;
   });
 }
