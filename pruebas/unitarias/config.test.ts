@@ -81,6 +81,8 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
     ['M2_PUERTO', '65535', 'puerto', 65535],
     ['M2_TIEMPO_BD_MS', '1', 'tiempoBdMs', 1],
     ['M2_TIEMPO_MODULOS_MS', '1', 'tiempoModulosMs', 1],
+    ['M2_TIEMPO_BD_MS', '2147483647', 'tiempoBdMs', 2147483647],
+    ['M2_TIEMPO_MODULOS_MS', '2147483647', 'tiempoModulosMs', 2147483647],
     ['M2_REINTENTOS_MODULOS', '0', 'reintentosModulos', 0],
     ['M2_REINTENTOS_MODULOS', '5', 'reintentosModulos', 5],
     ['M2_CLAVE_TOKENS', 'k'.repeat(32), 'claveTokens', 'k'.repeat(32)],
@@ -113,10 +115,12 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
     ['M2_TIEMPO_BD_MS', '-5'],
     ['M2_TIEMPO_BD_MS', '1.5'],
     ['M2_TIEMPO_BD_MS', 'rápido'],
+    ['M2_TIEMPO_BD_MS', '2147483648'],
     ['M2_TIEMPO_MODULOS_MS', '0'],
     ['M2_TIEMPO_MODULOS_MS', '-5'],
     ['M2_TIEMPO_MODULOS_MS', '1.5'],
     ['M2_TIEMPO_MODULOS_MS', 'rápido'],
+    ['M2_TIEMPO_MODULOS_MS', '2147483648'],
     ['M2_REINTENTOS_MODULOS', '-1'],
     ['M2_REINTENTOS_MODULOS', '6'],
     ['M2_REINTENTOS_MODULOS', '1.5'],
@@ -128,6 +132,20 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
   ])('%s = %j es inválida y se informa sola', (variable, valor) => {
     const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }));
     expect(nombres(errores)).toEqual([variable]);
+  });
+
+  // Los dos tiempos tienen la misma regla: un entero entre 1 y 2147483647, el mayor que aceptan los temporizadores de
+  // Node. El error trae solo la variable y ese motivo: ni rastro del valor recibido.
+  const MOTIVO_TIEMPO = 'no es un entero entre 1 y 2147483647';
+  const VALORES_INVALIDOS_DE_TIEMPO = ['0', '-5', '1.5', 'rápido', '2147483648', '99999999999999999999'];
+  it.each(
+    ['M2_TIEMPO_BD_MS', 'M2_TIEMPO_MODULOS_MS'].flatMap((variable) =>
+      VALORES_INVALIDOS_DE_TIEMPO.map((valor): [string, string] => [variable, valor]),
+    ),
+  )('%s = %j: el error da el motivo del tope', (variable, valor) => {
+    expect(erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }))).toEqual([
+      { variable, motivo: MOTIVO_TIEMPO },
+    ]);
   });
 
   it('informa todas las variables con problemas, no solo la primera', () => {

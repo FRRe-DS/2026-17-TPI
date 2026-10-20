@@ -58,7 +58,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Rojo primero: sin `src/config.ts` la prueba no cargaba («Cannot find module»). Ya en verde, se rompió el código a propósito de 11 maneras (que el error repita el valor, que una variable vacía cuente como definida, que `cargarConfigTokens` pida la base, que el puerto admita 65536, que la clave admita 31 caracteres, entre otras) y cada una hizo fallar al menos una prueba.
   - Comprobado además, con Node v24.15.0: `npm run lint`, `npm run build` y `tsc -p tsconfig.json` (este último también tipa `pruebas/`) pasan.
 - Para mirar con atención:
-  - Un tiempo enorme es válido y rompe sin avisar. La spec dice solo «entero mayor que 0», pero desde 2³¹ ms (unos 24,9 días) `setTimeout` y `AbortSignal.timeout` de Node disparan a los pocos milisegundos, con un `TimeoutOverflowWarning` (probado con Node v24.15.0). Con `M2_TIEMPO_BD_MS=3000000000`, toda consulta daría 503 al instante. Ponerle un tope cambia RNF-06.2: va por `/sdd-change`, en una rama `spec/`. Decidido el 2026-10-19: el tope es 2147483647 ms (2³¹ − 1), el mayor tiempo que esos temporizadores aceptan. Se probó con Node v24.15.0: con ese valor esperan lo configurado y con uno más disparan al milisegundo. Es un límite de la plataforma y no una política del grupo, así que cualquier tiempo razonable sigue siendo válido. Se escribe en la spec, el plan y una tarea nueva con el próximo `/sdd-change` (el del contrato v1 o antes), y entonces `enteroPositivo` pasa a `enteroEntre(1, 2147483647)`. Hasta entonces T2 queda como está.
+  - Un tiempo enorme es válido y rompe sin avisar. La spec dice solo «entero mayor que 0», pero desde 2³¹ ms (unos 24,9 días) `setTimeout` y `AbortSignal.timeout` de Node disparan a los pocos milisegundos, con un `TimeoutOverflowWarning` (probado con Node v24.15.0). Con `M2_TIEMPO_BD_MS=3000000000`, toda consulta daría 503 al instante. Ponerle un tope cambia RNF-06.2: va por `/sdd-change`, en una rama `spec/`. Decidido el 2026-10-19: el tope es 2147483647 ms (2³¹ − 1), el mayor tiempo que esos temporizadores aceptan. Se probó con Node v24.15.0: con ese valor esperan lo configurado y con uno más disparan al milisegundo. Es un límite de la plataforma y no una política del grupo, así que cualquier tiempo razonable sigue siendo válido. Se escribe en la spec, el plan y una tarea nueva con el próximo `/sdd-change` (el del contrato v1 o antes), y entonces `enteroPositivo` pasa a `enteroEntre(1, 2147483647)`. Hecho en T32.
   - `config.encabezadoCorrelacion` guarda el nombre como se escribió (por ejemplo `X-Request-Id`), pero Node entrega los encabezados de la solicitud en minúscula: quien lo lea (T9) tiene que buscarlo en minúscula.
   - De la URL de la base solo se comprueba que sea `postgres://` o `postgresql://` y que se pueda leer como URL. Que tenga host, usuario o base, y que responda, lo descubre `migrar` al arrancar (RNF-05.3).
   - Los nombres de las variables están escritos en este archivo y se repiten en `ejemplo.env` (T26), en `docker-compose.yml` y en la tabla del README (T31): si uno cambia, cambian todos.
@@ -462,3 +462,27 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - No se fija qué gana entre dos problemas de un mismo punto, porque RNF-03.5 los pone juntos. Hoy, con más de 1 MiB de otro tipo gana el 415 (Fastify lo decide por el tipo, sin leer el cuerpo); entre dos 400, el JSON roto (se lee antes de validar) y, en la validación, la ruta, después el cuerpo y por último la query string.
   - Las solicitudes que Node no puede leer (400, 408 y 431, por socket) no están en la matriz: Node las responde antes de que exista la solicitud, así que no se llega a evaluar ningún otro problema. Las prueba T12.
   - Si se suma un problema a la matriz, cambia la cuenta que fija «arma todas las combinaciones posibles» (315).
+
+### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
+- Qué cambió:
+  - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.
+  - El error de un tiempo inválido dice ahora «no es un entero entre 1 y 2147483647», tanto para el 0, los negativos, los decimales y el texto como para lo que pasa del tope. Sigue sin repetir el valor recibido.
+- Por qué así:
+  - 2147483647 es 2³¹ − 1 ms (unos 24,9 días), el mayor tiempo que aceptan `setTimeout` y `AbortSignal.timeout` de Node. Con uno más disparan al milisegundo, y con `M2_TIEMPO_BD_MS=3000000000` toda consulta daría 503 (RNF-06.2). Es un límite de la plataforma y no una política del grupo: cualquier tiempo razonable sigue valiendo. Lo decidió el responsable el 2026-10-19 (spec, «Decisiones»; plan, Lógica 1).
+  - Reusa `enteroEntre`, la regla de los puertos y de los reintentos: el motivo sale de los dos números, como en la tabla de Lógica 1, sin escribir un texto aparte.
+  - La regla tiene nombre y se usa en los dos tiempos, en vez de repetir `enteroEntre(1, 2147483647)` en cada línea: el tope y el motivo de su existencia quedan escritos una sola vez.
+- Cómo se conecta:
+  - Cambia solo `cargarConfig` (T2). T19 (la base) y T24 (el cliente de módulos) son las primeras tareas que leen `tiempoBdMs` y `tiempoModulosMs`, y ya reciben un valor que los temporizadores de Node aguantan; por eso el bloque F va antes que C y D.
+  - Cierra lo que T2 dejó anotado en «Para mirar con atención»: un tiempo enorme era válido y rompía sin avisar.
+- Tests:
+  - [pruebas/unitarias/config.test.ts](../../pruebas/unitarias/config.test.ts), 16 pruebas nuevas (88 en el archivo; 1476 en total):
+    - 2147483647 es válido en cada tiempo (2);
+    - 2147483648 es inválido en cada tiempo, informado solo y con el nombre de su variable (2);
+    - seis valores inválidos por tiempo (0, -5, 1.5, «rápido», 2147483648 y un número de 20 cifras, que no es un entero seguro) dan exactamente `{ variable, motivo: 'no es un entero entre 1 y 2147483647' }`. Como el error no trae nada más, no puede traer el valor (12).
+  - Rojo primero: fallaban 14 de las 16. Las 2 de 2147483647 pasaban de entrada, porque ese valor ya era válido; 2147483648 se aceptaba y el motivo decía «mayor que 0».
+  - Ya en verde, se rompió el código a propósito de 5 maneras (corre solo este archivo) y cada una hizo fallar pruebas: el tope un milisegundo más (14 fallan) o menos (14), el mínimo en 0 (15), y el tope quitado solo de `M2_TIEMPO_MODULOS_MS` (7) o solo de `M2_TIEMPO_BD_MS` (7).
+  - Con Node v24.15.0: `npm test` (1476), `npm run lint`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - El mínimo sigue siendo 1 ms: la spec no pide otro y no se agregó.
+  - El tope está escrito en `src/config.ts` y en `config.test.ts`, además de la spec y el plan: si cambia, cambian los cuatro. También el README (T31) y `ejemplo.env` (T26) tienen que decir «entero entre 1 y 2147483647» para los dos tiempos.
+  - Una variable de tiempo nueva (por ejemplo, un plazo propio de la parada) tiene que usar `tiempoEnMs`; con otro `enteroEntre` vuelve el problema de los temporizadores.
