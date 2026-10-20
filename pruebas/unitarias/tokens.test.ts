@@ -494,6 +494,20 @@ describe('generarToken: firma un token que verificarToken acepta (RNF-12.5)', ()
     expect(firma).toBe(firmar(`${cabecera}.${cuerpo}`, CONFIG_TOKENS.claveTokens));
     expect(cabecera).toBe(codificar({ alg: 'HS256', typ: 'JWT' }));
   });
+
+  // Con una clave solo ASCII, UTF-8 da los mismos bytes que latin1 y que otras codificaciones; con la ñ y el € ya no. Así se
+  // fija que la clave es el texto en UTF-8, al firmar y al verificar.
+  it('una clave con ñ y € también se toma como texto UTF-8, al firmar y al verificar', async () => {
+    const config = { ...CONFIG_TOKENS, claveTokens: 'clave-de-prueba-con-ñ-y-€-en-utf-8' };
+    const token = await generarToken({ sub, roles: ['CLIENTE'] }, config);
+    const [cabecera, cuerpo, firma] = token.split('.');
+
+    expect(firma).toBe(firmar(`${cabecera}.${cuerpo}`, config.claveTokens));
+    await expect(verificar(armarToken({ config }), config)).resolves.toStrictEqual({
+      sub: SUB_DE_PRUEBA,
+      roles: ['CLIENTE'],
+    });
+  });
 });
 
 // El comando de desarrollo que genera tokens (RNF-12.5). Las pruebas llaman a `main` como función, con los argumentos y el
