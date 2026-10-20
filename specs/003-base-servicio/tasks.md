@@ -54,7 +54,7 @@ Depende de: bloque A.
 ## Bloque C — Base de datos, salud, arranque y parada
 Depende de: bloque A.
 
-- [ ] **T17. Separar las pruebas en dos proyectos de Vitest, levantar `postgres:18.6` para las de integración y aplicar la migración inicial con `migrar()` (plan, Datos y Pruebas).** RNF-05.1, RNF-07.1
+- [x] **T17. Separar las pruebas en dos proyectos de Vitest, levantar `postgres:18.6` para las de integración y aplicar la migración inicial con `migrar()` (plan, Datos y Pruebas).** RNF-05.1, RNF-07.1
   - Hecho cuando: `npm test` corre los proyectos `unitarias` e `integracion` y crea un único contenedor `postgres:18.6` por corrida, que descarta al terminar; `npx vitest run --project unitarias` pasa con `DOCKER_HOST` apuntando a un socket que no existe; y `pruebas/integracion/migraciones.test.ts` comprueba que `migrar()` aplica la migración inicial y la anota en `migraciones_aplicadas`, y que una segunda corrida no aplica nada.
 - [ ] **T18. Migraciones seguras: dos procesos a la vez, una que falla, una fuera de orden, una base que no responde y el plazo de 60 s (plan, Datos).** RNF-05.2, RNF-05.3
   - Hecho cuando: `pruebas/integracion/migraciones.test.ts` comprueba que, con dos corridas a la vez, cada migración se aplica una sola vez; que una migración que falla no deja cambios y devuelve el error; que una con fecha más vieja que otra ya aplicada se aplica igual; que, con una base que no responde, `migrar()` falla en el tiempo de base más un margen; y que una fase que no termina en el plazo (acortado en la prueba) falla sin dejar la migración aplicada ni a medias.

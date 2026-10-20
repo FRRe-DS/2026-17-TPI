@@ -11,7 +11,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - [package-lock.json](../../package-lock.json): fija también las dependencias de las dependencias. Es lo que instala `npm ci`, en CI y en el `Dockerfile` (T26).
   - [tsconfig.json](../../tsconfig.json) (editor, lint y pruebas; no emite) y [tsconfig.build.json](../../tsconfig.build.json) (solo `src/`, compila a `dist/`).
   - [eslint.config.mjs](../../eslint.config.mjs): typescript-eslint sobre los `.ts`, sin `dist/` ni `src/generado/`.
-  - [vitest.config.ts](../../vitest.config.ts): busca `pruebas/**/*.test.ts`.
+  - [vitest.config.ts](../../vitest.config.ts): busca `pruebas/**/*.test.ts` (T17 lo separó en los proyectos `unitarias` e `integracion`).
   - [.gitignore](../../.gitignore): suma `node_modules/`, `dist/` y `src/generado/`.
   - [AGENTS.md](../../AGENTS.md), «Trampas conocidas»: ya no dice que falta `package.json`; sigue diciendo que falta `docker-compose.yml` hasta el bloque E.
   - `src/generado/contrato.ts` no se escribe ni se versiona: lo genera openapi-typescript desde `contrato/openapi.yml`. Con el contrato de `main`, que solo tiene `info`, los tipos salen vacíos.
@@ -34,7 +34,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - `npm install` avisa que `glob@10.5.0` está deprecado. Lo trae `@testcontainers/postgresql` (solo pruebas) y no entra a la imagen, que instala con `--omit=dev`.
   - ESLint solo revisa `.ts`. Revisar los `.mjs` (como `scripts/`) pide declarar sus globales (`process`, `console`), y el paquete `globals` sería una dependencia nueva sin aprobar. Se retoma con `scripts/contrato-test.mjs` (T5).
   - Ningún script tipa `pruebas/` (`tsc -p tsconfig.json`): se corrió a mano y pasa; el editor sí lo usa.
-  - Vitest corre hoy un solo grupo de pruebas; T17 lo separa en `unitarias` e `integracion`.
+  - Vitest corría un solo grupo de pruebas; T17 lo separó en `unitarias` e `integracion`.
 
 ### T2 — Leer y validar la configuración del entorno · commit `003/T2`
 - Qué cambió:
@@ -463,6 +463,42 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Las solicitudes que Node no puede leer (400, 408 y 431, por socket) no están en la matriz: Node las responde antes de que exista la solicitud, así que no se llega a evaluar ningún otro problema. Las prueba T12.
   - Si se suma un problema a la matriz, cambia la cuenta que fija «arma todas las combinaciones posibles» (315).
 
+### T17 — Separar las pruebas en dos proyectos, levantar la base de las pruebas de integración y aplicar la migración inicial · commit `003/T17`
+- Qué cambió:
+  - [vitest.config.ts](../../vitest.config.ts): dos proyectos. `unitarias` (`pruebas/unitarias/`, `pruebas/http/` y `pruebas/modulos/`) no necesita Docker; `integracion` (`pruebas/integracion/`) tiene un `globalSetup` que levanta la base. `npm test` corre los dos, y `npx vitest run --project unitarias`, solo el primero.
+  - [pruebas/ayudas/global.ts](../../pruebas/ayudas/global.ts): ese `globalSetup`. Levanta un `postgres:18.6` con Testcontainers antes de la primera prueba de integración, les pasa su URL a las pruebas con `provide('urlBd', …)` (se lee con `inject('urlBd')`) y lo para al terminar. `IMAGEN_POSTGRES` guarda la imagen, con su versión exacta.
+  - [pruebas/ayudas/bd.ts](../../pruebas/ayudas/bd.ts): `crearBaseDePrueba()` crea una base vacía dentro de ese contenedor y devuelve su URL y un `borrar()`.
+  - [migraciones/1792523403393_inicial.sql](../../migraciones/1792523403393_inicial.sql): la primera migración, con `-- Up Migration` y `-- Down Migration`. Solo cambia el comentario del esquema `public` («M2 Clientes: el esquema cambia solo con migraciones»); el Down lo deja como lo trae PostgreSQL («standard public schema»).
+  - [src/bd/migraciones.ts](../../src/bd/migraciones.ts): `migrar({ urlBd, log? })` abre su conexión, llama a `runner()` de node-pg-migrate sobre `migraciones/` (tabla de control `migraciones_aplicadas`, dirección `up`), la cierra y devuelve el nombre de las migraciones que aplicó (`[]` si ya estaban todas).
+- Por qué así:
+  - Un solo contenedor por corrida (plan, Decisiones): Vitest ejecuta el `globalSetup` una vez, en su proceso, no importa cuántos archivos de integración haya. Esos archivos corren en paralelo y comparten el contenedor, pero no la base: cada uno (o cada prueba) toma la suya con `crearBaseDePrueba()`, porque las pruebas de migraciones miran justo el esquema y la tabla de control. Esa ayuda no estaba en la lista de «Ayudas» del plan; la pide el primer archivo de integración.
+  - `unitarias` e `integracion` son proyectos distintos para que las unitarias no necesiten Docker (plan, Decisiones): el `globalSetup` de un proyecto corre solo si hay pruebas suyas en la corrida, así que `--project unitarias` no carga Testcontainers ni toca Docker (RNF-07.1). Los proyectos heredan las opciones de la raíz, que hoy no tiene ninguna.
+  - `migrar` hace por ahora lo que pide T17: aplicar y anotar. Las opciones que la hacen segura —`tiempoBdMs` para el tiempo de conexión, `plazoMs`, `advisoryLockMode: 'wait'` y `checkOrder: false`— llegan con T18, cada una con la prueba en rojo que la exige (dos procesos a la vez, una migración más vieja que otra ya aplicada, una base que no responde y el plazo vencido). Sin ellas, node-pg-migrate falla el segundo proceso («Another migration is already running», visto en su `lock()`) y rechaza una migración más vieja que otra ya aplicada.
+  - La carpeta de migraciones se resuelve desde el módulo, como `RUTA_CONTRATO` (T4), y no desde el directorio de trabajo, que es lo que haría node-pg-migrate con un `dir` relativo: `migraciones/` está al lado de `src/` y de `dist/`. Comprobado a mano con el compilado, llamado desde `/tmp`.
+  - Sin `log`, `migrar` no escribe nada: node-pg-migrate usaría la consola, y la salida estándar solo lleva logs en JSON (RNF-14.5). `arrancar` (T22) le pasa el logger del servicio.
+  - La conexión se abre y se cierra dentro de `migrar` (plan, Datos): con `dbClient`, node-pg-migrate usa la que le dan y no la cierra, y el bloqueo de la migración vive en esa sesión.
+- Cómo se conecta:
+  - T18 sigue sobre `migrar` y sobre `migraciones.test.ts`. Para probar una migración que falla o una fuera de orden va a necesitar migraciones armadas por la prueba: una opción `dir` que reemplace a la de `migraciones/` (el plan fija solo el valor por defecto). T22 llama a `migrar` al arrancar, después de construir la app y antes de escuchar.
+  - Las pruebas de T18 a T23 que usan la base empiezan con `crearBaseDePrueba()` en un `beforeEach` o `beforeAll` y la borran en un `afterEach` o `afterAll`; migraciones.test.ts es el ejemplo.
+  - `consistencia.test.ts` (T1) cuida ahora también los dos proyectos. T26 y T27 le suman que `IMAGEN_POSTGRES` sea la imagen de `bd` del compose (plan, Pruebas).
+  - CI: el job `build-test` corre `npm test` en ubuntu-24.04, que trae Docker, así que corre los dos proyectos sin cambios.
+- Tests:
+  - [pruebas/integracion/migraciones.test.ts](../../pruebas/integracion/migraciones.test.ts), 8 pruebas: la base es PostgreSQL 18.6, de `postgres:18.6`; el repositorio trae una migración inicial; `migrar()` aplica las de `migraciones/`, devuelve sus nombres y las anota en `migraciones_aplicadas` (que antes no existe); la inicial cambia el comentario del esquema; una segunda corrida devuelve `[]` y deja intactas las filas anotadas; `migrar()` cierra su conexión; manda lo que hace al `log` que recibe; y sin `log` no escribe nada en la consola. Esperan lo que hay en `migraciones/` y no un nombre fijo, así que siguen valiendo cuando las specs #4 a #8 sumen migraciones.
+  - [pruebas/unitarias/consistencia.test.ts](../../pruebas/unitarias/consistencia.test.ts), 6 pruebas nuevas (26 en el archivo): `vitest.config.ts` declara `unitarias` e `integracion`, en ese orden; solo `integracion` tiene `globalSetup`, que es `pruebas/ayudas/global.ts` y existe; hay pruebas en los dos; toda prueba de `pruebas/` cae en un proyecto (una que quedara fuera de los dos `include` no correría nunca y la suite seguiría en verde); ninguna cae en los dos; y las de `pruebas/integracion/` son de integración y las demás, de unitarias.
+  - Rojo primero: `npx vitest run --project unitarias` fallaba («No projects matched the filter "unitarias"»), y 4 de las 6 de consistencia fallaban (las otras 2 pasaban sin proyectos). La de integración falló primero por el módulo que faltaba; con `migrar` y la migración todavía vacía, pasaban 6 de 7 y fallaba la del comentario («standard public schema»). La del cierre de la conexión se sumó después, y su rojo está en las mutaciones.
+  - Ya en verde, se rompió el código a propósito. `migrar`, contra la integración: 9 de 9 detectadas (devolver `[]`, `down`, otra tabla de control, otra carpeta, no pasarle el `log` a node-pg-migrate, un `log` por defecto que escribe en la consola, no cerrar la conexión, no conectar y devolver la ruta en vez del nombre). El SQL de la migración: 3 de 3 (sin el `COMMENT`, con otro texto y sobre otro esquema). `vitest.config.ts`, contra consistencia: 7 de 8 (otro nombre de proyecto, sin `globalSetup` o con otro archivo, `globalSetup` en `unitarias`, sin `pruebas/http`, `unitarias` con todo `pruebas/` e `integracion` con otra carpeta). La viva es quitar `pruebas/modulos/**` de `unitarias`: hoy esa carpeta no existe (llega con T24), y desde entonces la detecta «toda prueba de `pruebas/` cae en un proyecto».
+  - 10 corridas seguidas del proyecto `integracion`, sin fallos ni contenedores sobrantes.
+  - Con `docker events`: `vitest run --project unitarias` no genera ningún evento de contenedor, y un `npm test` completo, con dos archivos de integración (el segundo, temporal, ya borrado), crea, arranca, para y destruye exactamente un `postgres:18.6`; al terminar no queda ninguno.
+  - El `migrar()` compilado (`dist/`), llamado desde `/tmp` contra un `postgres:18.6`, aplica `1792523403393_inicial`, y la segunda corrida da `[]`.
+  - Con Node v24.15.0: `npm test` (1504), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - Un `DOCKER_HOST` inexistente no alcanza para probar que las unitarias no usan Docker: Testcontainers prueba esa variable y, si falla, sigue con el socket por defecto. Con `DOCKER_HOST=unix:///no/existe.sock`, `--project unitarias` pasa (como pide la tarea), pero `--project integracion` también, porque encuentra `/var/run/docker.sock`. Lo que lo prueba son los eventos de Docker de arriba y que `globalSetup` no esté en `unitarias` (consistencia.test.ts). En una máquina sin Docker, `npm test` falla al arrancar `integracion`, y `--project unitarias` anda.
+  - La primera corrida baja `postgres:18.6` (457 MB) y `testcontainers/ryuk:0.14.0` (2,4 MB), el contenedor de limpieza de Testcontainers: aparece en `docker ps` unos segundos después de cada corrida y se va solo. No es la base: cuando T26 y T27 comprueben las imágenes (RNF-04.1), tienen que mirar solo la de PostgreSQL.
+  - `node-pg-migrate create` sin `--migrations-dir` crea el archivo en `migrations/` y no en `migraciones/`. El comando del plan (Datos) no lo dice; el que se usó es `npx node-pg-migrate create <nombre> --migration-file-language sql --migrations-dir migraciones`. Lo necesitan las specs #4 a #8 y el README (T31); el plan se corrige en el próximo `/sdd-change`.
+  - La marca de la inicial (1792523403393, 2026-10-20 19:10 UTC) es la del día de T17. Las migraciones de las otras specs se crean después, así que van detrás.
+  - El `.d.ts` de node-pg-migrate dice `singleTransaction` «@default true», pero el `runner` lo trata como falso si no se pasa (solo mira `options.singleTransaction` cuando es verdadero): hoy cada migración corre en su propia transacción, como pide el plan. T18 lo prueba con una que falla.
+  - `migrar` deja que un error de conexión o de SQL salga tal cual. Qué hace `arrancar` con él (salir con 1, sin la contraseña) es de T22.
+
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
 - Qué cambió:
   - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.
@@ -472,7 +508,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Reusa `enteroEntre`, la regla de los puertos y de los reintentos: el motivo sale de los dos números, como en la tabla de Lógica 1, sin escribir un texto aparte.
   - La regla tiene nombre y se usa en los dos tiempos, en vez de repetir `enteroEntre(1, 2147483647)` en cada línea: el tope y el motivo de su existencia quedan escritos una sola vez.
 - Cómo se conecta:
-  - Cambia solo `cargarConfig` (T2). `tiempoBdMs` se lee desde T17 (el tiempo de conexión de `migrar`) y `tiempoModulosMs`, desde T24 (el cliente de módulos): ya reciben un valor que los temporizadores de Node aguantan, y por eso el bloque F va antes que C y D.
+  - Cambia solo `cargarConfig` (T2). `tiempoBdMs` se lee desde T18 (el tiempo de conexión de `migrar`; T17 aplica la migración inicial y todavía no lo usa) y `tiempoModulosMs`, desde T24 (el cliente de módulos): ya reciben un valor que los temporizadores de Node aguantan, y por eso el bloque F va antes que C y D.
   - Cierra lo que T2 dejó anotado en «Para mirar con atención»: un tiempo enorme era válido y rompía sin avisar.
 - Tests:
   - [pruebas/unitarias/config.test.ts](../../pruebas/unitarias/config.test.ts), 16 pruebas nuevas (88 en el archivo; 1476 en total):
