@@ -16,7 +16,7 @@ Orden de construcción (tasks.md lo divide en tareas y bloques): proyecto → co
 | `src/app.ts` | `construirApp({ config, pool, contrato, manejadores, flujoLog })`: Fastify con hooks, errores, salud y operaciones | RNF-03.1 a RNF-03.5, RNF-12.1, RNF-14.3 a RNF-14.6 |
 | `src/config.ts` | `cargarConfig(env)`: lee y valida las variables | RNF-06.1, RNF-06.2 |
 | `src/errores.ts` | Clase `Problema`, los errores que lanzan los demás componentes y `aProblema(error, ruta)` (Lógica 6) | RNF-03.1, RNF-03.2, RNF-03.3, RNF-08.1, RNF-13.3 |
-| `src/errores-fastify.ts` | Errores que Fastify responde por su cuenta, llevados a problem+json (Lógica 9) | RNF-03.1, RNF-03.2, RNF-14.4 |
+| `src/errores-fastify.ts` | El manejador de errores de la app, que reconoce el corte del cliente (Lógica 6), y los errores que Fastify responde por su cuenta, llevados a problem+json (Lógica 9) | RNF-03.1, RNF-03.2, RNF-03.3, RNF-14.4 |
 | `src/correlacion.ts` | `idCorrelacion(valor)` | RNF-14.3, RNF-14.4 |
 | `src/logs.ts` | Opciones del logger, línea por solicitud, `limpiarSecretos` | RNF-14.5, RNF-14.6, RNF-19.1, RNF-19.2 |
 | `src/auth/tokens.ts` | `verificarToken` y `generarToken` | RNF-12.2, RNF-12.4, RNF-12.5 |
@@ -148,6 +148,8 @@ El hook de permisos, `registrarPermisos(app, config)` en `src/auth/permisos.ts`,
 
 Toda ruta declara sus permisos en `config.permisos`: las de `registrarOperaciones`, desde su `security`; las comodín del 405, como públicas, porque el 405 sale con o sin token (RNF-03.5); y `GET /health` registrada a mano, como pública. El hook suma un `onRoute` que hace fallar el registro de una ruta sin `config.permisos`, con «La ruta <método> <url> no declara sus permisos»: el error sale de `construirApp` y el servicio no arranca, en vez de dejar abierta una ruta por olvido (RNF-12.1). El manejador del 404 no pasa por `onRoute`; lo responde el hook anterior, así que el de permisos nunca lo ve.
 
+El `onRoute` solo ve las rutas que se registran después de él, y una registrada antes de `registrarPermisos` se le escapa. Como segunda capa, el `onRequest` trata una ruta sin `config.permisos` como protegida y sin roles en la operación: pide token (401) y cualquier rol conocido (403), como una operación cuyo contrato no nombra roles (RNF-12.1, RNF-12.3).
+
 **5. `generarToken({ sub, roles, venceEnSegundos = 3600 }, config)`** (RNF-12.5) usa `SignJWT` con `alg: HS256`, `typ: JWT`, `iss`, `aud`, `sub`, `iat`, `exp` y los roles en el campo configurado. No valida el `sub` ni los roles: firma lo que se le pide, para poder armar también tokens que el servicio rechaza. El comando `src/herramientas/token.ts` exporta `main(argv, env)`: lee `--sub`, `--roles` (separados por comas) y `--vence` con `util.parseArgs` de Node, imprime solo el token y devuelve el código de salida. Las pruebas lo llaman sin compilar ni abrir otro proceso.
 - `--sub` es obligatorio y no puede estar vacío ni tener solo espacios; no se exige un UUID.
 - `--roles` es obligatorio: se recortan los espacios, se ignoran los elementos vacíos y no se sacan repetidos. Un rol que el servicio no reconoce se firma igual, con un aviso en la salida de errores.
@@ -160,7 +162,7 @@ Toda ruta declara sus permisos en `config.permisos`: las de `registrarOperacione
 - `Content-Type: application/problem+json`.
 - Los errores con nombre (`NoAutenticado`, `SinPermiso`, `Conflicto`, `ModuloNoDisponible`, `BaseNoDisponible` y `Deteniendose`) son subclases de `Problema` definidas en `src/errores.ts`. Los demás componentes los importan y los lanzan.
 - Las respuestas a HTTP que no se puede leer van sin `instance`, porque la ruta no se llegó a leer (Lógica 9).
-- El corte del cliente al leer el cuerpo lo reconoce `responderProblema` antes de llamar a `aProblema`, por la solicitud y no solo por el `code`: un `ECONNRESET` de la base o de otro módulo sigue siendo un error del servicio y queda en el log. El corte da 400 y no se registra como error interno. Casi nunca llega a responderse, porque la conexión ya se cerró, y entonces no deja línea de la solicitud (Lógica 11).
+- El corte del cliente al leer el cuerpo lo reconoce `responderProblema` antes de llamar a `aProblema`, por la solicitud y no solo por el `code`: es un `ECONNRESET` que es el mismo error con el que Node cortó la solicitud (`request.raw.errored`). Un `ECONNRESET` de la base o de otro módulo es otro error, aunque el cliente ya se haya ido y aunque la solicitud no tenga cuerpo o el suyo no haya terminado de llegar: sigue siendo un error del servicio y queda en el log. El corte da 400 y no se registra como error interno. Casi nunca llega a responderse, porque la conexión ya se cerró, y entonces no deja línea de la solicitud (Lógica 11).
 
 | Origen | Código | `type` | `title` | `detail` |
 |---|---|---|---|---|
@@ -169,7 +171,7 @@ Toda ruta declara sus permisos en `config.permisos`: las de `registrarOperacione
 | JSON mal formado, o cuerpo JSON vacío | 400 | about:blank | Solicitud inválida | El cuerpo no es JSON válido |
 | URL mal codificada, o parámetro de ruta de más de 100 caracteres (Lógica 9) | 400 | about:blank | Solicitud inválida | La URL no es válida, o un parámetro de la ruta supera los 100 caracteres |
 | HTTP que no se puede leer (Lógica 9) | 400 | about:blank | Solicitud inválida | La solicitud no se pudo leer |
-| El cliente cortó la conexión o mandó un `chunked` mal formado mientras se leía el cuerpo (`ECONNRESET` con `request.raw.readableAborted`) | 400 | about:blank | Solicitud inválida | La solicitud no se pudo leer |
+| El cliente cortó la conexión o mandó un `chunked` mal formado mientras se leía el cuerpo (el `ECONNRESET` es `request.raw.errored`) | 400 | about:blank | Solicitud inválida | La solicitud no se pudo leer |
 | `NoAutenticado`, de `verificarToken`, con `WWW-Authenticate: Bearer` | 401 | about:blank | No autenticado | El motivo |
 | `SinPermiso`, de `autorizar` | 403 | about:blank | Sin permiso | El rol del token no permite esta operación |
 | Ruta inexistente | 404 | about:blank | No encontrado | No existe la ruta pedida |
@@ -363,12 +365,15 @@ Las que afectan al grupo están en `docs/adr/003-base-servicio.md`: la excepció
 - **Respuestas sin esquema de serialización.**
   - Por qué: Fastify no las serializa con el contrato; las valida la prueba de contrato.
   - Descartado: pasarle los esquemas de respuesta a fast-json-stringify, que no garantiza JSON Schema 2020-12.
-- **El corte del cliente al leer el cuerpo se reconoce por la solicitud** (`request.raw.readableAborted`), no solo por el `code` (Lógica 6).
-  - Por qué: la decisión de la spec es que ese corte no es un error interno, y un `ECONNRESET` de la base o de otro módulo sí lo es.
-  - Descartado: convertir todo `ECONNRESET` en 400, que escondería esos errores.
-- **Una ruta sin permisos declarados no se registra** (Lógica 4).
-  - Por qué: un olvido falla al arrancar y en las pruebas, en vez de dejar una ruta abierta (RNF-12.1). Lo propuso la revisión del bloque B.
-  - Descartado: que el hook le exija token a una ruta sin permisos, que solo falla cuando alguien la llama y obliga a distinguir las comodín del 405 en cada solicitud.
+- **El corte del cliente al leer el cuerpo se reconoce por la solicitud**: el `ECONNRESET` tiene que ser el mismo error con el que Node la cortó (`request.raw.errored`), no solo tener ese `code` (Lógica 6).
+  - Por qué: la decisión de la spec es que ese corte no es un error interno, y un `ECONNRESET` de la base o de otro módulo sí lo es, con cuerpo o sin él. Es el único criterio que acertó en los siete casos probados (Trampas verificadas). La revisión del bloque F lo propuso como alternativa más estricta, y la prueba lo confirmó.
+  - Descartados:
+    - convertir todo `ECONNRESET` en 400, que escondería esos errores;
+    - `request.raw.readableAborted`, el criterio de T33: una solicitud sin cuerpo no la lee nadie, y queda en true en cuanto el cliente se va, así que un `ECONNRESET` del servicio en un `GET` pasaba por corte del cliente;
+    - `request.raw.complete` en false: un `ECONNRESET` del servicio que llega antes de leer el cuerpo, con el cuerpo todavía a medias, pasaría por corte del cliente. Hoy ningún hook habla con la base ni con otro módulo antes de leer el cuerpo, pero el caso límite de la spec lo incluye.
+- **Una ruta sin permisos declarados no se registra, y la que se le escapa pide token** (Lógica 4).
+  - Por qué: un olvido falla al arrancar y en las pruebas, en vez de dejar una ruta abierta (RNF-12.1); lo propuso la revisión del bloque B. El `onRoute` no ve las rutas registradas antes que él, así que el `onRequest` trata una ruta sin permisos como protegida, con cualquier rol conocido: es la segunda capa que propuso la revisión del bloque F, porque los bloques que siguen suman rutas a `construirApp` (T20, `/health`).
+  - Descartados: solo el `onRoute`, que deja abierta una ruta registrada antes que él; y solo el `onRequest`, que falla recién cuando alguien llama a la ruta. Como segunda capa ya no obliga a distinguir las comodín del 405, que desde T35 se declaran públicas.
 - **`engines.node` en `^24.2.0`**, porque el comando de tokens usa `import.meta.main` (Lógica 5). Lo propuso la revisión del bloque B: con `^24`, en Node 24.0 o 24.1 el comando no imprime nada y sale con 0.
   - Descartado: comparar `import.meta.url` con `process.argv[1]`, que anda en todo Node 24 pero no reconoce el archivo si se ejecuta por un enlace simbólico.
 - **CI sin pasos condicionales.**
@@ -401,9 +406,9 @@ Las pruebas HTTP usan `app.inject()`, con el contrato de prueba de `pruebas/ayud
 | `unitarias/contrato-test.test.ts` | unitaria | `listarOperaciones`: contrato sin operaciones, con pendientes y con implementadas | RNF-07.2 |
 | `unitarias/validacion.test.ts` | unitaria | Ajv 2020 con el contrato de prueba: `$ref` al contrato, también dentro de `paths`; formatos; conversión de tipos solo fuera del cuerpo; palabras de OpenAPI; el contrato de `main` carga sin error | RNF-03.2 |
 | `http/errores.test.ts` | HTTP | 404; 405 con `Allow` para cada método de `http.METHODS` que la ruta no tiene, salvo `CONNECT` (a HEAD, sin cuerpo); 413; 415; 400 por JSON roto y por campo faltante (el `detail` lo nombra); 500 sin detalles internos, con el error en el log; forma problem+json e `instance` sin query string | RNF-03.1, RNF-03.2, RNF-03.3 |
-| `http/errores-fastify.test.ts` | HTTP y socket | URL mal codificada y parámetro de ruta de 101 caracteres → 400; por un socket, HTTP mal formado → 400 y encabezados de más de 16 KiB → 431; `ERR_HTTP_REQUEST_TIMEOUT` → 408; todo en problem+json, con encabezado de correlación; por un socket, el corte a mitad del cuerpo y un `chunked` mal formado no dejan una línea de error, y un `ECONNRESET` del manejador sigue dando 500 con su línea | RNF-03.1, RNF-03.2, RNF-03.3, RNF-14.4 |
+| `http/errores-fastify.test.ts` | HTTP y socket | URL mal codificada y parámetro de ruta de 101 caracteres → 400; por un socket, HTTP mal formado → 400 y encabezados de más de 16 KiB → 431; `ERR_HTTP_REQUEST_TIMEOUT` → 408; todo en problem+json, con encabezado de correlación; por un socket, el corte a mitad del cuerpo y un `chunked` mal formado no dejan una línea de error, y un `ECONNRESET` del servicio con el cliente ya ido sigue dando 500 con su línea, con el cuerpo leído, sin cuerpo o con el cuerpo a medias | RNF-03.1, RNF-03.2, RNF-03.3, RNF-14.4 |
 | `http/precedencia.test.ts` | HTTP | Ruta inexistente, con o sin token → 404; método equivocado, con o sin token → 405; sin token y cuerpo inválido → 401; rol equivocado y cuerpo inválido → 403; luego 413 o 415 y 400 | RNF-03.5 |
-| `http/autenticacion.test.ts` | HTTP | Operación protegida del contrato de prueba: cada 401 con `WWW-Authenticate: Bearer`; 403; acceso con uno y con varios roles, y el manejador recibe `sub` y roles; operación sin roles; operación con `security: []`; una ruta registrada sin `config.permisos` hace fallar `construirApp` | RNF-12.1, RNF-12.2, RNF-12.3, RNF-12.4 |
+| `http/autenticacion.test.ts` | HTTP | Operación protegida del contrato de prueba: cada 401 con `WWW-Authenticate: Bearer`; 403; acceso con uno y con varios roles, y el manejador recibe `sub` y roles; operación sin roles; operación con `security: []`; una ruta registrada sin `config.permisos` hace fallar `construirApp`, y una registrada antes de `registrarPermisos` pide token y un rol conocido | RNF-12.1, RNF-12.2, RNF-12.3, RNF-12.4 |
 | `http/operaciones.test.ts` | HTTP | Solo se exponen las operaciones con manejador; las otras dan 404 o 405; los esquemas del contrato validan; un `X-Request-Id` inválido no da 400; cada ruta guarda los roles de su `security` | RNF-03.4 |
 | `http/correlacion-logs.test.ts` | HTTP | Id respetado o reemplazado en respuestas buenas y de error; una línea por solicitud con sus campos; los logs nunca tienen el token, `Authorization`, la clave, la contraseña, cuerpos ni query strings; el id inválido no aparece | RNF-14.3, RNF-14.4, RNF-14.5, RNF-14.6, RNF-19.1, RNF-19.2 |
 | `integracion/migraciones.test.ts` | integración | Aplica las pendientes en orden y una sola vez; una segunda corrida no aplica nada; con dos corridas a la vez, cada migración se aplica una sola vez; una migración que falla no deja cambios; una más vieja que otra ya aplicada se aplica igual; base inaccesible → error dentro del tiempo; una fase que no termina en el plazo (acortado) falla sin dejar nada a medias | RNF-05.1, RNF-05.2, RNF-05.3 |
@@ -467,7 +472,7 @@ Verificadas el 2026-10-18 con `npm view` y Docker Hub. Van exactas en `package.j
   - el `clientErrorHandler` por defecto escribe en el socket un JSON propio con 400, 408 o 431;
   - la documentación de `frameworkErrors` está desactualizada: 5.12.7 le pasa también `FST_ERR_MAX_PARAM_LENGTH` (probado);
   - `requestTimeout` vale 0, así que el 408 sale del `headersTimeout` de Node (60 s esperando los encabezados, revisado cada 30 s) y no hay límite para el cuerpo;
-  - el cliente que corta a mitad del cuerpo, o un `chunked` mal formado, llega al manejador de errores como `ECONNRESET` («aborted»), con `statusCode` 400 y `request.raw.readableAborted` en true; un `ECONNRESET` que lanza el manejador lo tiene en false (probado);
+  - el cliente que corta a mitad del cuerpo, o un `chunked` mal formado, llega al manejador de errores como `ECONNRESET` («aborted»), con `statusCode` 400, y es el mismo objeto que `request.raw.errored`, el error con el que Node cortó la solicitud. Un `ECONNRESET` que lanza el servicio es otro objeto, también con el cliente ya ido (probado en 5.12.7 con RST, FIN y `chunked`, y con el del servicio en un GET y un DELETE sin cuerpo, en un POST entero y en uno a medias);
   - un error lanzado en un `onRoute` sale de `app.route()` al registrar la ruta, y `onRoute` no ve el manejador del 404 (probado);
   - una query string mal codificada no da error: `?x=%zz` llega como `x: '%zz'` (probado).
 - **Schemathesis 4** (Context7): por defecto prueba datos válidos e inválidos y corre todos los chequeos.
@@ -483,6 +488,7 @@ Verificadas el 2026-10-18 con `npm view` y Docker Hub. Van exactas en `package.j
   - `setTimeout` y `AbortSignal.timeout` aceptan hasta 2147483647 ms; con uno más disparan al milisegundo y dejan un `TimeoutOverflowWarning` (probado en 24.15). Es el tope de RNF-06.2;
   - un pedido HTTP/1.1 sin `Host` lo responde Node solo (`requireHostHeader`, como pide el RFC 9112): 400 sin cuerpo, sin el encabezado de correlación y sin línea de log, antes de `clientError` y de Fastify. Queda como excepción de la spec;
   - a un `Expect` que no es `100-continue`, Node responde 417 por su cuenta si nadie atiende `checkExpectation` (`parserOnIncoming`);
+  - `request.raw.readableAborted` queda en true en cuanto el cliente se va de una solicitud sin cuerpo, aunque haya llegado entera, porque nadie la leyó; y `request.raw.complete` es false mientras el cuerpo no terminó de llegar, y durante el evento `request` hasta en un GET sin cuerpo (pasa a true antes de la primera microtarea). Ninguno de los dos distingue un `ECONNRESET` del servicio de un corte del cliente (probado en 24.15);
   - `import.meta.main` existe desde 24.2.0 y es experimental (estabilidad 1.0; Context7).
 - **jose 6**: `requiredClaims` solo exige que el claim exista. Un `sub` vacío pasa, y se controla aparte. Un `exp`, `nbf` o `iat` que no es un número da `ERR_JWT_CLAIM_VALIDATION_FAILED` con `reason: 'invalid'`.
 - **ajv-formats 3**: ya trae los formatos de OpenAPI (`int32`, `int64`, `float`, `double`, `byte`, `binary` y `password`).
@@ -497,7 +503,7 @@ Para confirmar al implementar (no se pudieron probar acá):
 - que `docker compose up --wait` termine con error cuando `m2` sale con código 1.
 
 ## Notas para las tareas
-- Las tareas van en seis bloques, con un PR de implementación por bloque (encabezado de tasks.md). El bloque F (T32 a T35) sale del cambio del 2026-10-20 y va antes que C y D: T32 pone el tope de los tiempos que usan T19 y T24, y T33 a T35 tocan lo de los bloques A y B.
+- Las tareas van en siete bloques, con un PR de implementación por bloque (encabezado de tasks.md). El bloque F (T32 a T35) sale del cambio del 2026-10-20 y va antes que C y D: T32 pone el tope de los tiempos que usan T19 y T24, y T33 a T35 tocan lo de los bloques A y B. El bloque G (T36 y T37) sale del segundo cambio, con lo que encontró la revisión del bloque F: corrige lo de T33 y T35, así que va antes que E, y con C y D, en cualquier orden.
 - Antes de implementar: Node 24 en la terminal del agente. Docker sin sudo, docker compose v2 y buildx ya están en la máquina del integrador (verificado el 2026-10-18).
 
 ## Trazabilidad
@@ -508,7 +514,7 @@ Para confirmar al implementar (no se pudieron probar acá):
 | RNF-02.1 | Compose sin otros módulos; cliente de módulos probado con un servidor de prueba | `cliente.test.ts`; job `contract-test` |
 | RNF-03.1 | `aProblema`, el manejador de errores de `app.ts` y Lógica 9 | `problemas.test.ts`, `errores.test.ts`, `errores-fastify.test.ts` |
 | RNF-03.2 | Tabla de `aProblema`; validación de `contrato/validacion.ts`; rutas 405 de `contrato/operaciones.ts`; Lógica 9 | `problemas.test.ts`, `validacion.test.ts`, `errores.test.ts`, `errores-fastify.test.ts` |
-| RNF-03.3 | `aProblema` (500) y log del error ya limpio; `responderProblema` no registra el corte del cliente al leer el cuerpo | `errores.test.ts`, `correlacion-logs.test.ts`, `errores-fastify.test.ts` |
+| RNF-03.3 | `aProblema` (500) y log del error ya limpio; `responderProblema` no registra el corte del cliente al leer el cuerpo, pero sí un `ECONNRESET` del servicio | `errores.test.ts`, `correlacion-logs.test.ts`, `errores-fastify.test.ts` |
 | RNF-03.4 | `registrarOperaciones` y la excepción de `/health` | `operaciones.test.ts`, `salud.test.ts` |
 | RNF-03.5 | Orden de hooks de Lógica 8 | `precedencia.test.ts` |
 | RNF-04.1 | `Dockerfile`, `docker-compose.yml` y `pruebas/ayudas/global.ts` | `consistencia.test.ts` |
@@ -525,9 +531,9 @@ Para confirmar al implementar (no se pudieron probar acá):
 | RNF-07.1 | Vitest con dos proyectos y Testcontainers | `npm test` en el job `build-test` |
 | RNF-07.2 | `scripts/contrato-test.mjs` y `listarOperaciones` | `contrato-test.test.ts`; `npm run contrato:test`; job `contract-test` |
 | RNF-08.1 | `consultar()`: `23505` → `Conflicto` (409) | `problemas.test.ts`, `duplicados.test.ts` |
-| RNF-12.1 | Hook de permisos y su `onRoute`, que no deja registrar una ruta sin permisos; `security: []` en el contrato | `autenticacion.test.ts` |
+| RNF-12.1 | Hook de permisos, que pide token también a una ruta sin permisos declarados, y su `onRoute`, que no deja registrarla; `security: []` en el contrato | `autenticacion.test.ts` |
 | RNF-12.2 | `verificarToken`, con el control de `sub` | `tokens.test.ts`, `autenticacion.test.ts` |
-| RNF-12.3 | `autorizar`, también para operaciones sin roles | `permisos.test.ts`, `autenticacion.test.ts` |
+| RNF-12.3 | `autorizar`, también para operaciones sin roles y rutas sin permisos declarados | `permisos.test.ts`, `autenticacion.test.ts` |
 | RNF-12.4 | `sub` y roles en la solicitud | `autenticacion.test.ts` |
 | RNF-12.5 | `src/herramientas/token.ts` y `generarToken` | `tokens.test.ts` |
 | RNF-13.1 | `AbortSignal.timeout` en cada intento | `cliente.test.ts` |
