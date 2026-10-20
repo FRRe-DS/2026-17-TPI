@@ -153,6 +153,21 @@ describe('precedencia: el 401 y el 403 van antes que los errores del cuerpo y de
     esElProblema(await alta({ ...tipo, ...SIN_ROLES }, cuerpo), SIN_PERMISO);
   });
 
+  // Un mismo token puede tener a la vez un problema del punto 4 y uno del 5: vencido y sin un rol que la operación permita.
+  // Gana el 401; el mismo token sin vencer, con un cuerpo válido, da 403.
+  it.each([
+    ['con un rol que la operación no permite', ['OPERADOR']],
+    ['sin roles conocidos', []],
+  ])('un token vencido %s: 401, aunque sin vencer daría 403', async (_c, roles) => {
+    const cuerpo = JSON.stringify({ nombre: 'Ana', fechaNacimiento: '1990-05-17' });
+
+    const vencido = await alta({ ...COMO_JSON, ...bearer({ claims: { exp: ahora() - 3600, roles } }) }, cuerpo);
+    const vigente = await alta({ ...COMO_JSON, ...bearer({ claims: { roles } }) }, cuerpo);
+
+    esElProblema(vencido, TOKEN_VENCIDO);
+    esElProblema(vigente, SIN_PERMISO);
+  });
+
   it.each([
     ['sin token', {}, SIN_TOKEN],
     ['con un token sin roles conocidos', SIN_ROLES, SIN_PERMISO],
@@ -242,7 +257,8 @@ const RUTA_INEXISTENTE: Problema = {
 };
 
 // Los problemas posibles de cada punto del orden, del primero al último. El 2 (la parada, 503) llega con T23. El 401 y el
-// 403 van en el mismo grupo: un token no puede faltar y traer un rol a la vez.
+// 403 van en el mismo grupo: un token no puede faltar y traer un rol a la vez. Un token vencido con un rol no permitido sí
+// junta los dos, y se prueba arriba.
 const ORDEN: Problema[][] = [
   [
     { nombre: 'la URL mal codificada', parte: 'id', esperado: URL_INVALIDA, aplicar: (pedido) => (pedido.id = '%E0%A4%A') },
