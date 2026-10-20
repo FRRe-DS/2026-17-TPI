@@ -15,7 +15,7 @@ Restricciones que la condicionan:
 ## Decisión
 Proponer al Grupo 1 el borrador de `contrato/openapi.yml` con:
 - **Recursos**, todos bajo `/api/v1/clientes/{clienteId}`: perfil (`POST /clientes`, `GET`/`PATCH`), `direcciones` (CRUD), `preferencias` (`GET`/`PUT`), `viajes` (historial, solo lectura), `calificaciones` (`POST`/`GET`), `estado-cuenta` (`GET`) y `bloqueos` (`POST`/`GET`/`PATCH` para levantar).
-- **Identidad**: `clienteId` es el `sub` del JWT de M1. Un CLIENTE solo opera sobre su `clienteId` (`403` si no). Los roles de cada operación se declaran como roles de OpenAPI 3.1 en `security` (`bearerAuth: [CLIENTE, OPERADOR]`), sin extensiones propias.
+- **Identidad**: `clienteId` es el `sub` de un token de M1 con rol CLIENTE. Un CLIENTE solo opera sobre su `clienteId` (`403` si no). Los roles de cada operación se declaran como roles de OpenAPI 3.1 en `security` (`bearerAuth: [CLIENTE, OPERADOR]`), sin extensiones propias.
 - **Rol SERVICIO**: los módulos que consultan si el cliente está habilitado (M5, M9) usan un token de M1 con rol SERVICIO, cuyo `sub` nombra al módulo que consulta (no es un `clienteId`). Solo `obtenerEstadoCuenta` lo admite; en cualquier otra operación, `403`.
 - **Salud**: `GET /health` sin token (`security: []`): `200` con `{"estado": "ok"}` si el servicio y su base responden; si no, `503` en `application/problem+json`.
 - **Errores**: `application/problem+json` (RFC 9457), esquema `Problema` (`type`, `title`, `status`, `detail`, `instance`), sin extensiones. Los genéricos se declaran en `components.responses` con `type: about:blank` (esquema `ProblemaGenerico`) y `title` en español: `400`, `401`, `403`, `404`, `405` (con `Allow`, para cualquier ruta que no admite el método), `413`, `415`, `500` y `503` de la base. Los de dominio conservan su `type` propio: `409` para duplicados o estado inválido, `422` para reglas de negocio y `503` con `Retry-After` cuando M6 no responde.
@@ -30,13 +30,17 @@ Proponer al Grupo 1 el borrador de `contrato/openapi.yml` con:
 - **Bloqueos**: no se borran; levantarlos registra quién, cuándo y por qué. El estado del cliente (`ACTIVO`/`BLOQUEADO`) se deriva de los bloqueos vigentes.
 - **Servidor**: URL relativa `/`; el puerto 8082 queda como propuesta de ADR 003.
 
-Queda abierto, para acordar con el Grupo 1 y el consorcio antes de publicar:
-1. Datos mínimos del perfil: ¿el email vive en M1 o también en M2?
-2. Formato de `clienteId` (`uuid` en el borrador): depende de lo que emita M1 (#9).
-3. Valores de `TipoVehiculo`, `CanalComunicacion` y `NecesidadAccesibilidad`: compartidos con M3, M5, M8 y M9.
-4. Si M3 necesita un promedio de calificaciones por conductor (`GET` por `conductorId`): RF-2.5 no lo pide.
-5. Qué expone M6 para el historial y para validar el viaje (#2): `ViajeResumen` y los `estado` dependen de ese contrato.
-6. Licencia en `info` (único aviso del lint): la define la cátedra.
+Acordado con el Grupo 1 (2026-10-20):
+- El email vive solo en M1; el perfil de M2 no lo guarda.
+- El promedio de calificaciones por conductor (`GET` por `conductorId`) queda afuera: RF-2.5 no lo pide.
+- De acuerdo con los valores de `TipoVehiculo`, `CanalComunicacion` y `NecesidadAccesibilidad`, con la paginación y con el alta y el levantamiento de bloqueos.
+- La licencia en `info` (aviso del lint) la define la cátedra.
+
+Queda abierto, porque depende de otros módulos:
+1. Formato de `clienteId` (`uuid` en el borrador): depende de lo que emita M1 (#9).
+2. Valores de `TipoVehiculo`, `CanalComunicacion` y `NecesidadAccesibilidad`, si M3, M5, M8 o M9 piden otros.
+3. Qué expone M6 para el historial y para validar el viaje (#2): `ViajeResumen` y los `estado` dependen de ese contrato.
+4. Confirmación de M5 de que consulta `estado-cuenta` con un token de rol SERVICIO.
 
 ## Alternativas descartadas
 - **Copiar los viajes de M6 en la base de M2** para el historial: más rápido, pero duplica datos de otro módulo y se desincroniza; RF-2.4 pide obtenerlo por API.
