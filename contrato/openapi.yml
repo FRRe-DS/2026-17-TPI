@@ -5,8 +5,7 @@ info:
     API de Clientes (M2). Perfil, direcciones frecuentes, preferencias, historial
     resumido de viajes, calificación del conductor y estado de cuenta con bloqueos.
 
-    **Borrador v1 en negociación con el Grupo 1 (issue #1, ADR 001).** No está
-    publicado en el repositorio de la cátedra.
+    Contrato común de M2, acordado entre el Grupo 1 y el Grupo 17.
 
     Convenciones:
     - Autenticación: `Authorization: Bearer <JWT>` emitido por M1. En los

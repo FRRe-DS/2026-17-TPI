@@ -1,6 +1,6 @@
 # ADR 001 — Contrato M2 v1 con el Grupo 1
 
-Fecha: 2026-10-16 · Estado: propuesta
+Fecha: 2026-10-16 · Estado: aceptada
 Issue: #1
 
 ## Contexto
