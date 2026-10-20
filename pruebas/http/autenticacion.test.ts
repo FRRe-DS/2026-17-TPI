@@ -1,10 +1,12 @@
-import type { LightMyRequestResponse } from 'fastify';
+import Fastify, { type LightMyRequestResponse } from 'fastify';
 import { describe, expect, it } from 'vitest';
+import { registrarPermisos } from '../../src/auth/permisos.js';
 import type { ConfigTokens } from '../../src/config.js';
 import type { Manejador } from '../../src/contrato/operaciones.js';
+import { responderProblema } from '../../src/errores-fastify.js';
 import { contratoCon, crearApp } from '../ayudas/app.js';
 import { capturarLogs } from '../ayudas/logs.js';
-import { armarToken, bearer, type OpcionesToken } from '../ayudas/tokens.js';
+import { armarToken, bearer, CONFIG_TOKENS, type OpcionesToken } from '../ayudas/tokens.js';
 
 const UUID = '00000000-0000-4000-8000-000000000001';
 const OTRO_UUID = '00000000-0000-4000-8000-000000000002';
@@ -297,6 +299,57 @@ describe('autenticación: una ruta que no declara sus permisos no se registra (R
     esProblema(conOtroRol, 403, 'Sin permiso', 'El rol del token no permite esta operación', '/a-mano');
     expect(conSuRol.statusCode).toBe(200);
     expect(conSuRol.json()).toEqual({ identidad: { sub: SUB, roles: ['OPERADOR'] } });
+  });
+});
+
+describe('autenticación: una ruta sin permisos que el onRoute no vio pide token y un rol conocido (RNF-12.1, RNF-12.3)', () => {
+  const CONOCIDOS = ['CLIENTE', 'CONDUCTOR', 'OPERADOR', 'SERVICIO'];
+
+  // Una app con una ruta sin `config.permisos` registrada antes que `registrarPermisos`: su onRoute no la ve, como no vería
+  // GET /health si se registrara a mano antes que el hook (plan, Lógica 4). crearApp no deja armarla, porque construirApp
+  // llama a registrarPermisos antes de registrar cualquier ruta. Tiene solo el hook y el manejador de errores, sin el
+  // encabezado de correlación. Cada solicitud arma la suya y la cierra.
+  async function pedirAnterior(authorization?: string) {
+    const app = Fastify();
+    app.get('/anterior', quien);
+    registrarPermisos(app, CONFIG_TOKENS);
+    app.setErrorHandler(responderProblema);
+    const respuesta = await pedir('/anterior', authorization, app);
+    await app.close();
+    return respuesta;
+  }
+
+  // Lo que comprueba esProblema, menos el encabezado de correlación, que esta app no pone.
+  function esProblemaDeLaAnterior(respuesta: LightMyRequestResponse, status: number, title: string, detail: string) {
+    expect(respuesta.statusCode).toBe(status);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.json()).toEqual({ type: 'about:blank', title, status, detail, instance: '/anterior' });
+  }
+
+  it('sin token: 401 con WWW-Authenticate', async () => {
+    const respuesta = await pedirAnterior();
+
+    esProblemaDeLaAnterior(respuesta, 401, 'No autenticado', FALTA);
+    expect(respuesta.headers['www-authenticate']).toBe('Bearer');
+  });
+
+  it.each([
+    ['la lista de roles vacía', []],
+    ['solo roles que el servicio no conoce', ['ADMIN']],
+    ['los roles conocidos escritos en minúsculas', ['cliente']],
+    ['sin el campo de roles', undefined],
+  ])('con un token con %s: 403', async (_caso, roles) => {
+    const respuesta = await pedirAnterior(bearer({ claims: { roles } }).authorization);
+
+    esProblemaDeLaAnterior(respuesta, 403, 'Sin permiso', 'El rol del token no permite esta operación');
+    expect(respuesta.headers['www-authenticate']).toBeUndefined();
+  });
+
+  it.each(CONOCIDOS)('con el rol %s llega al manejador, con el sub y los roles', async (rol) => {
+    const respuesta = await pedirAnterior(bearer({ claims: { sub: SUB, roles: [rol] } }).authorization);
+
+    expect(respuesta.statusCode).toBe(200);
+    expect(respuesta.json()).toEqual({ identidad: { sub: SUB, roles: [rol] } });
   });
 });
 
