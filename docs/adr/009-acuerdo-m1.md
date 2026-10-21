@@ -23,10 +23,10 @@ Este ADR propone al consorcio el formato del token y el mecanismo de validación
 | `sub` | `string` (no vacío) | Sí | Identificador único de quien llama. Para usuarios, cómo se relaciona con el cliente lo define la spec del perfil (#4). Para servicios (rol `SERVICIO`), identifica al módulo que llama (ej. `m9-reservas`). |
 | `iss` | `string` | Sí | Emisor del token. Se propone el valor `m1-identidad` para todo el consorcio. Todos los módulos lo validan contra su configuración. |
 | `aud` | `string` o `string[]` | Sí | Audiencia del token. Puede ser un texto (audiencia única o compartida) o una lista de textos. Cada módulo receptor exige que su propia audiencia esté incluida. |
-| `exp` | `number` | Sí | Momento de expiración (Unix timestamp en segundos, NumericDate RFC 7519). Todo token debe vencer. Se valida con 30 s de tolerancia de reloj. |
+| `exp` | `integer` | Sí | Momento de expiración (Unix timestamp en segundos, NumericDate RFC 7519). Todo token debe vencer. Se valida con 30 s de tolerancia de reloj. |
 | `roles` | `string[]` | Sí | Lista de roles. Los conocidos por M2 son `CLIENTE`, `CONDUCTOR`, `OPERADOR` y `SERVICIO`. Cada módulo puede reconocer otros. |
-| `iat` | `number` | No | Momento de emisión (Unix timestamp en segundos, NumericDate RFC 7519). Opcional para M2. |
-| `nbf` | `number` | No | No válido antes de (Unix timestamp en segundos, NumericDate RFC 7519). Si está presente, se valida con 30 s de tolerancia de reloj. |
+| `iat` | `integer` | No | Momento de emisión (Unix timestamp en segundos, NumericDate RFC 7519). Opcional para M2. |
+| `nbf` | `integer` | No | No válido antes de (Unix timestamp en segundos, NumericDate RFC 7519). Si está presente, se valida con 30 s de tolerancia de reloj. |
 
 - **Valores concretos de emisor y audiencia propuestos para el consorcio:**
   - `iss`: `m1-identidad`
