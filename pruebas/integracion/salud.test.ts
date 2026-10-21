@@ -7,6 +7,8 @@ import { BaseNoDisponible } from '../../src/errores.js';
 import { manejadores } from '../../src/operaciones/index.js';
 import { contratoCon, crearApp } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
+import { capturarLogs } from '../ayudas/logs.js';
+import { crearProxy, type ProxyDeBase } from '../ayudas/proxy.js';
 import { AUTORIZADO, bearer } from '../ayudas/tokens.js';
 
 const contratoSalud = cargarContrato(fileURLToPath(new URL('../ayudas/contrato-salud.yml', import.meta.url)));
@@ -196,6 +198,196 @@ describe('GET /health: desde el contrato o a mano (RNF-03.4, ADR de la base)', (
     expect((await app.inject({ method: 'GET', url: '/otra' })).json()).toEqual({
       estado: 'ok',
       atendidoPor: 'el manejador del contrato',
+    });
+  });
+});
+
+// El valor por defecto de M2_TIEMPO_BD_MS: RNF-14.2 pide 503 en 2 s.
+const TIEMPO_BD_MS = 2000;
+
+// Lo que se acepta por encima del tiempo de base: la máquina de CI puede ir lenta.
+const MARGEN_MS = 1000;
+
+// Node puede disparar un temporizador unos milisegundos antes de lo que mide performance.now().
+const TOLERANCIA_MS = 20;
+
+// Las pruebas que esperan de verdad el tiempo de base tardan unos 2 s; el límite de Vitest por defecto es 5 s.
+const LIMITE_PRUEBA_MS = 15_000;
+
+type Registro = { error: unknown; mensaje: string };
+
+// La base se cuelga o se cae con el servicio andando, y después vuelve (RNF-14.2). Entre el pool y la base de la prueba hay un
+// proxy TCP que se cuelga (acepta la conexión y no contesta), se cierra (rechaza las conexiones) y se reabre. La app y el pool
+// son los mismos de principio a fin: nada se reinicia.
+describe('GET /health y una operación con la base caída y el servicio andando (RNF-14.2)', () => {
+  let base: BaseDePrueba;
+  let proxy: ProxyDeBase;
+  let pool: PoolBd;
+  let registros: Registro[];
+
+  beforeEach(async () => {
+    base = await crearBaseDePrueba();
+    proxy = await crearProxy(base.urlBd);
+    // Cada prueba con su lista: un error que el pool registre al cerrarse no cae en la de la prueba siguiente.
+    const propios: Registro[] = [];
+    registros = propios;
+    pool = crearPool({ urlBd: proxy.urlBd, tiempoBdMs: TIEMPO_BD_MS }, (error, mensaje) => propios.push({ error, mensaje }));
+  });
+
+  afterEach(async () => {
+    await proxy.terminar();
+    await pool.end();
+    await base.borrar();
+  });
+
+  // Una operación del contrato de prueba que consulta la base como lo harán las de negocio.
+  const consultaLaBase: Manejador = async (request) => {
+    await request.server.pool.consultar('SELECT 1');
+    return { ok: true };
+  };
+
+  // Las dos rutas que consultan la base.
+  const RUTAS = ['/health', '/pruebas/publica'];
+
+  // La app de la prueba y un `pedir` que mide cuánto tarda cada respuesta. Antes de devolverla responde una solicitud, como
+  // un servicio que ya estaba andando: el pool queda con una conexión abierta a la base, que se cuelga o se cae con ella.
+  async function andando() {
+    const logs = capturarLogs();
+    const app = crearApp({ probarPublica: consultaLaBase }, { pool, flujoLog: logs.flujo });
+    const pedir = async (url: string) => {
+      const desde = performance.now();
+      const respuesta = await app.inject({ method: 'GET', url });
+      return { respuesta, duracion: performance.now() - desde };
+    };
+    expect((await pedir('/health')).respuesta.statusCode).toBe(200);
+    expect(pool.idleCount).toBe(1);
+    return { logs, pedir };
+  }
+
+  type Pedido = Awaited<ReturnType<Awaited<ReturnType<typeof andando>>['pedir']>>;
+
+  function esBaseNoDisponible({ respuesta }: Pedido, url: string) {
+    expect(respuesta.statusCode).toBe(503);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.json()).toEqual({
+      type: 'about:blank',
+      title: 'Servicio no disponible',
+      status: 503,
+      detail: 'La base de datos no está disponible',
+      instance: url,
+    });
+  }
+
+  describe('con la base colgada: acepta la conexión y no contesta', () => {
+    // Las dos a la vez: una toma la conexión que el pool ya tenía y queda esperando la respuesta a su consulta; la otra abre
+    // una conexión nueva y queda esperando que la base la acepte. Las dos cortan en el tiempo de base.
+    it(
+      'GET /health y una operación que consulta la base responden 503 en problem+json en 2 s más un margen',
+      async () => {
+        const { logs, pedir } = await andando();
+        proxy.colgar();
+
+        const pedidos = await Promise.all(RUTAS.map(pedir));
+
+        for (const [indice, url] of RUTAS.entries()) {
+          const pedido = pedidos[indice] as Pedido;
+          esBaseNoDisponible(pedido, url);
+          expect(pedido.duracion).toBeGreaterThanOrEqual(TIEMPO_BD_MS - TOLERANCIA_MS);
+          expect(pedido.duracion).toBeLessThan(TIEMPO_BD_MS + MARGEN_MS);
+        }
+        // Una causa registrada por cada solicitud, y ninguna como error interno: un 503 es una respuesta prevista.
+        expect(registros).toHaveLength(2);
+        expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([]);
+      },
+      LIMITE_PRUEBA_MS,
+    );
+
+    // Con 12 solicitudes y 10 conexiones como máximo, dos esperan una conexión que el pool no puede dar: tampoco pasan del
+    // tiempo de base.
+    it(
+      'con más solicitudes que conexiones en el pool, ninguna espera más que el tiempo de base',
+      async () => {
+        const { pedir } = await andando();
+        proxy.colgar();
+
+        const pedidos = await Promise.all(Array.from({ length: 12 }, (_, indice) => pedir(RUTAS[indice % 2] as string)));
+
+        for (const [indice, pedido] of pedidos.entries()) {
+          esBaseNoDisponible(pedido, RUTAS[indice % 2] as string);
+          expect(pedido.duracion).toBeLessThan(TIEMPO_BD_MS + MARGEN_MS);
+        }
+      },
+      LIMITE_PRUEBA_MS,
+    );
+
+    it(
+      'cuando la base vuelve, las dos responden 200 sin reiniciar la app',
+      async () => {
+        const { pedir } = await andando();
+        proxy.colgar();
+        esBaseNoDisponible(await pedir('/health'), '/health');
+
+        await proxy.reabrir();
+
+        for (const url of RUTAS) expect((await pedir(url)).respuesta.statusCode).toBe(200);
+      },
+      LIMITE_PRUEBA_MS,
+    );
+
+    // Un corte más corto que el tiempo de base no es una falta de base. Las dos a la vez: una espera la respuesta a su consulta
+    // en la conexión que el pool ya tenía, y la otra, que la base acepte una conexión nueva. Cuando el proxy suelta lo que
+    // retuvo, las dos terminan bien.
+    it('si la base vuelve antes del tiempo de base, las consultas que esperaban terminan bien', async () => {
+      const { pedir } = await andando();
+      proxy.colgar();
+
+      const pendientes = RUTAS.map(pedir);
+      await new Promise((listo) => setTimeout(listo, 300));
+      await proxy.reabrir();
+      const pedidos = await Promise.all(pendientes);
+
+      for (const { respuesta, duracion } of pedidos) {
+        expect(respuesta.statusCode).toBe(200);
+        expect(duracion).toBeGreaterThanOrEqual(300 - TOLERANCIA_MS);
+        expect(duracion).toBeLessThan(TIEMPO_BD_MS);
+      }
+      expect(pool.totalCount).toBe(2);
+      expect(registros).toEqual([]);
+    });
+  });
+
+  describe('con la conexión rechazada: la base se cayó', () => {
+    // Sin un oyente de 'error' en el pool, esto tira el proceso: Vitest lo cuenta como error de la corrida.
+    it('la conexión que el pool tenía abierta se cae, se registra y el servicio sigue', async () => {
+      await andando();
+
+      await proxy.cerrar();
+
+      await vi.waitFor(() => expect(pool.totalCount).toBe(0));
+      expect(registros).toHaveLength(1);
+    });
+
+    // La conexión rechazada falla enseguida: no hace falta esperar el tiempo de base para saber que la base no está.
+    it('GET /health y la operación responden 503 en problem+json, sin esperar el tiempo de base', async () => {
+      const { logs, pedir } = await andando();
+      await proxy.cerrar();
+
+      for (const url of RUTAS) {
+        const pedido = await pedir(url);
+        esBaseNoDisponible(pedido, url);
+        expect(pedido.duracion).toBeLessThan(TIEMPO_BD_MS);
+      }
+      expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([]);
+    });
+
+    it('cuando la base vuelve, las dos responden 200 sin reiniciar la app', async () => {
+      const { pedir } = await andando();
+      await proxy.cerrar();
+      esBaseNoDisponible(await pedir('/health'), '/health');
+
+      await proxy.reabrir();
+
+      for (const url of RUTAS) expect((await pedir(url)).respuesta.statusCode).toBe(200);
     });
   });
 });

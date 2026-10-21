@@ -622,6 +622,55 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - `construirApp` exige `pool`. Quien lo llame sin base (las pruebas HTTP) pasa `POOL_FALSO`, que falla si alguien consulta; así una prueba que llega a la base sin querer lo dice en voz alta en vez de colgarse.
   - Para el próximo `/sdd-change`: plan.md, Contrato y Estructura, dice que la excepción se registra «si el contrato la tiene, desde el contrato; si no, a mano»; conviene precisar que la decide la lista de implementadas (método y ruta) y que los manejadores llegan al pool por `request.server.pool`.
 
+### T21 — Base caída con el servicio corriendo: 503 en 2 s y vuelta sin reiniciar · commit `003/T21`
+- Qué cambió:
+  - [pruebas/ayudas/proxy.ts](../../pruebas/ayudas/proxy.ts) nuevo: `crearProxy(urlBd)` levanta un proxy TCP en un puerto libre de 127.0.0.1 que pasa cada conexión a la base de la prueba, y devuelve `{ urlBd, colgar, cerrar, reabrir, terminar }`:
+    - `urlBd` es la misma URL, apuntando al proxy;
+    - `colgar()` separa los dos sockets de cada conexión (`unpipe`, que los pausa: lo que llega queda retenido) y acepta las conexiones nuevas sin conectarlas con la base;
+    - `cerrar()` corta todas las conexiones y deja de escuchar: una conexión nueva se rechaza (`ECONNREFUSED`);
+    - `reabrir()` escucha otra vez en el mismo puerto, si estaba cerrado, vuelve a unir las conexiones retenidas y conecta con la base las que quedaron esperando;
+    - `terminar()` corta todo al final de cada prueba.
+  - [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts): un `describe` nuevo con 7 pruebas.
+  - El código del servicio no cambió: lo que pide T21 ya lo hacían `consultar()` (T19) y `verificarSalud` (T20).
+- Por qué así:
+  - Un proxy y no detener el contenedor: el contenedor de la base es uno por corrida y lo comparten los archivos de prueba que corren en paralelo (T17). Además, el proxy puede colgarse, que es el caso difícil: una base que acepta la conexión y no contesta. Sin los límites de tiempo, pg esperaría para siempre (plan, Trampas verificadas).
+  - `reabrir()` vuelve al mismo puerto porque la URL del pool no cambia, como cuando la base vuelve en la misma dirección. Así la app y el pool son los mismos objetos de principio a fin: eso es «sin reiniciar».
+  - Retener en vez de descartar: un corte más corto que el tiempo de base tiene que terminar bien, y la prueba del corte breve lo comprueba.
+  - El tiempo de base es el valor por defecto (2000 ms), sin acortarlo, porque RNF-14.2 pide 2 s. Las tres pruebas que lo esperan tardan unos 2,1 s cada una.
+  - Cada prueba arranca con el servicio andando: responde una solicitud antes de colgar o cerrar el proxy, así que el pool ya tiene una conexión abierta, que se cuelga o se cae con la base.
+  - La operación de prueba es `probarPublica` con un manejador que consulta por `request.server.pool`, como las de negocio (T20).
+- Cómo se conecta:
+  - Prueba juntos `consultar()` (los dos límites de pg, `conTiempoMaximo`, la clasificación y el oyente de `'error'`, T19), `verificarSalud` y el pool en `construirApp` (T20).
+  - T22: el `registrar` del pool de `arrancar` recibe las causas que acá junta la prueba.
+  - T27: el healthcheck de compose pide `/health`; con la base caída, el contenedor del servicio queda «no sano» hasta que vuelve.
+- Tests:
+  - [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts), 7 pruebas (72 en el archivo):
+    - con la base colgada, `GET /health` y `GET /pruebas/publica` a la vez dan 503 en problem+json entre 1980 ms y 3 s; se registran dos causas y no queda ninguna línea de error;
+    - colgada y con 12 solicitudes a la vez (el pool tiene 10 conexiones como máximo), las 12 dan 503 en menos de 3 s;
+    - colgada, un 503, y cuando vuelve, las dos rutas dan 200;
+    - colgada 300 ms y de vuelta: las dos solicitudes que esperaban (una en la conexión que ya existía, otra en una nueva) dan 200 entre 280 ms y 2 s, sin causas registradas;
+    - con la conexión rechazada, la conexión que el pool tenía se cae, se registra y el pool queda vacío, sin tirar el proceso;
+    - rechazada, las dos rutas dan 503 en problem+json en menos de 2 s, sin líneas de error;
+    - rechazada, un 503, y cuando vuelve, las dos rutas dan 200.
+  - Rojo primero: el archivo fallaba porque `pruebas/ayudas/proxy.ts` no existía. Con el proxy, las 7 pasaron de entrada, porque el servicio ya lo cumplía. El rojo de cada comportamiento está en las mutaciones.
+  - Mutaciones, contra las 7 pruebas: 17 de 21 detectadas.
+    - Del servicio: sin `conTiempoMaximo` ni `query_timeout`; sin `conTiempoMaximo` ni `connectionTimeoutMillis`; sin el oyente de `'error'`; sin `ECONNREFUSED`; sin el mensaje «Connection terminated»; sin «timeout exceeded when trying to connect»; `TiempoAgotado` que no cuenta; el 503 sin registrar; y `verificarSalud` que se traga el error.
+    - De la ayuda: `colgar` que no hace nada, que no retiene las conexiones abiertas o que conecta las nuevas; `cerrar` que no corta o que sigue escuchando; y `reabrir` que no vuelve a escuchar, que no suelta lo retenido o que no conecta las que esperaban.
+    - En la primera vuelta sobrevivía la última: la prueba del corte breve usaba una sola solicitud, que iba por la conexión que ya existía. Se cerró pidiendo las dos rutas a la vez.
+    - Vivas, equivalentes acá: sin `conTiempoMaximo`, sin `query_timeout`, sin `connectionTimeoutMillis` y sin el mensaje «Query read timeout». En estas pruebas cada límite de tiempo tapa al otro, y T19 prueba cada uno por separado.
+  - 10 corridas seguidas del archivo, sin fallas.
+  - Con Node v24.15.0: `npm test` (1657), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npm run contrato:test`, `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1555) y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - Medido con una sonda (dos corridas, que coincidieron). Con la base colgada, los 503 salen entre 2003 y 2008 ms.
+    - La solicitud que usa la conexión que ya existía corta por `TiempoAgotado`.
+    - La que abre una nueva corta por «timeout exceeded when trying to connect». Si al pedir conexión el pool tiene alguna libre, pg-pool pone a la solicitud en su cola con un límite de `connectionTimeoutMillis`. Ese límite sigue corriendo aunque después le toque una conexión nueva, y empieza antes que el de `conTiempoMaximo`. Ese mensaje no quiere decir solo «pool lleno».
+  - Con la conexión rechazada, los 503 salen en 1 a 3 ms.
+    - Si la solicitud llega antes de que pg note que la base cortó, usa la conexión vieja y falla con «Connection terminated unexpectedly»: por eso ese mensaje está en la lista de T19 (la mutación lo confirma).
+    - Si llega después, pg ya registró la conexión inactiva caída, y la nueva da `ECONNREFUSED`.
+  - El proxy simula la caída en la red. Una base que contesta pero tarda (una consulta pesada) la cubre T19 con `pg_sleep`.
+  - Mientras el proxy está cerrado, su puerto queda libre. Otro proceso podría tomarlo antes de `reabrir()`, que fallaría con `EADDRINUSE`. Es muy improbable y no pasó en las corridas.
+  - `salud.test.ts` tarda unos 17 s: 7 s son de estas pruebas y otros 7 s de las de T20, que crean una base por prueba. Las de T20 solo hacen `SELECT 1` y podrían compartir una base por archivo (`beforeAll`), lo que bajaría unos 6 s. No se hizo: es de T20.
+
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
 - Qué cambió:
   - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.
