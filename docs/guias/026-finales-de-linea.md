@@ -1,51 +1,22 @@
-# Guía: Normalización de finales de línea
+# 026 · Finales de línea LF
 
-## El problema
+Issue #26 · rama fix/026-finales-de-linea
 
-En Windows, Git tiene `core.autocrlf=true` por defecto. Con esa configuración, los archivos se almacenan en el repositorio con `LF` pero se convierten a `CRLF` al hacer checkout. El problema surge cuando alguna herramienta del proyecto lee los archivos con sus finales de línea reales: `scripts/spec-check.mjs` fallaba porque encontraba `\r\n` donde esperaba `\n`, rompiendo las comparaciones de texto y las expresiones regulares.
+## Qué cambió
+.gitattributes (nuevo, en la raíz): * text=auto eol=lf. Git guarda los archivos de texto con LF y los escribe con LF en el disco, sin importar el sistema ni el core.autocrlf de cada persona. No se tocó ningún otro archivo, ni scripts/spec-check.mjs.
 
-## La causa raíz
+## Por qué
+En Windows, con core.autocrlf=true (lo que propone el instalador de Git for Windows), git clone y git checkout escriben los archivos con CRLF. Los scripts leen el disco, no el índice. En scripts/spec-check.mjs, la expresión que reconoce las tareas de tasks.md termina en (.*)$, y el . no abarca el \r: con CRLF no encuentra ninguna tarea y el hook de pre-push rechaza el push con «no hay tareas con formato…» y «RNF-20.1 no está cubierto por ninguna tarea». Con el .gitattributes el disco queda en LF y el script funciona sin cambios.
 
-Sin un `.gitattributes` en la raíz, Git aplica la política del sistema operativo. En Windows con `core.autocrlf=true`, los archivos de texto quedan en disco con `CRLF`. Eso afecta a cualquier script Node.js que procese línea por línea o compare strings con saltos de línea incluidos.
+## Cómo se conecta
+- Lo guardado en git ya estaba en LF: git add --renormalize . no cambió ningún archivo. El cambio agrega solo este .gitattributes y esta guía.
+- El hook .githooks/pre-push y el job specs de CI corren el mismo spec-check. CI corre en Ubuntu, donde no hay conversión, y por eso nunca vio el problema.
+- El .gitattributes solo vale para lo que git escribe de ahora en adelante: un clon que ya existe en Windows sigue con CRLF en el disco hasta que se regeneren sus archivos.
 
-## La solución
+## Cómo se verifica
+- Clon nuevo en Windows: git ls-files --eol no muestra w/crlf y node scripts/spec-check.mjs pasa con el script de main sin modificar.
+- Clon existente: con git status limpio, git rm --cached -r . -q y después git reset --hard (pisa los cambios sin commitear). Después, git status sigue limpio y no cambia nada tras git checkout ..
 
-Se agrega un archivo `.gitattributes` en la raíz del repositorio con el contenido:
-
-```
-* text=auto eol=lf
-```
-
-Esto le indica a Git que:
-- trate todos los archivos como texto (`text=auto`), y
-- los normalice siempre a `LF` en disco (`eol=lf`), independientemente del sistema operativo o de la configuración local de `core.autocrlf`.
-
-Luego se ejecuta:
-
-```bash
-git add --renormalize .
-```
-
-Ese comando rescribe el índice aplicando las nuevas reglas de `.gitattributes` a todos los archivos ya rastreados, convirtiendo los `CRLF` que hubiera en `LF`.
-
-## Archivos afectados
-
-Después de `git add --renormalize .`, `git status` listará los archivos cuyo contenido en el índice cambió (los que tenían `CRLF`). Esos archivos no tienen cambios de contenido: solo cambian los finales de línea. El commit que sigue únicamente los renormaliza; no modifica ninguna lógica.
-
-## Cómo verificar que funciona
-
-```bash
-# Ver qué archivos quedaron afectados
-git status
-
-# Confirmar que spec-check pasa
-node scripts/spec-check.mjs
-
-# Confirmar que los tests siguen verdes
-npm test
-```
-
-## Referencias
-
-- [gitattributes — Git Documentation](https://git-scm.com/docs/gitattributes)
-- ADR relevante: `docs/adr/003-stack.md` (stack y convenciones del proyecto)
+## Qué mirar con atención
+- Que git add --renormalize . no cambie nada aparte del .gitattributes: si apareciera otro archivo, había CRLF guardado en el repositorio y se revisa antes de commitear.
+- Quien tenga el repo clonado en Windows tiene que regenerar sus archivos una vez, después de traerse este cambio con git pull. Si no, el pre-push vuelve a rechazar.
