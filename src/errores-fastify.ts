@@ -9,11 +9,13 @@ import { aProblema, SolicitudIlegible } from './errores.js';
 import { registrarErrorInterno, registrarSolicitud, registrarSolicitudIlegible, secretosDeAutorizacion } from './logs.js';
 
 // Si el cliente corta la conexión, o manda un chunked mal formado, mientras se lee el cuerpo, Node corta la solicitud con
-// ECONNRESET («aborted») y Fastify se lo pasa al manejador de errores. Es una solicitud que no se pudo leer, no un error del
-// servicio. Se reconoce por la solicitud, que se cortó antes de terminar, y no solo por el código: un ECONNRESET de la base o
-// de otro módulo llega con la solicitud ya leída y sigue siendo un error interno (plan, Lógica 6).
+// ECONNRESET («aborted») y Fastify le pasa ese mismo error al manejador de errores. Es una solicitud que no se pudo leer, no
+// un error del servicio. Se reconoce porque es el error con el que Node cortó la solicitud (`errored`), y no solo por el
+// código: un ECONNRESET de la base o de otro módulo es otro error y sigue siendo interno, aunque el cliente ya se haya ido.
+// `readableAborted` no alcanza: una solicitud sin cuerpo no la lee nadie, y Node la corta igual cuando el cliente se va
+// (plan, Lógica 6).
 function cortoElCliente(error: unknown, request: FastifyRequest): boolean {
-  return (error as { code?: unknown } | null)?.code === 'ECONNRESET' && request.raw.readableAborted;
+  return (error as { code?: unknown } | null)?.code === 'ECONNRESET' && error === request.raw.errored;
 }
 
 // El manejador de errores de la app: responde `error` con aProblema. Solo un error no previsto (500) se registra: los demás

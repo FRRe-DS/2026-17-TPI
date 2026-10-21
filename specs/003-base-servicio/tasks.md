@@ -108,7 +108,7 @@ Depende de: bloques A y B. Va antes que C y D: T32 pone el tope de los tiempos q
 ## Bloque G — Segundo cambio del 2026-10-20: el corte del cliente en una solicitud sin cuerpo y la ruta sin permisos
 Depende de: bloque F (T36 corrige `cortoElCliente`, de T33, y T37 el hook de permisos, de T35). Va antes que E; con C y D, en cualquier orden.
 
-- [ ] **T36. Reconocer el corte del cliente por el error de su solicitud: `cortoElCliente` compara con `request.raw.errored` (plan, Lógica 6).** RNF-03.3, RNF-03.2
+- [x] **T36. Reconocer el corte del cliente por el error de su solicitud: `cortoElCliente` compara con `request.raw.errored` (plan, Lógica 6).** RNF-03.3, RNF-03.2
   - Hecho cuando: `pruebas/http/errores-fastify.test.ts`, por un socket y con el cliente ya ido, comprueba que un `ECONNRESET` del servicio da 500 y deja su línea «Error interno» en un `GET` sin cuerpo (`/pruebas/publica`, lanzado en `preHandler`) y en un alta con el cuerpo a medias (lanzado en `onRequest`); que las pruebas de T33 siguen pasando (los cortes y el `chunked` mal formado sin línea de error, y el `ECONNRESET` con el cuerpo leído con la suya); y que el comentario de `cortoElCliente` explica el criterio nuevo.
-- [ ] **T37. Pedir token a una ruta sin permisos declarados: el `onRequest` de `registrarPermisos` la trata como protegida (plan, Lógica 4).** RNF-12.1, RNF-12.3
+- [x] **T37. Pedir token a una ruta sin permisos declarados: el `onRequest` de `registrarPermisos` la trata como protegida (plan, Lógica 4).** RNF-12.1, RNF-12.3
   - Hecho cuando: `pruebas/http/autenticacion.test.ts` comprueba que una ruta registrada antes de `registrarPermisos`, que el `onRoute` no ve, da 401 con `WWW-Authenticate: Bearer` sin token y 403 con un token sin roles conocidos, y que con cualquier rol conocido llega al manejador con el `sub` y los roles; que las pruebas de 404 y 405, con y sin token, siguen pasando; y que el comentario del hook explica la segunda capa.

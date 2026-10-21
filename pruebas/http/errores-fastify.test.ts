@@ -535,6 +535,26 @@ describe('construirApp: el cliente corta mientras se lee el cuerpo, por un socke
 
     expect(errores).toMatchObject([{ msg: 'Error interno', err: { codigo: 'ECONNRESET' } }]);
   });
+
+  // Una solicitud sin cuerpo no la lee nadie: cuando el cliente se va, Node la corta igual, aunque haya llegado entera. El
+  // ECONNRESET de la base o de otro módulo que llega entonces no es el del corte.
+  it('un ECONNRESET en una solicitud sin cuerpo, con el cliente ya ido, sigue dando 500 y deja su línea', async () => {
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+    const errores = await fallarDespuesDelCorte('preHandler', reset, 'GET /pruebas/publica HTTP/1.1\r\nHost: localhost\r\n\r\n');
+
+    expect(errores).toMatchObject([{ msg: 'Error interno', err: { codigo: 'ECONNRESET' } }]);
+  });
+
+  // Con el cuerpo a medias, la solicitud no terminó de llegar, pero el ECONNRESET que lanza el servicio antes de leerlo
+  // sigue siendo suyo.
+  it('un ECONNRESET que llega antes de leer el cuerpo, con el cuerpo a medias, sigue dando 500 y deja su línea', async () => {
+    const reset = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+    const errores = await fallarDespuesDelCorte('onRequest', reset, A_MEDIAS);
+
+    expect(errores).toMatchObject([{ msg: 'Error interno', err: { codigo: 'ECONNRESET' } }]);
+  });
 });
 
 // A un Expect que no es 100-continue, si nadie atiende checkExpectation, Node responde 417 solo, sin pasar por Fastify. El
