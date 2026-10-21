@@ -2,7 +2,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, describe, expect, it } from 'vitest';
 import { construirApp } from '../../src/app.js';
 import type { Manejador } from '../../src/contrato/operaciones.js';
-import { CONFIG, contratoCon, crearApp } from '../ayudas/app.js';
+import { CONFIG, contratoCon, crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { descartarLogs } from '../ayudas/logs.js';
 import { AUTORIZADO, bearer } from '../ayudas/tokens.js';
 
@@ -320,6 +320,7 @@ describe('precedencia: con varios problemas a la vez, responde por el primero de
   // No sale de `crearApp`, que cierra sus apps al terminar cada prueba.
   const app = construirApp({
     config: CONFIG,
+    pool: POOL_FALSO,
     contrato: CONTRATO_TODO,
     manejadores: { probarTodo: bien },
     flujoLog: descartarLogs,

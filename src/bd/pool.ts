@@ -102,6 +102,10 @@ export class PoolBd extends Pool {
   }
 }
 
+// Lo único que necesitan los manejadores de la base: consultar. El `PoolBd` lo cumple, y las pruebas HTTP le pasan un pool
+// falso cuando no hace falta la base. Cerrar el pool no les toca: lo hace quien lo crea.
+export type BaseDeDatos = Pick<PoolBd, 'consultar'>;
+
 // El pool de la configuración. No se conecta hasta la primera consulta, y hay que cerrarlo con `end()` al detenerse.
 export function crearPool(config: Pick<Config, 'urlBd' | 'tiempoBdMs'>, registrar?: RegistrarError): PoolBd {
   return new PoolBd(config, registrar);

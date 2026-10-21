@@ -581,6 +581,47 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - `08P01` (protocol_violation) también es de la clase 08 y cuenta como falta de base, como pide «`08xxx`» en el plan; `57014` (query_canceled, por un `statement_timeout` del servidor) no está en la lista y da 500. Nada lo configura hoy.
   - Las pruebas de consulta lenta esperan de verdad el tiempo de base que se les pone (500 ms cada una).
 
+### T20 — `GET /health` con la base arriba, registrada desde el contrato o como excepción · commit `003/T20`
+- Qué cambió:
+  - [src/salud.ts](../../src/salud.ts) nuevo:
+    - `verificarSalud`: el manejador. Hace `request.server.pool.consultar('SELECT 1')` y contesta `{ "estado": "ok" }`. Si la consulta falla, el error sale tal cual y el manejador de errores lo responde (503 si `consultar` lanza `BaseNoDisponible`, T19).
+    - `registrarSaludAMano(app, implementadas)`: registra `GET /health` como excepción temporal, pública (`config.permisos = { publica: true, roles: [] }`) y con `verificarSalud`, salvo que la lista de operaciones implementadas ya traiga un `GET /health`.
+    - La declaración `FastifyInstance.pool: BaseDeDatos`.
+  - [src/app.ts](../../src/app.ts): `construirApp` recibe `pool` (obligatorio), lo deja en `app.pool` con `decorate` y, después de `registrarOperaciones`, llama a `registrarSaludAMano` con las implementadas que esa devuelve. Va antes de las rutas 405.
+  - [src/operaciones/index.ts](../../src/operaciones/index.ts): `manejadores = { verificarSalud }`.
+  - [src/bd/pool.ts](../../src/bd/pool.ts): el tipo `BaseDeDatos` (`Pick<PoolBd, 'consultar'>`), que es lo que necesitan la app y los manejadores.
+  - [pruebas/ayudas/contrato-salud.yml](../../pruebas/ayudas/contrato-salud.yml) nuevo: solo `GET /health` como `verificarSalud`, pública, con el `X-Request-Id` sin patrón y la respuesta `Salud` del borrador del v1.
+  - [pruebas/ayudas/app.ts](../../pruebas/ayudas/app.ts): `POOL_FALSO` (falla si alguien consulta) y la opción `pool` de `crearApp`, que por defecto es el falso. [pruebas/http/precedencia.test.ts](../../pruebas/http/precedencia.test.ts), la única otra prueba que llama a `construirApp`, pasa `POOL_FALSO`.
+- Por qué así:
+  - El pool llega a los manejadores por `request.server.pool` y no por una fábrica `crearManejadores(pool)`, porque `manejadores` es un mapa fijo que `scripts/contrato-test.mjs` importa desde `dist/` sin crear ninguna base (T5). Las specs #4 a #8 consultan con `request.server.pool.consultar(sql, parámetros)`.
+  - `construirApp` no crea ni cierra el pool: lo hace el arranque (T22 lo crea, T23 lo cierra). Por eso el tipo es `BaseDeDatos` y no `PoolBd`.
+  - La excepción se decide con la lista de implementadas y no mirando el contrato a mano: si hay una operación implementada con método `GET` y ruta `/health`, sea cual sea su `operationId`, ya la registró el contrato. Si el contrato la tiene pero sin manejador, la operación queda pendiente y `/health` se registra a mano. Mirar solo la ruta no alcanza (un `POST /health` implementado no es un `GET`), lo mostró una mutación.
+  - Orden: `registrarSaludAMano` va después de `registrarPermisos` (el `onRoute` ve que declara sus permisos; era la advertencia de T35) y antes de las rutas 405, para que `POST /health` reciba su comodín y dé 405 con `Allow: GET`.
+  - El token se ignora porque la ruta es pública: el hook de permisos no lo mira, ni válido ni inválido (RNF-12.1, RNF-14.1).
+  - La consulta pasa por `consultar`, con su corte al tiempo de base (RNF-14.2). `SELECT 1` solo comprueba que la base contesta; no toca ninguna tabla.
+- Cómo se conecta:
+  - T21 prueba, con el proxy TCP, que `/health` da 503 en 2 s con la base colgada o rechazando conexiones, y que vuelve a 200 sin reiniciar. Este mismo manejador alcanza: no tiene lógica de tiempo propia.
+  - T22 le pasa a `construirApp` el pool que crea (`crearPool(config, registrar)`, T19) y los `manejadores` del servicio, y escribe en el log las implementadas y pendientes.
+  - T23: el hook de parada (503) va antes que el del 404, y `/health` durante el cierre responde 503 como las demás rutas.
+  - El healthcheck de compose (T27) hace un `GET /health` con `fetch`. No sirve un HEAD: da 405 porque `exposeHeadRoutes` está en `false`.
+  - T29: el paso 4 de `contrato-test.mjs` comprueba `/health`. Hoy, con `contrato-salud.yml`, el script ya lista `verificarSalud` como implementada.
+- Tests:
+  - [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts), 65 pruebas, con una base real en el contenedor:
+    - las mismas para las dos maneras de registrarla (a mano con el contrato de prueba, y desde el contrato con `contrato-salud.yml`): 200 con `{"estado": "ok"}` en JSON; consulta la base una vez; 200 sin token, con uno válido, vencido, firmado con otra clave, sin roles conocidos, con basura, con otro esquema y con el encabezado vacío; trae el `X-Request-Id` que llegó o uno nuevo si es inválido; con un pool que lanza `BaseNoDisponible`, 503 en problem+json; con uno que lanza otro error, 500 sin el mensaje; y ocho métodos que la ruta no tiene (`POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `HEAD`, `TRACE`, `PROPFIND`), con y sin token: 405 con `Allow: GET`;
+    - quién atiende la ruta se ve por lo que contesta: con `contrato-salud.yml` y un `verificarSalud` propio, ese manejador; con el `operationId` cambiado (`obtenerSalud`), también; con el contrato y sin manejador, el servicio; sin `/health` en el contrato, el servicio aunque haya un `verificarSalud` suelto; con solo un `POST /health` implementado, `GET /health` se registra a mano; y una operación `verificarSalud` en otra ruta no cambia nada;
+    - el servicio trae solo el manejador `verificarSalud`.
+  - [pruebas/unitarias/contrato-test.test.ts](../../pruebas/unitarias/contrato-test.test.ts), 2 pruebas nuevas: con `contrato-salud.yml` y los manejadores del servicio, `verificarSalud` queda implementada y no hay pendientes; sin manejadores, queda pendiente.
+  - Rojo primero: 62 de las pruebas de `salud.test.ts` y la de `contrato-test.test.ts` fallaban antes del código (la ruta no existía y `manejadores` estaba vacío); las demás de 405 ya pasaban, porque eso venía de T8.
+  - Mutaciones de `src/salud.ts`, `src/app.ts` y `src/operaciones/index.ts`: 18 de 18 detectadas (la ruta que se registra siempre, nunca, con otro método, otra ruta, solo por ruta o solo por método; protegida; sin permisos; en otra URL o con otro método; sin consultar la base; otro estado; el error tragado; un 200 con la base caída; sin decorar el pool; a mano después de las rutas 405; ignorar lo implementado; sin `verificarSalud` en el mapa). En la primera vuelta sobrevivía la de «solo por ruta»: se cerró con la prueba del `POST /health` implementado.
+  - 10 corridas seguidas de `salud.test.ts` y `contrato-test.test.ts`, sin fallas.
+  - A mano, con Node v24.15.0: `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml` lista «implementada GET /health (verificarSalud)», avisa que Schemathesis llega con T29 y termina con 0; sin `--contrato`, con el de `main`, «No hay operaciones implementadas» y 0.
+  - `npm test` (1650), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1555) y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - Toda app que arma `construirApp` tiene `GET /health`, también las de las pruebas con otro contrato. Una prueba que espere 404 en `/health` tendría que armar la app a mano. Hoy ninguna lo espera.
+  - La respuesta no se valida contra el esquema `Salud` del contrato: Fastify no valida respuestas. Lo comprobará Schemathesis en T29, cuando el v1 esté mergeado.
+  - `construirApp` exige `pool`. Quien lo llame sin base (las pruebas HTTP) pasa `POOL_FALSO`, que falla si alguien consulta; así una prueba que llega a la base sin querer lo dice en voz alta en vez de colgarse.
+  - Para el próximo `/sdd-change`: plan.md, Contrato y Estructura, dice que la excepción se registra «si el contrato la tiene, desde el contrato; si no, a mano»; conviene precisar que la decide la lista de implementadas (método y ruta) y que los manejadores llegan al pool por `request.server.pool`.
+
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
 - Qué cambió:
   - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.
