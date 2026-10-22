@@ -1,6 +1,6 @@
 # Spec 005 — Direcciones frecuentes
 
-Estado: borrador
+Estado: aprobada
 Issue: #5
 Etapa: TP1
 Responsable: @pablonacho
@@ -68,6 +68,7 @@ El cliente necesita conservar orígenes y destinos favoritos o recientes para re
 - M2 almacena una instantánea autónoma de texto y coordenadas, sin referencia a M4, como exige RNF-05.
 - El listado se ordena por `creadoEn` descendente y luego por `direccionId` descendente para que la paginación sea estable.
 - El DELETE realiza borrado físico porque ni el contrato ni el issue piden historial; agregar borrado lógico cambiaría la semántica y el almacenamiento sin beneficio requerido.
+- Reutilizar una `Idempotency-Key` con otro cuerpo responde `422` con `type: /errores/idempotencia-reutilizada`, el mismo identificador estable que usa la spec #4.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Confirmar el `type` del 422 por reutilizar una clave con otro cuerpo; se recomienda el mismo `/errores/idempotencia-reutilizada` de la spec #4.
+Ninguna.

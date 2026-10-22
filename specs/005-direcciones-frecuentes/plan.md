@@ -81,4 +81,4 @@ Los repositorios reciben parámetros SQL, nunca interpolan texto. Ningún logger
 - No se agrega dependencia ni ADR.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Responsable y `type` del 422 indicados en `spec.md`.
+Ninguna.
