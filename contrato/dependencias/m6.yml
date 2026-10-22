@@ -1,5 +1,6 @@
 # Propuesta desde el consumidor M2; NO es un acuerdo de los grupos 12 y 5.
-# Extracción sin cambios de las dos consultas y sus componentes referenciados.
+# Extracción de las dos consultas y sus componentes referenciados.
+# Propuesta de M2: clientId obligatorio y UUID en GET /trips, pendiente de acuerdo.
 openapi: 3.0.3
 info:
   title: Dependencia M6 consumida por M2 — propuesta issue 2
@@ -34,8 +35,10 @@ paths:
       parameters:
         - in: query
           name: clientId
+          required: true
           schema:
             type: string
+            format: uuid
           description: Filtrar por ID del cliente
         - in: query
           name: driverId
