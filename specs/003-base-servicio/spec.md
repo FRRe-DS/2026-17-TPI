@@ -20,7 +20,7 @@ Hace falta ahora por tres motivos: las specs de negocio dependen de ella, CI tod
 ## Usuarios
 - Integrantes del grupo, que desarrollan y prueban el módulo.
 - Equipo integrador del consorcio, que levanta y diagnostica los módulos.
-- Otros módulos que llamen a M2: según el enunciado, M5 y M9. Lo confirmará el contrato v1 (#1).
+- Otros módulos que llamen a M2: según el contrato v1 (ADR 001), M5 y M9, que consultan el estado de cuenta con el rol SERVICIO.
 
 ## Historias de usuario
 - HU-1. Como integrante del grupo, quiero levantar el servicio y su base con un solo comando para desarrollar y probar sin configurar nada a mano.
@@ -56,7 +56,7 @@ Ninguno: esta spec no agrega funcionalidad de negocio. Los RF-2.x llegan con las
   - 500: error interno (RNF-03.3);
   - 503: la base de datos u otro módulo no está disponible (RNF-13.3 y RNF-14.2), o el servicio se está deteniendo (RNF-04.5).
 - RNF-03.3: SI ocurre un error no previsto, ENTONCES EL SISTEMA responde 500 sin mensajes internos, trazas de pila ni consultas a la base, y registra el error completo en el log con el identificador de correlación, quitando lo que prohíbe RNF-19.1.
-- RNF-03.4: EL SISTEMA expone solo las operaciones de `contrato/openapi.yml` y, como excepción temporal registrada en un ADR, `GET /health`.
+- RNF-03.4: EL SISTEMA expone solo las operaciones de `contrato/openapi.yml`, `GET /health` incluida.
 - RNF-03.5: SI una solicitud tiene más de un problema, ENTONCES EL SISTEMA responde por el primero de este orden:
   1. la solicitud no se puede leer, la ruta de su URL está mal codificada o un parámetro de la ruta es demasiado largo (400, 408 o 431);
   2. el servicio se está deteniendo (503);
@@ -74,6 +74,7 @@ Ninguno: esta spec no agrega funcionalidad de negocio. Los RF-2.x llegan con las
 - RNF-04.5: CUANDO el servicio recibe la señal de parada, EL SISTEMA deja de aceptar solicitudes nuevas, espera a que terminen las que están en curso, cierra la conexión a la base y sale con código 0, todo en menos de 10 segundos.
   - Una solicitud que llega durante la parada por una conexión ya abierta recibe 503.
   - Una solicitud que no terminó a los 8 segundos de la señal se corta y queda registrada en el log.
+  - Si la señal llega mientras arranca, antes de aceptar solicitudes, deja de arrancar y sale con código 0, sin dejar ninguna migración a medias.
 
 ### Datos
 - RNF-05.1: EL SISTEMA guarda sus datos solo en su propia base de datos, y el esquema solo cambia mediante migraciones versionadas en el repositorio.
@@ -113,7 +114,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - RNF-08.1: SI una escritura choca con una restricción única de la base, ENTONCES EL SISTEMA responde 409 en problem+json, sin exponer el nombre de la restricción ni la consulta.
 
 ### Autenticación y autorización
-- RNF-12.1: EL SISTEMA exige un token en el encabezado `Authorization: Bearer` en todas las operaciones, salvo `GET /health` y las que el contrato declare públicas.
+- RNF-12.1: EL SISTEMA exige un token en el encabezado `Authorization: Bearer` en todas las operaciones, salvo las que el contrato declare públicas, como `GET /health`.
 - RNF-12.2: SI una operación protegida recibe un token que no es válido, ENTONCES EL SISTEMA responde 401 en problem+json, con el encabezado `WWW-Authenticate: Bearer` y un `detail` que dice el motivo sin repetir el token. Un token no es válido si:
   - falta o está mal formado;
   - no está firmado con HS256 y la clave configurada (por ejemplo, usa otro algoritmo o no tiene firma);
@@ -141,6 +142,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - RNF-14.5: EL SISTEMA escribe sus logs en JSON, en la salida estándar, una línea por evento.
 - RNF-14.6: CUANDO termina una solicitud, EL SISTEMA registra una línea con el identificador de correlación, el método, la ruta sin query string, el código de respuesta y la duración en milisegundos.
 - RNF-14.7: CUANDO el servicio llama a otro módulo, EL SISTEMA envía el identificador de correlación de la solicitud en curso, en el mismo encabezado.
+- RNF-14.8: SI una solicitud recibe 503 porque la base de datos u otro módulo no está disponible, ENTONCES EL SISTEMA registra la causa (qué falló al consultar la base, o en el último intento al otro módulo) en una línea con el identificador de correlación de esa solicitud, sin lo que prohíbe RNF-19.1.
 
 ### CI, privacidad y documentación
 - RNF-17.1: CUANDO se abre o actualiza un pull request hacia `main`, EL SISTEMA ejecuta en CI el build, el lint del código, las pruebas unitarias y de integración y la prueba de contrato, sin omitir ninguno.
@@ -150,15 +152,12 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - RNF-20.1: EL SISTEMA incluye en el repositorio un README que explica qué hace el servicio, cómo levantarlo, cómo correr las pruebas, cómo generar un token de prueba y qué variables usa, con un diagrama del servicio, su base de datos y los módulos con los que habla.
 
 ## Contrato y dependencias
-- Operaciones del contrato que cubre: ninguna. `contrato/openapi.yml` solo tiene `info`, y sus operaciones llegan con el contrato v1 (#1).
-- Excepción temporal, `GET /health`:
-  - Queda fuera del contrato como ruta operativa. Por eso va en inglés y fuera de `/api/v1/`: la constitución 7 deja los términos técnicos en inglés.
-  - Choca con la constitución 1 («nada se expone fuera de él»). El plan la registra en un ADR, y aprobar el PR de esta spec es la aceptación del grupo.
-  - Termina cuando se mergea el contrato v1 (#1). Si el contrato incluye la ruta, pasa a ser una operación más. Si la nombra distinto o no la incluye, el servicio se ajusta al contrato con /sdd-change.
+- Operaciones del contrato que cubre: `GET /health` (`verificarSalud`, pública). Las demás operaciones del contrato v1 (#1, ADR 001) llegan con las specs #4 a #8; mientras tanto, la prueba de contrato las informa como pendientes (RNF-07.2).
+- `GET /health` fue una excepción temporal fuera del contrato (ADR de la base), que terminó al mergearse el contrato v1: el contrato la declara sin token, en inglés y fuera de `/api/v1/`, y el servicio la registra desde él, como cualquier otra operación.
 - Operaciones de otros módulos que consume: ninguna todavía. El cliente para otros módulos se prueba contra un servidor de prueba, y los mocks de M1 y M6 se suman cuando #2 publique sus contratos.
-- Supuestos mientras no haya acuerdos. Si un acuerdo dice otra cosa, se ajusta con /sdd-change:
-  - Token (#9): HS256 con una clave por entorno, con emisor, audiencia y campo de roles configurables. `sub` identifica a la persona en M1; cómo se relaciona con el cliente de M2 lo define la spec del perfil (#4).
-  - Convenciones que el borrador del contrato v1 (#1, PR #16) propone al Grupo 1, que implementa el mismo módulo, y al consorcio: errores problem+json con `about:blank` para los genéricos, `GET /health`, `X-Request-Id`, rol SERVICIO, puerto 8082 y 2 s de espera entre módulos. El borrador ya corrigió las tres diferencias que tenía con esta spec (el 400 por un `X-Request-Id` inválido, los `title` en inglés y el 405 que faltaba). Quedan dos, pedidas en el PR #16 el 2026-10-20: el `title` del 403, que dice «Prohibido» y el servicio responde «Sin permiso», y la lista `errores` por campo en los 400, que esta spec no da porque el `detail` nombra el campo con problemas (RNF-03.2).
+- Acuerdos:
+  - Contrato v1 (#1, ADR 001), mergeado: coincide con esta spec en los errores problem+json (con `about:blank` y los `title` en español de los genéricos, «Sin permiso» en el 403 y sin lista de errores por campo en los 400), `GET /health`, `X-Request-Id`, el rol SERVICIO y los 2 s de espera por intento a otro módulo.
+  - Token (#9): el ADR 009, todavía en propuesta, le propone al consorcio el formato que esta spec ya usa: HS256 con una clave por entorno, con emisor, audiencia y campo de roles configurables. `sub` identifica a quien llama; cómo se relaciona con el cliente de M2 lo define la spec del perfil (#4). Si el acuerdo final dice otra cosa, se ajusta con /sdd-change.
 
 ## Casos límite
 - **Token con varios roles:** alcanza con que uno esté permitido para la operación.
@@ -181,7 +180,9 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - **Solicitud que llega durante la parada** por una conexión ya abierta: 503, antes que cualquier otro error.
 - **Solicitud sin token y con un cuerpo inválido:** 401, por el orden de RNF-03.5.
 - **La base se cae con el servicio corriendo:** `GET /health` y las operaciones que consultan la base responden 503 en 2 s como máximo. Cuando la base vuelve, responden normalmente sin reiniciar el servicio.
+- **Muchas solicitudes reciben 503 por la misma caída:** cada una deja en el log su línea con la causa y su propio identificador (RNF-14.8).
 - **La base no responde al arrancar, una migración falla o las migraciones no terminan en 60 s:** el servicio no arranca, y `docker compose up --wait` termina con error en menos de 2 minutos, con el motivo en `docker compose logs`.
+- **La base corta la conexión en medio de una migración** (por ejemplo, porque se reinicia): es una migración que falla. El servicio no arranca, y el motivo queda en el log como una línea JSON más (RNF-05.3 y RNF-14.5).
 - **Un tiempo de espera de más de 2147483647 ms:** el servicio no arranca y nombra la variable, sin mostrar su valor.
 - **Dos procesos aplican las migraciones a la vez:** cada migración se aplica una sola vez; el segundo espera al primero, dentro de sus 60 s.
 - **Migración mergeada después de otra con fecha más nueva:** se aplica igual, también en una base que ya tiene la más nueva.
@@ -190,10 +191,11 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - **Otro módulo responde 4xx:** no se reintenta. Qué contesta M2 lo decide la spec de cada operación.
 - **Llamada a otro módulo que no es GET:** nunca se reintenta. En TP1, M2 solo lee de otros módulos; las escrituras y su idempotencia llegan con RNF-09, en TP2.
 - **Un error interno trae el token o la contraseña de la base en su mensaje:** el log guarda el error sin esos datos (RNF-19.1 manda sobre RNF-03.3).
-- **Contrato sin operaciones (como hoy):** la prueba de contrato corre, informa que no hay operaciones y termina bien.
+- **Contrato sin operaciones:** la prueba de contrato corre, informa que no hay operaciones y termina bien.
 - **Contrato con operaciones todavía no implementadas:** quedan como pendientes y no hacen fallar la prueba (RNF-07.2).
 - **Dos PR verdes que juntos rompen `main`:** lo detecta el CI que corre sobre `main` después de cada merge. No se exige que la rama esté al día con `main`, para no frenar al grupo.
 - **Parada del contenedor con solicitudes en curso:** el servicio las termina antes de salir. Si alguna no terminó a los 8 s, la corta, lo registra en el log y sale igual con código 0, en menos de 10 s.
+- **Señal de parada mientras el servicio arranca** (por ejemplo, mientras espera el bloqueo de las migraciones de otro proceso): deja de arrancar, lo registra en el log y sale con código 0. La migración que estaba en curso no queda a medias: la base la deshace.
 
 ## Fuera de alcance
 - Operaciones de negocio (perfil, direcciones, preferencias, historial y calificación): specs #4 a #8.
@@ -209,7 +211,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 ## Criterios de finalización
 - `docker compose up -d --build --wait` levanta el servicio y la base desde un clon limpio, sin crear ni editar archivos, y `GET /health` responde 200 con `{"estado": "ok"}`.
 - Con la base detenida, `GET /health` responde 503 en problem+json en no más de 2 segundos de espera a la base. Al volver la base, responde 200 sin reiniciar el servicio.
-- `npm run build`, `npm run lint`, `npm test` y `npm run contrato:test` pasan en local y en CI. Los jobs `build-test` y `contract-test` ya no muestran avisos de «se omite»; el job `contrato` sigue omitiendo el lint del contrato hasta #1.
+- `npm run build`, `npm run lint`, `npm test` y `npm run contrato:test` pasan en local y en CI. Los jobs `build-test` y `contract-test` ya no muestran avisos de «se omite», y el job `contrato` hace el lint del contrato v1.
 - Las pruebas de autenticación usan una ruta que existe solo en el código de las pruebas, con tokens del comando de RNF-12.5 o armados por las pruebas, y cubren:
   - cada motivo de 401 de RNF-12.2, con `WWW-Authenticate: Bearer`;
   - 403 por rol no permitido y por token sin roles conocidos;
@@ -219,7 +221,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
   - el orden de RNF-03.5;
   - un error no previsto, que responde 500 sin el mensaje interno y deja el error en el log;
   - un duplicado en una tabla que crean solo las pruebas, que responde 409 sin el nombre de la restricción.
-- Toda respuesta, también las de error, trae `X-Request-Id`. Uno válido recibido se respeta, y uno inválido se reemplaza por un UUID. El mismo valor aparece en la línea de log de la solicitud. Ninguna línea de log contiene el token, `Authorization`, la clave, la contraseña de la base, cuerpos ni query strings.
+- Toda respuesta, también las de error, trae `X-Request-Id`. Uno válido recibido se respeta, y uno inválido se reemplaza por un UUID. El mismo valor aparece en la línea de log de la solicitud y, si respondió 503 por la base o por otro módulo, en la línea con la causa. Ninguna línea de log contiene el token, `Authorization`, la clave, la contraseña de la base, cuerpos ni query strings.
 - El cliente para otros módulos, probado contra un servidor de prueba:
   - corta a los 2 s aunque los encabezados lleguen antes;
   - reintenta una vez solo en GET, ante un 5xx o sin respuesta, y nunca ante un 4xx;
@@ -268,6 +270,10 @@ Se tomaron al clarificar, el 2026-10-15: el responsable delegó la resolución, 
 - **Segundo cambio del 2026-10-20**, con lo que encontró la revisión independiente del bloque F. Lo aprobó el responsable el 2026-10-20:
   - Cuenta como corte del cliente solo el que corta su propia solicitud mientras llega. Una solicitud sin cuerpo no la lee nadie, y Node la da por cortada en cuanto el cliente se va, aunque haya llegado entera. Con el criterio del bloque F, un corte de la base o de otro módulo que coincidía con eso se tomaba como del cliente y no quedaba en el log, contra la decisión del 2026-10-19 (RNF-03.3).
   - Una ruta sin permisos declarados nunca queda abierta. Desde el bloque F, el servicio no arranca con una así, pero ese control solo ve las rutas que se registran después de él. Como segunda capa, una ruta sin permisos pide token como cualquier operación protegida: los bloques que siguen suman rutas, y un olvido no puede abrir ninguna (RNF-12.1).
+- **Cambio del 2026-10-22**, con lo que encontraron el bloque C y su revisión independiente, ya con el contrato v1 en `main`. Lo aprobó el responsable el 2026-10-22:
+  - Termina la excepción de `GET /health`: el contrato v1 la declara (`verificarSalud`, sin token), y el servicio la registra solo desde el contrato. Conservar el registro a mano como reserva dejaría una ruta fuera del contrato si un contrato no la tuviera, contra la constitución 1, y las pruebas armarían una app distinta del servicio real.
+  - Una señal de parada durante el arranque corta el arranque y sale con código 0, igual que la parada del servicio andando: es una parada pedida, y otro código la haría parecer una falla. No hay solicitudes que esperar, y la base deshace la migración que estuviera en curso. Antes salía con 143 (130 con SIGINT), el código que Node da por defecto.
+  - La causa de un 503 por la base o por otro módulo queda en el log con el identificador de la solicitud (RNF-14.8). Antes, la de la base quedaba en una línea sin identificador, que con varias solicitudes a la vez no se podía unir con ninguna, y la de otro módulo no quedaba en ningún lado.
 
 ## Dudas abiertas
 Ninguna. Lo que depende de terceros quedó como supuesto en «Contrato y dependencias».
