@@ -21,24 +21,26 @@ El cliente necesita conservar orígenes y destinos favoritos o recientes para re
 ## Requisitos funcionales
 - RF-2.2: CUANDO un CLIENTE registra para su propio perfil una dirección válida de tipo `FAVORITA` o `RECIENTE`, EL SISTEMA guarda una copia propia del texto, alias opcional y coordenadas opcionales, responde `201` y devuelve una cabecera `Location`.
 - RF-2.2.1: CUANDO un CLIENTE lista sus direcciones o un OPERADOR lista las de un cliente existente, EL SISTEMA devuelve una página ordenada de la más nueva a la más antigua y, si se envía `tipo`, incluye solo `FAVORITA` o `RECIENTE` según corresponda.
-- RF-2.2.2: CUANDO un CLIENTE consulta una dirección propia o un OPERADOR consulta una dirección del cliente indicado, EL SISTEMA responde `200` con esa dirección; SI la dirección no pertenece al cliente de la ruta o no existe, ENTONCES EL SISTEMA responde `404`.
+- RF-2.2.2: CUANDO una persona con un rol admitido consulta una dirección que pertenece al cliente de la ruta, EL SISTEMA responde `200` con esa dirección.
+- RF-2.2.2.1: SI la dirección no pertenece al cliente de la ruta o no existe, ENTONCES EL SISTEMA responde `404`.
 - RF-2.2.3: CUANDO un CLIENTE envía uno o más campos válidos de una dirección propia, EL SISTEMA actualiza solo esos campos, conserva los demás y responde `200`.
-- RF-2.2.4: CUANDO un CLIENTE elimina una dirección propia existente, EL SISTEMA la elimina y responde `204` sin cuerpo; SI vuelve a consultarla o eliminarla, ENTONCES EL SISTEMA responde `404`.
-- RF-2.2.5: SI un CLIENTE intenta listar, crear, consultar, actualizar o eliminar direcciones bajo otro `clienteId`, ENTONCES EL SISTEMA responde `403`; un OPERADOR solo puede listar y consultar.
+- RF-2.2.4: CUANDO un CLIENTE elimina una dirección propia existente, EL SISTEMA la elimina y responde `204` sin cuerpo.
+- RF-2.2.4.1: SI se consulta o elimina una dirección ya eliminada, ENTONCES EL SISTEMA responde `404`.
+- RF-2.2.5: SI CLIENTE es el único rol del token que admite la operación y su `sub` no coincide con `clienteId`, ENTONCES EL SISTEMA responde `403`.
 
 ## Requisitos no funcionales
-- RNF-03.1: EL SISTEMA implementa exactamente las cinco operaciones, validaciones, códigos y errores `application/problem+json` definidos para direcciones en `contrato/openapi.yml`.
-- RNF-05.1: EL SISTEMA guarda la copia de cada dirección solo en la base propia de M2 mediante una migración versionada y no accede a datos internos de M4.
-- RNF-07.1: EL SISTEMA verifica las reglas con pruebas unitarias, HTTP, integración sobre PostgreSQL real y pruebas de contrato.
-- RNF-08.1: SI se repite o concurre un alta con la misma clave de idempotencia, ENTONCES EL SISTEMA produce un solo efecto y devuelve la respuesta prevista por el contrato.
-- RNF-19.1: EL SISTEMA no registra textos, alias, coordenadas, cuerpos, tokens ni claves de idempotencia en los logs.
-- RNF-20.1: EL SISTEMA documenta en la guía el modelo de copia propia, permisos y forma de probar las direcciones.
+- RNF-03: EL SISTEMA implementa exactamente las cinco operaciones, validaciones, códigos y errores `application/problem+json` definidos para direcciones en `contrato/openapi.yml`.
+- RNF-05: EL SISTEMA guarda la copia de cada dirección solo en la base propia de M2 mediante una migración versionada y no accede a datos internos de M4.
+- RNF-07: EL SISTEMA verifica las reglas con pruebas unitarias, HTTP, integración sobre PostgreSQL real y pruebas de contrato.
+- RNF-08: SI se repite o concurre un alta con la misma clave de idempotencia, ENTONCES EL SISTEMA produce un solo efecto y devuelve la respuesta prevista por el contrato.
+- RNF-19: EL SISTEMA no registra textos, alias, coordenadas, cuerpos, tokens ni claves de idempotencia en los logs.
+- RNF-20: EL SISTEMA documenta en la guía el modelo de copia propia, permisos y forma de probar las direcciones.
 
 ## Contrato y dependencias
 - Operaciones que cubre: `GET /api/v1/clientes/{clienteId}/direcciones (listarDirecciones)`, `POST /api/v1/clientes/{clienteId}/direcciones (crearDireccion)`, `GET /api/v1/clientes/{clienteId}/direcciones/{direccionId} (obtenerDireccion)`, `PATCH /api/v1/clientes/{clienteId}/direcciones/{direccionId} (actualizarDireccion)` y `DELETE /api/v1/clientes/{clienteId}/direcciones/{direccionId} (eliminarDireccion)`.
 - Depende de la spec #4: toda operación comprueba que el perfil del `clienteId` existe; si no, responde `404`.
 - M4 puede haber originado el texto o las coordenadas fuera de M2, pero M2 no lo llama y no conserva identificadores de M4.
-- CLIENTE administra solo sus direcciones; OPERADOR tiene lectura; SERVICIO no está admitido por estas operaciones.
+- La propiedad se exige cuando CLIENTE es el único rol del token admitido por la operación. Por eso un token CLIENTE+OPERADOR puede listar o consultar direcciones de otro cliente, pero no crearlas, actualizarlas ni eliminarlas; SERVICIO no está admitido.
 
 ## Casos límite
 - Texto vacío, texto de más de 255 caracteres, alias de más de 50, latitud fuera de `[-90, 90]`, longitud fuera de `[-180, 180]`, coordenadas incompletas, tipo desconocido o campos extra responden `400`.

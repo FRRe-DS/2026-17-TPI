@@ -9,21 +9,21 @@ Se agrega una tabla hija de `clientes`, un repositorio SQL y cinco manejadores. 
 
 | Archivo | Responsabilidad | Requisitos |
 |---|---|---|
-| `migraciones/<marca>_direcciones.sql` | Tabla e índices de direcciones | RF-2.2, RNF-05.1 |
+| `migraciones/<marca>_direcciones.sql` | Tabla e índices de direcciones | RF-2.2, RNF-05 |
 | `src/direcciones/modelo.ts` | Tipos y conversión de coordenadas/filas | RF-2.2, RF-2.2.2 |
-| `src/direcciones/repositorio.ts` | CRUD, filtro, paginación y orden | RF-2.2 a RF-2.2.4 |
-| `src/direcciones/servicio.ts` | Existencia del perfil, propiedad e idempotencia | RF-2.2, RF-2.2.5, RNF-08.1 |
-| `src/direcciones/operaciones.ts` | Cinco manejadores HTTP | RNF-03.1 |
-| `src/operaciones/index.ts` | Registro por `operationId` | RNF-03.1 |
+| `src/direcciones/repositorio.ts` | CRUD, filtro, paginación y orden | RF-2.2 a RF-2.2.4.1 |
+| `src/direcciones/servicio.ts` | Existencia, rol efectivo, propiedad e idempotencia | RF-2.2, RF-2.2.5, RNF-08 |
+| `src/direcciones/operaciones.ts` | Cinco manejadores HTTP | RNF-03 |
+| `src/operaciones/index.ts` | Registro por `operationId` | RNF-03 |
 | `pruebas/unitarias/direcciones.test.ts` | Transformaciones, orden y propiedad | RF-2.2.1, RF-2.2.5 |
-| `pruebas/integracion/direcciones.test.ts` | Persistencia, CRUD e idempotencia | RF-2.2 a RF-2.2.4, RNF-05.1, RNF-08.1 |
-| `pruebas/http/direcciones.test.ts` | Contrato, permisos, filtros y errores | RF-2.2 a RF-2.2.5, RNF-03.1 |
-| `specs/005-direcciones-frecuentes/guia.md` | Mapa y uso | RNF-20.1 |
+| `pruebas/integracion/direcciones.test.ts` | Persistencia, CRUD e idempotencia | RF-2.2 a RF-2.2.4.1, RNF-05, RNF-08 |
+| `pruebas/http/direcciones.test.ts` | Contrato, permisos, filtros y errores | RF-2.2 a RF-2.2.5, RNF-03 |
+| `specs/005-direcciones-frecuentes/guia.md` | Mapa y uso | RNF-20 |
 
 ## Contrato
 - Se implementan `listarDirecciones`, `crearDireccion`, `obtenerDireccion`, `actualizarDireccion` y `eliminarDireccion`.
 - Las validaciones de tipo, longitudes, coordenadas, UUID, paginación y cuerpos parciales salen de los `$ref` del OpenAPI.
-- CLIENTE requiere coincidencia entre `sub` y `clienteId`. OPERADOR solo alcanza los dos GET. Un recurso se busca siempre por `(cliente_id, direccion_id)` para no filtrar su existencia a otro cliente.
+- Se calcula `rolesEfectivos = rolesDelToken ∩ rolesDeLaOperacion`. Solo se exige `sub = clienteId` cuando `rolesEfectivos` es exactamente `[CLIENTE]`: CLIENTE+OPERADOR puede listar o consultar otro cliente, pero debe ser propietario para POST, PATCH y DELETE. Un recurso se busca siempre por `(cliente_id, direccion_id)` para no filtrar su existencia a otro cliente.
 - El POST devuelve 201, `Location: /api/v1/clientes/{clienteId}/direcciones/{direccionId}` y el cuerpo exacto de `Direccion`. DELETE devuelve 204 sin cuerpo.
 
 ## Datos
@@ -37,12 +37,12 @@ Se agrega una tabla hija de `clientes`, un repositorio SQL y cinco manejadores. 
 - `creado_en timestamptz NOT NULL DEFAULT clock_timestamp()`.
 - Índice `(cliente_id, creado_en DESC, direccion_id DESC)` y otro `(cliente_id, tipo, creado_en DESC, direccion_id DESC)` para listado y filtro.
 
-No se guarda `actualizado_en` porque el contrato no lo expone ni existe un requisito de auditoría para direcciones. El DELETE borra la fila. La idempotencia usa la tabla definida por la spec #4 con `operacion = crearDireccion` y `sujeto = clienteId`.
+No se guarda `actualizado_en` porque el contrato no lo expone ni existe un requisito de auditoría para direcciones. El DELETE borra la fila. La idempotencia usa la tabla definida por la spec #4. La migración se crea con `npx node-pg-migrate create direcciones --migration-file-language sql --migrations-dir migraciones`.
 
 ## Lógica
 
 ### Crear
-1. Comprobar propiedad y existencia del perfil.
+1. Calcular roles efectivos, comprobar propiedad si corresponde y comprobar existencia del perfil.
 2. Ejecutar el protocolo idempotente de la spec #4 dentro de una transacción.
 3. Generar `direccionId`, insertar la instantánea, guardar respuesta/Location y confirmar.
 
@@ -67,13 +67,13 @@ Los repositorios reciben parámetros SQL, nunca interpolan texto. Ningún logger
 
 | Requisito | Cobertura |
 |---|---|
-| RF-2.2, RF-2.2.1, RF-2.2.2, RF-2.2.3, RF-2.2.4, RF-2.2.5 | Tabla, repositorio, servicio, manejadores y pruebas |
-| RNF-03.1 | Registro por OpenAPI y pruebas HTTP/contrato |
-| RNF-05.1 | Copia local, migración y ausencia de integración con M4 |
-| RNF-07.1 | Unitarias, HTTP, integración y contrato |
-| RNF-08.1 | Idempotencia transaccional y concurrencia |
-| RNF-19.1 | Parametrización y pruebas de logs sin ubicaciones |
-| RNF-20.1 | Guía por tarea y visión general al validar |
+| RF-2.2, RF-2.2.1, RF-2.2.2, RF-2.2.2.1, RF-2.2.3, RF-2.2.4, RF-2.2.4.1, RF-2.2.5 | Tabla, repositorio, servicio, manejadores y pruebas |
+| RNF-03 | Registro por OpenAPI y pruebas HTTP/contrato |
+| RNF-05 | Copia local, migración y ausencia de integración con M4 |
+| RNF-07 | Unitarias, HTTP, integración y contrato |
+| RNF-08 | Idempotencia transaccional y concurrencia |
+| RNF-19 | Parametrización y pruebas de logs sin ubicaciones |
+| RNF-20 | Guía por tarea y visión general al validar |
 
 ## Decisiones
 - Se reutiliza la idempotencia de #4; no se crea un segundo mecanismo.
