@@ -35,6 +35,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - ESLint solo revisa `.ts`. Revisar los `.mjs` (como `scripts/`) pide declarar sus globales (`process`, `console`), y el paquete `globals` sería una dependencia nueva sin aprobar. Se retoma con `scripts/contrato-test.mjs` (T5).
   - Ningún script tipa `pruebas/` (`tsc -p tsconfig.json`): se corrió a mano y pasa; el editor sí lo usa.
   - Vitest corre hoy un solo grupo de pruebas; T17 lo separa en `unitarias` e `integracion`.
+  - Una respuesta con estado 204 (sin cuerpo) actualmente lanza ModuloNoDisponible (503). Como el plan de la cátedra no especifica este comportamiento, queda anotado para decidirlo en el próximo /sdd-change.
 
 ### T2 — Leer y validar la configuración del entorno · commit `003/T2`
 - Qué cambió:
