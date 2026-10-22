@@ -1,6 +1,6 @@
 # ADR 003 — Base del servicio: salud fuera del contrato y operaciones desde el contrato
 
-Fecha: 2026-10-18 · Estado: aceptada
+Fecha: 2026-10-18 · Estado: aceptada; la decisión 1 terminó el 2026-10-22 (ver «Actualización»)
 Issue: #3
 
 ## Contexto
@@ -30,3 +30,8 @@ Issue: #3
 - Las specs #4 a #8 escriben manejadores y sus pruebas. Si una operación necesita algo que el contrato no tiene, es un cambio de contrato (skill contrato-cambio).
 - Cuando el v1 se mergee, `verificarSalud` pasa a ser una operación más y entra en la prueba de contrato.
 - Mientras tanto, la prueba de contrato no prueba `/health`, porque el contrato de `main` no la tiene. La cubren las pruebas de integración, y el script de la prueba de contrato se prueba con un contrato de prueba que solo tiene `/health`.
+
+## Actualización (2026-10-22)
+- El contrato v1 se mergeó en `main` (ADR 001) y declara `GET /health` como `verificarSalud`, sin token (`security: []`). La ruta ya sale del contrato, así que la excepción de la decisión 1 terminó.
+- El registro a mano de `/health`, que seguía en el código como reserva para un contrato sin esa ruta, se quita (cambio de la spec 003 del 2026-10-22). Con él, un contrato sin `/health` igual la expondría, contra la constitución 1, y las pruebas con contratos propios armarían una app distinta del servicio real.
+- Las decisiones 2 y 3 siguen igual.
