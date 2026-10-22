@@ -3,7 +3,7 @@
 Issue #26 · rama `fix/026-finales-de-linea`
 
 ## Qué cambió
-`.gitattributes` (nuevo, en la raíz): `* text=auto eol=lf`. Git guarda los archivos de texto con LF y los escribe con LF en el disco, sin importar el sistema ni el `core.autocrlf` de cada persona. No se tocó ningún otro archivo, ni `scripts/spec-check.mj`s.
+`.gitattributes` (nuevo, en la raíz): `* text=auto eol=lf`. Git guarda los archivos de texto con LF y los escribe con LF en el disco, sin importar el sistema ni el `core.autocrlf` de cada persona. No se tocó ningún otro archivo, ni `scripts/spec-check.mjs`.
 
 ## Por qué
 En Windows, con `core.autocrlf=true` (lo que propone el instalador de Git for Windows), `git clone` y `git checkout` escriben los archivos con CRLF. Los scripts leen el disco, no el índice. En `scripts/spec-check.mjs`, la expresión que reconoce las tareas de `tasks.md` termina en `(.*)$`, y el `.` no abarca el `\r`: con CRLF no encuentra ninguna tarea y el hook de pre-push rechaza el push con «no hay tareas con formato…» y «RNF-20.1 no está cubierto por ninguna tarea». Con el `.gitattributes` el disco queda en LF y el script funciona sin cambios.
