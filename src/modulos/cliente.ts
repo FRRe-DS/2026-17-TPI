@@ -3,12 +3,12 @@ import { ModuloNoDisponible } from '../errores.js';
 export type RespuestaModulo = {
   estado: number;
   cuerpo: unknown;
-}
+};
 
 export type ClienteModulo = {
   obtener(ruta: string, idCorrelacion: string): Promise<RespuestaModulo>;
   enviar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo>;
-}
+};
 
 type OpcionesCliente = {
   nombre: string;
@@ -62,8 +62,8 @@ export function crearClienteModulo({
         const cuerpoParsed = JSON.parse(texto) as unknown;
         return { estado: respuesta.status, cuerpo: cuerpoParsed };
       }
-    } catch (error) {
-      throw Object.assign(new ModuloNoDisponible(nombre), { cause: error });
+    } catch {
+      throw new ModuloNoDisponible(nombre);
     }
     throw new ModuloNoDisponible(nombre);
   }
