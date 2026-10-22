@@ -64,7 +64,7 @@ it('corta el intento aunque los encabezados lleguen antes del plazo', async () =
     expect(serv.llamadas).toBe(1);
   });
 
-   it('devuelve el estado y el cuerpo como texto si un 4xx no responde con JSON', async () => {
+  it('devuelve el estado y el cuerpo como texto si un 4xx no responde con JSON', async () => {
     serv.responderCon({ tipo: 'no-json', estado: 400 });
     const cliente = crearClienteModulo({
       nombre: 'M6',
@@ -73,9 +73,21 @@ it('corta el intento aunque los encabezados lleguen antes del plazo', async () =
       reintentos: 0,
       encabezadoCorrelacion: 'X-Request-Id',
     });
-  
+
     const resultado = await cliente.enviar('POST', '/ruta-error', { dato: 1 }, 'id');
     expect(resultado.estado).toBe(400);
     expect(typeof resultado.cuerpo).toBe('string');
+  });
+
+  it('lanza ModuloNoDisponible ante un 2xx sin cuerpo JSON (204)', async () => {
+    serv.responderCon({ tipo: 'no-json', contenido: '', estado: 204 });
+    const cliente = crearClienteModulo({
+      nombre: 'M6',
+      urlBase: serv.url,
+      tiempoMs: 2000,
+      reintentos: 0,
+      encabezadoCorrelacion: 'X-Request-Id',
+    });
+    await expect(cliente.obtener('/', 'id')).rejects.toThrow(ModuloNoDisponible);
   });
 });

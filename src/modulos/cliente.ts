@@ -14,7 +14,7 @@ type OpcionesCliente = {
   nombre: string;
   urlBase: string;
   tiempoMs: number;
-  reintentos: number;
+  reintentos: number; // Su uso lógico está delegado a T25
   encabezadoCorrelacion: string;
 }
 
@@ -41,6 +41,7 @@ export function crearClienteModulo({
         headers: encabezados,
         body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
         signal: senal,
+        redirect: 'error',
       });
 
       // Lectura del cuerpo con la misma senal: cuenta para el corte por tiempo
@@ -61,8 +62,8 @@ export function crearClienteModulo({
         const cuerpoParsed = JSON.parse(texto) as unknown;
         return { estado: respuesta.status, cuerpo: cuerpoParsed };
       }
-    } catch (err) {
-      if (err instanceof ModuloNoDisponible) throw err;
+    } catch (error) {
+      throw Object.assign(new ModuloNoDisponible(nombre), { cause: error });
     }
     throw new ModuloNoDisponible(nombre);
   }
