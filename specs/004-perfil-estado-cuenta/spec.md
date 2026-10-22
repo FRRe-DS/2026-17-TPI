@@ -1,6 +1,6 @@
 # Spec 004 — Perfil y estado de cuenta
 
-Estado: borrador
+Estado: aprobada
 Issue: #4
 Etapa: TP1
 Responsable: @polettolucciano
@@ -75,6 +75,7 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - El estado no se edita: se deriva al consultar a partir de los bloqueos vigentes, para evitar que un campo guardado contradiga el historial.
 - Un bloqueo es vigente cuando no fue levantado y `hasta` es nulo o posterior al instante de consulta. La base, y no el reloj del cliente, decide ese instante.
 - Los listados se ordenan de forma estable por `creadoEn` descendente y luego por identificador descendente.
+- Los errores de dominio usan `type: /errores/perfil-ya-existe`, `type: /errores/idempotencia-reutilizada` y `type: /errores/bloqueo-ya-levantado`, nombres estables, relativos y específicos para que quien consume la API pueda distinguirlos.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Confirmar los `type` de los errores de dominio: se recomiendan `/errores/perfil-ya-existe`, `/errores/idempotencia-reutilizada` y `/errores/bloqueo-ya-levantado`.
+Ninguna.

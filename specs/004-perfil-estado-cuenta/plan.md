@@ -25,7 +25,7 @@ Se agregan persistencia y manejadores para el perfil y los bloqueos. El estado d
 - Se implementan `crearCliente`, `obtenerCliente`, `actualizarCliente`, `obtenerEstadoCuenta`, `listarBloqueos`, `crearBloqueo`, `obtenerBloqueo` y `levantarBloqueo`.
 - `src/operaciones/index.ts` solo asocia cada `operationId` con su manejador. Las rutas, validaciones y autorizaciones por rol siguen saliendo del OpenAPI, según ADR 003.
 - Los manejadores toman `request.identidad.sub`; para CLIENTE exigen que coincida con `params.clienteId`. OPERADOR puede leer perfiles y administrar bloqueos. SERVICIO solo llega a `obtenerEstadoCuenta` porque las demás rutas no admiten ese rol.
-- Los errores genéricos conservan `about:blank`. Los errores de dominio 409/422 usarán los `type` que se confirmen durante la aclaración, sin cambiar los códigos declarados por el contrato.
+- Los errores genéricos conservan `about:blank`. Los errores de dominio usan `/errores/perfil-ya-existe`, `/errores/idempotencia-reutilizada` y `/errores/bloqueo-ya-levantado`, sin cambiar los códigos declarados por el contrato.
 
 ## Datos
 
@@ -110,4 +110,4 @@ Se limita con `LIMIT size OFFSET page * size`; el total se cuenta con el mismo f
 - No se crea ADR: estas decisiones quedan dentro del alcance de la spec y no cambian la arquitectura compartida. Si el grupo decide reutilizar la tabla de idempotencia en otras specs, se promoverá esa decisión a ADR.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Responsable y `type` definitivos indicados en `spec.md`.
+Ninguna.
