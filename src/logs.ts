@@ -142,6 +142,17 @@ export function registrarSolicitud(request: FastifyRequest, reply: FastifyReply,
   );
 }
 
+const SOLICITUD_CORTADA = 'Solicitud cortada por la parada';
+
+// La línea de una solicitud que la parada cortó sin responderla (Lógica 13): los campos de la de una solicitud que terminó,
+// salvo el código, porque no salió ninguno. Va como advertencia: el cliente se quedó sin respuesta.
+export function registrarSolicitudCortada(request: FastifyRequest, reply: FastifyReply): void {
+  request.log.warn(
+    { metodo: request.method, ruta: request.url.split('?', 1)[0], duracionMs: reply.elapsedTime },
+    SOLICITUD_CORTADA,
+  );
+}
+
 // La línea de una solicitud que no se pudo leer como HTTP (Lógica 9): sin el método ni la ruta, que no se llegaron a leer, y
 // con el id de correlación que se generó para la respuesta. `log` es el de la app, que no lleva ningún id.
 export function registrarSolicitudIlegible(

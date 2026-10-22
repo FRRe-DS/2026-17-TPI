@@ -57,6 +57,5 @@ Si dos fuentes se contradicen, para y pregunta.
 
 ## Trampas conocidas
 - Hasta el bloque E de la spec base (#3) no existe `docker-compose.yml`: `docker compose` falla, y el job `contract-test` de CI omite sus pasos con un aviso.
-- `contrato/openapi.yml` solo tiene `info` hasta el contrato v1 (#1): CI omite su lint con un aviso.
 - Node 20 está fuera de soporte: usar Node 24 (`nvm use 24`).
 - `docker` sin sudo, y por lo tanto Testcontainers, exige estar en el grupo `docker`.

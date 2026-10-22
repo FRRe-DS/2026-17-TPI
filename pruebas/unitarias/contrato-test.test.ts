@@ -57,6 +57,25 @@ describe('listarOperaciones: contrato sin operaciones (RNF-07.2)', () => {
   });
 });
 
+// El contrato con solo GET /health (T20): con los manejadores del servicio, verificarSalud es una operación implementada.
+describe('listarOperaciones: la salud del servicio (RNF-07.2, ADR de la base)', () => {
+  const contratoSalud = cargarContrato(fileURLToPath(new URL('../ayudas/contrato-salud.yml', import.meta.url)));
+
+  it('con los manejadores del servicio, verificarSalud queda implementada y no hay pendientes', () => {
+    expect(listarOperaciones(contratoSalud, manejadores)).toEqual({
+      implementadas: [{ operationId: 'verificarSalud', metodo: 'GET', ruta: '/health' }],
+      pendientes: [],
+    });
+  });
+
+  it('sin manejadores, verificarSalud queda pendiente', () => {
+    expect(listarOperaciones(contratoSalud, {})).toEqual({
+      implementadas: [],
+      pendientes: [{ operationId: 'verificarSalud', metodo: 'GET', ruta: '/health' }],
+    });
+  });
+});
+
 describe('listarOperaciones: operaciones pendientes (RNF-07.2)', () => {
   it('sin manejadores, todas las operaciones del contrato quedan pendientes, en el orden del archivo', () => {
     expect(listarOperaciones(contratoPrueba, {})).toEqual({ implementadas: [], pendientes: OPERACIONES_DE_PRUEBA });

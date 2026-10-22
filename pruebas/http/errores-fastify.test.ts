@@ -126,6 +126,19 @@ describe('construirApp: la URL mal codificada y el parámetro de ruta largo, 400
       expect(respuesta.headers[ENCABEZADO]).toBeUndefined();
     });
 
+    // Durante la parada, Fastify pone Connection: close solo en lo que llega a una ruta (plan, Lógica 13).
+    it('deja abierta la conexión, salvo durante la parada (RNF-04.5)', async () => {
+      const app = crearApp(MANEJADORES);
+
+      const antes = await app.inject({ method: 'GET', url });
+      app.deteniendose = true;
+      const durante = await app.inject({ method: 'GET', url });
+
+      expect(antes.headers.connection).toBe('keep-alive');
+      expect(durante.statusCode).toBe(400);
+      expect(durante.headers.connection).toBe('close');
+    });
+
     it('deja una línea con el id, el método, la ruta sin query string, el estado y la duración (RNF-14.6)', async () => {
       const { app, logs } = crear();
 
