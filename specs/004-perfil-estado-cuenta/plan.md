@@ -46,6 +46,7 @@ No se guarda `estado`: se calcula con `EXISTS` sobre bloqueos vigentes. La clave
 - `motivo varchar(500) NOT NULL` y no vacío.
 - `hasta timestamptz NULL`, validada antes de insertar para que sea posterior al instante de la transacción.
 - `creado_en timestamptz NOT NULL DEFAULT clock_timestamp()`, `creado_por text NOT NULL`.
+- El campo `desde` que expone el contrato se mapea a `creado_en`; no se persiste otra marca temporal.
 - `levantado_en timestamptz NULL`, `levantado_por text NULL`, `motivo_levantamiento varchar(500) NULL`.
 - `CHECK` exige los tres datos de levantamiento juntos o los tres ausentes.
 - Índices `(cliente_id, creado_en DESC, bloqueo_id DESC)` y parcial por `cliente_id` para filas sin levantar; la condición temporal `hasta > now()` se evalúa en la consulta porque no es inmutable para un índice parcial.
@@ -93,6 +94,7 @@ Se limita con `LIMIT size OFFSET page * size`; el total se cuenta con el mismo f
 - HTTP: las ocho operaciones; 201/200/404/409/422; `Location`; PATCH parcial; filtro `vigente`; tokens CLIENTE+OPERADOR; SERVICIO rechazado fuera de estado de cuenta; respuestas problem+json.
 - Integración: migración up/down; transacciones; perfil único bajo concurrencia; idempotencia igual/diferente, concurrente y entre dos clientes; bloqueo con `hasta` pasada; actualización sin perder campos; historial conservado; levantamiento concurrente o vencido; estado y lista de vigentes consistentes.
 - Contrato: las ocho operaciones dejan de figurar pendientes y Schemathesis las prueba contra el servicio levantado.
+- Al registrar los nuevos manejadores, se actualiza `pruebas/integracion/arranque.test.ts`, que inicialmente espera que la única operación implementada sea `verificarSalud`.
 
 ## Trazabilidad
 
