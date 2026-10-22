@@ -3,7 +3,7 @@
 Estado: borrador
 Issue: #4
 Etapa: TP1
-Responsable: [NECESITA ACLARACIÓN] asignar un usuario de GitHub del subgrupo C
+Responsable: @polettolucciano
 
 ## Contexto y objetivo
 M2 necesita asociar los datos propios del cliente con la identidad emitida por M1, permitir que el cliente mantenga su perfil y exponer si puede operar. El estado de cuenta se calcula a partir de bloqueos administrativos: el historial se conserva, un bloqueo puede vencer o ser levantado y M5/M9 pueden consultar únicamente si el cliente está habilitado.
@@ -77,5 +77,4 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - Los listados se ordenan de forma estable por `creadoEn` descendente y luego por identificador descendente.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Confirmar qué usuario de GitHub del subgrupo C queda como responsable del issue #4.
 - [NECESITA ACLARACIÓN] Confirmar los `type` de los errores de dominio: se recomiendan `/errores/perfil-ya-existe`, `/errores/idempotencia-reutilizada` y `/errores/bloqueo-ya-levantado`.
