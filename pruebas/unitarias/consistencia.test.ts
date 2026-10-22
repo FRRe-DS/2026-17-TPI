@@ -66,8 +66,10 @@ const proyectos = (configuracionDeVitest.test?.projects ?? []).filter(
   (proyecto): proyecto is Proyecto => typeof proyecto === 'object' && 'test' in proyecto,
 );
 const raizEnDisco = fileURLToPath(raiz);
-const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco });
-const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco });
+// globSync devuelve las rutas con el separador de la plataforma («\» en Windows), y acá se comparan con prefijos escritos con «/».
+const conBarras = (ruta: string) => ruta.replaceAll('\\', '/');
+const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco }).map(conBarras);
+const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
 describe('vitest.config.ts: unitarias e integracion (RNF-07.1)', () => {
   it('declara los dos proyectos, en ese orden', () => {
