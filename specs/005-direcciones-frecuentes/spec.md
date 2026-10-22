@@ -3,7 +3,7 @@
 Estado: borrador
 Issue: #5
 Etapa: TP1
-Responsable: [NECESITA ACLARACIÓN] asignar un usuario de GitHub del subgrupo C
+Responsable: @pablonacho
 
 ## Contexto y objetivo
 El cliente necesita conservar orígenes y destinos favoritos o recientes para reutilizarlos. M2 guarda una copia propia del texto y, si se informan, las coordenadas; no guarda identificadores internos ni consulta la base de M4. Esta spec cubre RF-2.2 del issue #5 y depende de que exista el perfil de la spec #4.
@@ -70,5 +70,4 @@ El cliente necesita conservar orígenes y destinos favoritos o recientes para re
 - El DELETE realiza borrado físico porque ni el contrato ni el issue piden historial; agregar borrado lógico cambiaría la semántica y el almacenamiento sin beneficio requerido.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Confirmar qué usuario de GitHub del subgrupo C queda como responsable del issue #5.
 - [NECESITA ACLARACIÓN] Confirmar el `type` del 422 por reutilizar una clave con otro cuerpo; se recomienda el mismo `/errores/idempotencia-reutilizada` de la spec #4.
