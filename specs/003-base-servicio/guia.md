@@ -864,6 +864,32 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Una respuesta 2xx sin cuerpo (como un 204) cuenta como falta de disponibilidad y lanza `ModuloNoDisponible`. Comportamiento definido y cerrado por el PR #30.
   - El descarte del error original en el catch se resolverá formalmente en la T41 inyectando la causa en el constructor de `ModuloNoDisponible`.
 
+### T25 — Reintentar las lecturas y responder 503 cuando el otro módulo no está disponible · commit `003/T25`
+- Qué cambió:
+  - [src/modulos/cliente.ts](../../src/modulos/cliente.ts): `ejecutar` repite `intentar` hasta `1 + reintentos` veces si es un GET, con 200 ms de pausa entre intentos (`PAUSA_REINTENTO_MS`), y un solo intento con cualquier otro método. `intentar` hace un intento y lanza `IntentoFallido` ante un corte por tiempo, un error de red, un 5xx o un cuerpo que no es JSON. Agotados los intentos, `ejecutar` lanza `ModuloNoDisponible(nombre)`.
+  - [pruebas/ayudas/servidor-modulo.ts](../../pruebas/ayudas/servidor-modulo.ts): `responderCon` acepta una lista de comportamientos, uno por llamada y el último para las que siguen, y el servidor anota la hora de cada llamada (`momentos`).
+- Por qué así:
+  - Solo los GET se reintentan (RNF-13.2): repetir un POST, un PUT o un DELETE podría hacer el efecto dos veces, y lo que no puede duplicarse no se deja a un reintento ciego (RNF-08).
+  - Un 4xx no es falta de disponibilidad: el módulo respondió, y reintentar no cambia la respuesta. Vuelve a quien llamó, como desde T24.
+  - `IntentoFallido` es interno: lo único que sale del cliente es la respuesta o `ModuloNoDisponible`. Así quien lo use no distingue entre un corte y un 5xx, y todo da el mismo 503 que nombra al módulo (RNF-13.3).
+  - La pausa es una constante y no una opción: el plan la fija en 200 ms, y con los valores por defecto la espera total queda en 2 s + 200 ms + 2 s = 4,2 s.
+- Cómo se conecta:
+  - `reintentos` ya llegaba desde T24; de la configuración sale `config.reintentosModulos` (`M2_REINTENTOS_MODULOS`, por defecto 1).
+  - T41 le va a sumar la causa a `ModuloNoDisponible`: hoy el error del último intento se descarta en `ejecutar`, y ahí es donde tendría que pasarse.
+- Tests:
+  - [pruebas/modulos/cliente.test.ts](../../pruebas/modulos/cliente.test.ts), 12 pruebas nuevas (17 en el archivo):
+    - un GET con un 5xx, un corte de conexión, una respuesta que no es JSON y un corte por tiempo: se reintenta una vez, con la pausa medida entre las dos llamadas, y devuelve lo que responde el segundo intento (4); y da `ModuloNoDisponible` con «M6 no está disponible» si el segundo también falla (4);
+    - una conexión rechazada, con un puerto que acaba de liberarse: da `ModuloNoDisponible` tras la pausa (1);
+    - un POST con un 503 no se reintenta (1);
+    - un GET hace `1 + reintentos` intentos, y con 0 hace uno (1);
+    - con los valores por defecto, un módulo que nunca contesta termina entre 4,15 y 4,5 s, con dos llamadas (1).
+  - Rojo primero: fallaron 11 de las 12 (el POST ya pasaba, porque el cliente no reintentaba nada).
+  - Con Node v24.15.0: `npm test`, `npm run lint`, `npm run build` y `node scripts/spec-check.mjs --rama impl/003-bloque-d2 --base origin/main` pasan.
+- Para mirar con atención:
+  - La prueba de 4,2 s corre de verdad, sin relojes falsos, porque `AbortSignal.timeout` no usa los temporizadores de Vitest. Suma unos 4,2 s a la corrida; tiene su propio tope de 10 s.
+  - Con `enviar('GET', …)` también se reintenta: lo que decide es el método, no cuál de las dos funciones se llamó.
+  - Una respuesta 2xx sin cuerpo sigue contando como falta de disponibilidad, y ahora se reintenta (plan, Integraciones).
+
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
 - Qué cambió:
   - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.
