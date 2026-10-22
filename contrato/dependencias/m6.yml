@@ -1,0 +1,206 @@
+# Propuesta desde el consumidor M2; NO es un acuerdo de los grupos 12 y 5.
+# Extracción de las dos consultas y sus componentes referenciados.
+# Propuesta de M2: clientId obligatorio y UUID en GET /trips, pendiente de acuerdo.
+openapi: 3.0.3
+info:
+  title: Dependencia M6 consumida por M2 — propuesta issue 2
+  version: 0.1.0-borrador
+  description: |
+    Alcance: RF-2.4, RF-2.5 y RNF-05. Consultas extraídas del Grupo 12.
+    Fuente: https://github.com/FRRe-DS/2026-12-TPI/blob/4cc05b07725c6b6551f319578bbf73a5de926689/openapi.yaml
+    Blob: ba8180b5491214b3116aa127907b5071a8edf3be. Consulta: 2026-10-22.
+    La fuente declara versión 1.0.0; este borrador local no publica una versión de M6.
+    [NECESITA ACLARACIÓN] Grupos 12 y 5: aceptación conjunta de estas consultas,
+    URL base, autenticación, paginación, campos garantizados y errores.
+    Detalle y mensaje de coordinación: m6-propuesta.md; ADR 002.
+    No está listo para validar integración real ni para generar fixtures fiables:
+    Trip no declara required y faltan acuerdos descritos en la propuesta.
+servers:
+  - url: http://localhost:3006/api/v1
+    description: Servidor de desarrollo local (Contenedor OCI)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Trips
+    description: Operaciones del ciclo de vida y consultas de viajes
+
+paths:
+  /trips:
+    get:
+      tags: [Trips]
+      summary: Listar viajes filtrados (Para historial de M2 o consultas de Operador)
+      description: Permite a M2 obtener el historial resumido de un cliente (RF-2.4) o filtrar por conductor/estado.
+      parameters:
+        - in: query
+          name: clientId
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Filtrar por ID del cliente
+        - in: query
+          name: driverId
+          schema:
+            type: string
+          description: Filtrar por ID del conductor
+        - in: query
+          name: state
+          schema:
+            $ref: '#/components/schemas/TripState'
+          description: Filtrar por estado actual del viaje
+      responses:
+        '200':
+          description: Lista de viajes resumida
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+
+  /trips/{id}:
+    get:
+      tags: [Trips]
+      summary: Consultar estado actual y resumen de un viaje (RF-6.2)
+      description: Accesible por el cliente del viaje, el conductor asignado o un operador autorizado.
+      parameters:
+        - $ref: '#/components/parameters/TripIdParam'
+      responses:
+        '200':
+          description: Detalle y estado actual del viaje
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT emitido por M1 (Identidad y Acceso) con claims `sub` (userId) y `role` (CLIENT, DRIVER, OPERATOR).
+
+  parameters:
+    TripIdParam:
+      name: id
+      in: path
+      required: true
+      description: Identificador único del viaje (UUID)
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    TripState:
+      type: string
+      enum:
+        - PENDING_ARRIVAL
+        - DRIVER_ARRIVED
+        - IN_PROGRESS
+        - COMPLETED
+        - CANCELLED_BY_CLIENT
+        - CANCELLED_BY_DRIVER
+
+
+
+
+    Trip:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+          format: uuid
+        clientId:
+          type: string
+          format: uuid
+        driverId:
+          type: string
+          format: uuid
+        vehicleId:
+          type: string
+          format: uuid
+        originLatitude:
+          type: number
+          format: double
+        originLongitude:
+          type: number
+          format: double
+        destinationLatitude:
+          type: number
+          format: double
+        destinationLongitude:
+          type: number
+          format: double
+        state:
+          $ref: '#/components/schemas/TripState'
+        distanceKm:
+          type: number
+          format: float
+          nullable: true
+        durationMinutes:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+        - timestamp
+      properties:
+        code:
+          type: string
+          example: "INVALID_STATE_TRANSITION"
+        message:
+          type: string
+          example: "No se puede pasar a IN_PROGRESS desde el estado PENDING_ARRIVAL"
+        correlationId:
+          type: string
+          description: ID de correlación para trazabilidad en logs (RNF-14)
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    Unauthorized:
+      description: Token JWT ausente, inválido o expirado (M1)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: El rol o usuario autenticado no tiene permisos para realizar esta acción sobre el viaje
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Viaje no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

@@ -840,6 +840,30 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
     - las líneas: «Deteniendo el servicio», «Servicio detenido» con `cortadas`, «Solicitud cortada por la parada» y «El servicio no se detuvo en orden»;
     - `pruebas/ayudas/arranque.ts`.
 
+### T24 — Cliente para otros módulos · commit `003/T24`
+- Qué cambió:
+  - [src/modulos/cliente.ts](../../src/modulos/cliente.ts): `crearClienteModulo({ nombre, urlBase, tiempoMs, reintentos, encabezadoCorrelacion })` devuelve un `ClienteModulo` con `obtener(ruta, idCorrelacion)` (GET) y `enviar(metodo, ruta, cuerpo, idCorrelacion)` (otros métodos). Cada intento usa `AbortSignal.timeout(tiempoMs)` pasado a `fetch`, así el plazo cubre tanto la espera de encabezados como la lectura del cuerpo. Un 4xx vuelve directamente con `{ estado, cuerpo }`, sin reintento. Una falta de disponibilidad (timeout, fallo de red, 5xx o JSON inválido) lanza `ModuloNoDisponible(nombre)` de inmediato.
+  - [pruebas/modulos/cliente.test.ts](../../pruebas/modulos/cliente.test.ts): cinco pruebas de T24 contra `crearServidorModulo`. No necesita Docker; va en el proyecto `unitarias`.
+  - [pruebas/ayudas/servidor-modulo.ts](../../pruebas/ayudas/servidor-modulo.ts): servidor HTTP de prueba que acepta comportamientos configurables: `ok`, `demora-cuerpo` (envía encabezados inmediatamente con `flushHeaders`, demora el cuerpo), `4xx`, `5xx`, `no-json` y `corta`. Expone `levantar()`, `cerrar()`, `responderCon()`, `llamadas` y `encabezadosRecibidos`. El caso `no-json` con estado 4xx devuelve texto plano: el cliente retorna el estado y ese texto como cuerpo sin activar reintentos.
+- Por qué así:
+  - `AbortSignal.timeout` en el `fetch` y la lectura del cuerpo compartida (RNF-13.1): la señal corre desde antes del `fetch`, así que el plazo incluye la conexión, los encabezados y el cuerpo. `response.text()` con la misma señal aborta si el cuerpo tarda.
+  - 4xx sin reintento: el módulo remoto respondió; si dice que el recurso no existe o la solicitud es inválida, reintentar no ayuda. Si el cuerpo del 4xx no es JSON válido (por ejemplo texto plano de un proxy), se devuelve el texto crudo como cuerpo. Esto no activa reintentos.
+  - Encabezado de correlación (RNF-14.7): el id de la solicitud de entrada viaja al módulo remoto para unir los logs de los dos servicios.
+  - `reintentos` en el constructor, no en la llamada: cada spec que use el cliente lo configura al crearlo según el módulo (plan, Integraciones). Su uso lógico está delegado a T25.
+- Cómo se conecta:
+  - Depende solo de `src/errores.ts` (`ModuloNoDisponible`). El cliente de módulos no sabe nada de Fastify ni de la base.
+  - Las specs que consuman otros módulos crearán el cliente con `config.tiempoModulosMs`, `config.reintentosModulos` y `config.encabezadoCorrelacion`, que [pruebas/ayudas/app.ts](../../pruebas/ayudas/app.ts) ya expone en `CONFIG`.
+- Tests:
+  - [pruebas/modulos/cliente.test.ts](../../pruebas/modulos/cliente.test.ts): cinco pruebas integradas: «corta el intento aunque los encabezados lleguen antes del plazo» (servidor envía encabezados, demora el cuerpo 4× tiempoMs; el cliente falla en menos de 3× tiempoMs); «envía el id de correlación en el encabezado configurado» (servidor captura `x-request-id`, la prueba lo verifica); «devuelve el estado y el cuerpo de un 4xx sin reintentar» (servidor devuelve 404 una vez; prueba que `llamadas === 1` y el resultado trae `estado: 404`); «devuelve el estado y el cuerpo como texto si un 4xx no responde con JSON» (servidor devuelve texto plano con 400; prueba que el cuerpo es un texto); «lanza ModuloNoDisponible ante un 2xx sin cuerpo JSON» (servidor devuelve 204 sin cuerpo; prueba que lanza ModuloNoDisponible).
+  - Rojo primero: el módulo no existía y los tests fallaban con «Cannot find module».
+  - Con Node v24.15.0: `npm test`, `npm run lint` y `node scripts/spec-check.mjs --rama impl/003-bloque-d --base origin/main` pasan.
+- Para mirar con atención:
+  - `AbortSignal.timeout` empieza a contar al crearse, no al conectarse: si la conexión TCP tarda mucho, ese tiempo también se descuenta del plazo del cuerpo.
+  - T25 sumará el reintento para GET y el lanzamiento de `ModuloNoDisponible` cuando se agoten.
+  - Se configuró `redirect: 'error'` en el fetch; una redirección por parte del módulo remoto se considera una falta de disponibilidad y provocará un estado 503.
+  - Una respuesta 2xx sin cuerpo (como un 204) cuenta como falta de disponibilidad y lanza `ModuloNoDisponible`. Comportamiento definido y cerrado por el PR #30.
+  - El descarte del error original en el catch se resolverá formalmente en la T41 inyectando la causa en el constructor de `ModuloNoDisponible`.
+
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
 - Qué cambió:
   - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.
