@@ -59,13 +59,14 @@ describe('cargarContrato', () => {
     expect(cargarContrato()).toEqual(cargarContrato(RUTA_CONTRATO));
   });
 
-  it('carga y compila el contrato de main, aunque solo tenga info, y es OpenAPI 3.1', () => {
+  it('carga y compila el contrato de main, el v1 con sus rutas, y es OpenAPI 3.1', () => {
     const principal = cargarContrato();
     // Lo mismo que hace Ajv antes de resolver el primer $ref al contrato: compilar el documento entero como esquema.
     const validar = crearCompilador(principal)({ schema: { $ref: ID_CONTRATO }, httpPart: 'body', method: 'GET', url: '/' });
 
     expect(principal.openapi).toMatch(/^3\.1\./);
     expect(principal.info).toBeTypeOf('object');
+    expect(Object.keys(principal.paths as object)).toContain('/health');
     expect(validar({})).toBe(true);
   });
 

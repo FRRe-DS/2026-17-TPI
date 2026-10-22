@@ -1,7 +1,7 @@
 # Contrato de prueba: no es el del módulo (ese es contrato/openapi.yml). Sigue las convenciones del borrador del
 # contrato v1 (PR #16) y tiene una operación por cada caso que necesitan las pruebas de la spec 003 (plan, Pruebas):
 # la validación (T4), el registro de operaciones (T6), los errores (T7 y T8), los permisos (T15 y T16), la base
-# (T19 y T21) y la parada (T23). Cada prueba le da a cada operación el manejador que necesita.
+# (T19 y T21), la parada (T23) y la salud (T39). Cada prueba le da a cada operación el manejador que necesita.
 openapi: 3.1.0
 info:
   title: M2 Clientes, contrato de prueba
@@ -12,6 +12,23 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  # La única que es del v1. GET /health sale solo del contrato (RNF-03.4): una prueba que la use tiene que pasarle el
+  # manejador de verificarSalud, y sin él da 404.
+  /health:
+    parameters:
+      - $ref: '#/components/parameters/XRequestId'
+    get:
+      operationId: verificarSalud
+      summary: Verificar que el servicio responde. Pública, como en el v1.
+      security: []
+      responses:
+        '200':
+          description: El servicio responde.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+
   /pruebas/protegida:
     parameters:
       - $ref: '#/components/parameters/XRequestId'
@@ -171,6 +188,13 @@ components:
             type: object
 
   schemas:
+    Salud:
+      type: object
+      required: [estado]
+      properties:
+        estado:
+          type: string
+          const: ok
     ClienteNuevo:
       type: object
       additionalProperties: false

@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { arrancar, type Salir, type Servicio } from '../../src/arranque.js';
 import type { Entorno } from '../../src/config.js';
 import type { Manejador } from '../../src/contrato/operaciones.js';
+import { manejadores as manejadoresDelServicio } from '../../src/operaciones/index.js';
 import { entorno, escucha, puertoLibre } from '../ayudas/arranque.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs, type LineaDeLog } from '../ayudas/logs.js';
 import { leerRespuesta } from '../ayudas/socket.js';
 
-// El contrato de prueba: probarTarda y probarPublica son públicas, y probarProtegida exige un token.
+// El contrato de prueba: verificarSalud, probarTarda y probarPublica son públicas, y probarProtegida exige un token.
 const CONTRATO_PRUEBA = fileURLToPath(new URL('../ayudas/contrato-prueba.yml', import.meta.url));
 
 // Los textos de las líneas de la parada y el de la línea de cada solicitud que termina.
@@ -160,7 +161,7 @@ async function arrancarParaParar(cambios: Entorno = {}) {
   const servicio = await arrancar(entorno(base.urlBd, puerto, cambios), salir, {
     flujoLog: logs.flujo,
     rutaContrato: CONTRATO_PRUEBA,
-    manejadores: { probarTarda: tarda.manejador, probarPublica: consultaLarga, probarProtegida: bien },
+    manejadores: { ...manejadoresDelServicio, probarTarda: tarda.manejador, probarPublica: consultaLarga, probarProtegida: bien },
   });
   if (servicio === undefined) throw new Error(`el servicio no arrancó:\n${logs.texto()}`);
   andando.push(servicio);

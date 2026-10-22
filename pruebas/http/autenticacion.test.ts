@@ -259,7 +259,7 @@ describe('autenticación: una ruta que no declara sus permisos no se registra (R
   type App = ReturnType<typeof crearApp>;
   const PUBLICA = { permisos: { publica: true, roles: [] } };
 
-  // Rutas registradas a mano, fuera del contrato, como GET /health cuando no está en él (plan, Lógica 4).
+  // Rutas registradas a mano, fuera del contrato (plan, Lógica 4).
   const SIN_PERMISOS: [string, (app: App) => unknown, string][] = [
     ['con app.route, sin config', (app) => app.route({ method: 'GET', url: '/a-mano', handler: quien }), 'GET'],
     ['con app.route, con config y sin permisos', (app) => app.route({ method: 'GET', url: '/a-mano', config: {}, handler: quien }), 'GET'],
@@ -305,8 +305,8 @@ describe('autenticación: una ruta que no declara sus permisos no se registra (R
 describe('autenticación: una ruta sin permisos que el onRoute no vio pide token y un rol conocido (RNF-12.1, RNF-12.3)', () => {
   const CONOCIDOS = ['CLIENTE', 'CONDUCTOR', 'OPERADOR', 'SERVICIO'];
 
-  // Una app con una ruta sin `config.permisos` registrada antes que `registrarPermisos`: su onRoute no la ve, como no vería
-  // GET /health si se registrara a mano antes que el hook (plan, Lógica 4). crearApp no deja armarla, porque construirApp
+  // Una app con una ruta sin `config.permisos` registrada antes que `registrarPermisos`: su onRoute no la ve, como pasaría con
+  // una ruta que otro bloque registrara antes que el hook (plan, Lógica 4). crearApp no deja armarla, porque construirApp
   // llama a registrarPermisos antes de registrar cualquier ruta. Tiene solo el hook y el manejador de errores, sin el
   // encabezado de correlación. Cada solicitud arma la suya y la cierra.
   async function pedirAnterior(authorization?: string) {

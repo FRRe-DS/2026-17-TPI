@@ -26,6 +26,7 @@ describe('construirApp: solo responden las operaciones con manejador (RNF-03.4)'
   });
 
   it.each([
+    ['GET', '/health'],
     ['GET', '/pruebas/protegida'],
     ['GET', '/pruebas/sin-roles'],
     ['GET', '/pruebas/publica'],

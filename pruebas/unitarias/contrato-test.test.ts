@@ -9,6 +9,7 @@ const contratoPrueba = cargarContrato(RUTA_PRUEBA);
 
 // Las operaciones de contrato-prueba.yml, en el orden en que aparecen en el archivo.
 const OPERACIONES_DE_PRUEBA = [
+  { operationId: 'verificarSalud', metodo: 'GET', ruta: '/health' },
   { operationId: 'probarProtegida', metodo: 'GET', ruta: '/pruebas/protegida' },
   { operationId: 'probarSinRoles', metodo: 'GET', ruta: '/pruebas/sin-roles' },
   { operationId: 'probarPublica', metodo: 'GET', ruta: '/pruebas/publica' },
@@ -19,7 +20,7 @@ const OPERACIONES_DE_PRUEBA = [
   { operationId: 'probarFalla', metodo: 'GET', ruta: '/pruebas/falla' },
   { operationId: 'probarTarda', metodo: 'GET', ruta: '/pruebas/tarda' },
 ];
-const [PROTEGIDA, SIN_ROLES, PUBLICA, LISTADO, ALTA, PARAMETROS, DUPLICADA, FALLA, TARDA] = OPERACIONES_DE_PRUEBA;
+const [SALUD, PROTEGIDA, SIN_ROLES, PUBLICA, LISTADO, ALTA, PARAMETROS, DUPLICADA, FALLA, TARDA] = OPERACIONES_DE_PRUEBA;
 
 // listarOperaciones solo mira que el manejador exista: cualquier valor sirve.
 const manejador = () => undefined;
@@ -49,11 +50,14 @@ describe('listarOperaciones: contrato sin operaciones (RNF-07.2)', () => {
     expect(listarOperaciones(contrato, manejadores)).toEqual({ implementadas: [], pendientes: [] });
   });
 
-  it('el contrato de main se puede listar con los manejadores del servicio', () => {
+  // El v1 trae todas las operaciones de M2; el servicio implementa las que tienen manejador, y verificarSalud es la de esta spec.
+  it('con el v1 y los manejadores del servicio, verificarSalud queda implementada y las demás, pendientes', () => {
     const { implementadas, pendientes } = listarOperaciones(cargarContrato(), manejadores);
 
-    expect(implementadas).toBeInstanceOf(Array);
-    expect(pendientes).toBeInstanceOf(Array);
+    expect(implementadas).toContainEqual(SALUD);
+    expect(implementadas.map(({ operationId }) => operationId)).toEqual(Object.keys(manejadores));
+    expect(pendientes).not.toContainEqual(SALUD);
+    expect(pendientes.length).toBeGreaterThan(0);
   });
 });
 
@@ -91,8 +95,11 @@ describe('listarOperaciones: operaciones pendientes (RNF-07.2)', () => {
     });
   });
 
-  it('los manejadores de verdad no implementan nada del contrato de prueba, que es solo para las pruebas', () => {
-    expect(listarOperaciones(contratoPrueba, manejadores)).toEqual({ implementadas: [], pendientes: OPERACIONES_DE_PRUEBA });
+  it('los manejadores de verdad implementan del contrato de prueba solo verificarSalud, la única que es del v1', () => {
+    expect(listarOperaciones(contratoPrueba, manejadores)).toEqual({
+      implementadas: [SALUD],
+      pendientes: OPERACIONES_DE_PRUEBA.slice(1),
+    });
   });
 
   it.each([
@@ -132,7 +139,7 @@ describe('listarOperaciones: operaciones implementadas (RNF-03.4)', () => {
     const resultado = listarOperaciones(contratoPrueba, { probarPublica: manejador, probarAlta: manejador });
 
     expect(resultado.implementadas).toEqual([PUBLICA, ALTA]);
-    expect(resultado.pendientes).toEqual([PROTEGIDA, SIN_ROLES, LISTADO, PARAMETROS, DUPLICADA, FALLA, TARDA]);
+    expect(resultado.pendientes).toEqual([SALUD, PROTEGIDA, SIN_ROLES, LISTADO, PARAMETROS, DUPLICADA, FALLA, TARDA]);
   });
 
   it('dos métodos de la misma ruta se tratan por separado', () => {
