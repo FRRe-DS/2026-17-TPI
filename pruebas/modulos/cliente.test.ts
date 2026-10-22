@@ -65,7 +65,7 @@ it('corta el intento aunque los encabezados lleguen antes del plazo', async () =
   });
 
    it('devuelve el estado y el cuerpo como texto si un 4xx no responde con JSON', async () => {
-    serv.responderCon({tipo: 'no-json'});
+    serv.responderCon({ tipo: 'no-json', estado: 400 });
     const cliente = crearClienteModulo({
       nombre: 'M6',
       urlBase: serv.url,
