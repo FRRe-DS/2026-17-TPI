@@ -11,7 +11,9 @@ La revisión previa a la edición encontró un OpenAPI público del Grupo 12. Su
 
 ## Decisión
 
-Preparar `contrato/dependencias/m6.yml` como borrador desde el consumidor: extraer únicamente `GET /trips`, `GET /trips/{id}` y los componentes que referencian del commit público identificado en la propuesta. Mantener nombres, esquemas, estados, respuestas y seguridad de la fuente; los metadatos locales identifican procedencia y pendientes.
+Preparar `contrato/dependencias/m6.yml` como borrador desde el consumidor: extraer únicamente `GET /trips`, `GET /trips/{id}` y los componentes que referencian del commit público del Grupo 12 identificado en la propuesta. Mantener las demás definiciones de la fuente; los metadatos locales identifican procedencia y pendientes.
+
+M2 propone como única adaptación de consumo que `clientId` en `GET /trips` sea obligatorio y tenga formato UUID, pendiente de acuerdo con los grupos 12 y 5.
 
 Es una primera propuesta de dependencia: compatible/incompatible no aplica respecto de un contrato previo de consumo. No representa aprobación ni publicación de M6. Se adapta el paso de la skill que menciona `contrato/openapi.yml` al archivo de dependencia exigido por #2. El contrato publicado de M2 y `contrato/ORIGEN` no cambian.
 
