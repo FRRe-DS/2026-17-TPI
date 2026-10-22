@@ -612,3 +612,24 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
 - Para mirar con atención:
   - Desde T37 el orden de los hooks del plan (Lógica 8) ya no es solo una convención para el 404: antes, poner el de permisos antes que el del 404 no cambiaba nada (lo anotó T15); ahora una ruta que no existe daría 401 sin token, y fallan unas 100 pruebas.
   - La segunda capa no reemplaza al `onRoute`: una ruta sin permisos que pide token puede ser un error igual (`/health` tiene que ser pública), pero falla cerrada y en las pruebas, en vez de quedar abierta.
+
+### T24 — Cliente para otros módulos · commit `003/T24`
+- Qué cambió:
+  - [src/modulos/cliente.ts](../../src/modulos/cliente.ts): `crearClienteModulo({ nombre, urlBase, tiempoMs, reintentos, encabezadoCorrelacion })` devuelve un `ClienteModulo` con `obtener(ruta, idCorrelacion)` (GET) y `enviar(metodo, ruta, cuerpo, idCorrelacion)` (otros métodos). Cada intento usa `AbortSignal.timeout(tiempoMs)` pasado a `fetch`, así el plazo cubre tanto la espera de encabezados como la lectura del cuerpo. Un 4xx vuelve directamente con `{ estado, cuerpo }`, sin reintento. Una falta de disponibilidad (timeout, fallo de red, 5xx, JSON inválido) en el último intento lanza `ModuloNoDisponible(nombre)`.
+  - [pruebas/modulos/cliente.test.ts](../../pruebas/modulos/cliente.test.ts): tres pruebas de T24 contra `crearServidorModulo`. No necesita Docker; va en el proyecto `unitarias`.
+  - [pruebas/ayudas/servidor-modulo.ts](../../pruebas/ayudas/servidor-modulo.ts): servidor HTTP de prueba que acepta comportamientos configurables: `ok`, `demora-cuerpo` (envía encabezados inmediatamente con `flushHeaders`, demora el cuerpo), `4xx`, `5xx`, `no-json` y `corta`. Expone `levantar()`, `cerrar()`, `responderCon()`, `llamadas` y `encabezadosRecibidos`.
+- Por qué así:
+  - `AbortSignal.timeout` en el `fetch` y la lectura del cuerpo compartida (RNF-13.1): la señal corre desde antes del `fetch`, así que el plazo incluye la conexión, los encabezados y el cuerpo. `response.text()` con la misma señal aborta si el cuerpo tarda.
+  - 4xx sin reintento (RNF-02.1): el módulo remoto respondió; si dice que el recurso no existe o la solicitud es inválida, reintentar no ayuda.
+  - Encabezado de correlación (RNF-14.7): el id de la solicitud de entrada viaja al módulo remoto para unir los logs de los dos servicios.
+  - `reintentos` en el constructor, no en la llamada: cada spec que use el cliente lo configura al crearlo según el módulo (plan, Integraciones). La lógica de reintento (T25) ya está en el bucle y se activa cuando `reintentos > 0`.
+- Cómo se conecta:
+  - Depende solo de `src/errores.ts` (`ModuloNoDisponible`). El cliente de módulos no sabe nada de Fastify ni de la base.
+  - Las specs que consuman otros módulos crearán el cliente con `config.tiempoModulosMs`, `config.reintentosModulos` y `config.encabezadoCorrelacion`, que [src/ayudas/app.ts](../../pruebas/ayudas/app.ts) ya expone en `CONFIG`.
+- Tests:
+  - [pruebas/modulos/cliente.test.ts](../../pruebas/modulos/cliente.test.ts): «corta el intento aunque los encabezados lleguen antes del plazo» (servidor envía encabezados, demora el cuerpo 4× tiempoMs; el cliente falla en menos de 3× tiempoMs); «envía el id de correlación en el encabezado configurado» (servidor captura `x-request-id`, la prueba lo verifica); «devuelve el estado y el cuerpo de un 4xx sin reintentar» (servidor devuelve 404 una vez; prueba que `llamadas === 1` y el resultado trae `estado: 404`).
+  - Rojo primero: el módulo no existía y los tres tests fallaban con «Cannot find module».
+  - Con Node v24.15.0: `npm test` (1504), `npm run lint` y `node scripts/spec-check.mjs --rama impl/003-bloque-d --base origin/main` pasan.
+- Para mirar con atención:
+  - `AbortSignal.timeout` empieza a contar al crearse, no al conectarse: si la conexión TCP tarda mucho, ese tiempo también se descuenta del plazo del cuerpo.
+  - T25 sumará el reintento para GET y el lanzamiento de `ModuloNoDisponible` cuando se agoten; la lógica ya está en el bucle.
