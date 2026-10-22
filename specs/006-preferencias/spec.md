@@ -3,7 +3,7 @@
 Estado: borrador
 Issue: #6
 Etapa: TP1
-Responsable: [NECESITA ACLARACIÓN] asignar un usuario de GitHub del subgrupo C
+Responsable: @DrazenPavicich
 
 ## Contexto y objetivo
 M2 debe conservar las preferencias del cliente sobre tipos de vehículo, canales de comunicación y necesidades de accesibilidad. El contrato v1 ya fija los enumerados acordados con los módulos interesados. La consulta siempre devuelve un objeto completo, incluso si el cliente nunca guardó preferencias, y el guardado reemplaza el conjunto completo de forma idempotente.
@@ -70,5 +70,4 @@ Esta spec cubre RF-2.3 del issue #6 y depende del perfil de la spec #4.
 - La consulta de predeterminados no escribe en la base, para que un GET no tenga efectos laterales.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Confirmar qué usuario de GitHub del subgrupo C queda como responsable del issue #6.
 - [NECESITA ACLARACIÓN] El contrato exige devolver valores predeterminados pero no dice cuáles. Se recomienda `tiposVehiculo: []`, `canales: []`, `accesibilidad: []` y sin `observacionesAccesibilidad`, porque coincide con la semántica documentada de las listas vacías.
