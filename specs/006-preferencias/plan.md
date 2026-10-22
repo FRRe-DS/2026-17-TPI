@@ -36,7 +36,7 @@ Se agrega una tabla uno-a-uno con el perfil y dos manejadores. GET lee la fila o
 - `observaciones_accesibilidad varchar(255) NULL`.
 - Checks garantizan que cada arreglo contiene solo valores admitidos y no tiene repetidos; la validación HTTP continúa siendo la primera barrera.
 
-Una clave primaria por cliente impide filas duplicadas. No se guardan fechas porque el contrato no las expone ni el issue pide auditoría. El valor predeterminado recomendado es tres listas vacías y observaciones ausentes; se fijará en `modelo.ts` al resolver la aclaración.
+Una clave primaria por cliente impide filas duplicadas. No se guardan fechas porque el contrato no las expone ni el issue pide auditoría. El valor predeterminado es tres listas vacías y observaciones ausentes.
 
 ## Lógica
 
@@ -81,4 +81,4 @@ Las consultas son parametrizadas. Los manejadores no entregan el objeto de prefe
 - No se crea ADR ni se agrega una dependencia.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] Responsable y conjunto predeterminado indicados en `spec.md`.
+Ninguna.

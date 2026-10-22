@@ -1,6 +1,6 @@
 # Spec 006 — Preferencias
 
-Estado: borrador
+Estado: aprobada
 Issue: #6
 Etapa: TP1
 Responsable: @DrazenPavicich
@@ -68,6 +68,7 @@ Esta spec cubre RF-2.3 del issue #6 y depende del perfil de la spec #4.
 - Se guarda una sola fila por cliente y el PUT usa UPSERT atómico; no existe una fila por elemento ni actualización parcial.
 - Los enumerados se toman literalmente del contrato v1 y se protegen también en la base para impedir estados imposibles fuera de la API.
 - La consulta de predeterminados no escribe en la base, para que un GET no tenga efectos laterales.
+- Si todavía no existe una fila, las preferencias predeterminadas son `tiposVehiculo: []`, `canales: []`, `accesibilidad: []` y no incluyen `observacionesAccesibilidad`; coincide con la semántica que el contrato asigna a cada lista vacía.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] El contrato exige devolver valores predeterminados pero no dice cuáles. Se recomienda `tiposVehiculo: []`, `canales: []`, `accesibilidad: []` y sin `observacionesAccesibilidad`, porque coincide con la semántica documentada de las listas vacías.
+Ninguna.
