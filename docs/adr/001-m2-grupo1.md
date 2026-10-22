@@ -62,3 +62,4 @@ Queda abierto, porque depende de otros módulos:
 - M1 tiene que poder emitir tokens con rol SERVICIO para M5 y M9; se acuerda con el Grupo 1 y en el contrato de M1 (#9).
 - La idempotencia exige guardar clave, hash del cuerpo y respuesta (cambio de esquema de base en la spec que la implemente).
 - Si el Grupo 1 cambia algo, se actualiza este ADR antes del PR a la cátedra. Publicado, se actualiza `contrato/ORIGEN`.
+- Publicado el 2026-10-21: la cátedra mergeó el PR #5 de FRRe-DS/2026-TPI (commit `61465e9`), aprobado por el Grupo 1. `contrato/openapi.yml` es una copia exacta y `contrato/ORIGEN` registra ese commit.
