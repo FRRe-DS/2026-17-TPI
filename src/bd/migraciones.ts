@@ -35,6 +35,10 @@ export async function migrar({
   log = () => {},
 }: OpcionesMigrar): Promise<string[]> {
   const cliente = new Client({ connectionString: urlBd, connectionTimeoutMillis: tiempoBdMs });
+  // Si la base corta la conexión (un reinicio, pg_terminate_backend), pg emite 'error' y, sin oyente, el proceso se cae con
+  // una traza y sin la línea JSON del motivo (RNF-05.3, RNF-14.5). No hace falta hacer nada más: la consulta en curso, o la
+  // siguiente, falla con el corte, y migrar() lo devuelve como cualquier otro error.
+  cliente.on('error', () => {});
   const vencido = Promise.withResolvers<never>();
   const plazo = setTimeout(() => {
     // Con una consulta en curso, end() corta el socket en el acto. La base deshace la migración y suelta el bloqueo

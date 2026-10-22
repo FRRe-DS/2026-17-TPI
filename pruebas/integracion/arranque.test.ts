@@ -99,6 +99,18 @@ const esperanUnBloqueo = async (urlBd: string) =>
     )
   )[0]?.n;
 
+// Corta, desde una sesión aparte, las sesiones de la base que esperan un bloqueo consultivo, como si la base se
+// reiniciara. Devuelve cuántas cortó.
+const cortarLasQueEsperan = async (urlBd: string) =>
+  (
+    await filas(
+      urlBd,
+      `SELECT pg_terminate_backend(pid) FROM pg_locks
+       WHERE locktype = 'advisory' AND NOT granted
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+    )
+  ).length;
+
 const errores = (lineas: LineaDeLog[]) => lineas.filter((linea) => linea.level === ERROR);
 
 let base: BaseDePrueba;
@@ -285,6 +297,36 @@ describe('arrancar con la base o el puerto que no sirven (RNF-05.3, RNF-19.1)', 
     expect(logs.texto()).not.toContain(CONFIG_TOKENS.claveTokens);
     expect(await anotadas(base.urlBd)).toEqual(delRepositorio);
   });
+
+  // Si la base corta la conexión de las migraciones, pg emite 'error' en su cliente: sin un oyente, el proceso se cae con
+  // una traza en la salida de errores y sin esta línea, y Vitest lo cuenta como error de la corrida.
+  it('la base corta la conexión mientras espera el bloqueo: salir(1) con 57P01 en JSON y sin la contraseña', async () => {
+    const otroProceso = new Client({ connectionString: base.urlBd });
+    // Si la prueba falla antes de cerrarla, la base la corta al borrarse: ese error no importa.
+    otroProceso.on('error', () => {});
+    await otroProceso.connect();
+    try {
+      await otroProceso.query(`SELECT pg_advisory_lock(${PG_MIGRATE_LOCK_ID})`);
+      const puerto = await puertoLibre();
+      const { salir, logs, arranque } = arrancarParaProbar(entorno(base.urlBd, puerto));
+
+      await vi.waitFor(async () => expect(await cortarLasQueEsperan(base.urlBd)).toBe(1), {
+        timeout: 3000,
+        interval: 20,
+      });
+
+      expect(await arranque).toBeUndefined();
+      expect(salir.mock.calls).toEqual([[1]]);
+      expect(errores(logs.lineas())).toEqual([
+        expect.objectContaining({ msg: NO_ARRANCA, err: expect.objectContaining({ codigo: '57P01' }) }),
+      ]);
+      // La URL lleva la contraseña buena, la del contenedor (RNF-19.1).
+      expect(logs.texto()).not.toContain(new URL(base.urlBd).password);
+      expect(await escucha(puerto)).toBe(false);
+    } finally {
+      await otroProceso.end();
+    }
+  }, 10_000);
 });
 
 describe('arranque normal (RNF-05.2)', () => {

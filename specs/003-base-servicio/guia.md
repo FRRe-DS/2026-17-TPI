@@ -989,3 +989,25 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
 - Para mirar con atención:
   - Desde T37 el orden de los hooks del plan (Lógica 8) ya no es solo una convención para el 404: antes, poner el de permisos antes que el del 404 no cambiaba nada (lo anotó T15); ahora una ruta que no existe daría 401 sin token, y fallan unas 100 pruebas.
   - La segunda capa no reemplaza al `onRoute`: una ruta sin permisos que pide token puede ser un error igual (`/health` tiene que ser pública), pero falla cerrada y en las pruebas, en vez de quedar abierta.
+
+### T38 — Escuchar el `'error'` del cliente de `migrar` · commit `003/T38`
+- Qué cambió:
+  - [src/bd/migraciones.ts](../../src/bd/migraciones.ts): `migrar` le pone a su `pg.Client` un oyente de `'error'` que no hace nada, apenas lo crea. Es una línea con su comentario; el resto de `migrar` no cambia.
+- Por qué así:
+  - Si la base corta la conexión de `migrar` (un reinicio, `pg_terminate_backend`), pg primero rechaza la consulta en curso con el error de la base (57P01) y, cuando el socket se cierra, emite `'error'` en el cliente con «Connection terminated unexpectedly» (`node_modules/pg/lib/client.js`, el `once('end')` de `_connect`, 8.23.1). Sin oyente, ese `emit` tira el proceso con una traza en la salida de errores antes de que `arrancar` llegue a escribir la línea JSON del motivo (RNF-05.3, RNF-14.5; plan, Datos y Trampas verificadas). Lo encontró T18.
+  - No hace falta que el oyente haga nada: el corte ya llega por la consulta en curso o, si no había ninguna, por la siguiente, que pg rechaza con «not queryable». node-pg-migrate lo devuelve tal cual: sin `singleTransaction` no intenta `ROLLBACK`, el `pg_advisory_unlock` del `finally` falla y solo lo avisa por `log`, y `cliente.end()` termina enseguida porque la conexión ya terminó. Así `migrar` falla con el 57P01, y `arrancar` lo registra y llama a `salir(1)`, como con cualquier otro error.
+  - No se registra nada en el oyente: el motivo lo registra `arrancar`, una sola vez y con el error de la base, que dice más que «Connection terminated unexpectedly».
+- Cómo se conecta:
+  - `arrancar` ([src/arranque.ts](../../src/arranque.ts)) no cambia: su `catch` ya registra «El servicio no pudo arrancar» con el error y llama a `salir(1)`.
+  - Es el equivalente del `pool.on('error')` de [src/bd/pool.ts](../../src/bd/pool.ts) (T19), para el cliente suelto de las migraciones.
+  - El oyente también cubre el plazo de 60 s: si el socket diera un error después de que el plazo llamó a `cliente.end()`, tampoco tiraría el proceso.
+  - T40 le suma a `migrar` la `parada`; el oyente sigue igual.
+- Tests:
+  - [pruebas/integracion/migraciones.test.ts](../../pruebas/integracion/migraciones.test.ts), «migrar con la base que corta la conexión»: con `cortarSesiones` (`pg_terminate_backend` desde otra sesión), corta la sesión de `migrar` (1) en medio de una migración de la prueba que crea una tabla y tarda 5 s, y comprueba que falla con 57P01, que la tabla no quedó y que `migraciones_aplicadas` está vacía; (2) mientras espera el bloqueo de las migraciones que tiene otra sesión, y comprueba que falla con 57P01 y que no hay ninguna tabla.
+  - [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts), en «arrancar con la base o el puerto que no sirven»: con otra sesión que tiene el bloqueo, corta con `cortarLasQueEsperan` la sesión de `migrar` que lo espera, y comprueba `salir(1)`, una sola línea de error, en JSON, con «El servicio no pudo arrancar» y `codigo` 57P01, sin la contraseña del contenedor, y que el puerto no escucha.
+  - Lo de «sin errores sin atender» lo comprueba Vitest: un `'error'` sin oyente es una excepción no atrapada, y la corrida falla aunque las aserciones pasen. Rojo primero: las 3 pruebas pasaban sus aserciones, pero la corrida terminaba con «3 errors», cada uno un «Uncaught Exception: Connection terminated unexpectedly» desde `pg/lib/client.js:204`, atribuido a cada una de las 3. Con el oyente, sin errores. Sacar el oyente es la mutación que importa, y es justo ese rojo.
+  - Con Node v24.15.0: `npm test` (2010, 3 nuevas), `npm run lint`, `npm run build` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - En las pruebas, la promesa de `migrar` se atiende con `.catch(() => {})` apenas se crea y se mira después del corte (como en `bd.test.ts`): si rechazara mientras la prueba espera el corte, Vitest lo contaría como un rechazo sin atender.
+  - La otra sesión, la que tiene el bloqueo, se cierra en un `finally` dentro de la prueba y tiene su propio oyente de `'error'`: `onTestFinished` corre después del `afterEach` que borra la base, y el borrado con `FORCE` la cortaría.
+  - Con `log`, node-pg-migrate deja en `info` «Error executing: …» con la consulta cortada y el texto del aviso del `unlock` que falla, en inglés, como sus otros mensajes (T22). No llevan la contraseña: la consulta es la de la migración o la del bloqueo.
