@@ -72,7 +72,7 @@ Depende de: bloque A.
 ## Bloque D — Cliente para otros módulos
 Depende de: bloque A (del código, usa solo lo de T3).
 
-- [ ] **T24. Cliente para otros módulos: corte por tiempo, correlación y respuestas 4xx, con `crearClienteModulo` (plan, Integraciones).** RNF-13.1, RNF-14.7, RNF-02.1
+- [x] **T24. Cliente para otros módulos: corte por tiempo, correlación y respuestas 4xx, con `crearClienteModulo` (plan, Integraciones).** RNF-13.1, RNF-14.7, RNF-02.1
   - Hecho cuando: `pruebas/modulos/cliente.test.ts`, contra el servidor de prueba, comprueba que cada intento se corta a tiempo aunque los encabezados lleguen antes; que la llamada lleva el id de la solicitud en curso en el encabezado de correlación; y que un 4xx vuelve con su código y su cuerpo, sin reintento.
 - [ ] **T25. Reintentar las lecturas y responder 503 cuando el otro módulo no está disponible (plan, Integraciones).** RNF-13.2, RNF-13.3
   - Hecho cuando: `pruebas/modulos/cliente.test.ts` comprueba que un GET se reintenta una vez a los 200 ms ante un 5xx, una conexión rechazada, un corte o una respuesta que no es JSON; que un POST no se reintenta; que al final da 503 nombrando el módulo; y que, con los valores por defecto, todo termina en no más de 4,2 s.
