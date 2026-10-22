@@ -1,16 +1,16 @@
 import { ModuloNoDisponible } from '../errores.js';
 
-export interface RespuestaModulo {
+export type RespuestaModulo = {
   estado: number;
   cuerpo: unknown;
 }
 
-export interface ClienteModulo {
+export type ClienteModulo = {
   obtener(ruta: string, idCorrelacion: string): Promise<RespuestaModulo>;
   enviar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo>;
 }
 
-interface OpcionesCliente {
+type OpcionesCliente = {
   nombre: string;
   urlBase: string;
   tiempoMs: number;
@@ -26,7 +26,8 @@ export function crearClienteModulo({
 }: OpcionesCliente): ClienteModulo {
   async function ejecutar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
     try {
-      const señal = AbortSignal.timeout(tiempoMs);
+    // Se utiliza AbortSignal para asegurar el corte por tiempo global (conexión y cuerpo compartido)
+      const senal = AbortSignal.timeout(tiempoMs);
       const encabezados: Record<string, string> = {
         Accept: 'application/json',
         [encabezadoCorrelacion]: idCorrelacion,
@@ -39,12 +40,12 @@ export function crearClienteModulo({
         method: metodo,
         headers: encabezados,
         body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
-        signal: señal,
+        signal: senal,
       });
 
-      // Lectura del cuerpo con la misma señal: cuenta para el corte por tiempo
+      // Lectura del cuerpo con la misma senal: cuenta para el corte por tiempo
       const texto = await respuesta.text();
-
+      // Las respuestas de la familia 4xx regresan directamente sin activar reintentos innecesarios
       if (respuesta.status >= 400 && respuesta.status < 500) {
         let cuerpoParsed: unknown;
         try {

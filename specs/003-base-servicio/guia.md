@@ -34,7 +34,6 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - `npm install` avisa que `glob@10.5.0` está deprecado. Lo trae `@testcontainers/postgresql` (solo pruebas) y no entra a la imagen, que instala con `--omit=dev`.
   - ESLint solo revisa `.ts`. Revisar los `.mjs` (como `scripts/`) pide declarar sus globales (`process`, `console`), y el paquete `globals` sería una dependencia nueva sin aprobar. Se retoma con `scripts/contrato-test.mjs` (T5).
   - Ningún script tipa `pruebas/` (`tsc -p tsconfig.json`): se corrió a mano y pasa; el editor sí lo usa.
-  - Vitest corre hoy un solo grupo de pruebas; T17 lo separa en `unitarias` e `integracion`.
   - Vitest corría un solo grupo de pruebas; T17 lo separó en `unitarias` e `integracion`.
 
 ### T2 — Leer y validar la configuración del entorno · commit `003/T2`
@@ -841,8 +840,26 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
     - las líneas: «Deteniendo el servicio», «Servicio detenido» con `cortadas`, «Solicitud cortada por la parada» y «El servicio no se detuvo en orden»;
     - `pruebas/ayudas/arranque.ts`.
 
-### T24 — Cliente para otros módulos
+### T24 — Cliente para otros módulos · commit `003/T24`
+- Qué cambió:
+  - [src/modulos/cliente.ts](../../src/modulos/cliente.ts): `crearClienteModulo({ nombre, urlBase, tiempoMs, reintentos, encabezadoCorrelacion })` devuelve un `ClienteModulo` con `obtener(ruta, idCorrelacion)` (GET) y `enviar(metodo, ruta, cuerpo, idCorrelacion)` (otros métodos). Cada intento usa `AbortSignal.timeout(tiempoMs)` pasado a `fetch`, así el plazo cubre tanto la espera de encabezados como la lectura del cuerpo. Un 4xx vuelve directamente con `{ estado, cuerpo }`, sin reintento. Una falta de disponibilidad (timeout, fallo de red, 5xx o JSON inválido) lanza `ModuloNoDisponible(nombre)` de inmediato.
+  - [pruebas/modulos/cliente.test.ts](../../pruebas/modulos/cliente.test.ts): tres pruebas de T24 contra `crearServidorModulo`. No necesita Docker; va en el proyecto `unitarias`.
+  - [pruebas/ayudas/servidor-modulo.ts](../../pruebas/ayudas/servidor-modulo.ts): servidor HTTP de prueba que acepta comportamientos configurables: `ok`, `demora-cuerpo` (envía encabezados inmediatamente con `flushHeaders`, demora el cuerpo), `4xx`, `5xx`, `no-json` y `corta`. Expone `levantar()`, `cerrar()`, `responderCon()`, `llamadas` y `encabezadosRecibidos`.
+- Por qué así:
+  - `AbortSignal.timeout` en el `fetch` y la lectura del cuerpo compartida (RNF-13.1): la señal corre desde antes del `fetch`, así que el plazo incluye la conexión, los encabezados y el cuerpo. `response.text()` con la misma señal aborta si el cuerpo tarda.
+  - 4xx sin reintento: el módulo remoto respondió; si dice que el recurso no existe o la solicitud es inválida, reintentar no ayuda.
+  - Encabezado de correlación (RNF-14.7): el id de la solicitud de entrada viaja al módulo remoto para unir los logs de los dos servicios.
+  - `reintentos` en el constructor, no en la llamada: cada spec que use el cliente lo configura al crearlo según el módulo (plan, Integraciones).
+- Cómo se conecta:
+  - Depende solo de `src/errores.ts` (`ModuloNoDisponible`). El cliente de módulos no sabe nada de Fastify ni de la base.
+  - Las specs que consuman otros módulos crearán el cliente con `config.tiempoModulosMs`, `config.reintentosModulos` y `config.encabezadoCorrelacion`, que [pruebas/ayudas/app.ts](../../pruebas/ayudas/app.ts) ya expone en `CONFIG`.
+- Tests:
+  - [pruebas/modulos/cliente.test.ts](../../pruebas/modulos/cliente.test.ts): «corta el intento aunque los encabezados lleguen antes del plazo» (servidor envía encabezados, demora el cuerpo 4× tiempoMs; el cliente falla en menos de 3× tiempoMs); «envía el id de correlación en el encabezado configurado» (servidor captura `x-request-id`, la prueba lo verifica); «devuelve el estado y el cuerpo de un 4xx sin reintentar» (servidor devuelve 404 una vez; prueba que `llamadas === 1` y el resultado trae `estado: 404`).
+  - Rojo primero: el módulo no existía y los tres tests fallaban con «Cannot find module».
+  - Con Node v24.15.0: `npm test` (1504), `npm run lint` y `node scripts/spec-check.mjs --rama impl/003-bloque-d --base origin/main` pasan.
 - Para mirar con atención:
+  - `AbortSignal.timeout` empieza a contar al crearse, no al conectarse: si la conexión TCP tarda mucho, ese tiempo también se descuenta del plazo del cuerpo.
+  - T25 sumará el reintento para GET y el lanzamiento de `ModuloNoDisponible` cuando se agoten.
   - Una respuesta 2xx sin cuerpo, como un 204, hoy lanza ModuloNoDisponible (503). El plan no lo define; se decide en T25 o en el próximo /sdd-change.
 
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
