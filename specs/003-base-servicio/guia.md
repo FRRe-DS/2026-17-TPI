@@ -720,6 +720,125 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - RNF-14.5, opcional de la revisión del bloque A: ahora una prueba comprueba que, sin `flujoLog`, las líneas a mano van a la salida estándar. Las de la app, con el destino por defecto de pino, se escriben directo en el descriptor 1 y no pasan por `process.stdout.write`: siguen comprobadas a mano (arriba).
   - Para el próximo `/sdd-change`: plan.md, Lógica 12 y Estructura, la firma `arrancar(env, salir, { flujoLog?, rutaContrato? })` → `Servicio | undefined`; el pseudocódigo con `crearPool(config, registrar)`; las líneas que escribe («Operaciones del contrato», «Servicio escuchando en …», «El servicio no pudo arrancar», una por variable); y que antes de la app se escriben a mano con el formato de pino.
 
+### T23 — Detenerse en orden ante SIGTERM o SIGINT, con corte a los 8 s · commit `003/T23`
+- Qué cambió:
+  - [src/arranque.ts](../../src/arranque.ts): el `Servicio` que devuelve `arrancar` suma `detener({ corteMs = 8000 })`, que sigue la Lógica 13:
+    - pone `app.deteniendose` en true y registra «Deteniendo el servicio»;
+    - llama a `app.close()` y después a `pool.end()`, con un corte de `corteMs`;
+    - si terminan antes, registra «Servicio detenido» con `cortadas: 0` y llama a `salir(0)`;
+    - si no, deja una línea `warn` «Solicitud cortada por la parada» por cada solicitud en curso (id de correlación, método, ruta sin query string y duración), cierra todas las conexiones (`closeAllConnections`), registra «Servicio detenido» con cuántas cortó y llama a `salir(0)` sin esperar al pool;
+    - si algo falla al cerrar, registra «El servicio no se detuvo en orden» con el error y llama igual a `salir(0)`;
+    - llamarla otra vez devuelve la misma parada, aunque se pase otro `corteMs`.
+    - `arrancar` acepta además `manejadores`, solo para las pruebas; sin él, usa los del servicio.
+  - [src/app.ts](../../src/app.ts): `prepararParada` registra el primer hook `onRequest`, antes del del 404:
+    - anota cada respuesta en `app.enCurso` hasta que emite `close` o hasta que se cierra su conexión;
+    - con `app.deteniendose`, lanza `Deteniendose` (503, problem+json) y, cada vez que termina una respuesta, cierra las conexiones que quedaron sin solicitudes (`closeIdleConnections`);
+    - `return503OnClosing: false`, para que Fastify no responda su 503 propio.
+  - [src/errores-fastify.ts](../../src/errores-fastify.ts): durante la parada, el 400 por la URL (frameworkErrors) sale con `Connection: close`.
+  - [src/logs.ts](../../src/logs.ts): `registrarSolicitudCortada`, la línea de cada solicitud cortada.
+  - [src/servidor.ts](../../src/servidor.ts): si arrancó, SIGTERM y SIGINT llaman a `detener()`, con `process.on`.
+  - [pruebas/ayudas/arranque.ts](../../pruebas/ayudas/arranque.ts) nuevo: `puertoLibre`, `escucha` y `entorno`, que salen de `arranque.test.ts`, como anotó T22.
+  - [pruebas/integracion/parada.test.ts](../../pruebas/integracion/parada.test.ts) nuevo. [precedencia.test.ts](../../pruebas/http/precedencia.test.ts) suma el punto 2 de RNF-03.5 a la matriz, [errores-fastify.test.ts](../../pruebas/http/errores-fastify.test.ts) suma una prueba y [errores.test.ts](../../pruebas/http/errores.test.ts) corrige un comentario que ponía el hook de parada después del 404.
+- Por qué así:
+  - El 503 lo da un hook propio y no Fastify, porque el de Fastify no es problem+json (plan, Decisiones). Es el primer `onRequest`: el 503 le gana al 404, al 405, al 401, al 403 y a todo lo del cuerpo (RNF-03.5, punto 2). El 400 por la URL sale antes, en frameworkErrors, que no pasa por los hooks (punto 1).
+  - La bandera propia se pone en el acto. El `closing` de Fastify llega unos ticks después de `app.close()`, porque avvio cierra en su propio orden.
+  - Por qué se cierran las conexiones que quedan sin solicitudes al terminar cada respuesta:
+    - una respuesta que empezó antes de la parada sale con keep-alive;
+    - Fastify cierra las conexiones inactivas solo al empezar a cerrar;
+    - sin esto, `app.close()` esperaría a que el cliente cerrara su conexión (el `keepAliveTimeout` de Fastify, 72 s) o al corte.
+    - Descartado: forzar `Connection: close` en `onSend`. La conexión se cerraría antes de que saliera el 503 de una solicitud que ya esperaba detrás en la misma conexión.
+  - El 400 por la URL cierra la conexión por lo mismo: Fastify pone `Connection: close` durante el cierre solo en lo que llega a una ruta.
+  - Al cortar no se espera al pool. `pool.end()` espera a las conexiones en uso, y una consulta en curso la retiene hasta el tiempo de base (`M2_TIEMPO_BD_MS`, que admite mucho más que 10 s). El plan dice «cierra sus conexiones, registra cuántas cortó y sale igual con 0»; `process.exit` cierra lo demás.
+  - Se sale con 0 también si algo falla al cerrar. La parada se pidió, y salir con otro código la haría parecer una falla (plan, Decisiones). Sin ese `catch`, el rechazo quedaría sin atender y Node terminaría con 1 sin pasar por `salir`.
+  - `enCurso` guarda las respuestas y no las solicitudes. El `close` de la solicitud llega en cuanto se terminó de leer el cuerpo de un POST, antes de responder.
+  - Por qué cada conexión, al cerrarse, saca sus respuestas de `enCurso` (un oyente por conexión, en el evento `connection` del servidor):
+    - una respuesta que espera detrás de otra en la misma conexión no emite `close` si la conexión se corta antes de que salga;
+    - sin esto, quedaría para siempre en el conjunto, y un corte posterior la contaría.
+  - `detener` devuelve siempre la misma parada: una segunda señal (Ctrl+C dos veces) no la repite ni cambia el corte. Por eso `process.on` y no `once`: con `once`, la segunda señal haría lo de siempre en Node, terminar el proceso sin esperar.
+  - 8 s dejan 2 s para cerrar conexiones, escribir y salir dentro de los 10 s de RNF-04.5.
+  - La opción `manejadores` de `arrancar` es como `rutaContrato`: con el contrato de prueba, las pruebas necesitan una operación que tarde lo que ellas quieran.
+  - La línea de una solicitud cortada va en `warn`: el cliente se quedó sin respuesta, pero no es un error del servicio.
+- Cómo se conecta:
+  - Usa:
+    - `Deteniendose` (T3) y el manejador de errores (T7);
+    - el encabezado de correlación (T9) y la línea de cada solicitud (T11);
+    - frameworkErrors (T12);
+    - el `Servicio` de `arrancar` (T22) y el `end()` del pool de T19.
+  - Las notas de tareas anteriores quedan cumplidas:
+    - el hook de parada va antes que el del 404 (T7 y T15);
+    - `/health` responde 503 durante el cierre, como las demás rutas (T20);
+    - el punto 2 de la precedencia lo prueban `parada.test.ts` y, ahora, la matriz de `precedencia.test.ts` (T16).
+  - Lo que viene:
+    - T26 (el `CMD` en forma exec) y T27 (`init: true`) hacen que SIGTERM llegue a Node.
+    - T28 y el CI (T30) miden `docker compose stop m2`: menos de 10 s y código 0.
+- Tests:
+  - [pruebas/integracion/parada.test.ts](../../pruebas/integracion/parada.test.ts), 15 pruebas, con el servicio de `arrancar`, el contrato de prueba, una base real por prueba y conexiones TCP escritas a mano:
+    - una solicitud en curso termina con su 200. Mientras tanto no se sale. Al terminar, `salir(0)` llega en menos de 1 s, con el pool ya cerrado, y la base se queda sin sesiones. Las líneas salen en orden: Deteniendo, la de la solicitud, Detenido con `cortadas: 0`;
+    - mientras termina, el puerto rechaza conexiones nuevas;
+    - por una conexión abierta, detrás de la que está en curso, llega una solicitud. Recibe 503 en problem+json con su id de correlación, sin `WWW-Authenticate` ni `Allow`, y `Connection: close`. Los casos:
+      - una sin token a una operación que lo exige (sería 401);
+      - una a una ruta que no existe (404);
+      - una con un método que la ruta no tiene (405);
+      - un `GET /health`;
+    - por la misma conexión, una URL mal codificada recibe el 400, con `Connection: close`, y la parada termina enseguida;
+    - otra llamada a `detener`, durante la parada o después, no hace otra;
+    - con el pool ya cerrado, la falla queda en el log y sale igual con 0;
+    - el corte acortado a 300 ms:
+      - corta una solicitud que espera y otra que ocupa una conexión del pool con una consulta de 30 s;
+      - `salir(0)` llega entre 300 ms y 1,3 s, y las dos conexiones se cierran sin respuesta;
+      - cada una deja su línea `warn` con id, método, ruta sin query string y duración, sin código;
+      - Detenido dice `cortadas: 2`;
+    - sin `corteMs`, con el reloj falso: a los 7999 ms no salió, y a los 8000 sale con 0;
+    - el corte no cuenta una solicitud que ya terminó en una conexión que sigue abierta, ni las dos de una conexión que el cliente cortó (la que estaba en curso y la que esperaba detrás);
+    - `src/servidor.ts`, con un `arrancar` falso:
+      - SIGTERM y SIGINT llaman a `detener()`, y el oyente sigue registrado para la señal siguiente;
+      - si no arrancó, no suma oyentes.
+  - [pruebas/http/precedencia.test.ts](../../pruebas/http/precedencia.test.ts): la matriz suma «el servicio se está deteniendo» (`app.deteniendose`) como punto 2. Son 630 combinaciones en vez de 315: con la URL inválida gana el 400, y con cualquier otro problema, el 503.
+  - [pruebas/http/errores-fastify.test.ts](../../pruebas/http/errores-fastify.test.ts): el 400 por la URL deja la conexión abierta (`keep-alive`), salvo durante la parada (`close`), con las dos URL.
+  - Rojo primero:
+    - en parada.test.ts, 13 de las 14 de entonces fallaron por `detener`, que no existía, o porque la operación que tarda daba 404 sin la opción `manejadores`;
+    - pasaba la de «si no arrancó, no suma oyentes», que vale también sin parada;
+    - en precedencia.test.ts, fallaron las 135 combinaciones que tienen la parada y no la URL inválida.
+    - Lo que se sumó con el código ya escrito se comprobó con las mutaciones: el caso de `GET /health`, la prueba de errores-fastify.test.ts y la limpieza ampliada con la solicitud ya terminada.
+  - Mutaciones de `src/app.ts`, `src/arranque.ts`, `src/errores-fastify.ts`, `src/logs.ts` y `src/servidor.ts`: 31 de 32 detectadas. Entre ellas:
+    - `enCurso`: no anotar las respuestas, o no sacarlas al terminar o al cerrarse su conexión;
+    - el 503: quitarlo, dejar el de Fastify (`return503OnClosing`) o registrar su hook después del del 404;
+    - las conexiones: no cerrar las inactivas al terminar cada respuesta; el 400 por la URL sin `Connection: close` o siempre con él;
+    - `detener`:
+      - sin la bandera o sin la línea Deteniendo;
+      - sin `pool.end()`, o esperándolo también al cortar;
+      - sin el `catch`, o con `salir(1)`;
+      - el corte en 7999 u 8001 ms, o sin devolver la misma parada;
+      - sin las líneas de las cortadas, sin `closeAllConnections` o Detenido sin `cortadas`;
+    - las opciones: siempre los manejadores del servicio, o ninguno por defecto;
+    - la línea cortada: en `info`, con la query string, sin la duración o sin el método;
+    - `servidor.ts`: sin SIGINT, con `once`, o sin mirar si arrancó.
+    - Viva, equivalente en el servicio: sin el `clearTimeout` del corte. El temporizador queda armado y no hace nada, porque `salir(0)` termina el proceso.
+  - 10 corridas seguidas de parada.test.ts, sin fallas; tarda unos 7 s.
+  - A mano, con `dist/servidor.js` como proceso aparte y un `postgres:18.6`:
+    - SIGTERM y SIGINT terminan con código 0 en unos 100 ms, con Deteniendo y Detenido (`cortadas: 0`). Una conexión nueva durante la parada da `ECONNREFUSED`.
+    - Con la base detrás de un proxy congelado y `M2_TIEMPO_BD_MS=20000`, un `GET /health` queda colgado. El SIGTERM termina con 0 a los 8026 ms y el cliente ve la conexión cortada. Quedan la línea `warn` con `/health`, su id y 8302 ms, y Detenido con `cortadas: 1`.
+    - La salida de errores, vacía; todas las líneas, JSON; ni la clave ni la contraseña en el log.
+  - Con Node v24.15.0 pasan:
+    - `npm test` (2007), `npm run lint`, `tsc -p tsconfig.json` y `npm run build`;
+    - `npm run contrato:test`;
+    - `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1872);
+    - `node scripts/spec-check.mjs --rama impl/003-bloque-c --base origin/main`.
+- Para mirar con atención:
+  - Durante el arranque, las señales hacen lo de siempre en Node: un SIGTERM mientras migra termina el proceso con 143 (130 con SIGINT). La parada en orden empieza cuando el servicio ya escucha. RNF-04.5 habla del servicio andando; si el grupo quiere otra cosa, va a un `/sdd-change`.
+  - Con `return503OnClosing: false` ya no aparece la línea en inglés de Fastify «request aborted - refusing to accept new requests as server is closing» que anotó T10.
+  - `cortadas` cuenta las solicitudes que llegaron a `onRequest`. Una conexión que todavía mandaba los encabezados también se corta, pero no se cuenta.
+  - Si una solicitud cortada tenía una consulta, el manejador sigue hasta que la consulta termina o la base la corta. En el servicio, `process.exit` termina todo antes. En las pruebas, el `afterEach` borra la base para que el pool termine de cerrarse.
+  - La matriz de precedencia suma la parada, que T16 dejaba a criterio del grupo: si no se la quiere, se saca el grupo `deteniendo` de `ORDEN` y la matriz vuelve a 315.
+  - Para el próximo `/sdd-change`, en plan.md (Lógica 13 y Estructura):
+    - `detener` es un método del `Servicio` que devuelve `arrancar`, y una segunda llamada devuelve la misma parada;
+    - la opción `manejadores` de `arrancar`;
+    - los decoradores `deteniendose` y `enCurso` de la app;
+    - el cierre de las conexiones sin solicitudes al terminar cada respuesta, y el `Connection: close` del 400 por la URL durante la parada;
+    - que al cortar no se espera al pool, y que un error al cerrar también sale con 0;
+    - las líneas: «Deteniendo el servicio», «Servicio detenido» con `cortadas`, «Solicitud cortada por la parada» y «El servicio no se detuvo en orden»;
+    - `pruebas/ayudas/arranque.ts`.
+
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
 - Qué cambió:
   - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.

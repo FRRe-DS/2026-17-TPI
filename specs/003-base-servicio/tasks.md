@@ -66,7 +66,7 @@ Depende de: bloque A.
   - Hecho cuando: `pruebas/integracion/salud.test.ts`, con el proxy TCP de prueba, comprueba que con el proxy colgado `GET /health` y una operación de prueba que consulta la base responden 503 en problem+json en 2 s más un margen; que con la conexión rechazada también dan 503; y que cuando el proxy vuelve, responden 200 sin reiniciar la app.
 - [x] **T22. Arrancar en orden: configuración, contrato, app, migraciones y recién después escuchar, con `arrancar` y `src/servidor.ts` (plan, Lógica 12).** RNF-05.2, RNF-05.3, RNF-06.2, RNF-19.1
   - Hecho cuando: `pruebas/integracion/arranque.test.ts` comprueba que se llama a `salir(1)`, con el motivo en una línea JSON y sin valores ni credenciales, cuando falta una variable, cuando el contrato no compila, cuando el puerto está ocupado y cuando la base está caída; y que en un arranque normal el servicio escucha recién después de migrar y registra las operaciones implementadas y pendientes.
-- [ ] **T23. Detenerse en orden ante SIGTERM o SIGINT: `detener()` con corte a los 8 s (plan, Lógica 13).** RNF-04.5
+- [x] **T23. Detenerse en orden ante SIGTERM o SIGINT: `detener()` con corte a los 8 s (plan, Lógica 13).** RNF-04.5
   - Hecho cuando: `pruebas/integracion/parada.test.ts` comprueba que una solicitud en curso termina; que una conexión nueva se rechaza; que una solicitud sin token que llega por una conexión abierta durante el cierre recibe 503 en problem+json; que una que no termina en el corte (acortado en la prueba) se corta, queda en el log y el servicio llama igual a `salir(0)`; que el pool se cierra; y que `salir(0)` llega antes de 10 s.
 
 ## Bloque D — Cliente para otros módulos

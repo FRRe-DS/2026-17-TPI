@@ -12,6 +12,7 @@ import type { Entorno } from '../../src/config.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { listarOperaciones } from '../../src/contrato/operaciones.js';
 import { manejadores } from '../../src/operaciones/index.js';
+import { entorno, escucha, puertoLibre } from '../ayudas/arranque.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs, type LineaDeLog } from '../ayudas/logs.js';
 import { crearProxy } from '../ayudas/proxy.js';
@@ -37,27 +38,6 @@ const delRepositorio = readdirSync(DIR_MIGRACIONES)
   .map((archivo) => archivo.slice(0, -'.sql'.length))
   .sort();
 
-// Un puerto que estaba libre recién: se abre uno cualquiera y se cierra, porque M2_PUERTO no admite 0.
-async function puertoLibre(): Promise<number> {
-  const servidor = net.createServer();
-  await new Promise<void>((listo) => servidor.listen(0, '0.0.0.0', listo));
-  const { port } = servidor.address() as AddressInfo;
-  await new Promise<void>((listo) => servidor.close(() => listo()));
-  return port;
-}
-
-// Si algo acepta conexiones en el puerto, en 127.0.0.1.
-function escucha(puerto: number): Promise<boolean> {
-  return new Promise((resolver) => {
-    const socket = net.connect({ port: puerto, host: '127.0.0.1' });
-    socket.once('connect', () => {
-      socket.destroy();
-      resolver(true);
-    });
-    socket.once('error', () => resolver(false));
-  });
-}
-
 // Las variables opcionales de la configuración (RNF-06.1), que `entorno` no pone.
 const VARIABLES_OPCIONALES = [
   'M2_CAMPO_ROLES',
@@ -66,16 +46,6 @@ const VARIABLES_OPCIONALES = [
   'M2_REINTENTOS_MODULOS',
   'M2_ENCABEZADO_CORRELACION',
 ];
-
-// Las variables de un arranque que anda, con la base y el puerto que se pasen y los cambios del caso (undefined: falta).
-const entorno = (urlBd: string, puerto: number, cambios: Entorno = {}): Entorno => ({
-  M2_URL_BD: urlBd,
-  M2_PUERTO: String(puerto),
-  M2_CLAVE_TOKENS: CONFIG_TOKENS.claveTokens,
-  M2_EMISOR_TOKENS: CONFIG_TOKENS.emisorTokens,
-  M2_AUDIENCIA_TOKENS: CONFIG_TOKENS.audienciaTokens,
-  ...cambios,
-});
 
 // Escribe un contrato, un objeto como YAML o un texto tal cual, en una carpeta que se borra cuando termina la prueba.
 function contratoEnArchivo(contrato: object | string): string {
