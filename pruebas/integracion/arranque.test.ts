@@ -268,7 +268,7 @@ describe('arrancar con la base o el puerto que no sirven (RNF-05.3, RNF-19.1)', 
     expect(logs.texto()).not.toContain(CONTRASENA);
   });
 
-  it('el puerto está ocupado: salir(1) con EADDRINUSE, con las migraciones ya aplicadas', async () => {
+  it('el puerto está ocupado: salir(1) con EADDRINUSE, después de migrar y sin la contraseña ni la clave', async () => {
     const ocupado = net.createServer();
     await new Promise<void>((listo) => ocupado.listen(0, '0.0.0.0', listo));
     onTestFinished(() => new Promise<void>((listo) => ocupado.close(() => listo())));
@@ -280,6 +280,9 @@ describe('arrancar con la base o el puerto que no sirven (RNF-05.3, RNF-19.1)', 
     expect(errores(logs.lineas())).toEqual([
       expect.objectContaining({ msg: NO_ARRANCA, err: expect.objectContaining({ codigo: 'EADDRINUSE' }) }),
     ]);
+    // La URL lleva la contraseña buena, la del contenedor, y la falla llega con la app ya creada (RNF-19.1).
+    expect(logs.texto()).not.toContain(new URL(base.urlBd).password);
+    expect(logs.texto()).not.toContain(CONFIG_TOKENS.claveTokens);
     expect(await anotadas(base.urlBd)).toEqual(delRepositorio);
   });
 });
