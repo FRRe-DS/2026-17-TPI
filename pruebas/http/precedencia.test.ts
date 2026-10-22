@@ -2,7 +2,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { afterAll, describe, expect, it } from 'vitest';
 import { construirApp } from '../../src/app.js';
 import type { Manejador } from '../../src/contrato/operaciones.js';
-import { CONFIG, contratoCon, crearApp } from '../ayudas/app.js';
+import { CONFIG, contratoCon, crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { descartarLogs } from '../ayudas/logs.js';
 import { AUTORIZADO, bearer } from '../ayudas/tokens.js';
 
@@ -21,6 +21,7 @@ const URL_INVALIDA: Esperado = {
   title: 'Solicitud inválida',
   detail: 'La URL no es válida, o un parámetro de la ruta supera los 100 caracteres',
 };
+const DETENIENDOSE: Esperado = { status: 503, title: 'Servicio no disponible', detail: 'El servicio se está deteniendo' };
 const NO_ENCONTRADO: Esperado = { status: 404, title: 'No encontrado', detail: 'No existe la ruta pedida' };
 const NO_PERMITIDO: Esperado = {
   status: 405,
@@ -226,7 +227,9 @@ const CONTRATO_TODO = contratoCon({
 });
 
 // Lo que se manda; cada problema cambia una parte. Sin ningún problema, la solicitud es válida y llega al manejador.
+// `deteniendo` no se manda: es la app que se está deteniendo, como la deja `detener()` (arranque.ts).
 type Pedido = {
+  deteniendo: boolean;
   method: 'POST' | 'PUT';
   ruta: string;
   id: string;
@@ -256,13 +259,21 @@ const RUTA_INEXISTENTE: Problema = {
   aplicar: (pedido) => (pedido.ruta = '/pruebas/nada'),
 };
 
-// Los problemas posibles de cada punto del orden, del primero al último. El 2 (la parada, 503) llega con T23. El 401 y el
-// 403 van en el mismo grupo: un token no puede faltar y traer un rol a la vez. Un token vencido con un rol no permitido sí
-// junta los dos, y se prueba arriba.
+// Los problemas posibles de cada punto del orden, del primero al último. El 401 y el 403 van en el mismo grupo: un token
+// no puede faltar y traer un rol a la vez. Un token vencido con un rol no permitido sí junta los dos, y se prueba arriba.
+// La parada con conexiones reales, en integracion/parada.test.ts.
 const ORDEN: Problema[][] = [
   [
     { nombre: 'la URL mal codificada', parte: 'id', esperado: URL_INVALIDA, aplicar: (pedido) => (pedido.id = '%E0%A4%A') },
     PARAMETRO_LARGO,
+  ],
+  [
+    {
+      nombre: 'el servicio se está deteniendo',
+      parte: 'deteniendo',
+      esperado: DETENIENDOSE,
+      aplicar: (pedido) => (pedido.deteniendo = true),
+    },
   ],
   [
     RUTA_INEXISTENTE,
@@ -316,10 +327,11 @@ const COMBINACIONES = ORDEN.reduce<Problema[][]>(
   });
 
 describe('precedencia: con varios problemas a la vez, responde por el primero del orden (RNF-03.5)', () => {
-  // Una sola app para todas las combinaciones, que no cambian nada en ella: crear una por prueba tarda unos 20 ms, y son 315.
-  // No sale de `crearApp`, que cierra sus apps al terminar cada prueba.
+  // Una sola app para todas las combinaciones: crear una por prueba tarda unos 20 ms, y son 630. Lo único que cambian en ella
+  // es `deteniendose`, que cada una pone como la necesita. No sale de `crearApp`, que cierra sus apps al terminar cada prueba.
   const app = construirApp({
     config: CONFIG,
+    pool: POOL_FALSO,
     contrato: CONTRATO_TODO,
     manejadores: { probarTodo: bien },
     flujoLog: descartarLogs,
@@ -327,11 +339,12 @@ describe('precedencia: con varios problemas a la vez, responde por el primero de
   afterAll(() => app.close());
 
   it('arma todas las combinaciones posibles', () => {
-    expect(COMBINACIONES).toHaveLength(315);
+    expect(COMBINACIONES).toHaveLength(630);
   });
 
   it.each(COMBINACIONES)('%s', async (_titulo, problemas) => {
     const pedido: Pedido = {
+      deteniendo: false,
       method: 'POST',
       ruta: '/pruebas/todo',
       id: UUID,
@@ -342,6 +355,7 @@ describe('precedencia: con varios problemas a la vez, responde por el primero de
       grande: false,
     };
     for (const problema of problemas) problema.aplicar(pedido);
+    app.deteniendose = pedido.deteniendo;
 
     const respuesta = await app.inject({
       method: pedido.method,

@@ -54,19 +54,19 @@ Depende de: bloque A.
 ## Bloque C — Base de datos, salud, arranque y parada
 Depende de: bloque A.
 
-- [ ] **T17. Separar las pruebas en dos proyectos de Vitest, levantar `postgres:18.6` para las de integración y aplicar la migración inicial con `migrar()` (plan, Datos y Pruebas).** RNF-05.1, RNF-07.1
+- [x] **T17. Separar las pruebas en dos proyectos de Vitest, levantar `postgres:18.6` para las de integración y aplicar la migración inicial con `migrar()` (plan, Datos y Pruebas).** RNF-05.1, RNF-07.1
   - Hecho cuando: `npm test` corre los proyectos `unitarias` e `integracion` y crea un único contenedor `postgres:18.6` por corrida, que descarta al terminar; `npx vitest run --project unitarias` pasa con `DOCKER_HOST` apuntando a un socket que no existe; y `pruebas/integracion/migraciones.test.ts` comprueba que `migrar()` aplica la migración inicial y la anota en `migraciones_aplicadas`, y que una segunda corrida no aplica nada.
-- [ ] **T18. Migraciones seguras: dos procesos a la vez, una que falla, una fuera de orden, una base que no responde y el plazo de 60 s (plan, Datos).** RNF-05.2, RNF-05.3
+- [x] **T18. Migraciones seguras: dos procesos a la vez, una que falla, una fuera de orden, una base que no responde y el plazo de 60 s (plan, Datos).** RNF-05.2, RNF-05.3
   - Hecho cuando: `pruebas/integracion/migraciones.test.ts` comprueba que, con dos corridas a la vez, cada migración se aplica una sola vez; que una migración que falla no deja cambios y devuelve el error; que una con fecha más vieja que otra ya aplicada se aplica igual; que, con una base que no responde, `migrar()` falla en el tiempo de base más un margen; y que una fase que no termina en el plazo (acortado en la prueba) falla sin dejar la migración aplicada ni a medias.
-- [ ] **T19. Consultar la base con tiempo máximo y clasificar sus errores: `crearPool` y `consultar()` (plan, Datos).** RNF-08.1, RNF-14.2
+- [x] **T19. Consultar la base con tiempo máximo y clasificar sus errores: `crearPool` y `consultar()` (plan, Datos).** RNF-08.1, RNF-14.2
   - Hecho cuando: `pruebas/integracion/duplicados.test.ts` comprueba que el segundo alta sobre una tabla con restricción única que crea la prueba da 409 sin el nombre de la restricción; que una consulta más lenta que el tiempo de base (con `pg_sleep`) da 503 en ese tiempo más un margen; y que otro error de la base da 500.
-- [ ] **T20. `GET /health` con la base arriba, registrada desde el contrato o como excepción (plan, Contrato).** RNF-14.1, RNF-03.4
+- [x] **T20. `GET /health` con la base arriba, registrada desde el contrato o como excepción (plan, Contrato).** RNF-14.1, RNF-03.4
   - Hecho cuando: `pruebas/integracion/salud.test.ts` comprueba 200 con `{"estado": "ok"}`, también con un token inválido; `POST /health` → 405 con `Allow: GET`; con `pruebas/ayudas/contrato-salud.yml`, la ruta se registra desde el contrato, y con un contrato sin `/health`, a mano; y `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml` lista `verificarSalud` como implementada, avisa que la prueba con Schemathesis llega con T29 y termina con 0.
-- [ ] **T21. Base caída con el servicio corriendo: 503 en 2 s y vuelta sin reiniciar (plan, Datos y Pruebas).** RNF-14.2
+- [x] **T21. Base caída con el servicio corriendo: 503 en 2 s y vuelta sin reiniciar (plan, Datos y Pruebas).** RNF-14.2
   - Hecho cuando: `pruebas/integracion/salud.test.ts`, con el proxy TCP de prueba, comprueba que con el proxy colgado `GET /health` y una operación de prueba que consulta la base responden 503 en problem+json en 2 s más un margen; que con la conexión rechazada también dan 503; y que cuando el proxy vuelve, responden 200 sin reiniciar la app.
-- [ ] **T22. Arrancar en orden: configuración, contrato, app, migraciones y recién después escuchar, con `arrancar` y `src/servidor.ts` (plan, Lógica 12).** RNF-05.2, RNF-05.3, RNF-06.2, RNF-19.1
+- [x] **T22. Arrancar en orden: configuración, contrato, app, migraciones y recién después escuchar, con `arrancar` y `src/servidor.ts` (plan, Lógica 12).** RNF-05.2, RNF-05.3, RNF-06.2, RNF-19.1
   - Hecho cuando: `pruebas/integracion/arranque.test.ts` comprueba que se llama a `salir(1)`, con el motivo en una línea JSON y sin valores ni credenciales, cuando falta una variable, cuando el contrato no compila, cuando el puerto está ocupado y cuando la base está caída; y que en un arranque normal el servicio escucha recién después de migrar y registra las operaciones implementadas y pendientes.
-- [ ] **T23. Detenerse en orden ante SIGTERM o SIGINT: `detener()` con corte a los 8 s (plan, Lógica 13).** RNF-04.5
+- [x] **T23. Detenerse en orden ante SIGTERM o SIGINT: `detener()` con corte a los 8 s (plan, Lógica 13).** RNF-04.5
   - Hecho cuando: `pruebas/integracion/parada.test.ts` comprueba que una solicitud en curso termina; que una conexión nueva se rechaza; que una solicitud sin token que llega por una conexión abierta durante el cierre recibe 503 en problem+json; que una que no termina en el corte (acortado en la prueba) se corta, queda en el log y el servicio llama igual a `salir(0)`; que el pool se cierra; y que `salir(0)` llega antes de 10 s.
 
 ## Bloque D — Cliente para otros módulos

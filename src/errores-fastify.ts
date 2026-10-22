@@ -36,6 +36,9 @@ export function crearFrameworkErrors(encabezadoCorrelacion: string) {
   return (error: FastifyError, request: FastifyRequest, reply: FastifyReply): void => {
     const inicio = performance.now();
     reply.header(encabezadoCorrelacion, request.id);
+    // Durante la parada, la conexión se cierra después de esta respuesta. Fastify pone Connection: close solo en las que
+    // llegan a una ruta: sin esto, la conexión quedaría abierta hasta el corte (Lógica 13).
+    if (request.server.deteniendose) reply.header('Connection', 'close');
     responderProblema(error, request, reply);
     registrarSolicitud(request, reply, performance.now() - inicio);
   };

@@ -147,7 +147,8 @@ describe('construirApp: una ruta que no existe da 404 antes de leer el cuerpo (R
     });
   });
 
-  // Los hooks de parada y de autenticación se registran después: ninguno tiene que correr para una ruta que no existe.
+  // El hook de autenticación se registra después: no tiene que correr para una ruta que no existe. El de la parada va antes,
+  // porque su 503 le gana al 404 (RNF-03.5); lo prueba precedencia.test.ts.
   it('y antes de cualquier otro hook onRequest que se registre después', async () => {
     const app = crearApp({ probarAlta: eco });
     const otro = vi.fn();

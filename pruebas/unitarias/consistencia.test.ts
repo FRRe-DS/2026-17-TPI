@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, globSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import configuracionDeVitest from '../../vitest.config.js';
 
 // Una versión exacta es X.Y.Z, con prelanzamiento o build opcionales. Todo lo demás es un rango o una etiqueta:
 // ^1.2.3, ~1.2.3, *, latest, >=1, 1.x, 1.2.3 - 2.0.0, 1.0.0 || 2.0.0, next.
@@ -53,6 +55,56 @@ describe('engines.node (RNF-01.1)', () => {
   // npm install y npm ci copian engines de package.json al paquete raíz del lock, que es la entrada "".
   it('package-lock.json lo repite en el paquete raíz', () => {
     expect(bloqueo.packages['']?.engines?.node).toBe(ENGINES_NODE);
+  });
+});
+
+// Los dos proyectos de Vitest (RNF-07.1), tal como los declara vitest.config.ts: `include` dice qué pruebas son de cada uno
+// y `globalSetup`, qué corre antes de ellas.
+type Proyecto = { test: { name: string; include: string[]; globalSetup?: string[] } };
+
+const proyectos = (configuracionDeVitest.test?.projects ?? []).filter(
+  (proyecto): proyecto is Proyecto => typeof proyecto === 'object' && 'test' in proyecto,
+);
+const raizEnDisco = fileURLToPath(raiz);
+const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco });
+const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco });
+
+describe('vitest.config.ts: unitarias e integracion (RNF-07.1)', () => {
+  it('declara los dos proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion']);
+  });
+
+  // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
+  it('solo integracion tiene un globalSetup, el que levanta la base', () => {
+    const [unitarias, integracion] = proyectos;
+    expect(unitarias?.test.globalSetup).toBeUndefined();
+    expect(integracion?.test.globalSetup).toEqual(['pruebas/ayudas/global.ts']);
+    expect(existsSync(new URL('pruebas/ayudas/global.ts', raiz))).toBe(true);
+  });
+
+  it('hay pruebas en los dos proyectos', () => {
+    for (const proyecto of proyectos) expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
+  });
+
+  // Un archivo fuera de los dos `include` no correría nunca y la suite seguiría en verde.
+  it('toda prueba de pruebas/ cae en un proyecto', () => {
+    const cubiertas = new Set(proyectos.flatMap(archivosDe));
+    expect(todasLasPruebas.filter((archivo) => !cubiertas.has(archivo))).toEqual([]);
+  });
+
+  it('ninguna prueba cae en los dos proyectos', () => {
+    const repetidas = proyectos.flatMap(archivosDe).filter((archivo, i, todas) => todas.indexOf(archivo) !== i);
+    expect(repetidas).toEqual([]);
+  });
+
+  it('las de pruebas/integracion/ son de integracion, y las demás, de unitarias', () => {
+    const [unitarias, integracion] = proyectos;
+    const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
+    const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
+    const alReves = todasLasPruebas.filter((archivo) =>
+      archivo.startsWith('pruebas/integracion/') ? !deIntegracion.has(archivo) : !deUnitarias.has(archivo),
+    );
+    expect(alReves).toEqual([]);
   });
 });
 

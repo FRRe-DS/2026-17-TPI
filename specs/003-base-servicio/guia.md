@@ -11,7 +11,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - [package-lock.json](../../package-lock.json): fija también las dependencias de las dependencias. Es lo que instala `npm ci`, en CI y en el `Dockerfile` (T26).
   - [tsconfig.json](../../tsconfig.json) (editor, lint y pruebas; no emite) y [tsconfig.build.json](../../tsconfig.build.json) (solo `src/`, compila a `dist/`).
   - [eslint.config.mjs](../../eslint.config.mjs): typescript-eslint sobre los `.ts`, sin `dist/` ni `src/generado/`.
-  - [vitest.config.ts](../../vitest.config.ts): busca `pruebas/**/*.test.ts`.
+  - [vitest.config.ts](../../vitest.config.ts): busca `pruebas/**/*.test.ts` (T17 lo separó en los proyectos `unitarias` e `integracion`).
   - [.gitignore](../../.gitignore): suma `node_modules/`, `dist/` y `src/generado/`.
   - [AGENTS.md](../../AGENTS.md), «Trampas conocidas»: ya no dice que falta `package.json`; sigue diciendo que falta `docker-compose.yml` hasta el bloque E.
   - `src/generado/contrato.ts` no se escribe ni se versiona: lo genera openapi-typescript desde `contrato/openapi.yml`. Con el contrato de `main`, que solo tiene `info`, los tipos salen vacíos.
@@ -34,7 +34,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - `npm install` avisa que `glob@10.5.0` está deprecado. Lo trae `@testcontainers/postgresql` (solo pruebas) y no entra a la imagen, que instala con `--omit=dev`.
   - ESLint solo revisa `.ts`. Revisar los `.mjs` (como `scripts/`) pide declarar sus globales (`process`, `console`), y el paquete `globals` sería una dependencia nueva sin aprobar. Se retoma con `scripts/contrato-test.mjs` (T5).
   - Ningún script tipa `pruebas/` (`tsc -p tsconfig.json`): se corrió a mano y pasa; el editor sí lo usa.
-  - Vitest corre hoy un solo grupo de pruebas; T17 lo separa en `unitarias` e `integracion`.
+  - Vitest corría un solo grupo de pruebas; T17 lo separó en `unitarias` e `integracion`.
 
 ### T2 — Leer y validar la configuración del entorno · commit `003/T2`
 - Qué cambió:
@@ -301,7 +301,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
 - Para mirar con atención:
   - Una solicitud que el cliente corta antes de que termine la respuesta no deja línea: Fastify llama a `onResponse` solo cuando la respuesta terminó de enviarse (comprobado con un socket que se destruye a mitad del manejador). RNF-14.6 habla del código de la respuesta, que ahí no existe. Para verlas habría que registrar algo en `onRequestAbort`.
   - La ruta se registra como llegó. Si un cliente pone el token en la ruta (en vez del encabezado), queda en el log. No pasa por `limpiarSecretos` porque un `Authorization` de una sola letra le cambiaría a esa letra todas las apariciones en la ruta de cada solicitud suya. La query string, donde suelen ir esos datos, no se registra nunca.
-  - `listen` escribe por su cuenta «Server listening at http://…» (en inglés, sin `idCorrelacion`): es de T22, que decide si lo deja o escribe su propia línea de arranque.
+  - `listen` escribe por su cuenta «Server listening at http://…» (en inglés, sin `idCorrelacion`): es de T22, que decide si lo deja o escribe su propia línea de arranque. (T22: se deja la de Fastify, con el texto en español por `listenTextResolver`: «Servicio escuchando en http://…».)
   - Para el próximo `/sdd-change`: Lógica 11 pasa a decir que el mensaje es «Solicitud terminada», que siempre es `info`, que la ruta es la pedida (con sus parámetros) y que se dejan `time`, `pid` y `hostname` de pino.
 
 ### T12 — Llevar a problem+json los errores que Fastify responde por su cuenta · commit `003/T12`
@@ -463,6 +463,383 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Las solicitudes que Node no puede leer (400, 408 y 431, por socket) no están en la matriz: Node las responde antes de que exista la solicitud, así que no se llega a evaluar ningún otro problema. Las prueba T12.
   - Si se suma un problema a la matriz, cambia la cuenta que fija «arma todas las combinaciones posibles» (315).
 
+### T17 — Separar las pruebas en dos proyectos, levantar la base de las pruebas de integración y aplicar la migración inicial · commit `003/T17`
+- Qué cambió:
+  - [vitest.config.ts](../../vitest.config.ts): dos proyectos. `unitarias` (`pruebas/unitarias/`, `pruebas/http/` y `pruebas/modulos/`) no necesita Docker; `integracion` (`pruebas/integracion/`) tiene un `globalSetup` que levanta la base. `npm test` corre los dos, y `npx vitest run --project unitarias`, solo el primero.
+  - [pruebas/ayudas/global.ts](../../pruebas/ayudas/global.ts): ese `globalSetup`. Levanta un `postgres:18.6` con Testcontainers antes de la primera prueba de integración, les pasa su URL a las pruebas con `provide('urlBd', …)` (se lee con `inject('urlBd')`) y lo para al terminar. `IMAGEN_POSTGRES` guarda la imagen, con su versión exacta. Desde la revisión del bloque C, el contenedor tiene una contraseña propia, que las pruebas pueden buscar en el log (ver T22, «Tests»).
+  - [pruebas/ayudas/bd.ts](../../pruebas/ayudas/bd.ts): `crearBaseDePrueba()` crea una base vacía dentro de ese contenedor y devuelve su URL y un `borrar()`.
+  - [migraciones/1792523403393_inicial.sql](../../migraciones/1792523403393_inicial.sql): la primera migración, con `-- Up Migration` y `-- Down Migration`. Solo cambia el comentario del esquema `public` («M2 Clientes: el esquema cambia solo con migraciones»); el Down lo deja como lo trae PostgreSQL («standard public schema»).
+  - [src/bd/migraciones.ts](../../src/bd/migraciones.ts): `migrar({ urlBd, log? })` (T18 le sumó `tiempoBdMs`, `plazoMs` y `dir`) abre su conexión, llama a `runner()` de node-pg-migrate sobre `migraciones/` (tabla de control `migraciones_aplicadas`, dirección `up`), la cierra y devuelve el nombre de las migraciones que aplicó (`[]` si ya estaban todas).
+- Por qué así:
+  - Un solo contenedor por corrida (plan, Decisiones): Vitest ejecuta el `globalSetup` una vez, en su proceso, no importa cuántos archivos de integración haya. Esos archivos corren en paralelo y comparten el contenedor, pero no la base: cada uno (o cada prueba) toma la suya con `crearBaseDePrueba()`, porque las pruebas de migraciones miran justo el esquema y la tabla de control. Esa ayuda no estaba en la lista de «Ayudas» del plan; la pide el primer archivo de integración.
+  - `unitarias` e `integracion` son proyectos distintos para que las unitarias no necesiten Docker (plan, Decisiones): el `globalSetup` de un proyecto corre solo si hay pruebas suyas en la corrida, así que `--project unitarias` no carga Testcontainers ni toca Docker (RNF-07.1). Los proyectos heredan las opciones de la raíz, que hoy no tiene ninguna.
+  - `migrar` hace por ahora lo que pide T17: aplicar y anotar. Las opciones que la hacen segura —`tiempoBdMs` para el tiempo de conexión, `plazoMs`, `advisoryLockMode: 'wait'` y `checkOrder: false`— llegan con T18, cada una con la prueba en rojo que la exige (dos procesos a la vez, una migración más vieja que otra ya aplicada, una base que no responde y el plazo vencido). Sin ellas, node-pg-migrate falla el segundo proceso («Another migration is already running», visto en su `lock()`) y rechaza una migración más vieja que otra ya aplicada.
+  - La carpeta de migraciones se resuelve desde el módulo, como `RUTA_CONTRATO` (T4), y no desde el directorio de trabajo, que es lo que haría node-pg-migrate con un `dir` relativo: `migraciones/` está al lado de `src/` y de `dist/`. Comprobado a mano con el compilado, llamado desde `/tmp`.
+  - Sin `log`, `migrar` no escribe nada: node-pg-migrate usaría la consola, y la salida estándar solo lleva logs en JSON (RNF-14.5). `arrancar` (T22) le pasa el logger del servicio.
+  - La conexión se abre y se cierra dentro de `migrar` (plan, Datos): con `dbClient`, node-pg-migrate usa la que le dan y no la cierra, y el bloqueo de la migración vive en esa sesión.
+- Cómo se conecta:
+  - T18 sigue sobre `migrar` y sobre `migraciones.test.ts`. Para probar una migración que falla o una fuera de orden va a necesitar migraciones armadas por la prueba: una opción `dir` que reemplace a la de `migraciones/` (el plan fija solo el valor por defecto). T22 llama a `migrar` al arrancar, después de construir la app y antes de escuchar.
+  - Las pruebas de T18 a T23 que usan la base empiezan con `crearBaseDePrueba()` en un `beforeEach` o `beforeAll` y la borran en un `afterEach` o `afterAll`; migraciones.test.ts es el ejemplo.
+  - `consistencia.test.ts` (T1) cuida ahora también los dos proyectos. T26 y T27 le suman que `IMAGEN_POSTGRES` sea la imagen de `bd` del compose (plan, Pruebas).
+  - CI: el job `build-test` corre `npm test` en ubuntu-24.04, que trae Docker, así que corre los dos proyectos sin cambios.
+- Tests:
+  - [pruebas/integracion/migraciones.test.ts](../../pruebas/integracion/migraciones.test.ts), 8 pruebas: la base es PostgreSQL 18.6, de `postgres:18.6`; el repositorio trae una migración inicial; `migrar()` aplica las de `migraciones/`, devuelve sus nombres y las anota en `migraciones_aplicadas` (que antes no existe); la inicial cambia el comentario del esquema; una segunda corrida devuelve `[]` y deja intactas las filas anotadas; `migrar()` cierra su conexión; manda lo que hace al `log` que recibe; y sin `log` no escribe nada en la consola. Esperan lo que hay en `migraciones/` y no un nombre fijo, así que siguen valiendo cuando las specs #4 a #8 sumen migraciones.
+  - [pruebas/unitarias/consistencia.test.ts](../../pruebas/unitarias/consistencia.test.ts), 6 pruebas nuevas (26 en el archivo): `vitest.config.ts` declara `unitarias` e `integracion`, en ese orden; solo `integracion` tiene `globalSetup`, que es `pruebas/ayudas/global.ts` y existe; hay pruebas en los dos; toda prueba de `pruebas/` cae en un proyecto (una que quedara fuera de los dos `include` no correría nunca y la suite seguiría en verde); ninguna cae en los dos; y las de `pruebas/integracion/` son de integración y las demás, de unitarias.
+  - Rojo primero: `npx vitest run --project unitarias` fallaba («No projects matched the filter "unitarias"»), y 4 de las 6 de consistencia fallaban (las otras 2 pasaban sin proyectos). La de integración falló primero por el módulo que faltaba; con `migrar` y la migración todavía vacía, pasaban 6 de 7 y fallaba la del comentario («standard public schema»). La del cierre de la conexión se sumó después, y su rojo está en las mutaciones.
+  - Ya en verde, se rompió el código a propósito. `migrar`, contra la integración: 9 de 9 detectadas (devolver `[]`, `down`, otra tabla de control, otra carpeta, no pasarle el `log` a node-pg-migrate, un `log` por defecto que escribe en la consola, no cerrar la conexión, no conectar y devolver la ruta en vez del nombre). El SQL de la migración: 3 de 3 (sin el `COMMENT`, con otro texto y sobre otro esquema). `vitest.config.ts`, contra consistencia: 7 de 8 (otro nombre de proyecto, sin `globalSetup` o con otro archivo, `globalSetup` en `unitarias`, sin `pruebas/http`, `unitarias` con todo `pruebas/` e `integracion` con otra carpeta). La viva es quitar `pruebas/modulos/**` de `unitarias`: hoy esa carpeta no existe (llega con T24), y desde entonces la detecta «toda prueba de `pruebas/` cae en un proyecto».
+  - 10 corridas seguidas del proyecto `integracion`, sin fallos ni contenedores sobrantes.
+  - Con `docker events`: `vitest run --project unitarias` no genera ningún evento de contenedor, y un `npm test` completo, con dos archivos de integración (el segundo, temporal, ya borrado), crea, arranca, para y destruye exactamente un `postgres:18.6`; al terminar no queda ninguno.
+  - El `migrar()` compilado (`dist/`), llamado desde `/tmp` contra un `postgres:18.6`, aplica `1792523403393_inicial`, y la segunda corrida da `[]`.
+  - Con Node v24.15.0: `npm test` (1504), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - Un `DOCKER_HOST` inexistente no alcanza para probar que las unitarias no usan Docker: Testcontainers prueba esa variable y, si falla, sigue con el socket por defecto. Con `DOCKER_HOST=unix:///no/existe.sock`, `--project unitarias` pasa (como pide la tarea), pero `--project integracion` también, porque encuentra `/var/run/docker.sock`. Lo que lo prueba son los eventos de Docker de arriba y que `globalSetup` no esté en `unitarias` (consistencia.test.ts). En una máquina sin Docker, `npm test` falla al arrancar `integracion`, y `--project unitarias` anda.
+  - La primera corrida baja `postgres:18.6` (457 MB) y `testcontainers/ryuk:0.14.0` (2,4 MB), el contenedor de limpieza de Testcontainers: aparece en `docker ps` unos segundos después de cada corrida y se va solo. No es la base: cuando T26 y T27 comprueben las imágenes (RNF-04.1), tienen que mirar solo la de PostgreSQL.
+  - `node-pg-migrate create` sin `--migrations-dir` crea el archivo en `migrations/` y no en `migraciones/`. El comando del plan (Datos) no lo dice; el que se usó es `npx node-pg-migrate create <nombre> --migration-file-language sql --migrations-dir migraciones`. Lo necesitan las specs #4 a #8 y el README (T31); el plan se corrige en el próximo `/sdd-change`.
+  - La marca de la inicial (1792523403393, 2026-10-20 19:10 UTC) es la del día de T17. Las migraciones de las otras specs se crean después, así que van detrás.
+  - El `.d.ts` de node-pg-migrate dice `singleTransaction` «@default true», pero el `runner` lo trata como falso si no se pasa (solo mira `options.singleTransaction` cuando es verdadero): hoy cada migración corre en su propia transacción, como pide el plan. T18 lo prueba con una que falla.
+  - `migrar` deja que un error de conexión o de SQL salga tal cual. Qué hace `arrancar` con él (salir con 1, sin la contraseña) es de T22.
+
+### T18 — Migraciones seguras: dos procesos a la vez, una que falla, una fuera de orden, una base que no responde y el plazo de 60 s · commit `003/T18`
+- Qué cambió:
+  - [src/bd/migraciones.ts](../../src/bd/migraciones.ts): `migrar({ urlBd, tiempoBdMs, plazoMs?, dir?, log? })`.
+    - Su cliente de pg lleva `connectionTimeoutMillis: tiempoBdMs`: si la conexión no queda lista en el tiempo de base, falla.
+    - `runner()` recibe además `advisoryLockMode: 'wait'` y `checkOrder: false`. `singleTransaction` sigue sin pasarse.
+    - El plazo: un temporizador de `plazoMs` (`PLAZO_MIGRACIONES_MS`, 60 000 por defecto) compite con toda la fase, que ahora está en `aplicarPendientes`: conectar, esperar el bloqueo, aplicar y cerrar la conexión. Si vence primero, cierra el cliente sin esperar y `migrar` falla con «Las migraciones no terminaron en <plazoMs> ms». Si la fase termina antes, el `finally` cancela el temporizador.
+    - `dir` reemplaza a `migraciones/`. Solo lo usan las pruebas.
+  - [pruebas/integracion/migraciones.test.ts](../../pruebas/integracion/migraciones.test.ts): las llamadas de T17 pasan `tiempoBdMs` (2000, el valor por defecto de `M2_TIEMPO_BD_MS`), y hay dos `describe` nuevos. Ayudas nuevas, en el mismo archivo: `carpetaDeMigraciones` y `sumarMigracion` arman migraciones en una carpeta temporal que se borra al terminar la prueba; `baseQueNoResponde` es un servidor TCP que acepta la conexión y nunca contesta; `tablas`, `anotadas` y `sesionesAjenas` leen la base.
+- Por qué así:
+  - Dos procesos a la vez (RNF-05.2): node-pg-migrate toma un bloqueo consultivo de la sesión antes de leer la tabla de control. En la versión 9 el modo por defecto es `fail`, y el segundo proceso falla con «Another migration is already running». Con `wait` espera ese bloqueo (`pg_advisory_lock`) y, cuando lo toma, ya no encuentra nada pendiente.
+  - `checkOrder: false` (plan, Decisiones): sin eso, node-pg-migrate aborta con «Not run migration … is preceding already run migration …» en toda base que ya aplicó una migración más nueva, como el volumen de cada integrante cuando #4 a #8 se mergean en otro orden.
+  - Una transacción por migración: el `runner` trata `singleTransaction` como falso si no se pasa (lo vio T17), así que cada migración va entre `BEGIN` y `COMMIT` junto con su fila en `migraciones_aplicadas`. La que falla no deja nada; las anteriores quedan y las siguientes no se intentan. Con `singleTransaction: true` se perderían también las anteriores.
+  - El tiempo de base en la conexión (plan, Datos): `connectionTimeoutMillis` cubre desde la conexión TCP hasta que la base queda lista para consultas, con la autenticación.
+  - El plazo es una carrera (`Promise.race`) y no solo cerrar el cliente: si vence mientras pg todavía se conecta, cerrar no hace fallar a `connect()`, porque pg no le avisa cuando el cierre lo pidió uno, y `migrar` seguiría esperando (lo mostró la mutación «cierra pero no falla»). Con la carrera, `migrar` falla a los `plazoMs` pase lo que pase con la conexión.
+  - Cerrar sin esperar: con una consulta en curso, `cliente.end()` corta el socket en el acto, y la base deshace la migración y suelta el bloqueo, porque los dos dependen de esa conexión (plan, Datos; ver «Para mirar con atención»).
+  - Descartados (plan, Decisiones): `lock_timeout` y `statement_timeout`, que limitan cada sentencia y no la fase completa.
+- Cómo se conecta:
+  - `tiempoBdMs` es el `config.tiempoBdMs` de `cargarConfig` (T2, con el tope de T32). En T22, `arrancar` llama a `migrar` después de construir la app y antes de escuchar, le pasa el logger como `log` y, si falla, llama a `salir(1)` con el motivo: el error de pg (base que no responde, migración que falla) o el del plazo.
+  - `migrar` usa su propio cliente y no el pool de T19 (`crearPool` y `consultar()`), que tiene sus propios límites.
+  - `baseQueNoResponde` no reemplaza al proxy TCP de T21 (`pruebas/ayudas/proxy.ts`), que además se cuelga y se reabre con el servicio andando.
+- Tests:
+  - [pruebas/integracion/migraciones.test.ts](../../pruebas/integracion/migraciones.test.ts), 7 pruebas nuevas (15 en el archivo):
+    - con dos corridas a la vez, cada migración se aplica una sola vez: dos `migrar()` sobre la misma base, cada uno con su sesión, como dos procesos, y la primera migración tarda 0,5 s con el bloqueo tomado. Una corrida devuelve las dos migraciones y la otra `[]`, y cada una queda anotada y aplicada una vez;
+    - una migración que falla no deja cambios y `migrar` devuelve su error: entre una anterior y una siguiente, la que falla crea `a_medias` y después inserta en una tabla que no existe. `migrar` falla con el error de la base; quedan la anterior y su fila, y no hay `a_medias` ni rastro de la siguiente;
+    - una migración más vieja que otra ya aplicada se aplica igual y queda anotada después de la más nueva;
+    - una fase que no termina en el plazo (1 s) falla con el mensaje del plazo entre 980 ms y 2 s. La migración crea `a_medias` y duerme 2 s; la prueba espera a que la base dé de baja la sesión y comprueba que no quedaron `a_medias` ni su fila;
+    - al terminar, `migrar` no deja temporizadores pendientes (con temporizadores falsos);
+    - con una base que no contesta y un tiempo de base de 500 ms, falla entre 480 ms y 1,5 s, después de una sola conexión;
+    - sin `plazoMs`, con temporizadores falsos y un tiempo de base de 120 s, a los 59 999 ms sigue esperando y a los 60 000 falla con el mensaje del plazo.
+  - Rojo primero: con el código de T17 fallaban 6 de las 7, tres solo porque `migrar` ignoraba `dir`. Con `dir` y nada más, cada una falló por su motivo: «Another migration is already running. Advisory lock mode is set to 'fail'», «Not run migration 1700000000000_vieja is preceding already run migration 1800000000000_nueva», la promesa del plazo se cumplía en vez de fallar y las dos de la base colgada vencían a los 5 s. La de la migración que falla ya pasaba (la transacción por migración venía de node-pg-migrate), y la de los temporizadores no podía fallar sin plazo: su rojo está en las mutaciones.
+  - Mutaciones de `migrar`, contra la integración: 14 de 14 detectadas (sin `wait`, sin `checkOrder: false`, sin el tiempo de conexión, con uno fijo de 100 ms, sin plazo, el plazo que no cierra el cliente, el que cierra pero no falla, el plazo por defecto de 6 s y de 600 s, sin `clearTimeout`, con `singleTransaction: true`, sin cerrar la conexión al terminar, el plazo armado recién después de conectar e ignorar `dir`).
+  - Tiempos reales, con el compilado y 20 veces cada uno: la base colgada falla entre 501 y 503 ms con 500 ms de tiempo de base, y el plazo vence entre 1000 y 1002 ms con 1000 ms de plazo.
+  - 10 corridas seguidas del proyecto `integracion`, sin fallas ni carpetas temporales sobrantes.
+  - Con Node v24.15.0: `npm test` (1522), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npm run contrato:test`, `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1507) y `node scripts/spec-check.mjs --rama impl/003-bloque-c --base origin/main` pasan.
+- Para mirar con atención:
+  - Al vencer el plazo, `migrar` falla enseguida, pero la base sigue con la sentencia en curso hasta que termina: recién ahí ve que la conexión no está, deshace la migración y suelta el bloqueo. Probado con un `pg_sleep(3)`: la sesión siguió activa y con el bloqueo hasta el final, y la tabla nunca se vio desde otra sesión. No queda nada a medias (RNF-05.3), pero un proceso que arranque en ese rato espera el bloqueo dentro de su propio plazo, y una migración futura que se quede esperando un lock (un `ALTER TABLE` sobre una tabla en uso) seguiría en la cola. Con `client_connection_check_interval`, que se puede pedir por sesión, la base lo nota enseguida (probado con 200 ms: la sesión se fue unos 100 ms después del corte, en vez de 2,7 s). El plan no lo pide.
+  - Si la base corta la conexión en medio de una migración (reinicio, `pg_terminate_backend`, `DROP DATABASE … WITH (FORCE)`), el cliente de pg emite `'error'` y, como nadie lo escucha, el proceso se cae con «Unhandled 'error' event» antes de que `migrar` devuelva el error (probado). Sale con 1, pero el motivo va a stderr como traza y no como línea JSON (RNF-05.3, RNF-14.5). T18 no lo pide; queda para el próximo `/sdd-change`: un oyente de `'error'` en el cliente, como el `pool.on('error')` de T19, para que el corte llegue como error de `migrar`. Mientras tanto, una prueba que falle con un `migrar` todavía corriendo puede terminar con ese error al borrar su base (pasó en el rojo de la de dos corridas).
+  - Después de que vence el plazo, node-pg-migrate todavía manda al `log` un par de líneas («Error executing», «Client was closed and is not queryable»): son de la fase cortada, no de un error nuevo.
+  - La prueba del plazo es la única que espera de verdad (unos 2 s, con un límite de 10 s). La de los 60 s usa temporizadores falsos solo para `setTimeout` y `clearTimeout`, y deja reales los sockets.
+
+### T19 — Consultar la base con tiempo máximo y clasificar sus errores: `crearPool` y `consultar()` · commit `003/T19`
+- Qué cambió:
+  - [src/bd/pool.ts](../../src/bd/pool.ts) nuevo:
+    - `crearPool(config, registrar?)` devuelve un `PoolBd`, que es un `pg.Pool` con `max: 10` y `connectionTimeoutMillis` y `query_timeout` iguales a `config.tiempoBdMs`. No se conecta hasta la primera consulta. Tiene un oyente de `'error'` que llama a `registrar`.
+    - `PoolBd.consultar(sql, parámetros?)` ejecuta la consulta con `conTiempoMaximo` y traduce lo que falla con `clasificarError`: un `Conflicto` (409), un `BaseNoDisponible` (503), que antes de lanzarse se registra con su causa, o, para cualquier otro error, el original sin tocar.
+    - `conTiempoMaximo(promesa, ms)` corta con `TiempoAgotado` si la promesa no termina en `ms`, y siempre cancela su temporizador.
+    - `clasificarError(error)` devuelve el `Conflicto`, el `BaseNoDisponible` o `undefined`. Es pura. `RegistrarError` es el tipo de `registrar`: `(error, mensaje) => void`.
+  - [pruebas/unitarias/bd.test.ts](../../pruebas/unitarias/bd.test.ts) y [pruebas/integracion/duplicados.test.ts](../../pruebas/integracion/duplicados.test.ts) nuevos.
+- Por qué así:
+  - `consultar` es un método del pool y no una función suelta (plan, Datos, la escribe como `consultar(sql, parámetros)`): necesita el pool y el tiempo de base, y así los manejadores reciben una sola cosa. Un pool falso para las pruebas HTTP es cualquier objeto con ese método. Descartado: una función `consultar(pool, tiempoBdMs, …)`, que obliga a llevar los dos juntos. `PoolBd` hereda de `pg.Pool`, así que `end()`, `ended`, `totalCount` y `options` son los de pg (plan, Lógica 12 llama a `pool.end()`).
+  - Los dos cortes se necesitan (plan, Decisiones). `connectionTimeoutMillis` y `query_timeout` valen cada uno por separado; `conTiempoMaximo` es el tope del total (RNF-14.2). Y `query_timeout` evita que la conexión de una consulta cortada siga ocupada: pg la descarta cuando vence, y el pool no se queda sin conexiones.
+  - Qué cuenta como falta de base: la lista del plan, tal cual. Los mensajes de pg se buscan al comienzo del texto, no en cualquier parte: un mensaje ajeno que mencione «Connection terminated» no se vuelve un 503. Un `AggregateError` (lo que da `localhost` cuando falla en IPv4 y en IPv6) trae el `code` y se reconoce igual.
+  - El error que no se reconoce sale como llegó, no envuelto: el manejador de errores (T7 y T10) lo responde con 500 y lo registra con el código, la tabla, la columna y la restricción de pg, y sin la consulta ni el texto original en la respuesta (RNF-03.3, RNF-08.1).
+  - La causa de la falta de base la registra `consultar`, porque el manejador de errores solo registra los 500 (T10). El `Conflicto` no se registra: es una respuesta prevista.
+  - `registrar` es un parámetro y no un logger: el pool se crea antes que la app (plan, Lógica 12), así que su logger todavía no existe. Sin él no se escribe nada, como `migrar` (RNF-14.5), pero el oyente de `'error'` está siempre: sin oyente, una conexión inactiva que la base corta tira el proceso (plan, Trampas verificadas).
+  - Con `Promise.race` un rechazo tardío de la consulta cortada queda atendido, y no es una promesa rechazada sin atender.
+- Cómo se conecta:
+  - Todavía no la llama nadie en el servicio: las pruebas arman los manejadores de `probarAltaDuplicada`, `probarTarda` y `probarFalla` (contrato de prueba, T4) con una función que consulta el pool. T20 suma `pool` a `construirApp` (plan, Estructura) para el manejador de `/health`; T22 crea el pool con `crearPool(config, registrar)` antes de la app y lo cierra con `end()` (T23).
+  - Para T22: `registrar` tiene que escribir con el logger de la app bajo `err` (`app.log.error({ err: error }, mensaje)`, así pasa por el serializador de T10 y sale sin la clave ni la contraseña). Como la app se crea después, `registrar` puede leer una variable que se asigna con la app.
+  - T21: la prueba del proxy colgado y de la conexión rechazada usa este mismo `consultar()`; la de la conexión rechazada ya está cubierta acá a nivel del pool (`127.0.0.1` y `localhost`).
+- Tests:
+  - [pruebas/unitarias/bd.test.ts](../../pruebas/unitarias/bd.test.ts), 46 pruebas, sin Docker:
+    - `clasificarError`: el `23505` es un `Conflicto` que no lleva la restricción ni la fila; 17 casos de falta de base (los cuatro códigos de Node, cinco de la clase 08, 57P01, 57P03, los cuatro mensajes de pg, un `AggregateError` y `TiempoAgotado`) y 17 de errores que se dejan pasar (42P01, 42601, 23502, 23503, 23514, 40P01, 57014, otro código de Node, un código que contiene 08 en el medio, un mensaje que contiene el de pg sin empezar con él, un código que no es texto, valores que no son un `Error`);
+    - `conTiempoMaximo` con temporizadores falsos: devuelve el valor, pasa el error, corta justo en `ms` con `TiempoAgotado`, no deja temporizadores y no deja un rechazo sin atender;
+    - `crearPool`: las opciones del pool, no se conecta, el error del pool se registra sin tirar el proceso (con y sin `registrar`), y `consultar` corta en el tiempo de base con un pg simulado que no termina (el único lugar donde el corte total se prueba solo, porque en la prueba real `query_timeout` lo alcanza al mismo tiempo);
+    - con la conexión rechazada en `127.0.0.1` y en `localhost` (puerto que acaba de cerrarse), `consultar` da `BaseNoDisponible` y registra el `ECONNREFUSED`.
+  - [pruebas/integracion/duplicados.test.ts](../../pruebas/integracion/duplicados.test.ts), 15 pruebas, por HTTP (`app.inject`) sobre una base real, con un tiempo de base de 500 ms:
+    - el segundo alta con el mismo código da 409 en problem+json, sin la restricción, la tabla ni la consulta, y la fila no se inserta dos veces; no deja líneas de error ni la restricción en el log, y `registrar` no se llama; dos altas a la vez dan un 201 y un 409 con una sola fila (RNF-08); un código distinto no choca;
+    - una consulta de `pg_sleep(10)` da 503 en problem+json entre 480 ms y 1,5 s; `registrar` recibe la causa una sola vez y no queda una línea de error; el pool sigue sirviendo; y el pool suelta la conexión del corte sin esperar a la base;
+    - una consulta en curso que la base corta (`pg_terminate_backend`) da 503 con el 57P01 como causa, y una conexión inactiva que la base corta llega a `registrar`, no tira el proceso y el pool abre otra;
+    - una tabla que no existe da 500 en problem+json, sin la consulta ni el nombre de la tabla, con una línea de error con el código `42P01`, y `registrar` no se llama.
+  - Rojo primero: las dos pruebas fallaban porque `src/bd/pool.ts` no existía (la importación fallaba). El rojo de cada comportamiento está en las mutaciones.
+  - Mutaciones de `src/bd/pool.ts`, contra los dos archivos: 28 de 28 detectadas (sin el oyente de `'error'`, sin `query_timeout`, sin `connectionTimeoutMillis`, otro `max`, sin `conTiempoMaximo` en `consultar` (solo la detecta la prueba del pg simulado), el doble de tiempo, sin `clearTimeout`, sin el 23505, `Conflicto` registrado, 503 sin registrar, el otro error convertido en 503, quitar cada código de la lista (57P01, 57P03, ECONNREFUSED, ENOTFOUND, ETIMEDOUT, ECONNRESET), sin la clase 08, `08` en cualquier parte, mensajes con `includes`, quitar cada mensaje, `TiempoAgotado` que no cuenta, aceptar valores que no son `Error`, un `code` numérico y los parámetros que no llegan).
+  - 10 corridas seguidas de los dos archivos, sin fallas.
+  - Con Node v24.15.0: `npm test` (1583), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npm run contrato:test`, `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1553) y `node scripts/spec-check.mjs --rama impl/003-bloque-c --base origin/main` pasan.
+- Para mirar con atención:
+  - La línea con la causa de una falta de base no lleva el `idCorrelacion`: `consultar` no sabe de qué solicitud viene, y `registrar` no recibe la solicitud. La respuesta 503 sí lleva el encabezado. Si hace falta cruzarlas, el arreglo es registrar la causa en el manejador de errores con `request.log` (para `BaseNoDisponible` y, en T25, `ModuloNoDisponible`), con la causa guardada en el error. Cambia el plan (Lógica 6, «Solo los 500 se registran») y va por `/sdd-change`; no se hizo acá.
+  - Para el próximo `/sdd-change`: plan.md, Datos y Estructura, la firma real (`crearPool(config, registrar?)` devuelve un `PoolBd` con `consultar` como método, y no `consultar(sql, parámetros)` suelto); Lógica 12, `crearPool(config, registrar)`; y la tabla de Pruebas suma `unitarias/bd.test.ts`.
+  - Una consulta cortada sigue corriendo en la base hasta que termina (el mismo hallazgo de T18, punto 2). Probado con `pg_sleep(3)` y un tiempo de base de 300 ms: `consultar` falló a los 303 ms, el pool soltó la conexión, y 1 s después la sesión seguía activa en la base; a los 3,5 s ya no. Con `client_connection_check_interval` la base lo notaría enseguida; el plan no lo pide. El tiempo máximo del servicio no depende de eso, pero una consulta lenta y repetida acumula sesiones en la base hasta que cada una termina.
+  - `08P01` (protocol_violation) también es de la clase 08 y cuenta como falta de base, como pide «`08xxx`» en el plan; `57014` (query_canceled, por un `statement_timeout` del servidor) no está en la lista y da 500. Nada lo configura hoy.
+  - Las pruebas de consulta lenta esperan de verdad el tiempo de base que se les pone (500 ms cada una).
+
+### T20 — `GET /health` con la base arriba, registrada desde el contrato o como excepción · commit `003/T20`
+- Qué cambió:
+  - [src/salud.ts](../../src/salud.ts) nuevo:
+    - `verificarSalud`: el manejador. Hace `request.server.pool.consultar('SELECT 1')` y contesta `{ "estado": "ok" }`. Si la consulta falla, el error sale tal cual y el manejador de errores lo responde (503 si `consultar` lanza `BaseNoDisponible`, T19).
+    - `registrarSaludAMano(app, implementadas)`: registra `GET /health` como excepción temporal, pública (`config.permisos = { publica: true, roles: [] }`) y con `verificarSalud`, salvo que la lista de operaciones implementadas ya traiga un `GET /health`.
+    - La declaración `FastifyInstance.pool: BaseDeDatos`.
+  - [src/app.ts](../../src/app.ts): `construirApp` recibe `pool` (obligatorio), lo deja en `app.pool` con `decorate` y, después de `registrarOperaciones`, llama a `registrarSaludAMano` con las implementadas que esa devuelve. Va antes de las rutas 405.
+  - [src/operaciones/index.ts](../../src/operaciones/index.ts): `manejadores = { verificarSalud }`.
+  - [src/bd/pool.ts](../../src/bd/pool.ts): el tipo `BaseDeDatos` (`Pick<PoolBd, 'consultar'>`), que es lo que necesitan la app y los manejadores.
+  - [pruebas/ayudas/contrato-salud.yml](../../pruebas/ayudas/contrato-salud.yml) nuevo: solo `GET /health` como `verificarSalud`, pública, con el `X-Request-Id` sin patrón y la respuesta `Salud` del borrador del v1.
+  - [pruebas/ayudas/app.ts](../../pruebas/ayudas/app.ts): `POOL_FALSO` (falla si alguien consulta) y la opción `pool` de `crearApp`, que por defecto es el falso. [pruebas/http/precedencia.test.ts](../../pruebas/http/precedencia.test.ts), la única otra prueba que llama a `construirApp`, pasa `POOL_FALSO`.
+- Por qué así:
+  - El pool llega a los manejadores por `request.server.pool` y no por una fábrica `crearManejadores(pool)`, porque `manejadores` es un mapa fijo que `scripts/contrato-test.mjs` importa desde `dist/` sin crear ninguna base (T5). Las specs #4 a #8 consultan con `request.server.pool.consultar(sql, parámetros)`.
+  - `construirApp` no crea ni cierra el pool: lo hace el arranque (T22 lo crea, T23 lo cierra). Por eso el tipo es `BaseDeDatos` y no `PoolBd`.
+  - La excepción se decide con la lista de implementadas y no mirando el contrato a mano: si hay una operación implementada con método `GET` y ruta `/health`, sea cual sea su `operationId`, ya la registró el contrato. Si el contrato la tiene pero sin manejador, la operación queda pendiente y `/health` se registra a mano. Mirar solo la ruta no alcanza (un `POST /health` implementado no es un `GET`), lo mostró una mutación.
+  - Orden: `registrarSaludAMano` va después de `registrarPermisos` (el `onRoute` ve que declara sus permisos; era la advertencia de T35) y antes de las rutas 405, para que `POST /health` reciba su comodín y dé 405 con `Allow: GET`.
+  - El token se ignora porque la ruta es pública: el hook de permisos no lo mira, ni válido ni inválido (RNF-12.1, RNF-14.1).
+  - La consulta pasa por `consultar`, con su corte al tiempo de base (RNF-14.2). `SELECT 1` solo comprueba que la base contesta; no toca ninguna tabla.
+- Cómo se conecta:
+  - T21 prueba, con el proxy TCP, que `/health` da 503 en 2 s con la base colgada o rechazando conexiones, y que vuelve a 200 sin reiniciar. Este mismo manejador alcanza: no tiene lógica de tiempo propia.
+  - T22 le pasa a `construirApp` el pool que crea (`crearPool(config, registrar)`, T19) y los `manejadores` del servicio, y escribe en el log las implementadas y pendientes.
+  - T23: el hook de parada (503) va antes que el del 404, y `/health` durante el cierre responde 503 como las demás rutas.
+  - El healthcheck de compose (T27) hace un `GET /health` con `fetch`. No sirve un HEAD: da 405 porque `exposeHeadRoutes` está en `false`.
+  - T29: el paso 4 de `contrato-test.mjs` comprueba `/health`. Hoy, con `contrato-salud.yml`, el script ya lista `verificarSalud` como implementada.
+- Tests:
+  - [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts), 65 pruebas, con una base real en el contenedor:
+    - las mismas para las dos maneras de registrarla (a mano con el contrato de prueba, y desde el contrato con `contrato-salud.yml`): 200 con `{"estado": "ok"}` en JSON; consulta la base una vez; 200 sin token, con uno válido, vencido, firmado con otra clave, sin roles conocidos, con basura, con otro esquema y con el encabezado vacío; trae el `X-Request-Id` que llegó o uno nuevo si es inválido; con un pool que lanza `BaseNoDisponible`, 503 en problem+json; con uno que lanza otro error, 500 sin el mensaje; y ocho métodos que la ruta no tiene (`POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `HEAD`, `TRACE`, `PROPFIND`), con y sin token: 405 con `Allow: GET`;
+    - quién atiende la ruta se ve por lo que contesta: con `contrato-salud.yml` y un `verificarSalud` propio, ese manejador; con el `operationId` cambiado (`obtenerSalud`), también; con el contrato y sin manejador, el servicio; sin `/health` en el contrato, el servicio aunque haya un `verificarSalud` suelto; con solo un `POST /health` implementado, `GET /health` se registra a mano; y una operación `verificarSalud` en otra ruta no cambia nada;
+    - el servicio trae solo el manejador `verificarSalud`.
+  - [pruebas/unitarias/contrato-test.test.ts](../../pruebas/unitarias/contrato-test.test.ts), 2 pruebas nuevas: con `contrato-salud.yml` y los manejadores del servicio, `verificarSalud` queda implementada y no hay pendientes; sin manejadores, queda pendiente.
+  - Rojo primero: 62 de las pruebas de `salud.test.ts` y la de `contrato-test.test.ts` fallaban antes del código (la ruta no existía y `manejadores` estaba vacío); las demás de 405 ya pasaban, porque eso venía de T8.
+  - Mutaciones de `src/salud.ts`, `src/app.ts` y `src/operaciones/index.ts`: 18 de 18 detectadas (la ruta que se registra siempre, nunca, con otro método, otra ruta, solo por ruta o solo por método; protegida; sin permisos; en otra URL o con otro método; sin consultar la base; otro estado; el error tragado; un 200 con la base caída; sin decorar el pool; a mano después de las rutas 405; ignorar lo implementado; sin `verificarSalud` en el mapa). En la primera vuelta sobrevivía la de «solo por ruta»: se cerró con la prueba del `POST /health` implementado.
+  - 10 corridas seguidas de `salud.test.ts` y `contrato-test.test.ts`, sin fallas.
+  - A mano, con Node v24.15.0: `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml` lista «implementada GET /health (verificarSalud)», avisa que Schemathesis llega con T29 y termina con 0; sin `--contrato`, con el de `main`, «No hay operaciones implementadas» y 0.
+  - `npm test` (1650), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1555) y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - Toda app que arma `construirApp` tiene `GET /health`, también las de las pruebas con otro contrato. Una prueba que espere 404 en `/health` tendría que armar la app a mano. Hoy ninguna lo espera.
+  - La respuesta no se valida contra el esquema `Salud` del contrato: Fastify no valida respuestas. Lo comprobará Schemathesis en T29, cuando el v1 esté mergeado.
+  - `construirApp` exige `pool`. Quien lo llame sin base (las pruebas HTTP) pasa `POOL_FALSO`, que falla si alguien consulta; así una prueba que llega a la base sin querer lo dice en voz alta en vez de colgarse.
+  - Para el próximo `/sdd-change`: plan.md, Contrato y Estructura, dice que la excepción se registra «si el contrato la tiene, desde el contrato; si no, a mano»; conviene precisar que la decide la lista de implementadas (método y ruta) y que los manejadores llegan al pool por `request.server.pool`.
+
+### T21 — Base caída con el servicio corriendo: 503 en 2 s y vuelta sin reiniciar · commit `003/T21`
+- Qué cambió:
+  - [pruebas/ayudas/proxy.ts](../../pruebas/ayudas/proxy.ts) nuevo: `crearProxy(urlBd)` levanta un proxy TCP en un puerto libre de 127.0.0.1 que pasa cada conexión a la base de la prueba, y devuelve `{ urlBd, colgar, cerrar, reabrir, terminar }`:
+    - `urlBd` es la misma URL, apuntando al proxy;
+    - `colgar()` separa los dos sockets de cada conexión (`unpipe`, que los pausa: lo que llega queda retenido) y acepta las conexiones nuevas sin conectarlas con la base;
+    - `cerrar()` corta todas las conexiones y deja de escuchar: una conexión nueva se rechaza (`ECONNREFUSED`);
+    - `reabrir()` escucha otra vez en el mismo puerto, si estaba cerrado, vuelve a unir las conexiones retenidas y conecta con la base las que quedaron esperando;
+    - `terminar()` corta todo al final de cada prueba.
+  - [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts): un `describe` nuevo con 7 pruebas.
+  - El código del servicio no cambió: lo que pide T21 ya lo hacían `consultar()` (T19) y `verificarSalud` (T20).
+- Por qué así:
+  - Un proxy y no detener el contenedor: el contenedor de la base es uno por corrida y lo comparten los archivos de prueba que corren en paralelo (T17). Además, el proxy puede colgarse, que es el caso difícil: una base que acepta la conexión y no contesta. Sin los límites de tiempo, pg esperaría para siempre (plan, Trampas verificadas).
+  - `reabrir()` vuelve al mismo puerto porque la URL del pool no cambia, como cuando la base vuelve en la misma dirección. Así la app y el pool son los mismos objetos de principio a fin: eso es «sin reiniciar».
+  - Retener en vez de descartar: un corte más corto que el tiempo de base tiene que terminar bien, y la prueba del corte breve lo comprueba.
+  - El tiempo de base es el valor por defecto (2000 ms), sin acortarlo, porque RNF-14.2 pide 2 s. Las tres pruebas que lo esperan tardan unos 2,1 s cada una.
+  - Cada prueba arranca con el servicio andando: responde una solicitud antes de colgar o cerrar el proxy, así que el pool ya tiene una conexión abierta, que se cuelga o se cae con la base.
+  - La operación de prueba es `probarPublica` con un manejador que consulta por `request.server.pool`, como las de negocio (T20).
+- Cómo se conecta:
+  - Prueba juntos `consultar()` (los dos límites de pg, `conTiempoMaximo`, la clasificación y el oyente de `'error'`, T19), `verificarSalud` y el pool en `construirApp` (T20).
+  - T22: el `registrar` del pool de `arrancar` recibe las causas que acá junta la prueba.
+  - T27: el healthcheck de compose pide `/health`; con la base caída, el contenedor del servicio queda «no sano» hasta que vuelve.
+- Tests:
+  - [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts), 7 pruebas (72 en el archivo):
+    - con la base colgada, `GET /health` y `GET /pruebas/publica` a la vez dan 503 en problem+json entre 1980 ms y 3 s; se registran dos causas y no queda ninguna línea de error;
+    - colgada y con 12 solicitudes a la vez (el pool tiene 10 conexiones como máximo), las 12 dan 503 en menos de 3 s;
+    - colgada, un 503, y cuando vuelve, las dos rutas dan 200;
+    - colgada 300 ms y de vuelta: las dos solicitudes que esperaban (una en la conexión que ya existía, otra en una nueva) dan 200 entre 280 ms y 2 s, sin causas registradas;
+    - con la conexión rechazada, la conexión que el pool tenía se cae, se registra y el pool queda vacío, sin tirar el proceso;
+    - rechazada, las dos rutas dan 503 en problem+json en menos de 2 s, sin líneas de error;
+    - rechazada, un 503, y cuando vuelve, las dos rutas dan 200.
+  - Rojo primero: el archivo fallaba porque `pruebas/ayudas/proxy.ts` no existía. Con el proxy, las 7 pasaron de entrada, porque el servicio ya lo cumplía. El rojo de cada comportamiento está en las mutaciones.
+  - Mutaciones, contra las 7 pruebas: 17 de 21 detectadas.
+    - Del servicio: sin `conTiempoMaximo` ni `query_timeout`; sin `conTiempoMaximo` ni `connectionTimeoutMillis`; sin el oyente de `'error'`; sin `ECONNREFUSED`; sin el mensaje «Connection terminated»; sin «timeout exceeded when trying to connect»; `TiempoAgotado` que no cuenta; el 503 sin registrar; y `verificarSalud` que se traga el error.
+    - De la ayuda: `colgar` que no hace nada, que no retiene las conexiones abiertas o que conecta las nuevas; `cerrar` que no corta o que sigue escuchando; y `reabrir` que no vuelve a escuchar, que no suelta lo retenido o que no conecta las que esperaban.
+    - En la primera vuelta sobrevivía la última: la prueba del corte breve usaba una sola solicitud, que iba por la conexión que ya existía. Se cerró pidiendo las dos rutas a la vez.
+    - Vivas, equivalentes acá: sin `conTiempoMaximo`, sin `query_timeout`, sin `connectionTimeoutMillis` y sin el mensaje «Query read timeout». En estas pruebas cada límite de tiempo tapa al otro, y T19 prueba cada uno por separado.
+  - 10 corridas seguidas del archivo, sin fallas.
+  - Con Node v24.15.0: `npm test` (1657), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npm run contrato:test`, `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1555) y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - Medido con una sonda (dos corridas, que coincidieron). Con la base colgada, los 503 salen entre 2003 y 2008 ms.
+    - La solicitud que usa la conexión que ya existía corta por `TiempoAgotado`.
+    - La que abre una nueva corta por «timeout exceeded when trying to connect». Si al pedir conexión el pool tiene alguna libre, pg-pool pone a la solicitud en su cola con un límite de `connectionTimeoutMillis`. Ese límite sigue corriendo aunque después le toque una conexión nueva, y empieza antes que el de `conTiempoMaximo`. Ese mensaje no quiere decir solo «pool lleno».
+  - Con la conexión rechazada, los 503 salen en 1 a 3 ms.
+    - Si la solicitud llega antes de que pg note que la base cortó, usa la conexión vieja y falla con «Connection terminated unexpectedly»: por eso ese mensaje está en la lista de T19 (la mutación lo confirma).
+    - Si llega después, pg ya registró la conexión inactiva caída, y la nueva da `ECONNREFUSED`.
+  - El proxy simula la caída en la red. Una base que contesta pero tarda (una consulta pesada) la cubre T19 con `pg_sleep`.
+  - Mientras el proxy está cerrado, su puerto queda libre. Otro proceso podría tomarlo antes de `reabrir()`, que fallaría con `EADDRINUSE`. Es muy improbable y no pasó en las corridas.
+  - `salud.test.ts` tarda unos 17 s: 7 s son de estas pruebas y otros 7 s de las de T20, que crean una base por prueba. Las de T20 solo hacen `SELECT 1` y podrían compartir una base por archivo (`beforeAll`), lo que bajaría unos 6 s. No se hizo: es de T20.
+
+### T22 — Arrancar en orden: configuración, contrato, app, migraciones y recién después escuchar · commit `003/T22`
+- Qué cambió:
+  - [src/arranque.ts](../../src/arranque.ts) nuevo. `arrancar(env, salir, { flujoLog?, rutaContrato? })` sigue la Lógica 12:
+    - `cargarConfig(env)`. Si hay errores, escribe una línea de error por variable, con `variable` y `motivo` y nunca el valor, y llama a `salir(1)`.
+    - `cargarContrato`, `crearPool(config, registrar)` (todavía no se conecta), `construirApp` y `app.ready()`, que compila los esquemas del contrato.
+    - Una línea `info` «Operaciones del contrato», con `implementadas` y `pendientes` (las de `listarOperaciones`, T5).
+    - `migrar` con el tiempo de base y el plazo de 60 s, y recién después `app.listen` en `0.0.0.0` y el puerto configurado.
+    - Si algo de eso falla, una línea de error «El servicio no pudo arrancar» con el error bajo `err`, sin la clave ni la contraseña, y `salir(1)`.
+    - Devuelve `{ app, pool }` (tipo `Servicio`), o `undefined` si no arrancó.
+  - Cómo registra:
+    - Antes de que exista la app no hay logger: `registrarSinApp` escribe la línea a mano con el formato de pino (`level`, `time` en milisegundos, `pid`, `hostname`, los campos y `msg` al final) en `flujoLog` o en la salida estándar. El error pasa por `serializarError` con `secretosDeConfig` (T10).
+    - Con la app ya creada, todo va por `app.log`: el fallo, las causas que `registrar` recibe del pool (T19) y los mensajes de node-pg-migrate, que `migrar` pasa por su `log`.
+    - La línea de escucha es la de Fastify, con el texto en español: `listenTextResolver` da «Servicio escuchando en http://…».
+  - [src/servidor.ts](../../src/servidor.ts) nuevo, el punto de entrada (`node dist/servidor.js`): llama a `arrancar(process.env, (codigo) => process.exit(codigo))`. La parada ante SIGTERM y SIGINT es de T23.
+  - [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts) nuevo.
+- Por qué así:
+  - El orden es el de la Lógica 12. El contrato se compila antes de tocar la base: un contrato roto no deja migraciones aplicadas. Se escucha recién después de migrar: el servicio no atiende con el esquema a medias (RNF-05.2). Cualquier falla termina con 1, así compose ve que el servicio no arrancó (RNF-05.3, RNF-06.2).
+  - El tercer parámetro de `arrancar` es solo para las pruebas: `flujoLog` captura el log y `rutaContrato` permite usar contratos rotos. Es lo mismo que `flujoLog` en `construirApp` y `dir` en `migrar`. El plan escribe `arrancar(env, salir)`: va al próximo `/sdd-change`.
+  - `arrancar` devuelve la app y el pool para que T23 los cierre al detenerse, y para que las pruebas los cierren.
+  - Las líneas de antes de la app se escriben a mano y no con otro logger: pino no es dependencia directa y sumarla pide aprobación (AGENTS.md). Con la app ya creada se usa su logger, y no la escritura a mano, para que el fallo salga después de lo que la app ya escribió: pino escribe en la salida estándar de a poco, y una línea escrita a mano podría adelantarse.
+  - Una línea por variable con problemas: RNF-06.2 pide el nombre de cada una. Todas las líneas de un arranque que falla llevan el mismo texto, «El servicio no pudo arrancar», para que se encuentren juntas en `docker compose logs`.
+  - La línea de escucha: T11 dejó la decisión para T22. Se deja la de Fastify, que ya trae la dirección, con el texto en español, en vez de sumar otra.
+  - Al fallar no se cierran la app ni el pool: el pool no tiene conexiones, la app no escucha, y `salir(1)` termina el proceso. Esperar un cierre solo podría demorar la salida.
+  - `process.exit` y no `process.exitCode`: el proceso tiene que terminar aunque algo quede abierto, y T23 lo necesita igual después del corte de los 8 s. Lo escrito no se pierde: pino vacía su búfer al salir (con `on-exit-leak-free`), y las líneas escritas a mano usan la salida estándar, que en Linux escribe en el acto.
+  - `0.0.0.0` porque, en el contenedor, las solicitudes llegan por la red de docker y no por `localhost`.
+- Cómo se conecta:
+  - Une lo de los bloques anteriores: `cargarConfig` (T2 y T32), `cargarContrato` (T4), `listarOperaciones` (T5), `construirApp` (T6 a T20), `serializarError` y `secretosDeConfig` (T10), `migrar` (T17 y T18) y `crearPool` (T19).
+  - Los errores de registro de operaciones salen de `construirApp` y los de Ajv de `app.ready()`, como anotó T6: los dos dan `salir(1)` antes de migrar.
+  - T23 suma `detener()` sobre el `Servicio` que devuelve `arrancar` (cerrar la app, `pool.end()` y `salir(0)`) y la atención de SIGTERM y SIGINT en `servidor.ts`. Hoy un SIGTERM mata el proceso con 143. `parada.test.ts` puede usar `puertoLibre`, `escucha`, `entorno` y `arrancarParaProbar` de `arranque.test.ts`: si los necesita, conviene pasarlos a `pruebas/ayudas/`.
+  - T26: el `CMD` de la imagen es `node dist/servidor.js`. T27: el healthcheck espera a que el servicio escuche, es decir, a que termine de migrar. T28 ve estas líneas en `docker compose logs m2`, con el código 1.
+- Tests:
+  - [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts), 18 pruebas, con una base real por prueba:
+    - configuración: si falta la URL, si faltan las cuatro obligatorias (una vacía) o si hay cinco valores inválidos, `salir(1)` y una línea de error por variable, en orden, con su nombre y sin su valor, la clave ni la contraseña; la línea tiene los campos de pino (`level`, `time`, `pid`, `hostname`, … y `msg` al final);
+    - contrato: con un YAML que no se lee, una operación con un `$ref` roto y un formato desconocido, `salir(1)` con el motivo, la base sin ninguna tabla (no migró) y el puerto cerrado. Un motivo que trae la clave y la contraseña sale con `[oculto]`, antes de que exista la app (la ruta de un contrato que no está) y con la app ya creada (el nombre del formato);
+    - base y puerto: con la base que no acepta conexiones, `salir(1)` con `ECONNREFUSED`, sin la contraseña y sin escuchar; con la contraseña equivocada, `28P01` y sin la contraseña; con el puerto ocupado, `EADDRINUSE`, las migraciones ya aplicadas (se migra antes de escuchar) y sin la contraseña ni la clave;
+    - arranque normal: mientras otra sesión tiene el bloqueo de las migraciones (`PG_MIGRATE_LOCK_ID`, que exporta node-pg-migrate), `arrancar` no terminó y el puerto rechaza conexiones; al soltarlo, escucha y las migraciones están aplicadas (RNF-05.2). Con el contrato del repositorio, escucha en `0.0.0.0` y el puerto configurado, `GET /health` da 200 y migró. El log trae, en orden, las operaciones (las de `listarOperaciones` con el contrato del repositorio), cada migración y «Servicio escuchando en http://127.0.0.1:<puerto>», sin líneas de error ni el texto en inglés de Fastify. Con un contrato propio, la línea de operaciones nombra a `verificarSalud` implementada y a las otras dos pendientes. Con la base cortada (el proxy de T21) después de arrancar, `GET /health` da 503 y la causa queda en el log de la app, con su `ECONNREFUSED`;
+    - `src/servidor.ts`: con las variables del proceso vacías salvo el emisor, llama a `process.exit(1)` y escribe en la salida estándar una línea por cada obligatoria que falta, y no la del emisor (RNF-14.5).
+  - Rojo primero: el archivo fallaba porque `src/arranque.ts` no existía. Con un `arrancar` vacío, las 18 fallaron por su motivo (sin `salir(1)`, sin líneas, sin escuchar; la del bloqueo, porque nadie lo esperaba).
+  - Mutaciones de `src/arranque.ts` y `src/servidor.ts`: 33 de 34 detectadas. Entre ellas: sin `salir` o con `salir(0)` (configuración y falla); el valor en la línea; una sola línea para todas las variables; seguir de largo con la configuración mal; sin `ready()`; escuchar antes de migrar o mientras migra; el contrato de siempre; el motivo sin limpiar (antes y con la app) o sin el serializador; el pool sin `registrar` o sin el serializador; sin la línea de operaciones o solo con las implementadas; `migrar` sin `log` o con 1 ms de base; `127.0.0.1` u otro puerto; el texto de Fastify; no devolver el servicio; la línea a mano sin `hostname`, con otro nivel, a la salida de errores, con `msg` al principio o la hora en segundos; la app sin `flujoLog`; y en `servidor.ts`, `process.exit(0)`, un entorno vacío o `process.exitCode`. Viva, equivalente en las pruebas: escribir el fallo siempre a mano, que da el mismo contenido; la diferencia es el orden con pino en la salida estándar (ver «Por qué así»).
+  - 10 corridas seguidas del archivo, sin fallas; tarda unos 5 s.
+  - A mano, con `dist/servidor.js` como proceso aparte: sin variables, código 1 y las líneas por la salida estándar, con la de errores vacía; con un `postgres:18.6`, arranca, `GET /health` da 200 y las líneas salen en orden; con el puerto ocupado, código 1 con `EADDRINUSE` después de migrar; con la contraseña equivocada, código 1 con `28P01` y sin la contraseña. Pino no perdió la última línea en 100 corridas con `process.exit` justo después de escribirla (por un pipe, con 1 y con 200 líneas).
+  - Con Node v24.15.0: `npm test` (1675), `npm run lint`, `tsc -p tsconfig.json`, `npm run build`, `npm run contrato:test`, `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1555) y `node scripts/spec-check.mjs --rama impl/003-bloque-c --base origin/main` pasan.
+  - La revisión del bloque C sumó a la prueba del puerto ocupado que el log no trae la contraseña de la base ni la clave de los tokens, como pide el «Hecho cuando». Esa falla llega al final, con la contraseña buena y la app ya creada. Con una fuga armada a propósito (una línea que registra la URL de la base o la clave cuando falla `listen`), las 18 pruebas pasaban; ahora falla la del puerto. Para que buscar la contraseña sirva, [pruebas/ayudas/global.ts](../../pruebas/ayudas/global.ts) le pone una propia al contenedor: la de Testcontainers por defecto, «test», es también el usuario, que el log puede mostrar (plan, Lógica 10), y aparece en las rutas de los archivos de prueba. Siguen siendo 18 pruebas.
+- Para mirar con atención:
+  - Con `0.0.0.0`, Fastify escribe una línea de escucha por cada interfaz IPv4 de la máquina: en la del integrador fueron 4 (127.0.0.1, dos de la red local y la de docker). En el contenedor deberían ser dos: 127.0.0.1 y la de su red de docker (lo verá T28).
+  - Los mensajes de node-pg-migrate van en inglés y en nivel `info`, también su «Error executing» cuando una migración falla: `migrar` recibe un solo `log` (T17). El error de verdad es la línea «El servicio no pudo arrancar» que sigue.
+  - pg no pone la contraseña en sus mensajes, así que las pruebas de la base caída, de la contraseña equivocada y del puerto ocupado cuidan sobre todo que no se registren la URL ni la configuración. La limpieza de un motivo con secretos la prueban los casos armados del contrato (su ruta y el nombre del formato).
+  - RNF-14.5, opcional de la revisión del bloque A: ahora una prueba comprueba que, sin `flujoLog`, las líneas a mano van a la salida estándar. Las de la app, con el destino por defecto de pino, se escriben directo en el descriptor 1 y no pasan por `process.stdout.write`: siguen comprobadas a mano (arriba).
+  - Para el próximo `/sdd-change`: plan.md, Lógica 12 y Estructura, la firma `arrancar(env, salir, { flujoLog?, rutaContrato? })` → `Servicio | undefined`; el pseudocódigo con `crearPool(config, registrar)`; las líneas que escribe («Operaciones del contrato», «Servicio escuchando en …», «El servicio no pudo arrancar», una por variable); y que antes de la app se escriben a mano con el formato de pino.
+
+### T23 — Detenerse en orden ante SIGTERM o SIGINT, con corte a los 8 s · commit `003/T23`
+- Qué cambió:
+  - [src/arranque.ts](../../src/arranque.ts): el `Servicio` que devuelve `arrancar` suma `detener({ corteMs = 8000 })`, que sigue la Lógica 13:
+    - pone `app.deteniendose` en true y registra «Deteniendo el servicio»;
+    - llama a `app.close()` y después a `pool.end()`, con un corte de `corteMs`;
+    - si terminan antes, registra «Servicio detenido» con `cortadas: 0` y llama a `salir(0)`;
+    - si no, deja una línea `warn` «Solicitud cortada por la parada» por cada solicitud en curso (id de correlación, método, ruta sin query string y duración), cierra todas las conexiones (`closeAllConnections`), registra «Servicio detenido» con cuántas cortó y llama a `salir(0)` sin esperar al pool;
+    - si algo falla al cerrar, registra «El servicio no se detuvo en orden» con el error y llama igual a `salir(0)`;
+    - llamarla otra vez devuelve la misma parada, aunque se pase otro `corteMs`.
+    - `arrancar` acepta además `manejadores`, solo para las pruebas; sin él, usa los del servicio.
+  - [src/app.ts](../../src/app.ts): `prepararParada` registra el primer hook `onRequest`, antes del del 404:
+    - anota cada respuesta en `app.enCurso` hasta que emite `close` o hasta que se cierra su conexión;
+    - con `app.deteniendose`, lanza `Deteniendose` (503, problem+json) y, cada vez que termina una respuesta, cierra las conexiones que quedaron sin solicitudes (`closeIdleConnections`);
+    - `return503OnClosing: false`, para que Fastify no responda su 503 propio.
+  - [src/errores-fastify.ts](../../src/errores-fastify.ts): durante la parada, el 400 por la URL (frameworkErrors) sale con `Connection: close`.
+  - [src/logs.ts](../../src/logs.ts): `registrarSolicitudCortada`, la línea de cada solicitud cortada.
+  - [src/servidor.ts](../../src/servidor.ts): si arrancó, SIGTERM y SIGINT llaman a `detener()`, con `process.on`.
+  - [pruebas/ayudas/arranque.ts](../../pruebas/ayudas/arranque.ts) nuevo: `puertoLibre`, `escucha` y `entorno`, que salen de `arranque.test.ts`, como anotó T22.
+  - [pruebas/integracion/parada.test.ts](../../pruebas/integracion/parada.test.ts) nuevo. [precedencia.test.ts](../../pruebas/http/precedencia.test.ts) suma el punto 2 de RNF-03.5 a la matriz, [errores-fastify.test.ts](../../pruebas/http/errores-fastify.test.ts) suma una prueba y [errores.test.ts](../../pruebas/http/errores.test.ts) corrige un comentario que ponía el hook de parada después del 404.
+- Por qué así:
+  - El 503 lo da un hook propio y no Fastify, porque el de Fastify no es problem+json (plan, Decisiones). Es el primer `onRequest`: el 503 le gana al 404, al 405, al 401, al 403 y a todo lo del cuerpo (RNF-03.5, punto 2). El 400 por la URL sale antes, en frameworkErrors, que no pasa por los hooks (punto 1).
+  - La bandera propia se pone en el acto. El `closing` de Fastify llega unos ticks después de `app.close()`, porque avvio cierra en su propio orden.
+  - Por qué se cierran las conexiones que quedan sin solicitudes al terminar cada respuesta:
+    - una respuesta que empezó antes de la parada sale con keep-alive;
+    - Fastify cierra las conexiones inactivas solo al empezar a cerrar;
+    - sin esto, `app.close()` esperaría a que el cliente cerrara su conexión (el `keepAliveTimeout` de Fastify, 72 s) o al corte.
+    - Descartado: forzar `Connection: close` en `onSend`. La conexión se cerraría antes de que saliera el 503 de una solicitud que ya esperaba detrás en la misma conexión.
+  - El 400 por la URL cierra la conexión por lo mismo: Fastify pone `Connection: close` durante el cierre solo en lo que llega a una ruta.
+  - Al cortar no se espera al pool. `pool.end()` espera a las conexiones en uso, y una consulta en curso la retiene hasta el tiempo de base (`M2_TIEMPO_BD_MS`, que admite mucho más que 10 s). El plan dice «cierra sus conexiones, registra cuántas cortó y sale igual con 0»; `process.exit` cierra lo demás.
+  - Se sale con 0 también si algo falla al cerrar. La parada se pidió, y salir con otro código la haría parecer una falla (plan, Decisiones). Sin ese `catch`, el rechazo quedaría sin atender y Node terminaría con 1 sin pasar por `salir`.
+  - `enCurso` guarda las respuestas y no las solicitudes. El `close` de la solicitud llega en cuanto se terminó de leer el cuerpo de un POST, antes de responder.
+  - Por qué cada conexión, al cerrarse, saca sus respuestas de `enCurso` (un oyente por conexión, en el evento `connection` del servidor):
+    - una respuesta que espera detrás de otra en la misma conexión no emite `close` si la conexión se corta antes de que salga;
+    - sin esto, quedaría para siempre en el conjunto, y un corte posterior la contaría.
+  - `detener` devuelve siempre la misma parada: una segunda señal (Ctrl+C dos veces) no la repite ni cambia el corte. Por eso `process.on` y no `once`: con `once`, la segunda señal haría lo de siempre en Node, terminar el proceso sin esperar.
+  - 8 s dejan 2 s para cerrar conexiones, escribir y salir dentro de los 10 s de RNF-04.5.
+  - La opción `manejadores` de `arrancar` es como `rutaContrato`: con el contrato de prueba, las pruebas necesitan una operación que tarde lo que ellas quieran.
+  - La línea de una solicitud cortada va en `warn`: el cliente se quedó sin respuesta, pero no es un error del servicio.
+- Cómo se conecta:
+  - Usa:
+    - `Deteniendose` (T3) y el manejador de errores (T7);
+    - el encabezado de correlación (T9) y la línea de cada solicitud (T11);
+    - frameworkErrors (T12);
+    - el `Servicio` de `arrancar` (T22) y el `end()` del pool de T19.
+  - Las notas de tareas anteriores quedan cumplidas:
+    - el hook de parada va antes que el del 404 (T7 y T15);
+    - `/health` responde 503 durante el cierre, como las demás rutas (T20);
+    - el punto 2 de la precedencia lo prueban `parada.test.ts` y, ahora, la matriz de `precedencia.test.ts` (T16).
+  - Lo que viene:
+    - T26 (el `CMD` en forma exec) y T27 (`init: true`) hacen que SIGTERM llegue a Node.
+    - T28 y el CI (T30) miden `docker compose stop m2`: menos de 10 s y código 0.
+- Tests:
+  - [pruebas/integracion/parada.test.ts](../../pruebas/integracion/parada.test.ts), 15 pruebas, con el servicio de `arrancar`, el contrato de prueba, una base real por prueba y conexiones TCP escritas a mano:
+    - una solicitud en curso termina con su 200. Mientras tanto no se sale. Al terminar, `salir(0)` llega en menos de 1 s, con el pool ya cerrado, y la base se queda sin sesiones. Las líneas salen en orden: Deteniendo, la de la solicitud, Detenido con `cortadas: 0`;
+    - mientras termina, el puerto rechaza conexiones nuevas;
+    - por una conexión abierta, detrás de la que está en curso, llega una solicitud. Recibe 503 en problem+json con su id de correlación, sin `WWW-Authenticate` ni `Allow`, y `Connection: close`. Los casos:
+      - una sin token a una operación que lo exige (sería 401);
+      - una a una ruta que no existe (404);
+      - una con un método que la ruta no tiene (405);
+      - un `GET /health`;
+    - por la misma conexión, una URL mal codificada recibe el 400, con `Connection: close`, y la parada termina enseguida;
+    - otra llamada a `detener`, durante la parada o después, no hace otra;
+    - con el pool ya cerrado, la falla queda en el log y sale igual con 0;
+    - el corte acortado a 300 ms:
+      - corta una solicitud que espera y otra que ocupa una conexión del pool con una consulta de 30 s;
+      - `salir(0)` llega entre 300 ms y 1,3 s, y las dos conexiones se cierran sin respuesta;
+      - cada una deja su línea `warn` con id, método, ruta sin query string y duración, sin código;
+      - Detenido dice `cortadas: 2`;
+    - sin `corteMs`, con el reloj falso: a los 7999 ms no salió, y a los 8000 sale con 0;
+    - el corte no cuenta una solicitud que ya terminó en una conexión que sigue abierta, ni las dos de una conexión que el cliente cortó (la que estaba en curso y la que esperaba detrás);
+    - `src/servidor.ts`, con un `arrancar` falso:
+      - SIGTERM y SIGINT llaman a `detener()`, y el oyente sigue registrado para la señal siguiente;
+      - si no arrancó, no suma oyentes.
+  - [pruebas/http/precedencia.test.ts](../../pruebas/http/precedencia.test.ts): la matriz suma «el servicio se está deteniendo» (`app.deteniendose`) como punto 2. Son 630 combinaciones en vez de 315: con la URL inválida gana el 400, y con cualquier otro problema, el 503.
+  - [pruebas/http/errores-fastify.test.ts](../../pruebas/http/errores-fastify.test.ts): el 400 por la URL deja la conexión abierta (`keep-alive`), salvo durante la parada (`close`), con las dos URL.
+  - Rojo primero:
+    - en parada.test.ts, 13 de las 14 de entonces fallaron por `detener`, que no existía, o porque la operación que tarda daba 404 sin la opción `manejadores`;
+    - pasaba la de «si no arrancó, no suma oyentes», que vale también sin parada;
+    - en precedencia.test.ts, fallaron las 135 combinaciones que tienen la parada y no la URL inválida.
+    - Lo que se sumó con el código ya escrito se comprobó con las mutaciones: el caso de `GET /health`, la prueba de errores-fastify.test.ts y la limpieza ampliada con la solicitud ya terminada.
+  - Mutaciones de `src/app.ts`, `src/arranque.ts`, `src/errores-fastify.ts`, `src/logs.ts` y `src/servidor.ts`: 31 de 32 detectadas. Entre ellas:
+    - `enCurso`: no anotar las respuestas, o no sacarlas al terminar o al cerrarse su conexión;
+    - el 503: quitarlo, dejar el de Fastify (`return503OnClosing`) o registrar su hook después del del 404;
+    - las conexiones: no cerrar las inactivas al terminar cada respuesta; el 400 por la URL sin `Connection: close` o siempre con él;
+    - `detener`:
+      - sin la bandera o sin la línea Deteniendo;
+      - sin `pool.end()`, o esperándolo también al cortar;
+      - sin el `catch`, o con `salir(1)`;
+      - el corte en 7999 u 8001 ms, o sin devolver la misma parada;
+      - sin las líneas de las cortadas, sin `closeAllConnections` o Detenido sin `cortadas`;
+    - las opciones: siempre los manejadores del servicio, o ninguno por defecto;
+    - la línea cortada: en `info`, con la query string, sin la duración o sin el método;
+    - `servidor.ts`: sin SIGINT, con `once`, o sin mirar si arrancó.
+    - Viva, equivalente en el servicio: sin el `clearTimeout` del corte. El temporizador queda armado y no hace nada, porque `salir(0)` termina el proceso.
+  - 10 corridas seguidas de parada.test.ts, sin fallas; tarda unos 7 s.
+  - A mano, con `dist/servidor.js` como proceso aparte y un `postgres:18.6`:
+    - SIGTERM y SIGINT terminan con código 0 en unos 100 ms, con Deteniendo y Detenido (`cortadas: 0`). Una conexión nueva durante la parada da `ECONNREFUSED`.
+    - Con la base detrás de un proxy congelado y `M2_TIEMPO_BD_MS=20000`, un `GET /health` queda colgado. El SIGTERM termina con 0 a los 8026 ms y el cliente ve la conexión cortada. Quedan la línea `warn` con `/health`, su id y 8302 ms, y Detenido con `cortadas: 1`.
+    - La salida de errores, vacía; todas las líneas, JSON; ni la clave ni la contraseña en el log.
+  - Con Node v24.15.0 pasan:
+    - `npm test` (2007), `npm run lint`, `tsc -p tsconfig.json` y `npm run build`;
+    - `npm run contrato:test`;
+    - `npx vitest run --project unitarias` con `DOCKER_HOST` inexistente (1872);
+    - `node scripts/spec-check.mjs --rama impl/003-bloque-c --base origin/main`.
+- Para mirar con atención:
+  - Durante el arranque, las señales hacen lo de siempre en Node: un SIGTERM mientras migra termina el proceso con 143 (130 con SIGINT). La parada en orden empieza cuando el servicio ya escucha. RNF-04.5 habla del servicio andando; si el grupo quiere otra cosa, va a un `/sdd-change`.
+  - Con `return503OnClosing: false` ya no aparece la línea en inglés de Fastify «request aborted - refusing to accept new requests as server is closing» que anotó T10.
+  - `cortadas` cuenta las solicitudes que llegaron a `onRequest`. Una conexión que todavía mandaba los encabezados también se corta, pero no se cuenta.
+  - Si una solicitud cortada tenía una consulta, el manejador sigue hasta que la consulta termina o la base la corta. En el servicio, `process.exit` termina todo antes. En las pruebas, el `afterEach` borra la base para que el pool termine de cerrarse.
+  - La matriz de precedencia suma la parada, que T16 dejaba a criterio del grupo: si no se la quiere, se saca el grupo `deteniendo` de `ORDEN` y la matriz vuelve a 315.
+  - Para el próximo `/sdd-change`, en plan.md (Lógica 13 y Estructura):
+    - `detener` es un método del `Servicio` que devuelve `arrancar`, y una segunda llamada devuelve la misma parada;
+    - la opción `manejadores` de `arrancar`;
+    - los decoradores `deteniendose` y `enCurso` de la app;
+    - el cierre de las conexiones sin solicitudes al terminar cada respuesta, y el `Connection: close` del 400 por la URL durante la parada;
+    - que al cortar no se espera al pool, y que un error al cerrar también sale con 0;
+    - las líneas: «Deteniendo el servicio», «Servicio detenido» con `cortadas`, «Solicitud cortada por la parada» y «El servicio no se detuvo en orden»;
+    - `pruebas/ayudas/arranque.ts`.
+
 ### T32 — Poner el tope a los dos tiempos de espera · commit `003/T32`
 - Qué cambió:
   - [src/config.ts](../../src/config.ts): `M2_TIEMPO_BD_MS` y `M2_TIEMPO_MODULOS_MS` pasan de «entero mayor que 0» a un entero entre 1 y 2147483647. Los dos usan una regla con nombre, `tiempoEnMs`, que es `enteroEntre(1, 2147483647)`. `enteroPositivo` ya no existe: ninguna otra variable lo usaba.
@@ -472,7 +849,7 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Reusa `enteroEntre`, la regla de los puertos y de los reintentos: el motivo sale de los dos números, como en la tabla de Lógica 1, sin escribir un texto aparte.
   - La regla tiene nombre y se usa en los dos tiempos, en vez de repetir `enteroEntre(1, 2147483647)` en cada línea: el tope y el motivo de su existencia quedan escritos una sola vez.
 - Cómo se conecta:
-  - Cambia solo `cargarConfig` (T2). `tiempoBdMs` se lee desde T17 (el tiempo de conexión de `migrar`) y `tiempoModulosMs`, desde T24 (el cliente de módulos): ya reciben un valor que los temporizadores de Node aguantan, y por eso el bloque F va antes que C y D.
+  - Cambia solo `cargarConfig` (T2). `tiempoBdMs` se lee desde T18 (el tiempo de conexión de `migrar`; T17 aplica la migración inicial y todavía no lo usa) y `tiempoModulosMs`, desde T24 (el cliente de módulos): ya reciben un valor que los temporizadores de Node aguantan, y por eso el bloque F va antes que C y D.
   - Cierra lo que T2 dejó anotado en «Para mirar con atención»: un tiempo enorme era válido y rompía sin avisar.
 - Tests:
   - [pruebas/unitarias/config.test.ts](../../pruebas/unitarias/config.test.ts), 16 pruebas nuevas (88 en el archivo; 1476 en total):
