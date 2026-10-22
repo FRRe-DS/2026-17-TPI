@@ -126,9 +126,21 @@ jobs:
           SHA: ${{ github.sha }}
           APROBADORES: "sandobaitt agustinpagno"
         run: |
-          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number // empty')
+          # Recién mergeado, la API a veces falla o contesta vacío: cada consulta se reintenta antes de dar el rojo.
+          consultar() {
+            local intento salida estado
+            for intento in 1 2 3 4 5; do
+              estado=0
+              salida=$(gh api "$1" --jq "$2") || estado=$?
+              if [ "$estado" -eq 0 ] && [ -n "$salida" ]; then break; fi
+              if [ "$intento" -lt 5 ]; then sleep 5; fi
+            done
+            printf '%s' "$salida"
+            return "$estado"
+          }
+          pr=$(consultar "repos/$REPO/commits/$SHA/pulls" '.[0].number // empty') || { echo "::error::La API de GitHub no contestó al buscar el PR de $SHA"; exit 1; }
           if [ -z "$pr" ]; then echo "::error::Push directo a main sin PR ($SHA)"; exit 1; fi
-          ok=$(gh api "repos/$REPO/pulls/$pr/reviews" --jq '[.[] | select(.state == "APPROVED") | .user.login] | unique | join(" ")')
+          ok=$(consultar "repos/$REPO/pulls/$pr/reviews" '[.[] | select(.state == "APPROVED") | .user.login] | unique | join(" ")') || { echo "::error::La API de GitHub no contestó al buscar las aprobaciones del PR #$pr"; exit 1; }
           for u in $APROBADORES; do
             case " $ok " in *" $u "*) echo "PR #$pr aprobado por $u"; exit 0 ;; esac
           done
