@@ -15,23 +15,24 @@
 |---|---|---|---|
 | `migraciones/1792723535129_perfil-bloqueos.sql` | Tablas `clientes`, `bloqueos_cliente` e `idempotencias`, con restricciones con nombre | RF-2.1, RF-2.6.1, RNF-05, RNF-08 | T1, V |
 | `src/bd/transaccion.ts` | `transaccion()` con tope por sentencia y errores clasificados | RNF-08 | T2 |
-| `src/bd/idempotencia.ts` | `conIdempotencia()`, reutilizable por la spec 005 (fuera de la tabla del plan) | RF-2.1, RF-2.6.1, RNF-08 | T3 |
+| `src/bd/idempotencia.ts` | `conIdempotencia()`, reutilizable por la spec 005 | RF-2.1, RF-2.6.1, RF-2.6.1.3, RNF-08 | T3 |
 | `src/bd/pool.ts` | `clasificarError`: además, el carácter nulo da 400 | RNF-03 | V, T10 |
 | `src/clientes/modelo.ts` | Tipos del contrato y de fila, y sus conversiones | RF-2.1, RF-2.6 | T4, T6, T7, T8 |
-| `src/clientes/repositorio.ts` | SQL de perfiles y bloqueos; `BLOQUEO_VIGENTE`, la única definición de vigencia | RF-2.1 a RF-2.6.4 | T4, T6, T7, T8 |
-| `src/clientes/servicio.ts` | Rol efectivo, propiedad, idempotencia, `hasta` en UTC | RF-2.1.1.1, RF-2.1.2.1, RF-2.6.1 | T5, T7, T8, T10 |
+| `src/clientes/repositorio.ts` | SQL de perfiles y bloqueos; `BLOQUEO_VIGENTE`, la única definición de vigencia | RF-2.1 a RF-2.6.4 | T4, T6, T7, T8, T10, T11 |
+| `src/clientes/servicio.ts` | Rol efectivo, propiedad, idempotencia, `hasta` en UTC y su límite del año 9999 | RF-2.1.1.1, RF-2.1.2.1, RF-2.6.1 a RF-2.6.1.3 | T5, T7, T8, T10, T11 |
 | `src/clientes/operaciones.ts` | Los ocho manejadores HTTP | RNF-03 | T5 a T8 |
 | `src/operaciones/index.ts` | Registra los ocho `operationId` | RNF-03 | T9 |
 | `src/errores.ts` | Errores de dominio: `perfil-ya-existe`, `idempotencia-reutilizada`, `bloqueo-vencido`, `bloqueo-hasta-fuera-de-rango`, `bloqueo-ya-levantado`, `bloqueo-no-vigente` | RF-2.1.3, RF-2.6.1.1, RF-2.6.1.2, RF-2.6.3.1 | T3 a T8, T10, T11 |
-| `schemathesis.toml`, `scripts/contrato-test.mjs` | Ajuste acotado de Schemathesis (fuera de la tabla del plan) | RNF-07.2 | T10 |
+| `schemathesis.toml`, `scripts/contrato-test.mjs` | Ajuste acotado de Schemathesis | RNF-07.2 | T10 |
 | `pruebas/unitarias/clientes.test.ts`, `pruebas/integracion/clientes.test.ts` | Conversiones y reglas; persistencia, transacciones y concurrencia | RNF-07 | T1 a T8 |
-| `pruebas/http/clientes.test.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` | HTTP sin base y con base, y la matriz de roles (los dos últimos, fuera de la tabla del plan) | RNF-03, RNF-07 | T5 a T10 |
+| `pruebas/http/clientes.test.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` | HTTP sin base y con base, y la matriz de roles | RNF-03, RNF-07 | T5 a T11 |
 
 **Decisiones clave** (detalle en [plan.md](plan.md) y en las entradas de abajo):
 - El estado se calcula y no se guarda, con `BLOQUEO_VIGENTE` en SQL y un mismo `CURRENT_TIMESTAMP` en cada sentencia: `estado` y `bloqueosVigentes` no pueden contradecirse (T6). Descartado: una columna `estado`, que habría que mantener al día cuando un bloqueo vence solo.
 - Lo que no puede duplicarse lo garantiza la base: clave primaria del perfil, restricción única de idempotencia y UPDATE condicional para levantar (T1, T3, T8; RNF-08). Descartado: comprobar antes en código, que pierde ante dos solicitudes a la vez.
 - La propiedad se exige solo si el único rol efectivo es CLIENTE (rol efectivo = roles del token ∩ roles de la operación; T5, T9).
 - `hasta` se pasa a UTC en el servicio y no lo interpreta PostgreSQL, que rechaza desplazamientos que el contrato admite (T10).
+- En `crearBloqueo`, antes de la idempotencia solo se rechaza lo que nunca pudo crearse (un `hasta` después del año 9999, 422 `bloqueo-hasta-fuera-de-rango`); el perfil (404) y la fecha pasada (422 `bloqueo-vencido`) se miran después, dentro del alta. Así, repetir un alta ya hecha devuelve su 201 aunque el `hasta` haya pasado (T11; RF-2.6.1.3, RNF-08). Descartado: comparar `hasta` con el reloj del servicio antes de la idempotencia, que daba 422 a una repetición legítima.
 
 **Conceptos que conviene entender.** Idempotencia con `Idempotency-Key`: la misma clave y el mismo cuerpo devuelven la respuesta guardada. READ COMMITTED y el bloqueo de fila: el segundo UPDATE espera al primero y vuelve a evaluar su condición. Rol efectivo. Paginación estable (orden total con desempate por id). Schemathesis y sus fases (examples, coverage, fuzzing, stateful).
 
@@ -350,3 +351,12 @@ npm test && npm run contrato:test
   - Queda sin efecto el aviso de T7 sobre relojes desfasados entre el contenedor de M2 y PostgreSQL: el servicio ya no mira su reloj para `hasta`.
   - La prueba de la repetición espera unos 1,7 s reales, porque el vencimiento lo decide el reloj de la base y no se puede simular desde la prueba.
   - `-infinity` no llega nunca a una respuesta: el `INSERT` no inserta y sale el 422.
+
+### Validación — spec 004 contra la implementación · commit `004/V: validación`
+- Qué se comprobó (2026-10-23, `/sdd-validate`): cada requisito de spec.md tiene prueba automática en verde (`npm test`, 2444 pruebas en 28 archivos) y las ocho operaciones pasan `npm run contrato:test` (9 operaciones con `/health`, 5281 casos, todas las fases). Lint, build y `spec-check` en verde.
+- Evidencia en vivo contra el compose (localhost:8082): los 16 requisitos funcionales y los casos límite de perfil y bloqueos con curl, también el que falló en la validación anterior: un alta de bloqueo con `hasta` a 3 s, repetida con la misma clave 4 s después, devuelve el mismo 201 con el mismo cuerpo y `Location`; con otro cuerpo, 422 `idempotencia-reutilizada`. Los logs de esa corrida no tienen nombres, teléfonos, motivos, claves ni tokens (RNF-19).
+- Qué cambió: «Estado: implementada» en spec.md, y el mapa y las decisiones de esta guía con T11.
+- Para mirar con atención:
+  - La repetición de un alta devuelve la respuesta guardada tal cual, así que un bloqueo ya vencido vuelve con `vigente: true`, el valor del momento del alta (RF-2.6.1.3). El estado actual se consulta con `obtenerBloqueo`.
+  - Schemathesis avisa que `crearBloqueo` rechaza la mayoría de los datos generados: son los `hasta` pasados (422 `bloqueo-vencido`), aceptados en `schemathesis.toml` (T10).
+  - Sugerencia sin hacer: `rolesDe` (`src/clientes/operaciones.ts`) devuelve `[]` si a la ruta le faltan los permisos, y entonces no exige la propiedad. Hoy no pasa: una ruta sin permisos no se registra (`registrarPermisos`), y `roles-clientes.test.ts` comprueba que el contrato declara los roles de las ocho operaciones.
