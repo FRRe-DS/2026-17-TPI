@@ -245,14 +245,14 @@ describe('schemathesis.toml: el ajuste de Schemathesis queda acotado (RNF-07.2)'
     expect(sinComentarios.match(/=/g)?.length).toBe(1 + bloques.length * 2);
   });
 
-  it('acepta 422 solo en crearCliente y crearBloqueo, que lo declaran en el contrato, y ningún otro código de más', () => {
+  it('acepta 422 solo en crearCliente, crearBloqueo y crearDireccion, que lo declaran en el contrato, y ningún otro código de más', () => {
     const operaciones = bloques.map((bloque) => {
       const operationId = /include-operation-id\s*=\s*"([^"]+)"/.exec(bloque)?.[1];
       const lista = /checks\.positive_data_acceptance\.expected-statuses\s*=\s*\[([^\]]*)\]/.exec(bloque)?.[1];
       return { operationId, estados: (lista ?? '').split(',').map((estado) => estado.trim()).filter(Boolean) };
     });
 
-    expect(operaciones.map(({ operationId }) => operationId)).toEqual(['crearCliente', 'crearBloqueo']);
+    expect(operaciones.map(({ operationId }) => operationId)).toEqual(['crearCliente', 'crearBloqueo', 'crearDireccion']);
     for (const { operationId, estados } of operaciones) {
       expect(estados.sort()).toEqual([...POR_DEFECTO, '422'].sort());
       expect(respuestasDe(operationId as string)).toContain('422');

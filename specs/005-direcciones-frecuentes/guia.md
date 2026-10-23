@@ -1,5 +1,61 @@
 # Guía — Spec 005 Direcciones frecuentes
 
+## Visión general
+**Qué se construyó y para qué.** Las cinco operaciones de direcciones frecuentes de M2. Un cliente guarda lugares favoritos o recientes (texto, alias y coordenadas opcionales) para no escribirlos otra vez, los lista, filtra, corrige y borra; un operador puede consultarlos para asistirlo, pero no cambiarlos. M2 guarda una copia propia de cada dirección: no consulta a M4 ni conserva ids suyos (RNF-05).
+
+**Recorrido de una petición** (`POST /api/v1/clientes/{clienteId}/direcciones`, el alta). Lo común a todas las operaciones está en la guía de la [spec 003](../003-base-servicio/guia.md):
+1. Token y rol: `registrarPermisos` deja pasar solo a CLIENTE, que es lo que declara el contrato. Ajv valida los ids, `Idempotency-Key` y el cuerpo (tipo, largos, rangos de coordenadas, campos extra).
+2. El manejador `crearDireccion` ([direcciones/operaciones.ts](../../src/direcciones/operaciones.ts)) lee la ruta, la clave y el cuerpo, y llama al servicio. No escribe logs (RNF-19).
+3. `crearDireccion` ([direcciones/servicio.ts](../../src/direcciones/servicio.ts)): `exigirPropietario` (de la 004) exige `sub = clienteId`; después `conIdempotencia` ([bd/idempotencia.ts](../../src/bd/idempotencia.ts)) reserva la clave en una transacción.
+4. Dentro de esa transacción, `exigirPerfil` (404 si no hay perfil) y `crearDireccion` ([direcciones/repositorio.ts](../../src/direcciones/repositorio.ts)) hace el INSERT con un id generado por M2; la respuesta se guarda con la clave.
+5. `aDireccion` ([direcciones/modelo.ts](../../src/direcciones/modelo.ts)) convierte la fila al esquema `Direccion`. El manejador responde 201 con `Location`. Un error es un `Problema` ([errores.ts](../../src/errores.ts)) y sale en problem+json.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos | Tareas |
+|---|---|---|---|
+| `migraciones/1792768969582_direcciones.sql` | Tabla `direcciones_cliente`, checks con nombre e índices del listado | RF-2.2, RNF-05 | T1 |
+| `src/direcciones/modelo.ts` | Tipos del contrato y de fila; `aDireccion`, `aPaginaDirecciones` | RF-2.2, RF-2.2.1, RF-2.2.2 | T2, T3 |
+| `src/direcciones/repositorio.ts` | SQL: alta, consulta, listado, PATCH y DELETE, siempre por `(cliente_id, direccion_id)` | RF-2.2 a RF-2.2.4.1 | T2 a T4 |
+| `src/direcciones/servicio.ts` | Rol efectivo, propiedad, perfil e idempotencia del alta | RF-2.2, RF-2.2.5, RNF-08 | T5 |
+| `src/direcciones/operaciones.ts` | Los cinco manejadores HTTP | RNF-03 | T6 |
+| `src/operaciones/index.ts` | Registra los cinco `operationId` | RNF-03 | T6 |
+| `src/clientes/repositorio.ts` | `exigirPerfil` pasa a exportarse | RF-2.2 | T5 |
+| `schemathesis.toml` | Acepta el 422 de idempotencia también en `crearDireccion` | RNF-07 | T7 |
+| `pruebas/unitarias/direcciones.test.ts`, `pruebas/integracion/direcciones.test.ts` | Conversiones y propiedad; migración, repositorio y servicio con PostgreSQL real | RNF-05, RNF-07, RNF-08 | T1 a T5 |
+| `pruebas/http/direcciones.test.ts`, `pruebas/integracion/direcciones-http.test.ts` | HTTP sin base y con base, y logs sin datos | RNF-03, RNF-19 | T6 |
+
+**Decisiones clave** (detalle en [plan.md](plan.md) y en las entradas de abajo):
+- Una dirección de otro cliente es 404, igual que una inexistente; se busca siempre por `(cliente_id, direccion_id)`, así no se revela que existe (T2, T4). Descartado: buscar solo por `direccion_id` y comparar después.
+- La propiedad se exige solo si el único rol efectivo es CLIENTE: CLIENTE+OPERADOR lee direcciones ajenas, pero solo escribe las propias (T5). Se reutiliza `exigirPropietario` de la 004 y no hay un segundo mecanismo.
+- El alta reutiliza `conIdempotencia`; el perfil se comprueba dentro de la transacción, así que sin perfil no queda reserva y la clave sirve después (T5). Descartado: una tabla propia de idempotencia.
+- El borrado es físico y la actualización es parcial con `COALESCE`: el contrato no admite `null`, así que alias y coordenadas se reemplazan pero no se quitan (T4).
+- El listado trae perfil, total y página en una sola sentencia, con orden `creado_en DESC, direccion_id DESC` para que la paginación sea estable (T3).
+
+**Conceptos que conviene entender.** Idempotencia con `Idempotency-Key`. Rol efectivo (roles del token ∩ roles de la operación). Paginación con orden total (desempate por id). `numeric` de PostgreSQL llega como texto. Un `CHECK` que da NULL se acepta.
+
+**Cómo probarlo uno mismo** (comprobado el 2026-10-23 contra el compose, con datos ficticios; el token lo firma el comando de tokens del contenedor):
+```bash
+docker compose up -d --build --wait
+CLI=$(cat /proc/sys/kernel/random/uuid); B=http://localhost:8082/api/v1/clientes
+token() { docker compose exec -T m2 node dist/herramientas/token.js --sub "$1" --roles "$2"; }
+TC=$(token "$CLI" CLIENTE); TO=$(token operador-1 OPERADOR)
+curl -X POST $B -H "Authorization: Bearer $TC" -H 'Idempotency-Key: perfil-1' -H 'Content-Type: application/json' \
+  -d '{"nombre":"Ana","apellido":"Ejemplo","telefono":"+5493624000000"}'                       # 201: hace falta el perfil (spec 004)
+curl -i -X POST $B/$CLI/direcciones -H "Authorization: Bearer $TC" -H 'Idempotency-Key: dir-1' -H 'Content-Type: application/json' \
+  -d '{"tipo":"FAVORITA","alias":"Casa","texto":"Calle Falsa 123","coordenadas":{"latitud":-27.45,"longitud":-58.98}}'   # 201 y Location; repetida, 201 igual; con otro cuerpo, 422 idempotencia-reutilizada
+curl "$B/$CLI/direcciones?tipo=FAVORITA&size=5" -H "Authorization: Bearer $TO"                  # 200: un OPERADOR lee las de un cliente
+curl -X PATCH $B/$CLI/direcciones/<direccionId> -H "Authorization: Bearer $TC" -H 'Content-Type: application/json' -d '{"alias":"Trabajo"}'   # 200, solo cambia el alias
+curl -X PATCH $B/$CLI/direcciones/<direccionId> -H "Authorization: Bearer $TO" -H 'Content-Type: application/json' -d '{"alias":"X"}'         # 403: un OPERADOR no escribe
+curl -i -X DELETE $B/$CLI/direcciones/<direccionId> -H "Authorization: Bearer $TC"              # 204 sin cuerpo; otra vez, 404
+npm test && npm run contrato:test
+```
+
+**Preguntas de comprobación** (la respuesta, entre paréntesis, dice dónde buscarla):
+1. Un token CLIENTE+OPERADOR pide la lista de otro cliente y después intenta borrarle una dirección: ¿qué recibe en cada caso y por qué? (`exigirPropietario`, roles de cada operación en el contrato; T5).
+2. Dos altas llegan a la vez con la misma `Idempotency-Key` y el mismo cuerpo: ¿cuántas filas quedan y qué recibe cada una? ¿Y si los cuerpos difieren? (`conIdempotencia`, `idempotencias_unica`; T5).
+3. Un cliente con perfil y sin direcciones, y un `clienteId` sin perfil, piden el listado: ¿qué recibe cada uno y qué parte de la consulta lo decide? (`listarDirecciones` del repositorio, el `FROM clientes`; T3).
+4. ¿Por qué un PATCH con `{"alias": ""}` cambia el alias y uno con `{}` da 400 antes de llegar al servicio? (`COALESCE` y `minProperties` del contrato; T4).
+
 ## Tareas
 ### T1 — Migración de direcciones con relación, checks e índices · commit `005/T1`
 - Qué cambió:
@@ -115,4 +171,20 @@
   - El 403 por propiedad lleva en `instance` la ruta pedida, que contiene el `clienteId` de la URL. No es una filtración (es lo que mandó quien llama); lo que se comprueba es que el detalle no lleve ningún id.
   - `manejadores` tiene que seguir el orden del contrato: una prueba de [pruebas/unitarias/contrato-test.test.ts](../../pruebas/unitarias/contrato-test.test.ts) compara ese orden con el de `listarOperaciones()`.
   - La prueba de contrato con Schemathesis (`npm run contrato:test`) todavía no se corrió para estas cinco: es la T7.
+
+### T7 — Validar contrato, regresión y documentación · commit `005/T7`
+- Qué cambió:
+  - [schemathesis.toml](../../schemathesis.toml): `crearDireccion` se suma a `crearCliente` y `crearBloqueo` en `positive_data_acceptance`, con la misma lista de estados (los de Schemathesis más el 422).
+  - [pruebas/unitarias/contrato-test.test.ts](../../pruebas/unitarias/contrato-test.test.ts): la prueba que vigila esa configuración espera ahora las tres operaciones.
+  - Esta guía: la «Visión general».
+- Por qué así: la primera corrida de `npm run contrato:test` dio un único fallo: `POST …/direcciones` respondió 422 `idempotencia-reutilizada` a un cuerpo válido, porque Schemathesis reutilizó una `Idempotency-Key` con otro cuerpo. Es el 422 que el contrato declara para esa operación, y el mismo caso que ya tenían `crearCliente` y `crearBloqueo` (spec 004, guía, T10). El ajuste es acotado: no se desactiva ningún chequeo, solo se acepta el 422 en una operación que lo declara; la prueba de la configuración comprueba que cada operación incluida lo declare y que no se acepte ningún otro código de más.
+- Cómo se conecta: `scripts/contrato-test.mjs` lee `schemathesis.toml` al correr; no hubo que tocar el script.
+- Tests y evidencia (2026-10-23):
+  - `npm run contrato:test` (14 operaciones implementadas, las cinco de direcciones incluidas): dos corridas seguidas con exit 0; 2744 y 2745 casos generados, todos pasan, en las cuatro fases (examples, coverage, fuzzing, stateful).
+  - `npm test`: 2631 pruebas en 32 archivos. `npm run lint` y `npm run build` sin errores. `node scripts/spec-check.mjs --rama impl/005-direcciones-frecuentes --base origin/main`: solo el error de la spec 004 (T12 sin marcar en `main`), ajeno a esta rama.
+  - Los ejemplos `curl` de la visión general se ejecutaron contra el compose reconstruido: 201 con `Location`, repetido 201, otro cuerpo 422, lista del OPERADOR 200, PATCH 200, PATCH de OPERADOR 403, DELETE 204 y repetido 404.
+- Para mirar con atención:
+  - Schemathesis casi no llega al 200 de `GET` y `DELETE` sobre una dirección ni al `GET` del listado: genera ids al azar y recibe 404 («Missing test data»). Esa parte la cubren las pruebas de integración HTTP (T6), no la de contrato. Lo mismo le pasa a las operaciones de perfil y bloqueos de la 004; si se quiere más profundidad, hay que enlazar las operaciones en el contrato o dar ids reales en la configuración.
+  - En el 201 del alta, el JSON sale con las claves en otro orden que en un `GET` (la respuesta pasa por `jsonb` para que la primera y las repetidas sean idénticas). El contenido es el mismo.
+  - La corrida creó datos ficticios en el volumen local `datos-bd` del compose; no entran al repositorio.
 

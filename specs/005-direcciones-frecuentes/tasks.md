@@ -14,5 +14,5 @@ Depende de: la migración de perfiles (T1 de la spec #4) debe estar mergeada en 
   - Hecho cuando: pruebas cubren CLIENTE propio/ajeno, CLIENTE+OPERADOR para lecturas y escrituras, y el POST repetido o concurrente con la misma clave produce un solo registro, mientras otro cuerpo da 422.
 - [x] **T6. Exponer y registrar las cinco operaciones del contrato.** RF-2.2, RF-2.2.1, RF-2.2.2, RF-2.2.2.1, RF-2.2.3, RF-2.2.4, RF-2.2.4.1, RF-2.2.5, RNF-03, RNF-19
   - Hecho cuando: pruebas HTTP cubren todos los códigos, roles, `Location`, 204 sin cuerpo y errores problem+json, y comprueban que logs no contienen textos, alias, coordenadas ni claves.
-- [ ] **T7. Validar contrato, regresión y documentación de la spec.** RNF-07, RNF-20
+- [x] **T7. Validar contrato, regresión y documentación de la spec.** RNF-07, RNF-20
   - Hecho cuando: las cinco operaciones pasan `npm run contrato:test`; build, lint, `npm test` y `spec-check` quedan en verde; y `guia.md` documenta el mapa, decisiones y ejemplos ficticios comprobados.
