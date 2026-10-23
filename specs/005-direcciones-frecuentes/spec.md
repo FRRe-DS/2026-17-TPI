@@ -1,6 +1,6 @@
 # Spec 005 — Direcciones frecuentes
 
-Estado: aprobada
+Estado: implementada
 Issue: #5
 Etapa: TP1
 Responsable: @pablonacho

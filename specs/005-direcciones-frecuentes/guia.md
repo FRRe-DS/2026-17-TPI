@@ -188,3 +188,16 @@ npm test && npm run contrato:test
   - En el 201 del alta, el JSON sale con las claves en otro orden que en un `GET` (la respuesta pasa por `jsonb` para que la primera y las repetidas sean idénticas). El contenido es el mismo.
   - La corrida creó datos ficticios en el volumen local `datos-bd` del compose; no entran al repositorio.
 
+### V — Validación · commit `005/V`
+- Qué se hizo: revisión independiente con el subagente `reviewer`, requisito por requisito, contra spec, contrato y constitución, sin cambiar código. Veredicto: aprobado. `spec.md` pasa a `Estado: implementada`.
+- Evidencia (2026-10-23, Node 24, compose reconstruido desde la rama):
+  - `npm test`: 2631 pruebas en 32 archivos. `npm run lint`, `npm run build` y el lint de Redocly del contrato, sin errores.
+  - `npm run contrato:test`: 14 operaciones implementadas, las cinco de direcciones incluidas; 2714 casos, todos pasan, en las cuatro fases.
+  - Cada RF (RF-2.2 a RF-2.2.5) y RNF (RNF-03, 05, 07, 08, 19, 20) de la spec tiene al menos una prueba que pasa; los casos límite de la spec también.
+  - `spec-check`: solo el error de la spec 004 (T12 sin marcar en `main`), ajeno a esta rama; lo arregla la PR #50. Hasta entonces el CI de la PR de esta rama va a fallar en ese chequeo.
+  - Los dos desvíos de forma del plan (PATCH con `COALESCE`, T4; perfil comprobado en la sentencia del listado, T3) no incumplen la spec: cambian dónde vive el código, no qué hace.
+- Para mirar con atención (sugerencias del revisor, no bloquean):
+  - La prueba de logs busca `Bearer`; podría buscar también el JWT completo, por si alguna vez se registra el token sin el prefijo.
+  - Los ejemplos usan `-27.45, -58.98`, el centro de Resistencia: no es la ubicación de ninguna persona, pero unas coordenadas claramente ficticias evitarían dudas con el criterio «sin exponer ubicaciones reales».
+  - Schemathesis llega poco al 200 de las lecturas y el borrado de una dirección (ver T7).
+
