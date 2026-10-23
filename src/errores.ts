@@ -55,17 +55,19 @@ export class NoAutenticado extends Problema {
   }
 }
 
-// De `autorizar`.
+// De `autorizar` o, con `detail`, de una regla de propiedad (`exigirPropietario`). El `detail` no lleva datos de la solicitud
+// (RNF-19).
 export class SinPermiso extends Problema {
-  constructor() {
-    super({ codigo: 403, title: 'Sin permiso', detail: 'El rol del token no permite esta operación' });
+  constructor(detail = 'El rol del token no permite esta operación') {
+    super({ codigo: 403, title: 'Sin permiso', detail });
   }
 }
 
-// De la solicitud a una ruta que no existe.
+// De la solicitud a una ruta que no existe o, con `detail`, a un recurso que no existe. El `detail` no lleva datos de la
+// solicitud (RNF-19).
 export class NoEncontrado extends Problema {
-  constructor() {
-    super({ codigo: 404, title: 'No encontrado', detail: 'No existe la ruta pedida' });
+  constructor(detail = 'No existe la ruta pedida') {
+    super({ codigo: 404, title: 'No encontrado', detail });
   }
 }
 
@@ -88,6 +90,18 @@ export class Conflicto extends Problema {
   }
 }
 
+// De `crearPerfil()`, cuando el clienteId ya tiene perfil (RF-2.1.3). No lleva el clienteId ni datos del perfil (RNF-19).
+export class PerfilYaExiste extends Problema {
+  constructor() {
+    super({
+      codigo: 409,
+      type: '/errores/perfil-ya-existe',
+      title: 'Perfil ya existe',
+      detail: 'Ya existe un perfil para este usuario',
+    });
+  }
+}
+
 // De `conIdempotencia()`, cuando la Idempotency-Key ya se usó con otra solicitud (spec 004, Criterios). No lleva la clave
 // (RNF-19).
 export class IdempotenciaReutilizada extends Problema {
@@ -97,6 +111,57 @@ export class IdempotenciaReutilizada extends Problema {
       type: '/errores/idempotencia-reutilizada',
       title: 'Clave de idempotencia reutilizada',
       detail: 'La Idempotency-Key ya se usó con otra solicitud',
+    });
+  }
+}
+
+// De `crearBloqueo`, cuando `hasta` no es posterior al instante de creación (spec 004, Casos límite). No lleva la fecha ni el
+// motivo (RNF-19).
+export class BloqueoVencido extends Problema {
+  constructor() {
+    super({
+      codigo: 422,
+      type: '/errores/bloqueo-vencido',
+      title: 'Bloqueo vencido',
+      detail: 'El fin del bloqueo tiene que ser posterior a su creación',
+    });
+  }
+}
+
+// De `crearBloqueo`, cuando `hasta` cae después del año 9999 en UTC: no se podría devolver en el formato date-time del
+// contrato, que pide el año con cuatro cifras (RF-2.6.1.2). No lleva la fecha ni el motivo (RNF-19).
+export class BloqueoHastaFueraDeRango extends Problema {
+  constructor() {
+    super({
+      codigo: 422,
+      type: '/errores/bloqueo-hasta-fuera-de-rango',
+      title: 'Fin del bloqueo fuera de rango',
+      detail: 'El fin del bloqueo tiene que ser anterior al año 10000 (UTC)',
+    });
+  }
+}
+
+// De `levantarBloqueo`, cuando el bloqueo ya fue levantado (RF-2.6.3.1). No lleva el bloqueoId ni los motivos (RNF-19).
+export class BloqueoYaLevantado extends Problema {
+  constructor() {
+    super({
+      codigo: 409,
+      type: '/errores/bloqueo-ya-levantado',
+      title: 'Bloqueo ya levantado',
+      detail: 'El bloqueo ya fue levantado',
+    });
+  }
+}
+
+// De `levantarBloqueo`, cuando el bloqueo venció por su fecha sin que nadie lo levantara (RF-2.6.3.1, spec 004, Casos
+// límite). No lleva el bloqueoId ni la fecha (RNF-19).
+export class BloqueoNoVigente extends Problema {
+  constructor() {
+    super({
+      codigo: 409,
+      type: '/errores/bloqueo-no-vigente',
+      title: 'Bloqueo no vigente',
+      detail: 'El bloqueo ya venció: no se puede levantar',
     });
   }
 }
@@ -134,6 +199,14 @@ const SOLICITUD_ILEGIBLE: DatosProblema = {
 export class SolicitudIlegible extends Problema {
   constructor() {
     super(SOLICITUD_ILEGIBLE);
+  }
+}
+
+// De una regla de una operación que el esquema del contrato no puede expresar, como que el sub del token sea un UUID para
+// crear un perfil (spec 004, Casos límite). El `detail` no lleva datos de la solicitud (RNF-19).
+export class SolicitudInvalida extends Problema {
+  constructor(detail: string) {
+    super({ codigo: 400, title: TITULO_SOLICITUD_INVALIDA, detail });
   }
 }
 

@@ -416,13 +416,34 @@ describe('arranque normal (RNF-05.2)', () => {
     }
   });
 
+  it('con el contrato del repositorio, reconoce como implementadas las ocho operaciones de la spec 004', async () => {
+    const { logs, arranque } = arrancarParaProbar(entorno(base.urlBd, await puertoLibre()));
+    await arranque;
+
+    const linea = logs.lineas().find(({ msg }) => msg === OPERACIONES);
+    const implementadas = (linea?.implementadas as { operationId: string }[]).map(({ operationId }) => operationId).sort();
+    expect(implementadas).toEqual(
+      [
+        'actualizarCliente',
+        'crearBloqueo',
+        'crearCliente',
+        'levantarBloqueo',
+        'listarBloqueos',
+        'obtenerBloqueo',
+        'obtenerCliente',
+        'obtenerEstadoCuenta',
+        'verificarSalud',
+      ].sort(),
+    );
+  });
+
   it('registra las operaciones implementadas y pendientes del contrato', async () => {
     const contrato = contratoEnArchivo(
       contratoConSalud(
         {},
         {
-          '/clientes/{clienteId}': {
-            get: { operationId: 'obtenerCliente', responses: { 200: { description: 'El cliente' } } },
+          '/clientes/{clienteId}/direcciones': {
+            get: { operationId: 'listarDirecciones', responses: { 200: { description: 'Las direcciones' } } },
           },
           '/clientes': { post: { responses: { 201: { description: 'Creado' } } } },
         },
@@ -435,7 +456,7 @@ describe('arranque normal (RNF-05.2)', () => {
     expect({ implementadas: linea?.implementadas, pendientes: linea?.pendientes }).toEqual({
       implementadas: [{ operationId: 'verificarSalud', metodo: 'GET', ruta: '/health' }],
       pendientes: [
-        { operationId: 'obtenerCliente', metodo: 'GET', ruta: '/clientes/{clienteId}' },
+        { operationId: 'listarDirecciones', metodo: 'GET', ruta: '/clientes/{clienteId}/direcciones' },
         { metodo: 'POST', ruta: '/clientes' },
       ],
     });

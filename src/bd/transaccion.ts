@@ -1,6 +1,6 @@
 import type { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { BaseNoDisponible } from '../errores.js';
-import { clasificarError, conTiempoMaximo, type PoolBd } from './pool.js';
+import { type BaseDeDatos, clasificarError, conTiempoMaximo } from './pool.js';
 
 // Lo que recibe la función de una transacción para consultar dentro de ella: lo mismo que `consultar()` del pool, pero sobre
 // la conexión de la transacción.
@@ -10,7 +10,7 @@ export type Consultar = <Fila extends QueryResultRow = QueryResultRow>(
 ) => Promise<QueryResult<Fila>>;
 
 // Lo que usa `transaccion()` del pool.
-export type PoolTransaccional = Pick<PoolBd, 'connect' | 'tiempoBdMs'>;
+export type PoolTransaccional = Pick<BaseDeDatos, 'connect' | 'tiempoBdMs'>;
 
 // Ejecuta `fn` dentro de una transacción (plan, «Transacciones»): BEGIN, lo que haga `fn` y COMMIT, o ROLLBACK si algo
 // falla, y entonces relanza el error. Cada sentencia, también BEGIN, COMMIT y ROLLBACK, tiene el tope del tiempo de base y la

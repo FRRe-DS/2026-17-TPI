@@ -49,7 +49,12 @@ async function pedirToken() {
   return stdout.trim();
 }
 
-// Paso 5: Schemathesis con todos sus chequeos por defecto, solo sobre las operaciones implementadas. Devuelve su código.
+// La configuración de Schemathesis, en la raíz del repositorio: no genera el carácter nulo y acepta el 422 donde el contrato lo
+// declara (spec 004, guia.md, T10).
+const CONFIGURACION = resolve(RAIZ, 'schemathesis.toml');
+
+// Paso 5: Schemathesis con todos sus chequeos y los ajustes de CONFIGURACION, solo sobre las operaciones implementadas.
+// Devuelve su código.
 function correrSchemathesis(rutaContrato, implementadas, token) {
   const absoluta = resolve(rutaContrato);
   const argumentos = [
@@ -59,7 +64,11 @@ function correrSchemathesis(rutaContrato, implementadas, token) {
     'host',
     '-v',
     `${dirname(absoluta)}:/contrato:ro`,
+    '-v',
+    `${CONFIGURACION}:/configuracion/schemathesis.toml:ro`,
     SCHEMATHESIS,
+    '--config-file',
+    '/configuracion/schemathesis.toml',
     'run',
     `/contrato/${basename(absoluta)}`,
     '--url',

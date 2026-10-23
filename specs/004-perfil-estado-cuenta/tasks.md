@@ -8,21 +8,21 @@ Tareas delicadas: T3 (idempotencia concurrente), T8 (levantamiento concurrente),
   - Hecho cuando: pruebas de integración comprueban COMMIT, ROLLBACK, 409 ante `23505`, 503 ante base indisponible y el límite de 2 s por sentencia.
 - [x] **T3. Implementar la idempotencia transaccional reutilizable para las altas.** RF-2.1, RF-2.6.1, RNF-08
   - Hecho cuando: con `transaccion()`, pruebas con PostgreSQL real demuestran que la misma solicitud concurrente produce un solo efecto y la misma respuesta, otro cuerpo da 422 y reutilizar una clave para otro `clienteId` crea el segundo bloqueo.
-- [ ] **T4. Implementar el repositorio de perfiles y sus transformaciones.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1
+- [x] **T4. Implementar el repositorio de perfiles y sus transformaciones.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1
   - Hecho cuando: las pruebas de integración crean, consultan y actualizan parcialmente un perfil, conservan campos no enviados, devuelven 404 cuando falta y resisten dos altas concurrentes sin duplicar.
-- [ ] **T5. Exponer crear, obtener y actualizar perfil con rol efectivo y errores del contrato.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RNF-03, RNF-19
+- [x] **T5. Exponer crear, obtener y actualizar perfil con rol efectivo y errores del contrato.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RNF-03, RNF-19
   - Hecho cuando: pruebas HTTP cubren 201, `Location`, 200, 400, 403, 404, 409 y 422; CLIENTE+OPERADOR puede consultar otro perfil pero no actualizarlo; y logs no contienen datos personales ni claves.
-- [ ] **T6. Implementar vigencia y estado de cuenta consistente.** RF-2.6, RF-2.6.4
+- [x] **T6. Implementar vigencia y estado de cuenta consistente.** RF-2.6, RF-2.6.4
   - Hecho cuando: pruebas unitarias e integración cubren bloqueos indefinidos, futuros, vencidos y levantados, varios bloqueos simultáneos y coincidencia entre `estado` y `bloqueosVigentes`.
-- [ ] **T7. Crear y consultar bloqueos con historial paginado.** RF-2.6.1, RF-2.6.2, RNF-03, RNF-08
+- [x] **T7. Crear y consultar bloqueos con historial paginado.** RF-2.6.1, RF-2.6.2, RNF-03, RNF-08
   - Hecho cuando: pruebas HTTP e integración cubren alta idempotente, autor del token, `Location`, `desde` igual a `creadoEn`, consulta individual, filtro de vigencia, totales, orden estable, página vacía, recursos de otro cliente como 404 y `hasta` pasada como 422 con tipo propio.
-- [ ] **T8. Levantar bloqueos sin borrar historial y proteger la concurrencia.** RF-2.6.3, RF-2.6.3.1, RF-2.6.4, RNF-08
+- [x] **T8. Levantar bloqueos sin borrar historial y proteger la concurrencia.** RF-2.6.3, RF-2.6.3.1, RF-2.6.4, RNF-08
   - Hecho cuando: se guardan juntos autor, instante y motivo; el historial conserva el bloqueo; dos levantamientos concurrentes producen un 200 y un 409; y levantar uno vencido responde 409 con `type: /errores/bloqueo-no-vigente`.
-- [ ] **T9. Registrar las ocho operaciones y completar las pruebas por rol efectivo.** RF-2.1.1.1, RF-2.1.2.1, RF-2.6, RF-2.6.1, RF-2.6.2, RF-2.6.3, RF-2.6.3.1, RNF-07
+- [x] **T9. Registrar las ocho operaciones y completar las pruebas por rol efectivo.** RF-2.1.1.1, RF-2.1.2.1, RF-2.6, RF-2.6.1, RF-2.6.2, RF-2.6.3, RF-2.6.3.1, RNF-07
   - Hecho cuando: CLIENTE solo opera sobre sí mismo cuando es su único rol efectivo, CLIENTE+OPERADOR usa las lecturas de OPERADOR, SERVICIO solo obtiene estado de cuenta, `pruebas/integracion/arranque.test.ts` reconoce los ocho `operationId` y todos los rechazos tienen problem+json.
-- [ ] **T10. Validar contrato, regresión y documentación de la spec.** RNF-03, RNF-07, RNF-20
+- [x] **T10. Validar contrato, regresión y documentación de la spec.** RNF-03, RNF-07, RNF-20
   - Hecho cuando: las ocho operaciones pasan `npm run contrato:test`; build, lint, `npm test` y `spec-check` quedan en verde; y `guia.md` contiene el mapa por tarea, decisiones, comandos y ejemplos de uso comprobados.
-- [ ] **T11. Resolver la idempotencia de `crearBloqueo` antes que el vencimiento de `hasta`, y dar su propio tipo al límite del año 9999.** RF-2.6.1.1, RF-2.6.1.2, RF-2.6.1.3, RNF-03, RNF-08
+- [x] **T11. Resolver la idempotencia de `crearBloqueo` antes que el vencimiento de `hasta`, y dar su propio tipo al límite del año 9999.** RF-2.6.1.1, RF-2.6.1.2, RF-2.6.1.3, RNF-03, RNF-08
   - Hecho cuando: pruebas HTTP con PostgreSQL real demuestran que un alta con `hasta` cercana, repetida con la misma clave cuando ya venció, devuelve el mismo 201 y no crea otro bloqueo, y con otro cuerpo da 422 `idempotencia-reutilizada`; que un cliente sin perfil con `hasta` pasada, también del año `0000`, da 404; que el año `0000` con perfil da 422 `bloqueo-vencido`; y que después del año 9999 da 422 `bloqueo-hasta-fuera-de-rango` sin tocar la base. El servicio ya no compara `hasta` con su reloj; `npm test` y `npm run contrato:test` en verde.
 - [ ] **T12. Rechazar la fecha de nacimiento del año `0000` y no dejar en los logs el valor de un error de datos de la base.** RF-2.1.4, RNF-03, RNF-19
   - Hecho cuando: sin base, `crearCliente` y `actualizarCliente` con `fechaNacimiento` del año `0000` dan 400 problem+json (también un CLIENTE sobre otro perfil en el PATCH); con base, el perfil no cambia y `0001-01-01` y `9999-12-31` se guardan y vuelven iguales; `serializarError` de un error con SQLSTATE `22…` no contiene el valor rechazado ni en `mensaje` ni en `traza` y conserva `codigo`, también con el error real de pg de `SELECT '0000-01-01'::date`; las frases de `guia.md` que dicen que el plan no nombra archivos que ya nombra quedan corregidas; `npm test` y `npm run contrato:test` en verde.
