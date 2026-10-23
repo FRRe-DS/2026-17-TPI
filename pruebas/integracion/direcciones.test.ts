@@ -5,6 +5,10 @@ import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
+import { crearPool, type PoolBd } from '../../src/bd/pool.js';
+import type { Consultar } from '../../src/bd/transaccion.js';
+import { crearDireccion, obtenerDireccion } from '../../src/direcciones/repositorio.js';
+import { Conflicto, NoEncontrado } from '../../src/errores.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
 // La migración de la spec 005: se crea con `--migrations-dir migraciones`, que le pone la marca de tiempo (plan, Datos).
@@ -320,5 +324,224 @@ describe('la migración direcciones se revierte (RNF-05.1)', () => {
     expect((await filas(base.urlBd, `SELECT 1 FROM pg_tables WHERE tablename = 'clientes'`)).length).toBe(1);
     expect(await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS })).toEqual(MIGRACION);
     expect(await hayTabla(base.urlBd)).toBe(true);
+  });
+});
+
+describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF-2.2.2, RF-2.2.2.1)', () => {
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+
+  const consultar: Consultar = (sql, parametros) => pool.consultar(sql, parametros);
+
+  const perfil = (clienteId: string) =>
+    consultar(`INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Gómez', '+5493624000000')`, [
+      clienteId,
+    ]);
+
+  const cliente = async () => {
+    const clienteId = nuevoId();
+    await perfil(clienteId);
+    return clienteId;
+  };
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await base?.borrar();
+  });
+
+  describe('crearDireccion()', () => {
+    it('con todos los datos, devuelve la dirección del contrato y la guarda con el id y el cliente dados', async () => {
+      const clienteId = await cliente();
+      const direccionId = nuevoId();
+
+      const creada = await crearDireccion(consultar, clienteId, direccionId, {
+        tipo: 'FAVORITA',
+        alias: 'Casa',
+        texto: 'Calle Falsa 123',
+        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+      });
+
+      expect(creada).toEqual({
+        direccionId,
+        tipo: 'FAVORITA',
+        alias: 'Casa',
+        texto: 'Calle Falsa 123',
+        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+        creadoEn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+      });
+      const guardada = await pool.consultar(
+        'SELECT cliente_id, tipo, alias, texto, latitud::float8 AS latitud, longitud::float8 AS longitud FROM direcciones_cliente WHERE direccion_id = $1',
+        [direccionId],
+      );
+      expect(guardada.rows).toEqual([
+        { cliente_id: clienteId, tipo: 'FAVORITA', alias: 'Casa', texto: 'Calle Falsa 123', latitud: -27.4511, longitud: -58.9867 },
+      ]);
+    });
+
+    it('solo con lo obligatorio, no trae alias ni coordenadas y la base guarda nulos', async () => {
+      const clienteId = await cliente();
+      const direccionId = nuevoId();
+
+      const creada = await crearDireccion(consultar, clienteId, direccionId, {
+        tipo: 'RECIENTE',
+        texto: 'Av. Sarmiento 1234',
+      });
+
+      expect(creada).toEqual({
+        direccionId,
+        tipo: 'RECIENTE',
+        texto: 'Av. Sarmiento 1234',
+        creadoEn: expect.any(String),
+      });
+      const guardada = await pool.consultar('SELECT alias, latitud, longitud FROM direcciones_cliente WHERE direccion_id = $1', [
+        direccionId,
+      ]);
+      expect(guardada.rows).toEqual([{ alias: null, latitud: null, longitud: null }]);
+    });
+
+    it('un alias vacío se guarda vacío y vuelve vacío, no ausente', async () => {
+      const clienteId = await cliente();
+
+      const creada = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        alias: '',
+        texto: 'Calle Falsa 123',
+      });
+
+      expect(creada.alias).toBe('');
+    });
+
+    it('guarda las coordenadas en los extremos y en el cero, sin perder el valor', async () => {
+      const clienteId = await cliente();
+
+      const extremos = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        texto: 'Polo',
+        coordenadas: { latitud: -90, longitud: 180 },
+      });
+      const cero = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        texto: 'Origen',
+        coordenadas: { latitud: 0, longitud: 0 },
+      });
+      const chica = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        texto: 'Casi origen',
+        coordenadas: { latitud: 1e-7, longitud: -1.5e-7 },
+      });
+
+      expect(extremos.coordenadas).toEqual({ latitud: -90, longitud: 180 });
+      expect(cero.coordenadas).toEqual({ latitud: 0, longitud: 0 });
+      expect(chica.coordenadas).toEqual({ latitud: 1e-7, longitud: -1.5e-7 });
+    });
+
+    it('la fecha de creación la pone la base y la respuesta coincide con la que se lee después', async () => {
+      const clienteId = await cliente();
+      const direccionId = nuevoId();
+
+      const antes = Date.now();
+      const creada = await crearDireccion(consultar, clienteId, direccionId, { tipo: 'FAVORITA', texto: 'X' });
+      const despues = Date.now();
+
+      expect(Date.parse(creada.creadoEn)).toBeGreaterThanOrEqual(antes - 5000);
+      expect(Date.parse(creada.creadoEn)).toBeLessThanOrEqual(despues + 5000);
+      expect(await obtenerDireccion(consultar, clienteId, direccionId)).toEqual(creada);
+    });
+
+    it('el texto y el alias van como parámetros: comillas y punto y coma se guardan tal cual', async () => {
+      const clienteId = await cliente();
+      const texto = `Calle O'Higgins 1; DROP TABLE direcciones_cliente; --`;
+
+      const creada = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        alias: `Mi "casa"`,
+        texto,
+      });
+
+      expect(creada.texto).toBe(texto);
+      expect(creada.alias).toBe('Mi "casa"');
+    });
+
+    it('el mismo contenido dos veces con ids distintos da dos direcciones: la spec no define igualdad semántica', async () => {
+      const clienteId = await cliente();
+      const datos = { tipo: 'FAVORITA' as const, texto: 'Calle Falsa 123' };
+
+      const una = await crearDireccion(consultar, clienteId, nuevoId(), datos);
+      const otra = await crearDireccion(consultar, clienteId, nuevoId(), datos);
+
+      expect(una.direccionId).not.toBe(otra.direccionId);
+    });
+
+    it('un id repetido da la restricción única de la base, que clasifica consultar() como Conflicto', async () => {
+      const clienteId = await cliente();
+      const direccionId = nuevoId();
+      await crearDireccion(consultar, clienteId, direccionId, { tipo: 'FAVORITA', texto: 'A' });
+
+      const error = await crearDireccion(consultar, clienteId, direccionId, { tipo: 'FAVORITA', texto: 'B' }).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(Conflicto);
+    });
+  });
+
+  describe('obtenerDireccion()', () => {
+    it('devuelve la dirección del cliente con las mismas formas que el alta, con y sin opcionales', async () => {
+      const clienteId = await cliente();
+      const completa = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        alias: 'Casa',
+        texto: 'Calle Falsa 123',
+        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+      });
+      const minima = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'RECIENTE', texto: 'Plaza 25' });
+
+      expect(await obtenerDireccion(consultar, clienteId, completa.direccionId)).toEqual(completa);
+      expect(await obtenerDireccion(consultar, clienteId, minima.direccionId)).toEqual(minima);
+    });
+
+    it('una dirección que existe bajo otro cliente es NoEncontrado, igual que una que no existe', async () => {
+      const propietario = await cliente();
+      const otro = await cliente();
+      const ajena = await crearDireccion(consultar, propietario, nuevoId(), { tipo: 'FAVORITA', texto: 'Privada' });
+
+      const deOtro = await obtenerDireccion(consultar, otro, ajena.direccionId).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      const inexistente = await obtenerDireccion(consultar, otro, nuevoId()).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+      expect(deOtro).toBeInstanceOf(NoEncontrado);
+      expect(inexistente).toBeInstanceOf(NoEncontrado);
+      expect((deOtro as NoEncontrado).detail).toBe((inexistente as NoEncontrado).detail);
+    });
+
+    it('un cliente sin perfil tampoco encuentra nada', async () => {
+      const error = await obtenerDireccion(consultar, nuevoId(), nuevoId()).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(NoEncontrado);
+    });
+
+    it('el mismo id pedido con el cliente propietario sigue encontrándose después de buscarlo bajo otro', async () => {
+      const propietario = await cliente();
+      const otro = await cliente();
+      const propia = await crearDireccion(consultar, propietario, nuevoId(), { tipo: 'FAVORITA', texto: 'Mía' });
+      await obtenerDireccion(consultar, otro, propia.direccionId).catch(() => undefined);
+
+      expect(await obtenerDireccion(consultar, propietario, propia.direccionId)).toEqual(propia);
+    });
   });
 });
