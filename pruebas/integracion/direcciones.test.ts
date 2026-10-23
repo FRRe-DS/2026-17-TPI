@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
 import type { Consultar } from '../../src/bd/transaccion.js';
-import { crearDireccion, obtenerDireccion } from '../../src/direcciones/repositorio.js';
+import { crearDireccion, listarDirecciones, obtenerDireccion } from '../../src/direcciones/repositorio.js';
 import { Conflicto, NoEncontrado } from '../../src/errores.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
@@ -542,6 +542,156 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
       await obtenerDireccion(consultar, otro, propia.direccionId).catch(() => undefined);
 
       expect(await obtenerDireccion(consultar, propietario, propia.direccionId)).toEqual(propia);
+    });
+  });
+
+  describe('listarDirecciones() (RF-2.2.1)', () => {
+    // Un cliente con cinco direcciones de creación conocida: tres favoritas y dos recientes, y dos de la misma creación para
+    // el desempate por direccionId. `creadoEn` es un intervalo desde el 1 de enero de 2026.
+    const conDirecciones = async () => {
+      const clienteId = await cliente();
+      const poner = (texto: string, tipo: string, creadoEn: string, direccionId = nuevoId()) =>
+        consultar(
+          `INSERT INTO direcciones_cliente (direccion_id, cliente_id, tipo, texto, creado_en)
+           VALUES ($1, $2, $3, $4, '2026-01-01T00:00:00Z'::timestamptz + $5::interval)`,
+          [direccionId, clienteId, tipo, texto, creadoEn],
+        );
+      // Los dos de la misma creación: el de direccionId mayor va primero.
+      const [menor, mayor] = [nuevoId(), nuevoId()].sort();
+      await poner('Primera', 'FAVORITA', '1 hour');
+      await poner('Segunda', 'RECIENTE', '2 hours');
+      await poner('Tercera', 'FAVORITA', '3 hours');
+      await poner('Empate menor', 'RECIENTE', '4 hours', menor);
+      await poner('Empate mayor', 'FAVORITA', '4 hours', mayor);
+      return clienteId;
+    };
+    const textos = (pagina: Awaited<ReturnType<typeof listarDirecciones>>) => pagina.items.map((d) => d.texto);
+
+    it('la lista completa, de la más nueva a la más antigua, con desempate estable por direccionId', async () => {
+      const clienteId = await conDirecciones();
+
+      const pagina = await listarDirecciones(consultar, clienteId, { page: 0, size: 20 });
+
+      expect(textos(pagina)).toEqual(['Empate mayor', 'Empate menor', 'Tercera', 'Segunda', 'Primera']);
+      expect(pagina).toMatchObject({ page: 0, size: 20, totalElementos: 5, totalPaginas: 1 });
+    });
+
+    it('tipo=FAVORITA deja solo las favoritas, y tipo=RECIENTE solo las recientes, con sus totales', async () => {
+      const clienteId = await conDirecciones();
+
+      const favoritas = await listarDirecciones(consultar, clienteId, { tipo: 'FAVORITA', page: 0, size: 20 });
+      const recientes = await listarDirecciones(consultar, clienteId, { tipo: 'RECIENTE', page: 0, size: 20 });
+
+      expect([textos(favoritas), favoritas.totalElementos]).toEqual([['Empate mayor', 'Tercera', 'Primera'], 3]);
+      expect([textos(recientes), recientes.totalElementos]).toEqual([['Empate menor', 'Segunda'], 2]);
+      expect(favoritas.items.every((d) => d.tipo === 'FAVORITA')).toBe(true);
+      expect(recientes.items.every((d) => d.tipo === 'RECIENTE')).toBe(true);
+    });
+
+    it('las páginas recorren la lista sin repetir ni saltear, y la última puede quedar corta', async () => {
+      const clienteId = await conDirecciones();
+
+      const paginas = await Promise.all([0, 1, 2].map((page) => listarDirecciones(consultar, clienteId, { page, size: 2 })));
+
+      expect(paginas.map(textos)).toEqual([['Empate mayor', 'Empate menor'], ['Tercera', 'Segunda'], ['Primera']]);
+      expect(paginas.map((p) => [p.page, p.size, p.totalElementos, p.totalPaginas])).toEqual([
+        [0, 2, 5, 3],
+        [1, 2, 5, 3],
+        [2, 2, 5, 3],
+      ]);
+    });
+
+    it('la paginación respeta el filtro: el total y las páginas son los de las favoritas', async () => {
+      const clienteId = await conDirecciones();
+
+      const primera = await listarDirecciones(consultar, clienteId, { tipo: 'FAVORITA', page: 0, size: 2 });
+      const segunda = await listarDirecciones(consultar, clienteId, { tipo: 'FAVORITA', page: 1, size: 2 });
+
+      expect([textos(primera), textos(segunda)]).toEqual([['Empate mayor', 'Tercera'], ['Primera']]);
+      expect([primera.totalElementos, primera.totalPaginas]).toEqual([3, 2]);
+    });
+
+    it('con size=1 devuelve una por página, y con size=100 (el máximo del contrato) las trae todas', async () => {
+      const clienteId = await conDirecciones();
+
+      const una = await listarDirecciones(consultar, clienteId, { page: 4, size: 1 });
+      const todas = await listarDirecciones(consultar, clienteId, { page: 0, size: 100 });
+
+      expect([textos(una), una.totalPaginas]).toEqual([['Primera'], 5]);
+      expect([todas.items.length, todas.totalPaginas]).toEqual([5, 1]);
+    });
+
+    it('una página fuera del total es una página vacía con los totales correctos', async () => {
+      const clienteId = await conDirecciones();
+
+      const pagina = await listarDirecciones(consultar, clienteId, { page: 7, size: 2 });
+      const filtrada = await listarDirecciones(consultar, clienteId, { tipo: 'RECIENTE', page: 3, size: 2 });
+
+      expect(pagina).toEqual({ page: 7, size: 2, totalElementos: 5, totalPaginas: 3, items: [] });
+      expect(filtrada).toEqual({ page: 3, size: 2, totalElementos: 2, totalPaginas: 1, items: [] });
+    });
+
+    it('una página enorme no desborda el OFFSET de la base: da una página vacía', async () => {
+      const clienteId = await conDirecciones();
+
+      const pagina = await listarDirecciones(consultar, clienteId, { page: Number.MAX_SAFE_INTEGER, size: 100 });
+
+      expect(pagina).toMatchObject({ totalElementos: 5, items: [] });
+    });
+
+    it('un cliente con perfil y sin direcciones: página vacía, cero elementos y cero páginas', async () => {
+      const clienteId = await cliente();
+
+      expect(await listarDirecciones(consultar, clienteId, { page: 0, size: 20 })).toEqual({
+        page: 0,
+        size: 20,
+        totalElementos: 0,
+        totalPaginas: 0,
+        items: [],
+      });
+    });
+
+    it('nunca trae direcciones de otro cliente, ni en los items ni en los totales', async () => {
+      const clienteId = await conDirecciones();
+      const otro = await cliente();
+      await crearDireccion(consultar, otro, nuevoId(), { tipo: 'FAVORITA', texto: 'De otro' });
+
+      const suyas = await listarDirecciones(consultar, otro, { page: 0, size: 20 });
+      const mias = await listarDirecciones(consultar, clienteId, { page: 0, size: 20 });
+
+      expect(textos(suyas)).toEqual(['De otro']);
+      expect(suyas.totalElementos).toBe(1);
+      expect(textos(mias)).not.toContain('De otro');
+      expect(mias.totalElementos).toBe(5);
+    });
+
+    it('un cliente sin perfil es NoEncontrado, con o sin filtro', async () => {
+      const sinFiltro = await listarDirecciones(consultar, nuevoId(), { page: 0, size: 20 }).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      const conFiltro = await listarDirecciones(consultar, nuevoId(), { tipo: 'FAVORITA', page: 0, size: 20 }).then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+      expect(sinFiltro).toBeInstanceOf(NoEncontrado);
+      expect(conFiltro).toBeInstanceOf(NoEncontrado);
+    });
+
+    it('el texto y el alias de lo listado salen con la misma forma que la consulta individual', async () => {
+      const clienteId = await cliente();
+      const creada = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        alias: 'Casa',
+        texto: 'Calle Falsa 123',
+        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+      });
+      const sin = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'RECIENTE', texto: 'Plaza 25' });
+
+      const pagina = await listarDirecciones(consultar, clienteId, { page: 0, size: 20 });
+
+      expect(pagina.items).toEqual([sin, creada]);
     });
   });
 });

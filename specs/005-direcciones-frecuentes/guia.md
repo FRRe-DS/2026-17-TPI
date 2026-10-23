@@ -39,3 +39,18 @@
   - Sin perfil, `crearDireccion()` no da 404: la clave foránea de la base rechaza la fila (23503) y `consultar()` no la clasifica, así que saldría como 500. Por eso T5 tiene que comprobar el perfil antes, como dice el plan.
   - `numeric` llega como texto y se convierte con `Number()`. Con un número de JavaScript que viaja a la base como texto decimal y vuelve igual, el valor se conserva (hay una prueba con `1e-7`).
 
+### T3 — Listado, filtro, orden y paginación estable · commit `005/T3`
+- Qué cambió:
+  - [src/direcciones/repositorio.ts](../../src/direcciones/repositorio.ts): `listarDirecciones()` devuelve una `PaginaDirecciones` de un cliente, con el filtro opcional por `tipo` y la página pedida (`PedidoListado`).
+  - [src/direcciones/modelo.ts](../../src/direcciones/modelo.ts): `aPaginaDirecciones()` arma la página con los totales (`totalPaginas = ceil(total / size)`).
+- Por qué así: una sola sentencia trae el perfil, el total del filtro y la página (`LATERAL`), igual que `listarBloqueos()` de la 004: comparten instantánea, así que el total coincide con lo que se pagina. El orden es `creado_en DESC, direccion_id DESC`, el de los dos índices de T1; el id desempata dos direcciones con la misma fecha y la paginación no repite ni saltea (RF-2.2.1). El filtro por tipo cambia la condición fija de la consulta y pasa el tipo como parámetro: nada de texto interpolado.
+- Cómo se conecta: T5 y T6 la llamarán desde el servicio y el manejador de `listarDirecciones`, con `page` y `size` ya validados por el contrato (0 en adelante; 1 a 100).
+- Tests:
+  - [pruebas/unitarias/direcciones.test.ts](../../pruebas/unitarias/direcciones.test.ts): `aPaginaDirecciones()` con orden recibido, sin elementos, página fuera del total y totales en múltiplos exactos del tamaño.
+  - [pruebas/integracion/direcciones.test.ts](../../pruebas/integracion/direcciones.test.ts), bloque `listarDirecciones()`, con PostgreSQL real: lista completa con empate de fecha, favoritas y recientes con sus totales, páginas que recorren todo sin repetir, paginación con filtro, `size` 1 y 100, página fuera del total (con y sin filtro), página enorme, cliente sin direcciones, aislamiento entre clientes, cliente sin perfil y misma forma que la consulta individual.
+  - En rojo primero: `listarDirecciones is not a function`.
+- Para mirar con atención:
+  - Sin perfil da `NoEncontrado` desde el propio repositorio, porque el perfil es la fila base del `JOIN`. Así un cliente existente sin direcciones (200, página vacía) y uno inexistente (404) se distinguen en la misma sentencia (spec, Contrato y dependencias).
+  - `page * size` se topa en `Number.MAX_SAFE_INTEGER`: una página gigante desbordaría el `OFFSET` de la base y daría un 500; con el tope da una página vacía.
+  - Con tablas chicas no se mira el plan de ejecución: no se comprobó con `EXPLAIN` que la base use los índices. Es una deuda menor, si el listado se llega a notar lento.
+

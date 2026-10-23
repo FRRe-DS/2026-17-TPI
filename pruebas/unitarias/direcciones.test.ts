@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aDireccion, type FilaDireccion } from '../../src/direcciones/modelo.js';
+import { aDireccion, aPaginaDirecciones, type FilaDireccion } from '../../src/direcciones/modelo.js';
 
 const DIRECCION_ID = 'b3c0f1a2-7d44-4c1e-9a55-1e2f3a4b5c6d';
 
@@ -56,5 +56,34 @@ describe('aDireccion(): de la fila al esquema Direccion del contrato (RF-2.2, RF
     expect(Object.keys(aDireccion(fila())).sort()).toEqual(
       ['coordenadas', 'creadoEn', 'direccionId', 'alias', 'texto', 'tipo'].sort(),
     );
+  });
+});
+
+describe('aPaginaDirecciones(): de las filas a la PaginaDirecciones del contrato (RF-2.2.1)', () => {
+  const otra = fila({ direccion_id: 'c4d1a2b3-8e55-4d2f-8b66-2f3a4b5c6d7e', alias: null, latitud: null, longitud: null });
+
+  it('devuelve las direcciones en el orden recibido, con la página y el tamaño pedidos y los totales del filtro', () => {
+    const pagina = aPaginaDirecciones([fila(), otra], 5, 1, 2);
+
+    expect(pagina).toEqual({
+      page: 1,
+      size: 2,
+      totalElementos: 5,
+      totalPaginas: 3,
+      items: [aDireccion(fila()), aDireccion(otra)],
+    });
+  });
+
+  it('sin direcciones, items vacío y cero páginas', () => {
+    expect(aPaginaDirecciones([], 0, 0, 20)).toEqual({ page: 0, size: 20, totalElementos: 0, totalPaginas: 0, items: [] });
+  });
+
+  it('una página fuera del total tiene items vacío pero conserva los totales', () => {
+    expect(aPaginaDirecciones([], 3, 9, 2)).toEqual({ page: 9, size: 2, totalElementos: 3, totalPaginas: 2, items: [] });
+  });
+
+  it('el total justo en un múltiplo del tamaño no suma una página de más', () => {
+    expect(aPaginaDirecciones([fila()], 100, 0, 100).totalPaginas).toBe(1);
+    expect(aPaginaDirecciones([fila()], 101, 0, 100).totalPaginas).toBe(2);
   });
 });

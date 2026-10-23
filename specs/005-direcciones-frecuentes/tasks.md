@@ -6,7 +6,7 @@ Depende de: la migración de perfiles (T1 de la spec #4) debe estar mergeada en 
   - Hecho cuando: después de mergear la migración de perfiles de la spec #4, una prueba de integración aplica y revierte la migración, verifica la FK y los índices, y la base rechaza texto vacío, tipo inválido o coordenadas incompletas/fuera de rango.
 - [x] **T2. Implementar el repositorio de alta y consulta por cliente.** RF-2.2, RF-2.2.2, RF-2.2.2.1
   - Hecho cuando: pruebas con PostgreSQL real crean direcciones con y sin datos opcionales, las convierten al esquema del contrato y nunca encuentran una dirección bajo otro cliente.
-- [ ] **T3. Implementar listado, filtro, orden y paginación estable.** RF-2.2.1
+- [x] **T3. Implementar listado, filtro, orden y paginación estable.** RF-2.2.1
   - Hecho cuando: integración verifica favoritas, recientes, lista completa, totales, límites, empates de fecha y página fuera del total.
 - [ ] **T4. Implementar actualización parcial y borrado físico.** RF-2.2.3, RF-2.2.4, RF-2.2.4.1
   - Hecho cuando: PATCH modifica solo lo enviado y conserva `creadoEn`; DELETE elimina una sola fila, devuelve 404 al repetirse y no afecta direcciones de otro cliente.
