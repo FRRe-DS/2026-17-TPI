@@ -155,7 +155,12 @@ describe('crearClienteModulo', () => {
         { message: 'M6 respondió 502' },
       ],
       ['un corte de la conexión: el error de fetch', { tipo: 'corta' }, { name: 'TypeError', message: 'fetch failed' }],
-      ['un cuerpo que no es JSON: el error de la lectura', { tipo: 'no-json' }, { name: 'SyntaxError' }],
+      // El SyntaxError de JSON.parse copia un pedazo del texto en su mensaje: la causa no puede ser ese error.
+      [
+        'un cuerpo que no es JSON: el código, sin el cuerpo',
+        { tipo: 'no-json', contenido: '<html><body>del-cuerpo, Av. Siempre Viva 742</body></html>' },
+        { message: 'M6 respondió 200 con un cuerpo que no es JSON' },
+      ],
       ['un corte por tiempo: el del plazo', { tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4 }, { name: 'TimeoutError' }],
     ] as const)('%s', async (_caso, falla, causa) => {
       serv.responderCon(falla);
@@ -164,7 +169,9 @@ describe('crearClienteModulo', () => {
 
       expect(error).toBeInstanceOf(Error);
       expect(error).toMatchObject(causa);
+      // La causa va al log (RNF-14.8), y el log no lleva cuerpos (RNF-19.2): ni en el mensaje ni en la traza.
       expect(String((error as Error).message)).not.toContain('del-cuerpo');
+      expect(String((error as Error).stack)).not.toContain('del-cuerpo');
     });
 
     it('con un reintento, es la del segundo intento y no la del primero', async () => {

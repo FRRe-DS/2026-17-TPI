@@ -518,6 +518,9 @@ describe('arrancar con la parada durante el arranque (RNF-04.5)', () => {
     });
 
     const servicio = await arrancar(entorno(base.urlBd, puerto), salir, { flujoLog, parada: parada.signal });
+    // No va a `andando`, cuyo afterEach cerraría el pool otra vez. Si la prueba falla antes de que la parada cierre todo,
+    // esto lo cierra: detener() devuelve la parada en curso o, si no hubo, la hace.
+    onTestFinished(() => servicio?.detener({ corteMs: 100 }));
 
     // Sin que la prueba llame a detener(): la parada ya estaba en curso.
     expect(servicio).toBeDefined();

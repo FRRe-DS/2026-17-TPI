@@ -32,7 +32,8 @@ export function crearClienteModulo({
   encabezadoCorrelacion,
 }: OpcionesCliente): ClienteModulo {
   // Un intento: devuelve la respuesta del módulo, que puede ser un 4xx. Si no la obtiene, lanza lo que falló: el corte por
-  // tiempo, el error de red, el 5xx (con su código y sin su cuerpo) o el cuerpo que no es JSON. Es lo que se reintenta.
+  // tiempo, el error de red, el 5xx o el cuerpo que no es JSON, estos dos con su código y sin su cuerpo, que puede traer
+  // datos del otro módulo y va al log como causa (RNF-14.8, RNF-19.2). Es lo que se reintenta.
   async function intentar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
     // La señal corre desde antes del `fetch`: el plazo incluye la conexión, los encabezados y el cuerpo (RNF-13.1).
     const senal = AbortSignal.timeout(tiempoMs);
@@ -61,8 +62,13 @@ export function crearClienteModulo({
         return { estado: respuesta.status, cuerpo: texto };
       }
     }
-    // Una respuesta que no es un error tiene que ser JSON; si no, el módulo no está bien.
-    return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown };
+    // Una respuesta que no es un error tiene que ser JSON; si no, el módulo no está bien. El SyntaxError de JSON.parse no
+    // sale: su mensaje copia un pedazo del texto.
+    try {
+      return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown };
+    } catch {
+      throw new Error(`${nombre} respondió ${respuesta.status} con un cuerpo que no es JSON`);
+    }
   }
 
   // Los GET se reintentan; un POST, PUT o DELETE no, porque repetirlo podría hacer el efecto dos veces (RNF-13.2). Agotados

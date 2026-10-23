@@ -597,6 +597,23 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
     sinSecretos(logs);
   });
 
+  // La causa es el error del último intento: si fuera el SyntaxError de JSON.parse, traería un pedazo del cuerpo (RNF-19.2).
+  it('por otro módulo que responde algo que no es JSON: la línea no trae nada del cuerpo', async () => {
+    modulo.responderCon({ tipo: 'no-json', contenido: '<html><body>Ana Perez, Av. Siempre Viva 742</body></html>' });
+    const { app, logs } = crear({ probarPublica: leeDeM6 });
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/publica', headers: { [ENCABEZADO]: 'sin-m6-2' } });
+
+    expect(respuesta.statusCode).toBe(503);
+    expect(errores(logs)).toEqual([
+      expect.objectContaining({
+        idCorrelacion: 'sin-m6-2',
+        err: expect.objectContaining({ causa: expect.objectContaining({ mensaje: 'M6 respondió 200 con un cuerpo que no es JSON' }) }),
+      }),
+    ]);
+    for (const dato of ['Ana Perez', 'Siempre Viva', '<html>']) expect(logs.texto()).not.toContain(dato);
+  });
+
   it('sin un id en la solicitud, la línea trae el UUID que devuelve la respuesta', async () => {
     const caida: BaseDeDatos = { consultar: async () => Promise.reject(new BaseNoDisponible({ cause: new Error('x') })) };
     const { app, logs } = crear({ probarPublica: consultaLaBase }, caida);
