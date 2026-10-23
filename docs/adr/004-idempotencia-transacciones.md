@@ -1,6 +1,6 @@
 # ADR 004 — Transacciones e idempotencia reutilizable
 
-Fecha: 2026-10-22 · Estado: propuesta
+Fecha: 2026-10-22 · Estado: aceptada
 Issue: #4
 
 ## Contexto

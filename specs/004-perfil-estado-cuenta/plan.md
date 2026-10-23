@@ -53,7 +53,7 @@ No se guarda `estado`: se calcula con `EXISTS` sobre bloqueos vigentes. La clave
 
 ### `idempotencias`
 - `operacion text`, `sujeto text`, `cliente_id uuid NULL`, `clave varchar(255)`, `hash_solicitud text`, `estado smallint`, `ubicacion text`, `respuesta jsonb`, `creado_en timestamptz`.
-- Clave primaria `(operacion, sujeto, cliente_id, clave)`, con `cliente_id` no nulo para `crearBloqueo`; el hash incluye cuerpo y parámetros de ruta. Así un operador puede reutilizar una clave para otro cliente sin devolver la respuesta del primero.
+- `UNIQUE NULLS NOT DISTINCT (operacion, sujeto, cliente_id, clave)` y `CHECK (operacion <> 'crearBloqueo' OR cliente_id IS NOT NULL)`. No es una clave primaria: PostgreSQL fuerza `NOT NULL` en sus columnas, y `crearCliente`, que no lleva `clienteId` en la ruta, guarda su clave con `cliente_id` nulo. Con `NULLS NOT DISTINCT`, dos altas de `crearCliente` con el mismo sujeto y clave chocan (23505) igual que las demás; el `CHECK` exige el cliente de la ruta a `crearBloqueo`. El hash incluye cuerpo y parámetros de ruta. Así un operador puede reutilizar una clave para otro cliente sin devolver la respuesta del primero.
 - Alta del registro de idempotencia y efecto de negocio ocurren en la misma transacción. Ante conflicto, se bloquea la fila: misma huella devuelve estado, `Location` y cuerpo guardados; otra huella produce 422.
 
 La migración incluye `Down Migration` en el orden inverso. No toca tablas de otras specs. Se crea con `npx node-pg-migrate create perfil-bloqueos --migration-file-language sql --migrations-dir migraciones`.
