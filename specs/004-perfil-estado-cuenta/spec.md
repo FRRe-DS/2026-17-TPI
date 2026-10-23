@@ -29,6 +29,7 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - RF-2.1.2.1: SI CLIENTE es el único rol del token que admite la operación y su `sub` no coincide con `clienteId` al actualizar, ENTONCES EL SISTEMA responde `403`.
 - RF-2.1.3: SI se intenta crear un segundo perfil para el mismo `clienteId`, ENTONCES EL SISTEMA responde `409` sin duplicarlo.
 - RF-2.1.3.1: SI no existe el perfil pedido para consultar o actualizar, ENTONCES EL SISTEMA responde `404`.
+- RF-2.1.4: SI la `fechaNacimiento` enviada al crear o actualizar un perfil es del año `0000`, ENTONCES EL SISTEMA responde `400` en `application/problem+json` sin crear ni cambiar el perfil.
 - RF-2.6: CUANDO un CLIENTE consulta su cuenta, un OPERADOR consulta una cuenta o un SERVICIO consulta una cuenta existente, EL SISTEMA responde `200` con `ACTIVO` si no tiene bloqueos vigentes o `BLOQUEADO` si tiene al menos uno, e incluye todos los bloqueos vigentes.
 - RF-2.6.1: CUANDO un OPERADOR registra un bloqueo con motivo y fin opcional válidos para un cliente existente, EL SISTEMA conserva el `sub` del operador, crea el bloqueo, responde `201` y devuelve una cabecera `Location`.
 - RF-2.6.1.1: SI el `hasta` de un bloqueo nuevo es igual o anterior al instante de creación que fija la base, ENTONCES EL SISTEMA responde `422` con `type: /errores/bloqueo-vencido` sin crear el bloqueo.
@@ -44,7 +45,7 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - RNF-05: EL SISTEMA guarda perfiles, bloqueos e idempotencia solo en la base propia de M2 mediante migraciones versionadas, sin consultar la base de M1, M5 ni M9.
 - RNF-07: EL SISTEMA verifica las reglas de esta spec con pruebas unitarias, HTTP, integración sobre PostgreSQL real y pruebas de contrato.
 - RNF-08: SI dos solicitudes concurrentes intentan crear el mismo perfil o repetir un alta con la misma clave de idempotencia, ENTONCES EL SISTEMA garantiza en la base un solo efecto y devuelve la respuesta prevista por el contrato.
-- RNF-19: EL SISTEMA no registra datos del perfil, motivos de bloqueo, cuerpos, tokens ni claves de idempotencia en los logs.
+- RNF-19: EL SISTEMA no registra datos del perfil, motivos de bloqueo, cuerpos, tokens ni claves de idempotencia en los logs, tampoco cuando la base rechaza un valor de la solicitud con un error no previsto que responde `500`.
 - RNF-20: EL SISTEMA documenta en la guía las operaciones, reglas de vigencia, permisos y forma de probar esta funcionalidad.
 
 ## Contrato y dependencias
@@ -58,6 +59,8 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - Dos creaciones simultáneas del mismo perfil producen un solo registro; una obtiene `201` y la otra `409`, salvo que ambas repitan la misma operación idempotente.
 - Repetir un POST con la misma `Idempotency-Key` y el mismo cuerpo devuelve la respuesta original; reutilizarla con otro cuerpo responde `422`.
 - Un `PATCH` vacío o con campos desconocidos responde `400` por el contrato y no cambia el perfil.
+- Una `fechaNacimiento` del año `0000` (por ejemplo `0000-01-01`), que el formato `date` del contrato admite, no es una fecha que la base pueda guardar: al crear o actualizar el perfil responde `400`, como las demás validaciones de la solicitud, antes de la idempotencia y de la regla de propiedad y sin consultar la base. Cualquier año de `0001` a `9999` se acepta.
+- Un texto de la solicitud con el carácter nulo (U+0000), que el contrato admite y la base no puede guardar, responde `400` en las cuatro operaciones que escriben (`crearCliente`, `actualizarCliente`, `crearBloqueo` y `levantarBloqueo`) sin guardar nada.
 - Crear un bloqueo con `hasta` igual o anterior al instante de creación responde `422` con `type: /errores/bloqueo-vencido`.
 - Un bloqueo nuevo para un cliente sin perfil responde `404`, aunque su `hasta` ya haya pasado: el cliente se comprueba antes que la fecha.
 - Un `hasta` anterior al año 0001, que el formato del contrato admite (año `0000`), es una fecha pasada como cualquier otra: `404` si el cliente no existe y, si existe, `422` con `type: /errores/bloqueo-vencido`.
@@ -88,6 +91,7 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - Un bloqueo es vigente cuando no fue levantado y `hasta` es nulo o posterior al instante de consulta. La base, y no el reloj del cliente ni el del servicio, decide ese instante; también el instante de creación con el que se compara el `hasta` de un bloqueo nuevo.
 - La idempotencia se resuelve antes que las reglas que dependen del momento en que llega la solicitud: si no, repetir un alta ya hecha podría dar un resultado distinto del original (RNF-08). Antes de ella solo se rechaza lo que nunca podría haberse creado, como un `hasta` posterior al año 9999.
 - El año 9999 es el límite porque el formato `date-time` del contrato (RFC 3339) tiene años de cuatro cifras: un bloqueo con un `hasta` posterior no se podría devolver.
+- Los valores que el contrato admite y la base no puede guardar (una `fechaNacimiento` del año `0000`, el carácter nulo en un texto) responden `400` y no `500`: son un problema de la solicitud, no del servicio. Es un desvío acotado del contrato, que no los excluye; se avisa al Grupo 1 para que el contrato los excluya en una versión siguiente.
 - El campo opcional `desde` de cada bloqueo se devuelve con el valor de `creadoEn`; no se agrega una segunda fecha que pueda divergir del instante de creación.
 - Los listados se ordenan de forma estable por `creadoEn` descendente y luego por identificador descendente.
 - Los errores de dominio usan `type: /errores/perfil-ya-existe`, `type: /errores/idempotencia-reutilizada`, `type: /errores/bloqueo-ya-levantado`, `type: /errores/bloqueo-vencido`, `type: /errores/bloqueo-hasta-fuera-de-rango` y `type: /errores/bloqueo-no-vigente`, nombres estables, relativos y específicos para que quien consume la API pueda distinguirlos.
