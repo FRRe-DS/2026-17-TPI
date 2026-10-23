@@ -8,7 +8,7 @@ Tareas delicadas: T3 (idempotencia concurrente), T8 (levantamiento concurrente) 
   - Hecho cuando: pruebas de integración comprueban COMMIT, ROLLBACK, 409 ante `23505`, 503 ante base indisponible y el límite de 2 s por sentencia.
 - [x] **T3. Implementar la idempotencia transaccional reutilizable para las altas.** RF-2.1, RF-2.6.1, RNF-08
   - Hecho cuando: con `transaccion()`, pruebas con PostgreSQL real demuestran que la misma solicitud concurrente produce un solo efecto y la misma respuesta, otro cuerpo da 422 y reutilizar una clave para otro `clienteId` crea el segundo bloqueo.
-- [ ] **T4. Implementar el repositorio de perfiles y sus transformaciones.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1
+- [x] **T4. Implementar el repositorio de perfiles y sus transformaciones.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1
   - Hecho cuando: las pruebas de integración crean, consultan y actualizan parcialmente un perfil, conservan campos no enviados, devuelven 404 cuando falta y resisten dos altas concurrentes sin duplicar.
 - [ ] **T5. Exponer crear, obtener y actualizar perfil con rol efectivo y errores del contrato.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RNF-03, RNF-19
   - Hecho cuando: pruebas HTTP cubren 201, `Location`, 200, 400, 403, 404, 409 y 422; CLIENTE+OPERADOR puede consultar otro perfil pero no actualizarlo; y logs no contienen datos personales ni claves.

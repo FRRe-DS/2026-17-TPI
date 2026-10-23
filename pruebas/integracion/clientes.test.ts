@@ -8,7 +8,8 @@ import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd, TiempoAgotado } from '../../src/bd/pool.js';
 import { conIdempotencia, type RespuestaIdempotente, type SolicitudIdempotente } from '../../src/bd/idempotencia.js';
 import { type Consultar, transaccion } from '../../src/bd/transaccion.js';
-import { BaseNoDisponible, Conflicto, IdempotenciaReutilizada } from '../../src/errores.js';
+import { actualizarPerfil, crearPerfil, obtenerPerfil } from '../../src/clientes/repositorio.js';
+import { BaseNoDisponible, Conflicto, IdempotenciaReutilizada, NoEncontrado, PerfilYaExiste } from '../../src/errores.js';
 import { puertoLibre } from '../ayudas/arranque.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
@@ -811,6 +812,204 @@ describe('conIdempotencia() sobre la base de la migración (RF-2.1, RF-2.6.1, RN
       expect(await cuantos('clientes', clienteId)).toBe(1);
       const reservas = await pool.consultar('SELECT clave FROM idempotencias WHERE sujeto = $1', [clienteId]);
       expect(reservas.rowCount).toBe(1);
+    });
+  });
+});
+
+describe('el repositorio de perfiles (RF-2.1, RF-2.1.1, RF-2.1.2, RF-2.1.3, RF-2.1.3.1, RNF-08)', () => {
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+
+  const consultar: Consultar = (sql, parametros) => pool.consultar(sql, parametros);
+
+  const SIN_FECHA = { nombre: 'Ana', apellido: 'Gómez', telefono: '+5493624000000' };
+  const ANA = { ...SIN_FECHA, fechaNacimiento: '1990-05-17' };
+
+  const fallaCon = (promesa: Promise<unknown>) =>
+    promesa.then(
+      () => expect.unreachable('no falló'),
+      (error: unknown) => error,
+    );
+
+  const bloquear = (clienteId: string, columnas: string, valores: string) =>
+    pool.consultar(
+      `INSERT INTO bloqueos_cliente (bloqueo_id, cliente_id, motivo, creado_por, ${columnas})
+       VALUES ($1, $2, 'Deuda pendiente', 'operador-1', ${valores})`,
+      [nuevoId(), clienteId],
+    );
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await base?.borrar();
+  });
+
+  describe('crearPerfil', () => {
+    it('guarda el perfil con el clienteId dado y lo devuelve en la forma del contrato, ACTIVO', async () => {
+      const clienteId = nuevoId();
+
+      const perfil = await crearPerfil(consultar, clienteId, ANA);
+
+      expect(perfil).toEqual({
+        clienteId,
+        ...ANA,
+        estado: 'ACTIVO',
+        creadoEn: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z$/),
+        actualizadoEn: perfil.creadoEn,
+      });
+      expect(await obtenerPerfil(consultar, clienteId)).toEqual(perfil);
+    });
+
+    it('la fecha de nacimiento es opcional: sin ella, el perfil no tiene el campo', async () => {
+      const perfil = await crearPerfil(consultar, nuevoId(), SIN_FECHA);
+
+      expect(perfil).not.toHaveProperty('fechaNacimiento');
+    });
+
+    it('la fecha de nacimiento vuelve igual a la que se guardó, sea cual sea la zona horaria del proceso', async () => {
+      const clienteId = nuevoId();
+      const zona = process.env.TZ;
+      process.env.TZ = 'America/Argentina/Buenos_Aires';
+      try {
+        await crearPerfil(consultar, clienteId, { ...ANA, fechaNacimiento: '2000-01-01' });
+        expect((await obtenerPerfil(consultar, clienteId)).fechaNacimiento).toBe('2000-01-01');
+      } finally {
+        if (zona === undefined) delete process.env.TZ;
+        else process.env.TZ = zona;
+      }
+    });
+
+    it('un segundo perfil para el mismo clienteId da PerfilYaExiste y deja el primero intacto (RF-2.1.3)', async () => {
+      const clienteId = nuevoId();
+      const primero = await crearPerfil(consultar, clienteId, ANA);
+
+      const error = await fallaCon(crearPerfil(consultar, clienteId, { ...ANA, nombre: 'Beatriz' }));
+
+      expect(error).toBeInstanceOf(PerfilYaExiste);
+      expect(await obtenerPerfil(consultar, clienteId)).toEqual(primero);
+    });
+
+    it('dos altas a la vez para el mismo clienteId: una crea, la otra da PerfilYaExiste, y queda una sola fila (RNF-08)', async () => {
+      const clienteId = nuevoId();
+
+      const resultados = await Promise.allSettled([
+        crearPerfil(consultar, clienteId, ANA),
+        crearPerfil(consultar, clienteId, { ...ANA, nombre: 'Beatriz' }),
+      ]);
+
+      expect(resultados.map((resultado) => resultado.status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(resultados.find((resultado) => resultado.status === 'rejected')?.reason).toBeInstanceOf(PerfilYaExiste);
+      const guardados = await pool.consultar('SELECT count(*)::int AS n FROM clientes WHERE cliente_id = $1', [clienteId]);
+      expect(guardados.rows).toEqual([{ n: 1 }]);
+    });
+
+    it('dentro de una transacción, un perfil repetido no la aborta: la función puede seguir consultando', async () => {
+      const clienteId = nuevoId();
+      await crearPerfil(consultar, clienteId, ANA);
+
+      const perfil = await transaccion(pool, async (enTransaccion) => {
+        await fallaCon(crearPerfil(enTransaccion, clienteId, ANA));
+        return obtenerPerfil(enTransaccion, clienteId);
+      });
+
+      expect(perfil.clienteId).toBe(clienteId);
+    });
+  });
+
+  describe('obtenerPerfil', () => {
+    it('un clienteId sin perfil da NoEncontrado, el 404 (RF-2.1.3.1)', async () => {
+      const error = await fallaCon(obtenerPerfil(consultar, nuevoId()));
+
+      expect(error).toBeInstanceOf(NoEncontrado);
+      expect(error).toMatchObject({ codigo: 404, detail: 'No existe el cliente pedido' });
+    });
+  });
+
+  describe('el estado del perfil sale de sus bloqueos (plan, «Estado y vigencia»)', () => {
+    it('BLOQUEADO con un bloqueo sin levantar y sin vencer; ACTIVO con uno levantado o uno vencido', async () => {
+      const [vigente, levantado, vencido] = [nuevoId(), nuevoId(), nuevoId()];
+      for (const clienteId of [vigente, levantado, vencido]) await crearPerfil(consultar, clienteId, ANA);
+      await bloquear(vigente, 'hasta', `now() + interval '1 day'`);
+      await bloquear(levantado, 'levantado_en, levantado_por, motivo_levantamiento', `now(), 'operador-2', 'Pagó'`);
+      await bloquear(vencido, 'hasta', `now() - interval '1 second'`);
+
+      const estados = await Promise.all([vigente, levantado, vencido].map((id) => obtenerPerfil(consultar, id)));
+
+      expect(estados.map((perfil) => perfil.estado)).toEqual(['BLOQUEADO', 'ACTIVO', 'ACTIVO']);
+    });
+  });
+
+  describe('actualizarPerfil', () => {
+    it('cambia solo los campos enviados, conserva los demás y mueve actualizadoEn (RF-2.1.2)', async () => {
+      const clienteId = nuevoId();
+      const antes = await crearPerfil(consultar, clienteId, ANA);
+
+      const despues = await actualizarPerfil(consultar, clienteId, { telefono: '+5493624111111' });
+
+      expect(despues).toEqual({ ...antes, telefono: '+5493624111111', actualizadoEn: expect.any(String) });
+      expect(Date.parse(despues.actualizadoEn)).toBeGreaterThan(Date.parse(antes.actualizadoEn));
+      expect(despues.creadoEn).toBe(antes.creadoEn);
+      expect(await obtenerPerfil(consultar, clienteId)).toEqual(despues);
+    });
+
+    it('cambia todos los campos a la vez, la fecha de nacimiento incluida', async () => {
+      const clienteId = nuevoId();
+      await crearPerfil(consultar, clienteId, ANA);
+      const cambios = { nombre: 'Beatriz', apellido: 'Paz', telefono: '+5493624222222', fechaNacimiento: '1985-12-31' };
+
+      expect(await actualizarPerfil(consultar, clienteId, cambios)).toMatchObject(cambios);
+    });
+
+    it('agrega la fecha de nacimiento a un perfil que no la tenía', async () => {
+      const clienteId = nuevoId();
+      await crearPerfil(consultar, clienteId, SIN_FECHA);
+
+      const perfil = await actualizarPerfil(consultar, clienteId, { fechaNacimiento: '1990-05-17' });
+
+      expect(perfil.fechaNacimiento).toBe('1990-05-17');
+    });
+
+    it('conserva el estado: un perfil bloqueado sigue BLOQUEADO después de actualizarlo', async () => {
+      const clienteId = nuevoId();
+      await crearPerfil(consultar, clienteId, ANA);
+      await bloquear(clienteId, 'hasta', `now() + interval '1 day'`);
+
+      expect((await actualizarPerfil(consultar, clienteId, { nombre: 'Beatriz' })).estado).toBe('BLOQUEADO');
+    });
+
+    it('sin cambios devuelve el perfil como está, sin tocar actualizadoEn', async () => {
+      const clienteId = nuevoId();
+      const antes = await crearPerfil(consultar, clienteId, ANA);
+
+      expect(await actualizarPerfil(consultar, clienteId, {})).toEqual(antes);
+    });
+
+    it('un perfil que no existe da NoEncontrado (RF-2.1.3.1), también sin cambios', async () => {
+      expect(await fallaCon(actualizarPerfil(consultar, nuevoId(), { nombre: 'Beatriz' }))).toBeInstanceOf(NoEncontrado);
+      expect(await fallaCon(actualizarPerfil(consultar, nuevoId(), {}))).toBeInstanceOf(NoEncontrado);
+    });
+
+    it('dos actualizaciones a la vez de campos distintos: quedan las dos, ninguna pisa a la otra (RNF-08)', async () => {
+      const clienteId = nuevoId();
+      await crearPerfil(consultar, clienteId, ANA);
+
+      await Promise.all([
+        actualizarPerfil(consultar, clienteId, { nombre: 'Beatriz' }),
+        actualizarPerfil(consultar, clienteId, { apellido: 'Paz' }),
+        actualizarPerfil(consultar, clienteId, { telefono: '+5493624333333' }),
+      ]);
+
+      expect(await obtenerPerfil(consultar, clienteId)).toMatchObject({
+        nombre: 'Beatriz',
+        apellido: 'Paz',
+        telefono: '+5493624333333',
+        fechaNacimiento: '1990-05-17',
+      });
     });
   });
 });

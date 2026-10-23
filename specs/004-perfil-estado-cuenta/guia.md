@@ -90,3 +90,33 @@ Se escribe al validar la spec.
   - `alta` no debe atrapar un error de la base y seguir: sin savepoints, la transacción queda abortada y la sentencia siguiente da `25P02` (500).
   - Un `COMMIT` cortado por tiempo da 503 aunque la base pueda haber confirmado. Con idempotencia, el reintento devuelve lo guardado. Sin ella (el PATCH de T5), el resultado queda ambiguo.
   - `idempotencias` guarda el cuerpo de la respuesta, con datos personales, sin vencimiento ni purga. No lo pide TP1: anotarlo para una etapa siguiente.
+
+### T4 — Repositorio de perfiles y sus transformaciones · commit `004/T4`
+- Qué cambió:
+  - [src/clientes/repositorio.ts](../../src/clientes/repositorio.ts): `crearPerfil`, `obtenerPerfil` y `actualizarPerfil`. Cada una recibe `consultar` como primer argumento, el del pool o el de una `transaccion()`, así sirven dentro de la idempotencia (T3) y fuera de ella.
+    - `crearPerfil` inserta con `ON CONFLICT (cliente_id) DO NOTHING`; si no inserta nada, lanza `PerfilYaExiste` (409, RF-2.1.3).
+    - `obtenerPerfil` lanza `NoEncontrado` (404, RF-2.1.3.1) si no hay fila.
+    - `actualizarPerfil` hace un solo `UPDATE` con `COALESCE($n, columna)` y mueve `actualizado_en`; sin perfil, `NoEncontrado`; sin campos, devuelve el perfil sin tocarlo.
+  - [src/clientes/modelo.ts](../../src/clientes/modelo.ts): los tipos del contrato (`Cliente`, `ClienteNuevo`, `ClienteCambios`, tomados de `src/generado/contrato.ts`), `FilaCliente` y `aCliente()`, que convierte la fila al esquema `Cliente`.
+  - [src/errores.ts](../../src/errores.ts): `PerfilYaExiste` (409, `type: /errores/perfil-ya-existe`) y `NoEncontrado` con `detail` opcional (por defecto sigue diciendo «No existe la ruta pedida»).
+- Por qué así:
+  - El estado no se guarda: cada lectura lo calcula con un `EXISTS` sobre los bloqueos vigentes (plan, «Estado y vigencia»), porque el esquema `Cliente` lo exige. El predicado de vigencia es la constante `BLOQUEO_VIGENTE`; T6 lo reutiliza para `obtenerEstadoCuenta`.
+  - `ON CONFLICT DO NOTHING` y no el `23505`: dentro de una transacción un error de la base la deja abortada, y la función no podría seguir consultando. Con dos altas a la vez, la segunda espera a la primera y, si esta confirma, no inserta nada (RNF-08.1).
+  - Un solo `UPDATE` atómico: en READ COMMITTED, PostgreSQL vuelve a evaluar el `SET` sobre la última versión de la fila, así que dos `PATCH` a la vez de campos distintos se aplican uno detrás del otro y ninguno pisa al otro.
+  - Ningún campo del contrato admite `null`, por eso `null` en el parámetro significa «no enviado» y `COALESCE` conserva el valor.
+  - La fecha de nacimiento sale con `to_char(…, 'YYYY-MM-DD')` y no como `Date` de pg: pg la arma a medianoche de la zona del proceso y la fecha puede correrse un día. Sin fecha, el campo no está en la respuesta.
+- Cómo se conecta: todavía no lo llama ningún manejador. El servicio de T5 llamará a `crearPerfil` dentro de `conIdempotencia()` y a las otras dos con el pool. Los errores de la base salen como los clasifica `consultar()`.
+- Tests:
+  - [pruebas/unitarias/clientes.test.ts](../../pruebas/unitarias/clientes.test.ts): `aCliente()` (campos, fechas en ISO, sin fecha no hay campo, estado según `bloqueado`) y las respuestas de `PerfilYaExiste` y `NoEncontrado`.
+  - [pruebas/integracion/clientes.test.ts](../../pruebas/integracion/clientes.test.ts), bloque «el repositorio de perfiles», con una base migrada:
+    - crear devuelve el perfil del contrato y `obtenerPerfil` lo repite; la fecha es opcional y vuelve igual en otra zona horaria;
+    - un segundo perfil da `PerfilYaExiste` y deja el primero intacto; dos altas a la vez dejan una fila; un perfil repetido dentro de una transacción no la aborta;
+    - obtener un perfil que no existe da 404 con detalle propio;
+    - el estado sale BLOQUEADO con un bloqueo vigente y ACTIVO con uno levantado o vencido;
+    - actualizar cambia solo lo enviado y mueve `actualizadoEn`; cambia todos los campos; agrega la fecha; conserva el estado; sin cambios no toca nada; sin perfil da 404; tres actualizaciones a la vez de campos distintos quedan todas.
+  - En rojo primero: con un esbozo que lanzaba, fallaron las 15 de integración y no cargaba el módulo de las unitarias. Mutaciones de control: leyendo la fecha como `Date` fallan 5, y sin `ON CONFLICT` fallan 3.
+  - `npm test` (2164), lint, build y spec-check en verde. Las pruebas del repositorio se corrieron tres veces seguidas sin fallas.
+- Para mirar con atención:
+  - La cobertura de la vigencia aquí es mínima (vigente, levantado, vencido). Los casos de T6 (indefinidos, futuros, varios simultáneos, coincidencia con `bloqueosVigentes`) los cubre esa tarea.
+  - `actualizarPerfil` no distingue entre «no enviado» y `null`: si algún día el contrato admite borrar la fecha de nacimiento, hará falta otra forma de decirlo.
+  - Los datos personales del perfil no se registran en ningún lado: ninguna de estas funciones escribe logs y los errores no llevan el `clienteId` (RNF-19).

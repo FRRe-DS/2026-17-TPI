@@ -62,10 +62,11 @@ export class SinPermiso extends Problema {
   }
 }
 
-// De la solicitud a una ruta que no existe.
+// De la solicitud a una ruta que no existe o, con `detail`, a un recurso que no existe. El `detail` no lleva datos de la
+// solicitud (RNF-19).
 export class NoEncontrado extends Problema {
-  constructor() {
-    super({ codigo: 404, title: 'No encontrado', detail: 'No existe la ruta pedida' });
+  constructor(detail = 'No existe la ruta pedida') {
+    super({ codigo: 404, title: 'No encontrado', detail });
   }
 }
 
@@ -85,6 +86,18 @@ export class MetodoNoPermitido extends Problema {
 export class Conflicto extends Problema {
   constructor() {
     super({ codigo: 409, title: 'Conflicto', detail: 'Ya existe un registro con esos datos' });
+  }
+}
+
+// De `crearPerfil()`, cuando el clienteId ya tiene perfil (RF-2.1.3). No lleva el clienteId ni datos del perfil (RNF-19).
+export class PerfilYaExiste extends Problema {
+  constructor() {
+    super({
+      codigo: 409,
+      type: '/errores/perfil-ya-existe',
+      title: 'Perfil ya existe',
+      detail: 'Ya existe un perfil para este usuario',
+    });
   }
 }
 
