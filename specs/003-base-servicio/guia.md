@@ -1169,3 +1169,26 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - La prueba lee el `Dockerfile` por instrucciones y no entiende `ARG` en el `FROM` ni etapas con la imagen de otra etapa: hoy no los hay, y si se suman, la prueba de «dos etapas» y la de versión exacta lo van a avisar.
   - No hay `HEALTHCHECK` en la imagen: lo pone compose (T27), con Node y `fetch`, porque la imagen no trae `curl`.
   - La base es `node:24.22.0-trixie-slim`, la que fija el plan (Versiones a fijar); el plan no compara otras bases, así que la imagen pesa lo de esa base más las dependencias de producción (258 MB).
+
+### T27 — `docker-compose.yml` con el servicio y su base, y `ejemplo.env` documentado · commit `003/T27`
+- Qué cambió:
+  - [docker-compose.yml](../../docker-compose.yml): servicio `m2` (`build: .`, `image: m2-clientes:0.1.0`, `env_file: ejemplo.env`, `init: true`, el puerto `${M2_PUERTO:-8082}` publicado, `depends_on: bd` con `service_healthy`) y servicio `bd` (`postgres:18.6`, `env_file`, volumen `datos-bd` en `/var/lib/postgresql`, sin puerto publicado).
+  - [ejemplo.env](../../ejemplo.env): las diez variables de `M2_*` (Lógica 1) y `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`, cada una con un comentario y la forma `VARIABLE=${VARIABLE:-valor}`.
+- Por qué así:
+  - Los dos `healthcheck` siguen el plan. El de `m2` es Node con `fetch` (GET): la imagen no trae curl y `wget --spider` manda HEAD, que da 405. Lee el puerto de `process.env.M2_PUERTO` del contenedor, sin `$`, para que compose no lo interpole. El de `bd` usa `pg_isready -h 127.0.0.1`, por TCP, porque el servidor temporal de la inicialización solo escucha por socket, y `$$` para que las variables las lea el contenedor.
+  - `${VARIABLE:-valor}` en el `env_file`: compose lo interpola con el entorno de quien lo corre, así que una variable definida afuera manda sobre el ejemplo (RNF-06.3), y un clon limpio levanta sin crear archivos (RNF-04.4). Se probó con compose 2.40.3.
+  - `M2_URL_BD` repite usuario, contraseña y base de `POSTGRES_*`: es una URL con el host `bd`, y compose no interpola un valor dentro de otro del mismo archivo de forma fiable. Por eso se cambian juntos, y una prueba comprueba que coincidan.
+  - Los valores de `ejemplo.env` son solo de desarrollo (la clave tiene 32 caracteres o más, para que la acepte `cargarConfig`).
+- Cómo se conecta:
+  - Usa la imagen de T26. T28 prueba las fallas de arranque y la parada con este compose; T29 y T30 lo usan para `contrato:test` (`docker compose exec -T m2 …`) y en CI.
+  - La imagen de `bd` es `IMAGEN_POSTGRES` de [pruebas/ayudas/global.ts](../../pruebas/ayudas/global.ts): una prueba compara las dos.
+- Tests:
+  - [pruebas/unitarias/ejemplo-env.test.ts](../../pruebas/unitarias/ejemplo-env.test.ts) (nuevo, 7): las 13 variables y ninguna más; toda línea con la forma `${VARIABLE:-valor}`; un valor y un comentario arriba de cada una; sin repetidas; los valores pasan `cargarConfig`; los opcionales repiten los valores por defecto de RNF-06.1; y `M2_URL_BD` usa el usuario, la contraseña y la base de `POSTGRES_*`, con el host `bd`.
+  - [pruebas/unitarias/consistencia.test.ts](../../pruebas/unitarias/consistencia.test.ts): bloque `docker-compose.yml` (9): solo `m2` y `bd`; imágenes con versión exacta; la de `bd` es `IMAGEN_POSTGRES`; la de `m2` lleva la versión de `package.json`; `build`, `env_file`, `init`, `ports` y `depends_on`; la base sin puertos y con su volumen; los dos chequeos. `imagenExacta` ahora recibe cuántas partes tiene la versión: tres para Node, dos para `postgres:18.6`.
+  - Rojo primero: faltaban `ejemplo.env` y el compose, así que los dos archivos de prueba no cargaban. Después falló una sola: `imagenExacta` exigía X.Y.Z y rechazaba `postgres:18.6`, que RNF-04.1 da por exacta; se corrigió la prueba.
+  - Comprobaciones a mano, de «Hecho cuando»: `docker compose up -d --build --wait` termina con los dos servicios sanos en 10 s (con la imagen ya construida); `curl localhost:8082/health` da 200 con `{"estado":"ok"}`; `M2_PUERTO=9090 docker compose config` muestra 9090 y, levantado de verdad, `curl localhost:9090/health` da 200 (el chequeo también usó 9090). Desde un clon limpio de la rama, sin crear ni editar nada, `docker compose up -d --build --wait` también termina sano (9 s, con la capa de `npm ci` en caché) y `/health` da 200.
+  - Con Node v24.15.0: `npm test` (2101), `npm run lint` y `npm run build` pasan.
+- Para mirar con atención:
+  - Con el volumen ya creado, cambiar `POSTGRES_PASSWORD` no tiene efecto hasta `docker compose down -v`, que pierde los datos locales; lo documenta T31 en el README.
+  - `ejemplo.env` va afuera de la imagen (`.dockerignore`): la configuración llega por `env_file` en compose y por entorno en cualquier otro lado.
+  - `bd` no publica el puerto 5432 en la máquina (RNF-02.1, plan Datos): para mirar la base hay que usar `docker compose exec bd psql`.
