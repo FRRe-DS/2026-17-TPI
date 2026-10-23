@@ -1,9 +1,12 @@
 import type { InjectOptions } from 'fastify';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { BaseDeDatos } from '../../src/bd/pool.js';
 import type { Manejador, Manejadores } from '../../src/contrato/operaciones.js';
 import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
+import { crearClienteModulo } from '../../src/modulos/cliente.js';
 import { CONFIG, crearApp } from '../ayudas/app.js';
 import { capturarLogs } from '../ayudas/logs.js';
+import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 import { escuchar, leerRespuesta, porSocket } from '../ayudas/socket.js';
 import { AUTORIZADO } from '../ayudas/tokens.js';
 
@@ -378,13 +381,9 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
     ['400: un campo no cumple el contrato', 400, { method: 'POST', url: '/pruebas/clientes', payload: { nombre: 'Ana' } }],
     ['415: el cuerpo no es JSON', 415, { method: 'POST', url: '/pruebas/clientes', payload: 'x', headers: TEXTO_PLANO }],
     ['409: el manejador lanza un Conflicto', 409, { method: 'POST', url: '/pruebas/clientes', payload: CLIENTE }],
-    ['503: el manejador lanza BaseNoDisponible', 503, { method: 'GET', url: '/pruebas/falla' }],
   ] as const)('%s: no es un error imprevisto y no se registra como error', async (_caso, estado, solicitud) => {
-    const { app, logs } = crear({
-      probarPublica: bien,
-      probarAlta: lanzando(new Conflicto()),
-      probarFalla: lanzando(new BaseNoDisponible()),
-    });
+    // El 503 por la base o por otro módulo sí deja una línea, con su causa: está en el bloque siguiente.
+    const { app, logs } = crear({ probarPublica: bien, probarAlta: lanzando(new Conflicto()) });
 
     const respuesta = await app.inject({ headers: POR_CLIENTE, ...solicitud });
 
@@ -489,6 +488,162 @@ describe('construirApp: un error no previsto queda en el log, con su id y sin se
     expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
     expect(errores(logs)).toMatchObject([{ err: { tipo: 'desconocido', mensaje: 'El error no se pudo serializar' } }]);
     sinSecretos(logs);
+  });
+});
+
+describe('construirApp: la causa de un 503 por la base o por otro módulo queda en el log, con su id (RNF-14.8, RNF-19.1)', () => {
+  const CONTRASENA_BD = 'contrasena-de-la-bd';
+  const URL_BD = `postgres://m2:${CONTRASENA_BD}@bd:5432/m2`;
+  const CLAVE = CONFIG.claveTokens;
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYmMifQ.firma-del-token';
+  const CON_TOKEN = { authorization: `Bearer ${TOKEN}` };
+  const SIN_BASE = 'La base de datos no está disponible';
+  const SIN_M6 = 'M6 no está disponible';
+
+  const modulo = crearServidorModulo();
+  beforeAll(() => modulo.levantar());
+  afterAll(() => modulo.cerrar());
+
+  // Una app con el log capturado, la contraseña de la base de este grupo de pruebas y el pool que se pase.
+  const crear = (manejadores: Manejadores, pool?: BaseDeDatos) => {
+    const logs = capturarLogs();
+    return { app: crearApp(manejadores, { flujoLog: logs.flujo, config: { urlBd: URL_BD }, pool }), logs };
+  };
+  const errores = (logs: ReturnType<typeof capturarLogs>) => logs.lineas().filter((linea) => linea.level >= 50);
+  const sinSecretos = (logs: ReturnType<typeof capturarLogs>) => {
+    for (const secreto of [CLAVE, CONTRASENA_BD, TOKEN]) expect(logs.texto()).not.toContain(secreto);
+  };
+
+  // Una operación que consulta la base, como lo harán las de negocio.
+  const consultaLaBase: Manejador = async (request) => {
+    await request.server.pool.consultar('SELECT 1');
+    return { ok: true };
+  };
+
+  // Una operación que lee de M6 con el cliente de módulos, sin reintentos, pasándole el id de la solicitud.
+  const leeDeM6: Manejador = async (request) => {
+    const cliente = crearClienteModulo({
+      nombre: 'M6',
+      urlBase: modulo.url,
+      tiempoMs: 500,
+      reintentos: 0,
+      encabezadoCorrelacion: CONFIG.encabezadoCorrelacion,
+    });
+    return (await cliente.obtener('/', request.id)).cuerpo;
+  };
+
+  it('por la base: una línea error con el id, el detail como texto y el error de pg como causa, sin secretos', async () => {
+    const causa = Object.assign(new Error(`connect ECONNREFUSED con ${URL_BD}, ${CLAVE} y ${TOKEN}`), {
+      code: 'ECONNREFUSED',
+    });
+    const caida: BaseDeDatos = { consultar: async () => Promise.reject(new BaseNoDisponible({ cause: causa })) };
+    const { app, logs } = crear({ probarPublica: consultaLaBase }, caida);
+
+    const respuesta = await app.inject({
+      method: 'GET',
+      url: '/pruebas/publica',
+      headers: { ...CON_TOKEN, [ENCABEZADO]: 'sin-base-1' },
+    });
+
+    expect(respuesta.statusCode).toBe(503);
+    expect(respuesta.json().detail).toBe(SIN_BASE);
+    expect(errores(logs)).toEqual([
+      expect.objectContaining({
+        level: 50,
+        msg: SIN_BASE,
+        idCorrelacion: 'sin-base-1',
+        err: expect.objectContaining({
+          tipo: 'BaseNoDisponible',
+          mensaje: SIN_BASE,
+          causa: expect.objectContaining({
+            tipo: 'Error',
+            codigo: 'ECONNREFUSED',
+            mensaje: 'connect ECONNREFUSED con postgres://m2:[oculto]@bd:5432/m2, [oculto] y [oculto]',
+          }),
+        }),
+      }),
+    ]);
+    // La respuesta no trae la causa.
+    expect(respuesta.body).not.toContain('ECONNREFUSED');
+    sinSecretos(logs);
+  });
+
+  it('por otro módulo: una línea error con el id, el detail como texto y lo que falló en el último intento', async () => {
+    modulo.responderCon({ tipo: '5xx', estado: 500, cuerpo: { error: `con ${CLAVE}` } });
+    const { app, logs } = crear({ probarPublica: leeDeM6 });
+
+    const respuesta = await app.inject({
+      method: 'GET',
+      url: '/pruebas/publica',
+      headers: { ...CON_TOKEN, [ENCABEZADO]: 'sin-m6-1' },
+    });
+
+    expect(respuesta.statusCode).toBe(503);
+    expect(respuesta.json().detail).toBe(SIN_M6);
+    // El id llegó también a M6, por el encabezado de correlación.
+    expect(modulo.encabezadosRecibidos.get(ENCABEZADO)).toBe('sin-m6-1');
+    expect(errores(logs)).toEqual([
+      expect.objectContaining({
+        level: 50,
+        msg: SIN_M6,
+        idCorrelacion: 'sin-m6-1',
+        err: expect.objectContaining({
+          tipo: 'ModuloNoDisponible',
+          mensaje: SIN_M6,
+          causa: expect.objectContaining({ mensaje: 'M6 respondió 500' }),
+        }),
+      }),
+    ]);
+    sinSecretos(logs);
+  });
+
+  it('sin un id en la solicitud, la línea trae el UUID que devuelve la respuesta', async () => {
+    const caida: BaseDeDatos = { consultar: async () => Promise.reject(new BaseNoDisponible({ cause: new Error('x') })) };
+    const { app, logs } = crear({ probarPublica: consultaLaBase }, caida);
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/publica' });
+
+    expect(respuesta.headers[ENCABEZADO]).toMatch(UUID_V4);
+    expect(errores(logs)).toMatchObject([{ msg: SIN_BASE, idCorrelacion: respuesta.headers[ENCABEZADO] }]);
+  });
+
+  // Todas fallan por la misma caída: cada una deja su línea, con su id y la causa de su consulta (spec, casos límite).
+  it('cinco solicitudes a la vez dejan cinco líneas, cada una con su id y su causa', async () => {
+    const ids = ['vez-1', 'vez-2', 'vez-3', 'vez-4', 'vez-5'];
+    const todas = Promise.withResolvers<void>();
+    let empezadas = 0;
+    // Ninguna falla hasta que empezaron las cinco. La causa nombra la solicitud: así se ve que cada línea lleva la de la suya.
+    const sinBase: Manejador = async (request) => {
+      empezadas += 1;
+      if (empezadas === ids.length) todas.resolve();
+      await todas.promise;
+      throw new BaseNoDisponible({ cause: new Error(`corte de ${request.id}`) });
+    };
+    const { app, logs } = crear({ probarPublica: sinBase });
+
+    const respuestas = await Promise.all(
+      ids.map((id) => app.inject({ method: 'GET', url: '/pruebas/publica', headers: { [ENCABEZADO]: id } })),
+    );
+
+    expect(respuestas.map((respuesta) => respuesta.statusCode)).toEqual([503, 503, 503, 503, 503]);
+    const lineas = errores(logs);
+    expect(lineas).toHaveLength(ids.length);
+    expect(lineas.map((linea) => linea.idCorrelacion).sort()).toEqual(ids);
+    for (const linea of lineas) {
+      expect(linea).toMatchObject({ msg: SIN_BASE, err: { causa: { mensaje: `corte de ${linea.idCorrelacion}` } } });
+    }
+  });
+
+  it('el 503 de la parada no deja esa línea: el servicio lo responde a propósito', async () => {
+    const { app, logs } = crear({ probarPublica: bien });
+    await app.ready();
+    app.deteniendose = true;
+
+    const respuesta = await app.inject({ method: 'GET', url: '/pruebas/publica' });
+
+    expect(respuesta.statusCode).toBe(503);
+    expect(respuesta.json().detail).toBe('El servicio se está deteniendo');
+    expect(errores(logs)).toEqual([]);
   });
 });
 

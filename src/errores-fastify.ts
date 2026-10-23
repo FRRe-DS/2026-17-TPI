@@ -5,8 +5,14 @@ import type { ConnectionError, FastifyError, FastifyInstance, FastifyReply, Fast
 import { randomUUID } from 'node:crypto';
 import { STATUS_CODES } from 'node:http';
 import type { Socket } from 'node:net';
-import { aProblema, SolicitudIlegible } from './errores.js';
-import { registrarErrorInterno, registrarSolicitud, registrarSolicitudIlegible, secretosDeAutorizacion } from './logs.js';
+import { aProblema, BaseNoDisponible, ModuloNoDisponible, SolicitudIlegible } from './errores.js';
+import {
+  registrarErrorInterno,
+  registrarNoDisponible,
+  registrarSolicitud,
+  registrarSolicitudIlegible,
+  secretosDeAutorizacion,
+} from './logs.js';
 
 // Si el cliente corta la conexión, o manda un chunked mal formado, mientras se lee el cuerpo, Node corta la solicitud con
 // ECONNRESET («aborted») y Fastify le pasa ese mismo error al manejador de errores. Es una solicitud que no se pudo leer, no
@@ -18,13 +24,19 @@ function cortoElCliente(error: unknown, request: FastifyRequest): boolean {
   return (error as { code?: unknown } | null)?.code === 'ECONNRESET' && error === request.raw.errored;
 }
 
-// El manejador de errores de la app: responde `error` con aProblema. Solo un error no previsto (500) se registra: los demás
-// son respuestas que el servicio da a propósito (RNF-03.3). El corte del cliente es un 400 que casi nunca llega a salir,
-// porque la conexión ya se cerró; si sigue abierta, el 400 lo responde clientErrorHandler.
+// El manejador de errores de la app: responde `error` con aProblema. Se registran un error no previsto (500), entero
+// (RNF-03.3), y un 503 por la base o por otro módulo, con su causa (RNF-14.8). Los dos van con `request.log`, que les pone
+// el id de la solicitud. Los demás, el 503 de la parada incluido, son respuestas que el servicio da a propósito. El corte
+// del cliente es un 400 que casi nunca llega a salir, porque la conexión ya se cerró; si sigue abierta, el 400 lo responde
+// clientErrorHandler.
 export function responderProblema(error: unknown, request: FastifyRequest, reply: FastifyReply) {
   const problema = cortoElCliente(error, request) ? new SolicitudIlegible() : error;
   const { codigo, cuerpo, encabezados } = aProblema(problema, request.url);
-  if (codigo === 500) registrarErrorInterno(request.log, error, secretosDeAutorizacion(request.headers.authorization));
+  const secretos = () => secretosDeAutorizacion(request.headers.authorization);
+  if (codigo === 500) registrarErrorInterno(request.log, error, secretos());
+  else if (error instanceof BaseNoDisponible || error instanceof ModuloNoDisponible) {
+    registrarNoDisponible(request.log, error, secretos());
+  }
   return reply.code(codigo).headers(encabezados).send(cuerpo);
 }
 

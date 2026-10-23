@@ -289,6 +289,23 @@ describe('GET /health y una operación con la base caída y el servicio andando 
 
   type Pedido = Awaited<ReturnType<Awaited<ReturnType<typeof andando>>['pedir']>>;
 
+  // Las líneas de error del log: desde T41, una por cada 503 por la base, con el id de su solicitud y la causa (RNF-14.8).
+  const lineasDeError = (logs: ReturnType<typeof capturarLogs>) => logs.lineas().filter((linea) => linea.level >= 50);
+
+  // Que cada pedido dejó exactamente una línea «La base de datos no está disponible» con su id y una causa, y nada más.
+  function unaLineaPorPedido(logs: ReturnType<typeof capturarLogs>, pedidos: Pedido[], causa: object = {}) {
+    const lineas = lineasDeError(logs);
+    expect(lineas).toHaveLength(pedidos.length);
+    for (const { respuesta } of pedidos) {
+      expect(lineas.filter((linea) => linea.idCorrelacion === respuesta.headers['x-request-id'])).toEqual([
+        expect.objectContaining({
+          msg: 'La base de datos no está disponible',
+          err: expect.objectContaining({ tipo: 'BaseNoDisponible', causa: expect.objectContaining(causa) }),
+        }),
+      ]);
+    }
+  }
+
   function esBaseNoDisponible({ respuesta }: Pedido, url: string) {
     expect(respuesta.statusCode).toBe(503);
     expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
@@ -318,9 +335,12 @@ describe('GET /health y una operación con la base caída y el servicio andando 
           expect(pedido.duracion).toBeGreaterThanOrEqual(TIEMPO_BD_MS - TOLERANCIA_MS);
           expect(pedido.duracion).toBeLessThan(TIEMPO_BD_MS + MARGEN_MS);
         }
-        // Una causa registrada por cada solicitud, y ninguna como error interno: un 503 es una respuesta prevista.
-        expect(registros).toHaveLength(2);
-        expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([]);
+        // Una línea por solicitud, con su id y la causa (RNF-14.8), y ninguna como error interno. El pool ya no registra
+        // nada: la causa va en el error.
+        unaLineaPorPedido(logs, pedidos, { mensaje: expect.any(String) });
+        expect(logs.texto()).not.toContain('Error interno');
+        expect(logs.texto()).not.toContain(new URL(base.urlBd).password);
+        expect(registros).toEqual([]);
       },
       LIMITE_PRUEBA_MS,
     );
@@ -395,12 +415,16 @@ describe('GET /health y una operación con la base caída y el servicio andando 
       const { logs, pedir } = await andando();
       await proxy.cerrar();
 
+      const pedidos: Pedido[] = [];
       for (const url of RUTAS) {
         const pedido = await pedir(url);
         esBaseNoDisponible(pedido, url);
         expect(pedido.duracion).toBeLessThan(TIEMPO_BD_MS);
+        pedidos.push(pedido);
       }
-      expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([]);
+      // La causa depende de la conexión: «Connection terminated» si la solicitud tomó la que el pool tenía y se cortó, o
+      // ECONNREFUSED si abrió una nueva.
+      unaLineaPorPedido(logs, pedidos, { mensaje: expect.any(String) });
     });
 
     it('cuando la base vuelve, las dos responden 200 sin reiniciar la app', async () => {

@@ -441,7 +441,7 @@ describe('arranque normal (RNF-05.2)', () => {
     });
   });
 
-  it('con el servicio andando, la causa de una falta de base queda en el log de la app (RNF-14.2)', async () => {
+  it('con el servicio andando, la causa de una falta de base queda en el log, con el id de la solicitud (RNF-14.8)', async () => {
     const proxy = await crearProxy(base.urlBd);
     onTestFinished(() => proxy.terminar());
     const puerto = await puertoLibre();
@@ -455,7 +455,8 @@ describe('arranque normal (RNF-05.2)', () => {
     expect(errores(logs.lineas())).toEqual([
       expect.objectContaining({
         msg: 'La base de datos no está disponible',
-        err: expect.objectContaining({ codigo: 'ECONNREFUSED' }),
+        idCorrelacion: respuesta.headers.get('x-request-id'),
+        err: expect.objectContaining({ causa: expect.objectContaining({ codigo: 'ECONNREFUSED' }) }),
       }),
     ]);
   });

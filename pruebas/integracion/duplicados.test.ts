@@ -175,15 +175,20 @@ describe('consultar() sobre una base real (RNF-08.1, RNF-14.2)', () => {
       expect(duracion).toBeLessThan(TIEMPO_BD_MS + MARGEN_MS);
     });
 
-    it('registra la causa, una sola vez, y no como un error interno', async () => {
+    // Desde T41 la registra el manejador de errores, con el id de la solicitud (RNF-14.8), y no `consultar()`.
+    it('registra la causa una sola vez, con el id de la solicitud, y no como un error interno', async () => {
       const { app, logs } = crear();
 
-      await app.inject({ method: 'GET', url: '/pruebas/tarda' });
+      const respuesta = await app.inject({ method: 'GET', url: '/pruebas/tarda' });
 
-      expect(registros).toHaveLength(1);
-      expect(registros[0]?.error).toBeInstanceOf(Error);
-      expect(registros[0]?.mensaje).toEqual(expect.any(String));
-      expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([]);
+      expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([
+        expect.objectContaining({
+          msg: 'La base de datos no está disponible',
+          idCorrelacion: respuesta.headers['x-request-id'],
+          err: expect.objectContaining({ tipo: 'BaseNoDisponible', causa: expect.objectContaining({ tipo: expect.any(String) }) }),
+        }),
+      ]);
+      expect(registros).toEqual([]);
     });
 
     it('el pool sigue sirviendo: la consulta siguiente sale bien', async () => {
@@ -205,16 +210,21 @@ describe('consultar() sobre una base real (RNF-08.1, RNF-14.2)', () => {
   });
 
   describe('la base que corta la conexión (RNF-14.2)', () => {
-    it('una consulta en curso que la base corta da 503 y registra la causa', async () => {
-      const { app } = crear();
-      const respuesta = app.inject({ method: 'GET', url: '/pruebas/tarda' });
+    it('una consulta en curso que la base corta da 503 y registra la causa con el id de la solicitud', async () => {
+      const { app, logs } = crear();
+      const respuesta = app.inject({ method: 'GET', url: '/pruebas/tarda', headers: { 'x-request-id': 'la-cortada' } });
 
       // El pool abre su conexión y manda la consulta: hasta entonces no hay sesión que cortar.
       await vi.waitFor(async () => expect(await cortarSesiones(`query LIKE '%pg_sleep%'`)).toBe(1));
 
       expect((await respuesta).statusCode).toBe(503);
-      expect(registros).toHaveLength(1);
-      expect(registros[0]?.error).toMatchObject({ code: '57P01' });
+      expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([
+        expect.objectContaining({
+          idCorrelacion: 'la-cortada',
+          err: expect.objectContaining({ causa: expect.objectContaining({ codigo: '57P01' }) }),
+        }),
+      ]);
+      expect(registros).toEqual([]);
     });
 
     // Sin un oyente de 'error' en el pool, esto tira el proceso: Vitest lo cuenta como error de la corrida.
