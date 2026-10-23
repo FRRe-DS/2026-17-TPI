@@ -31,6 +31,9 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - RF-2.1.3.1: SI no existe el perfil pedido para consultar o actualizar, ENTONCES EL SISTEMA responde `404`.
 - RF-2.6: CUANDO un CLIENTE consulta su cuenta, un OPERADOR consulta una cuenta o un SERVICIO consulta una cuenta existente, EL SISTEMA responde `200` con `ACTIVO` si no tiene bloqueos vigentes o `BLOQUEADO` si tiene al menos uno, e incluye todos los bloqueos vigentes.
 - RF-2.6.1: CUANDO un OPERADOR registra un bloqueo con motivo y fin opcional válidos para un cliente existente, EL SISTEMA conserva el `sub` del operador, crea el bloqueo, responde `201` y devuelve una cabecera `Location`.
+- RF-2.6.1.1: SI el `hasta` de un bloqueo nuevo es igual o anterior al instante de creación que fija la base, ENTONCES EL SISTEMA responde `422` con `type: /errores/bloqueo-vencido` sin crear el bloqueo.
+- RF-2.6.1.2: SI el `hasta` de un bloqueo nuevo, expresado en UTC, cae después del año 9999, ENTONCES EL SISTEMA responde `422` con `type: /errores/bloqueo-hasta-fuera-de-rango` sin crear el bloqueo.
+- RF-2.6.1.3: CUANDO un OPERADOR repite un alta de bloqueo que ya respondió `201`, con la misma `Idempotency-Key`, el mismo cliente y el mismo cuerpo, EL SISTEMA devuelve la respuesta original, aunque su `hasta` ya haya pasado.
 - RF-2.6.2: CUANDO un OPERADOR lista los bloqueos de un cliente existente, EL SISTEMA devuelve una página ordenada del más nuevo al más antiguo y permite filtrar por vigencia; CUANDO consulta un bloqueo del cliente, EL SISTEMA devuelve ese bloqueo.
 - RF-2.6.3: CUANDO un OPERADOR levanta un bloqueo vigente con un motivo válido, EL SISTEMA registra quién, cuándo y por qué lo levantó sin borrar el registro y responde `200`.
 - RF-2.6.3.1: SI el bloqueo ya está levantado o vencido, ENTONCES EL SISTEMA responde `409` sin modificarlo.
@@ -56,6 +59,10 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 - Repetir un POST con la misma `Idempotency-Key` y el mismo cuerpo devuelve la respuesta original; reutilizarla con otro cuerpo responde `422`.
 - Un `PATCH` vacío o con campos desconocidos responde `400` por el contrato y no cambia el perfil.
 - Crear un bloqueo con `hasta` igual o anterior al instante de creación responde `422` con `type: /errores/bloqueo-vencido`.
+- Un bloqueo nuevo para un cliente sin perfil responde `404`, aunque su `hasta` ya haya pasado: el cliente se comprueba antes que la fecha.
+- Un `hasta` anterior al año 0001, que el formato del contrato admite (año `0000`), es una fecha pasada como cualquier otra: `404` si el cliente no existe y, si existe, `422` con `type: /errores/bloqueo-vencido`.
+- Un `hasta` que en UTC cae después del año 9999 (por ejemplo `9999-12-31T23:00:00-05:00`) responde `422` con `type: /errores/bloqueo-hasta-fuera-de-rango` sin consultar la base, como las demás validaciones de la solicitud: no podría devolverse en el formato `date-time` del contrato.
+- Repetir un alta de bloqueo ya creada después de que venció su `hasta` devuelve la respuesta original (`201`, mismo cuerpo y `Location`), no un `422`; con otro cuerpo, sigue respondiendo `422` con `type: /errores/idempotencia-reutilizada`.
 - Un bloqueo con `hasta` igual o anterior al instante de consulta no está vigente, pero permanece en el historial.
 - Puede haber varios bloqueos vigentes simultáneos; levantar uno no activa la cuenta si queda otro vigente.
 - Un bloqueo vencido naturalmente no se considera levantado: conserva `levantadoEn`, `levantadoPor` y `motivoLevantamiento` ausentes, y levantarlo responde `409` con `type: /errores/bloqueo-no-vigente`.
@@ -78,10 +85,12 @@ Esta spec cubre RF-2.1 y RF-2.6 del issue #4. Depende de la base del servicio (#
 
 ## Decisiones
 - El estado no se edita: se deriva al consultar a partir de los bloqueos vigentes, para evitar que un campo guardado contradiga el historial.
-- Un bloqueo es vigente cuando no fue levantado y `hasta` es nulo o posterior al instante de consulta. La base, y no el reloj del cliente, decide ese instante.
+- Un bloqueo es vigente cuando no fue levantado y `hasta` es nulo o posterior al instante de consulta. La base, y no el reloj del cliente ni el del servicio, decide ese instante; también el instante de creación con el que se compara el `hasta` de un bloqueo nuevo.
+- La idempotencia se resuelve antes que las reglas que dependen del momento en que llega la solicitud: si no, repetir un alta ya hecha podría dar un resultado distinto del original (RNF-08). Antes de ella solo se rechaza lo que nunca podría haberse creado, como un `hasta` posterior al año 9999.
+- El año 9999 es el límite porque el formato `date-time` del contrato (RFC 3339) tiene años de cuatro cifras: un bloqueo con un `hasta` posterior no se podría devolver.
 - El campo opcional `desde` de cada bloqueo se devuelve con el valor de `creadoEn`; no se agrega una segunda fecha que pueda divergir del instante de creación.
 - Los listados se ordenan de forma estable por `creadoEn` descendente y luego por identificador descendente.
-- Los errores de dominio usan `type: /errores/perfil-ya-existe`, `type: /errores/idempotencia-reutilizada`, `type: /errores/bloqueo-ya-levantado`, `type: /errores/bloqueo-vencido` y `type: /errores/bloqueo-no-vigente`, nombres estables, relativos y específicos para que quien consume la API pueda distinguirlos.
+- Los errores de dominio usan `type: /errores/perfil-ya-existe`, `type: /errores/idempotencia-reutilizada`, `type: /errores/bloqueo-ya-levantado`, `type: /errores/bloqueo-vencido`, `type: /errores/bloqueo-hasta-fuera-de-rango` y `type: /errores/bloqueo-no-vigente`, nombres estables, relativos y específicos para que quien consume la API pueda distinguirlos.
 
 ## Dudas abiertas
 Ninguna.
