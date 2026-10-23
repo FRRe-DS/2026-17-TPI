@@ -14,8 +14,8 @@ const SCHEMATHESIS = 'schemathesis/schemathesis:4.31.1';
 const SUB_PRUEBA = '00000000-0000-4000-8000-000000000001';
 const ROLES_PRUEBA = 'CLIENTE,CONDUCTOR,OPERADOR,SERVICIO';
 
-// El puerto que publica docker-compose.yml, con su mismo valor por defecto.
-const PUERTO = process.env.M2_PUERTO ?? '8082';
+// El puerto que publica docker-compose.yml, con su mismo valor por defecto, también si la variable está vacía (`:-`).
+const PUERTO = process.env.M2_PUERTO || '8082';
 const URL_SERVICIO = `http://localhost:${PUERTO}`;
 
 // docker compose busca el proyecto en la raíz del repositorio, aunque el script se corra desde otro directorio.

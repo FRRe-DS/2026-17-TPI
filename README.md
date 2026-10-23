@@ -39,7 +39,7 @@ Mientras no exista M1, los tokens los firma el comando de [Generar un token](#ge
 
 ## Requisitos
 
-- Node.js 24.2 o más nuevo (con `nvm`: `nvm use 24`). Node 20 está fuera de soporte.
+- Node.js 24, desde la 24.2 (con `nvm`: `nvm use 24`). Node 20 está fuera de soporte.
 - Docker con compose v2, usable sin `sudo` (la persona tiene que estar en el grupo `docker`). Lo necesitan el servicio y las pruebas de integración.
 
 ## Levantar el servicio
@@ -159,9 +159,9 @@ M2_PUERTO=9090 docker compose up -d --build --wait
 | `M2_TIEMPO_MODULOS_MS` | no | `2000` | Espera máxima por intento a otro módulo, en milisegundos (de 1 a 2147483647) |
 | `M2_REINTENTOS_MODULOS` | no | `1` | Reintentos de una lectura a otro módulo, de 0 a 5 |
 | `M2_ENCABEZADO_CORRELACION` | no | `X-Request-Id` | Nombre del encabezado de correlación |
-| `POSTGRES_USER` | solo para la base | `m2` | Usuario que crea la imagen de PostgreSQL |
-| `POSTGRES_PASSWORD` | solo para la base | `m2-contrasena-de-desarrollo` | Contraseña de ese usuario |
-| `POSTGRES_DB` | solo para la base | `m2` | Base que se crea al inicializar |
+| `POSTGRES_USER` | solo para la base | el de `ejemplo.env` | Usuario que crea la imagen de PostgreSQL |
+| `POSTGRES_PASSWORD` | solo para la base | el de `ejemplo.env` | Contraseña de ese usuario |
+| `POSTGRES_DB` | solo para la base | el de `ejemplo.env` | Base que se crea al inicializar |
 
 Dos cuidados con la base:
 

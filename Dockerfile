@@ -13,7 +13,7 @@ FROM node:24.22.0-trixie-slim
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json ./
-# Exactamente según el lockfile y solo lo de producción. `--ignore-scripts` evita correr el prebuild, que no existe en la imagen.
+# Exactamente según el lockfile y solo lo de producción. `--ignore-scripts` impide que una dependencia corra scripts al instalarse.
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=construccion /app/dist ./dist
 COPY --from=construccion /app/contrato ./contrato

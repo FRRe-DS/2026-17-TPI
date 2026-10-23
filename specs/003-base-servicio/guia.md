@@ -43,6 +43,13 @@ docker compose logs m2 | grep prueba-1                              # la línea 
 npm test && npm run contrato:test
 ```
 
+**Preguntas de comprobación** (la respuesta, entre paréntesis, dice dónde buscarla):
+1. Llega `POST /no-existe` sin token y con un cuerpo roto mientras el servicio se está deteniendo: ¿qué código responde y por qué ese y no otro? (RNF-03.5 y el orden de los hooks en `construirApp`).
+2. ¿Qué hace que `GET /health` no pida token, y qué pasaría si el contrato la sacara? (`security: []` en el contrato; `registrarOperaciones`; T39).
+3. Una spec nueva suma una operación al contrato, pero todavía no su manejador: ¿qué responde el servicio a esa ruta y qué informa `npm run contrato:test`? (RNF-03.4 y RNF-07.2; `listarOperaciones`).
+4. Con la base colgada, ¿cuánto tarda `GET /health` en responder, qué responde y dónde queda la causa? (RNF-14.2 y RNF-14.8; `conTiempoMaximo` y `responderProblema`).
+5. ¿Por qué el healthcheck de `bd` en `docker-compose.yml` usa TCP y no el socket? (plan, «Trampas verificadas», imagen `postgres:18.6`).
+
 ## Tareas
 
 ### T1 — Crear el proyecto · commit `003/T1`
