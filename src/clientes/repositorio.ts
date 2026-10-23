@@ -102,8 +102,8 @@ export async function obtenerEstadoCuenta(consultar: Consultar, clienteId: strin
   return aEstadoCuenta(clienteId, rows.filter((fila) => fila.bloqueo_id !== null) as FilaBloqueo[]);
 }
 
-// Si existe el perfil de `clienteId`; si no, `NoEncontrado`.
-async function exigirPerfil(consultar: Consultar, clienteId: string): Promise<void> {
+// Si existe el perfil de `clienteId`; si no, `NoEncontrado`. También lo usa el alta de direcciones (spec 005).
+export async function exigirPerfil(consultar: Consultar, clienteId: string): Promise<void> {
   const { rowCount } = await consultar('SELECT 1 FROM clientes WHERE cliente_id = $1', [clienteId]);
   if (rowCount === 0) throw new NoEncontrado(NO_EXISTE);
 }

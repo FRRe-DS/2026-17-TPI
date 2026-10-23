@@ -17,3 +17,7 @@ checks.positive_data_acceptance.expected-statuses = ["2xx", "3xx", 401, 403, 404
 [[operations]]
 include-operation-id = "crearBloqueo"
 checks.positive_data_acceptance.expected-statuses = ["2xx", "3xx", 401, 403, 404, 409, 422, 429, "5xx"]
+
+[[operations]]
+include-operation-id = "crearDireccion"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "3xx", 401, 403, 404, 409, 422, 429, "5xx"]
