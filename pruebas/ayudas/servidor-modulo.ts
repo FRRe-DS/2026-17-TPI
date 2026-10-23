@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { type AddressInfo } from 'node:net';
 
-type Comportamiento =
+export type Comportamiento =
   | { tipo: 'ok'; estado?: number; cuerpo?: unknown }
   | { tipo: 'demora-cuerpo'; retardoMs: number; estado?: number; cuerpo?: unknown }
   | { tipo: '4xx'; estado: number; cuerpo?: unknown }
@@ -10,13 +10,17 @@ type Comportamiento =
   | { tipo: 'corta' };
 
 export function crearServidorModulo() {
-  let comportamiento: Comportamiento = { tipo: 'ok' };
+  // Uno por llamada, en orden; cuando se acaban, sigue valiendo el último.
+  let comportamientos: Comportamiento[] = [{ tipo: 'ok' }];
   let llamadas = 0;
+  // La hora de cada llamada, para medir la pausa entre intentos.
+  const momentos: number[] = [];
   const encabezadosRecibidos = new Map<string, string>();
   const timers: ReturnType<typeof setTimeout>[] = [];
 
   const servidor = createServer((req: IncomingMessage, res: ServerResponse) => {
     llamadas++;
+    momentos.push(Date.now());
     encabezadosRecibidos.clear();
     for (const [clave, valor] of Object.entries(req.headers)) {
       if (typeof valor === 'string') encabezadosRecibidos.set(clave.toLowerCase(), valor);
@@ -24,7 +28,7 @@ export function crearServidorModulo() {
 
     res.on('error', () => {});
 
-    const c = comportamiento;
+    const c = comportamientos[Math.min(llamadas, comportamientos.length) - 1]!;
     if (c.tipo === 'ok') {
       const cuerpo = JSON.stringify(c.cuerpo ?? { ok: true });
       res.writeHead(c.estado ?? 200, { 'Content-Type': 'application/json' });
@@ -67,12 +71,17 @@ export function crearServidorModulo() {
     get llamadas(): number {
       return llamadas;
     },
+    get momentos(): number[] {
+      return momentos;
+    },
     get encabezadosRecibidos(): Map<string, string> {
       return encabezadosRecibidos;
     },
-    responderCon(c: Comportamiento): void {
-      comportamiento = c;
+    // Un comportamiento para todas las llamadas, o una lista: uno por llamada y el último para las que siguen.
+    responderCon(c: Comportamiento | Comportamiento[]): void {
+      comportamientos = Array.isArray(c) ? c : [c];
       llamadas = 0;
+      momentos.length = 0;
     },
     async cerrar(): Promise<void> {
       for (const t of timers) clearTimeout(t);
