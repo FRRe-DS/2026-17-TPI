@@ -12,6 +12,8 @@ export default defineConfig([
     // Solo el script de la prueba de contrato, que es nuestro. Los globales de Node van a mano para no sumar una dependencia.
     files: ['scripts/contrato-test.mjs'],
     extends: [js.configs.recommended],
-    languageOptions: { globals: { console: 'readonly', process: 'readonly', URL: 'readonly' } },
+    languageOptions: {
+      globals: { AbortSignal: 'readonly', console: 'readonly', fetch: 'readonly', process: 'readonly', URL: 'readonly' },
+    },
   },
 ]);

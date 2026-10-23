@@ -1206,3 +1206,19 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Las tres fallas cortan en segundos y no en el tope de 2 minutos: `m2` sale con 1 antes de tener healthcheck, y `--wait` lo toma como falla en cuanto el contenedor sale. El tope de 2 minutos recién importaría si el servicio quedara vivo pero sin ponerse sano (`start_period` de 30 s más 6 reintentos de 5 s, unos 60 s como mucho): no es un caso que esta tarea provoque.
   - La causa de la falla de la base sale como el mensaje del error de `pg` o de red, no como un motivo con nombre: sirve para diagnosticar, y la contraseña se quita porque `registrarErrorInterno` y el serializador pasan por `limpiarSecretos`.
   - Se midió con la imagen ya construida: en frío, el `docker compose up --build` suma lo que tarda `npm ci` (T26, 47 s).
+
+### T29 — Prueba de contrato con token del contenedor y Schemathesis, pasos 4 a 6 · commit `003/T29`
+- Qué cambió: `scripts/contrato-test.mjs` suma los pasos 4 a 6 del plan (Contrato). Si hay operaciones implementadas, comprueba que el servicio responde en `http://localhost:<M2_PUERTO o 8082>/health`, pide el token con `docker compose exec -T m2 node dist/herramientas/token.js` (con `cwd` en la raíz del repositorio) y corre `schemathesis/schemathesis:4.31.1` con `--network host`, la carpeta del contrato montada de solo lectura, un `--include-operation-id` por implementada y el `Authorization` con el token; termina con el código de Schemathesis. Sin implementadas, sigue igual: «nada para probar» y 0. Se quitó el aviso «llega con la tarea T29». `eslint.config.mjs` suma `fetch` y `AbortSignal` a los globales del script.
+- Por qué así: el plan da los comandos tal cual. El chequeo de `/health` va antes del token para dar un mensaje claro («Levántalo con `docker compose up -d --build --wait`») en vez del error de `docker compose exec`. El token no se imprime; Schemathesis hereda la salida, así que su informe se ve completo. Si lo corta una señal, cuenta como 1.
+- Cómo se conecta: T30 corre `npm run contrato:test` en el job `contract-test`, después de `docker compose up -d --build --wait`; T31 lo documenta en el README. Las specs #4 a #8 no tocan el script: cada manejador nuevo entra solo en la lista de implementadas y en el `--include-operation-id`.
+- Tests (a mano, con el servicio levantado por compose, el 2026-10-22; en rojo antes del cambio: con `contrato-salud.yml` listaba `verificarSalud` y avisaba, sin correr Schemathesis):
+  - `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml`: Schemathesis «Selected: 1/1», «No issues found», código 0.
+  - Con una copia de ese contrato con `const: otro` en `Salud.estado`: «Response violates schema», «1 failure», y `node scripts/contrato-test.mjs` termina con 1, el mismo código que da Schemathesis corrido a mano con ese contrato.
+  - `npm run contrato:test` (el v1 de `main`): 20 operaciones, 1 implementada y 19 pendientes; Schemathesis «Selected: 1/20», «No issues found» (109 casos en la corrida a mano previa), código 0.
+  - Con un contrato con solo `info`: «nada para probar», código 0, sin Docker.
+  - Con `M2_PUERTO=9999` (nada escucha): «El servicio no responde…», código 1.
+  - `npm run lint`, `npm run build` y `npm test` (2101) en verde.
+- Para mirar con atención:
+  - El token va en los argumentos de `docker run` y se ve en la lista de procesos mientras corre Schemathesis. Es un token de desarrollo firmado con la clave de `ejemplo.env`; el plan lo pide así y el script no lo escribe en ningún log.
+  - La URL es `localhost` con `--network host`: anda en Linux (local y CI). En Docker Desktop (macOS o Windows) `--network host` no comparte la red del host de la misma forma; si alguien del grupo corre la prueba ahí, hay que revisarlo.
+  - Schemathesis usa 1 para «encontró fallas», el mismo código que el script usa para «no se pudo leer algo»: el mensaje distingue los dos casos, el código no.
