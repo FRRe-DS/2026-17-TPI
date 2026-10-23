@@ -96,3 +96,23 @@
   - El servicio confía en que `registrarPermisos` ya rechazó los tokens sin un rol admitido, igual que en la 004: un OPERADOR solo, llamando directo a `crearDireccion` sin pasar por HTTP, no tendría rol efectivo y no se le exigiría propiedad. Por HTTP no llega (403 de `autorizar`); lo comprobará T6.
   - `idempotencias` tiene un CHECK que exige `cliente_id` para `crearBloqueo`, pero no para `crearDireccion`. El código siempre lo pone; sumar el CHECK sería un cambio de esquema que no pide la spec.
 
+### T6 — Exponer y registrar las cinco operaciones del contrato · commit `005/T6`
+- Qué cambió:
+  - [src/direcciones/operaciones.ts](../../src/direcciones/operaciones.ts): los cinco manejadores (`listarDirecciones`, `crearDireccion`, `obtenerDireccion`, `actualizarDireccion`, `eliminarDireccion`). Leen la solicitud ya validada, llaman al servicio de T5 y arman la respuesta: el 201 con `Location` y el 204 sin cuerpo.
+  - [src/operaciones/index.ts](../../src/operaciones/index.ts): los registra por `operationId`, en el orden del contrato. Con eso `registrarOperaciones` crea las cinco rutas, con la validación y los roles que salen del OpenAPI (RNF-03).
+  - [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts), [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts): las listas fijas de operaciones implementadas suman las cinco. En el primero, un ejemplo de operación *pendiente* usaba `listarDirecciones`; ahora usa `listarCalificaciones`, que el servicio sigue sin implementar.
+- Por qué así: mismo molde que [src/clientes/operaciones.ts](../../src/clientes/operaciones.ts). Los manejadores no validan ni autorizan: el contrato ya lo hizo, y la propiedad la exige el servicio con los roles que el contrato da a la operación (`request.routeOptions.config.permisos`). No escriben logs, así que el texto, el alias, las coordenadas y la clave de idempotencia no salen de ahí (RNF-19). `identidadDe()` y `rolesDe()` se repiten de los de perfil en vez de compartirse: son tres líneas y así cada spec queda independiente.
+- Cómo se conecta: es el último eslabón; la petición pasa por `autorizar` (401 y 403 por el rol) → validación del contrato (400) → manejador → servicio (403 por propiedad, 404, 422) → repositorio. T7 corre además la prueba de contrato (`npm run contrato:test`).
+- Tests:
+  - [pruebas/http/direcciones.test.ts](../../pruebas/http/direcciones.test.ts), sin base (el pool falso falla si se consulta):
+    - 401 en las cinco; 403 por el rol para SERVICIO y CONDUCTOR, y para OPERADOR en las tres escrituras;
+    - 403 por propiedad en las cinco, también para CLIENTE+OPERADOR en las escrituras, sin ids en el detalle; el 403 va antes que los errores del cuerpo y la ruta;
+    - 400 para 19 cuerpos de alta inválidos, 11 de PATCH y 7 consultas del listado, y para ids que no son UUID; el 400 no devuelve texto, alias ni coordenadas;
+    - 405.
+  - [pruebas/integracion/direcciones-http.test.ts](../../pruebas/integracion/direcciones-http.test.ts), con PostgreSQL real: 201 con `Location` que se puede seguir, solo con lo obligatorio, caracteres especiales, U+0000 (400 y no 500); idempotencia repetida, con otro cuerpo (422 con `/errores/idempotencia-reutilizada`) y concurrente; alta sin perfil (404 y luego 201 con la misma clave); listado con filtro, páginas, página fuera del total y vacío; lectura por dueño, OPERADOR y CLIENTE+OPERADOR; PATCH mínimo y completo; DELETE con 204 sin cuerpo ni `Content-Type`, repetido (404), de otro cliente (404); y los logs, con datos ficticios reconocibles, sin ninguno de ellos ni la clave ni `Bearer`.
+  - En rojo primero: no existía `src/direcciones/operaciones.js`.
+- Para mirar con atención:
+  - El 403 por propiedad lleva en `instance` la ruta pedida, que contiene el `clienteId` de la URL. No es una filtración (es lo que mandó quien llama); lo que se comprueba es que el detalle no lleve ningún id.
+  - `manejadores` tiene que seguir el orden del contrato: una prueba de [pruebas/unitarias/contrato-test.test.ts](../../pruebas/unitarias/contrato-test.test.ts) compara ese orden con el de `listarOperaciones()`.
+  - La prueba de contrato con Schemathesis (`npm run contrato:test`) todavía no se corrió para estas cinco: es la T7.
+

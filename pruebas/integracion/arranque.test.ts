@@ -416,7 +416,7 @@ describe('arranque normal (RNF-05.2)', () => {
     }
   });
 
-  it('con el contrato del repositorio, reconoce como implementadas las ocho operaciones de la spec 004', async () => {
+  it('con el contrato del repositorio, reconoce como implementadas las de las specs 004 y 005', async () => {
     const { logs, arranque } = arrancarParaProbar(entorno(base.urlBd, await puertoLibre()));
     await arranque;
 
@@ -425,12 +425,17 @@ describe('arranque normal (RNF-05.2)', () => {
     expect(implementadas).toEqual(
       [
         'actualizarCliente',
+        'actualizarDireccion',
         'crearBloqueo',
         'crearCliente',
+        'crearDireccion',
+        'eliminarDireccion',
         'levantarBloqueo',
         'listarBloqueos',
+        'listarDirecciones',
         'obtenerBloqueo',
         'obtenerCliente',
+        'obtenerDireccion',
         'obtenerEstadoCuenta',
         'verificarSalud',
       ].sort(),
@@ -442,8 +447,8 @@ describe('arranque normal (RNF-05.2)', () => {
       contratoConSalud(
         {},
         {
-          '/clientes/{clienteId}/direcciones': {
-            get: { operationId: 'listarDirecciones', responses: { 200: { description: 'Las direcciones' } } },
+          '/clientes/{clienteId}/calificaciones': {
+            get: { operationId: 'listarCalificaciones', responses: { 200: { description: 'Las calificaciones' } } },
           },
           '/clientes': { post: { responses: { 201: { description: 'Creado' } } } },
         },
@@ -456,7 +461,7 @@ describe('arranque normal (RNF-05.2)', () => {
     expect({ implementadas: linea?.implementadas, pendientes: linea?.pendientes }).toEqual({
       implementadas: [{ operationId: 'verificarSalud', metodo: 'GET', ruta: '/health' }],
       pendientes: [
-        { operationId: 'listarDirecciones', metodo: 'GET', ruta: '/clientes/{clienteId}/direcciones' },
+        { operationId: 'listarCalificaciones', metodo: 'GET', ruta: '/clientes/{clienteId}/calificaciones' },
         { metodo: 'POST', ruta: '/clientes' },
       ],
     });
