@@ -11,22 +11,26 @@ Se agregan persistencia y manejadores para el perfil y los bloqueos. El estado d
 |---|---|---|
 | `migraciones/<marca>_perfil_bloqueos.sql` | Tablas, índices, restricciones e idempotencia | RF-2.1, RF-2.6.1, RNF-05, RNF-08 |
 | `src/bd/transaccion.ts` | Transacciones con tiempo máximo y clasificación de errores | RNF-08 |
+| `src/bd/idempotencia.ts` | `conIdempotencia()`: idempotencia transaccional reutilizable (también la usa la spec 005) | RF-2.1, RF-2.6.1, RF-2.6.1.3, RNF-08 |
 | `src/clientes/modelo.ts` | Tipos de dominio y transformaciones de filas | RF-2.1, RF-2.6 |
 | `src/clientes/repositorio.ts` | Consultas y transacciones de perfiles/bloqueos | RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RF-2.6 a RF-2.6.4 |
-| `src/clientes/servicio.ts` | Rol efectivo, propiedad, vigencia, idempotencia y reglas de negocio | RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RF-2.6 a RF-2.6.4, RNF-08 |
+| `src/clientes/servicio.ts` | Rol efectivo, propiedad, vigencia, idempotencia y reglas de negocio | RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RF-2.6 a RF-2.6.4 (con RF-2.6.1.1 a RF-2.6.1.3), RNF-08 |
 | `src/clientes/operaciones.ts` | Manejadores HTTP de los ocho `operationId` | RNF-03 |
 | `src/operaciones/index.ts` | Registra los nuevos manejadores | RNF-03 |
-| `src/errores.ts` | Errores de dominio acordados | RF-2.1.3, RF-2.6.3 |
+| `src/errores.ts` | Errores de dominio acordados | RF-2.1.3, RF-2.6.1.1, RF-2.6.1.2, RF-2.6.3 |
 | `pruebas/unitarias/clientes.test.ts` | Vigencia, propiedad, paginación y mapeo | RF-2.1.1, RF-2.6, RF-2.6.2, RF-2.6.4 |
 | `pruebas/integracion/clientes.test.ts` | Persistencia, transacciones y concurrencia | RNF-05, RNF-08 |
-| `pruebas/http/clientes.test.ts` | Operaciones, roles, códigos y cuerpos | RF-2.1 a RF-2.6.4, RNF-03 |
+| `pruebas/http/clientes.test.ts` | Operaciones, roles, códigos y cuerpos, sin base | RF-2.1 a RF-2.6.4, RNF-03 |
+| `pruebas/integracion/clientes-http.test.ts` | Las operaciones por HTTP con PostgreSQL real | RF-2.1 a RF-2.6.4, RNF-03, RNF-08, RNF-19 |
+| `pruebas/http/roles-clientes.test.ts` | Matriz de roles efectivos de las ocho operaciones | RF-2.1.1.1, RF-2.1.2.1, RF-2.6, RNF-03 |
+| `schemathesis.toml` | Ajuste acotado de la prueba de contrato (422 solo donde el contrato lo declara) | RNF-07 |
 | `specs/004-perfil-estado-cuenta/guia.md` | Mapa y uso de la funcionalidad | RNF-20 |
 
 ## Contrato
 - Se implementan `crearCliente`, `obtenerCliente`, `actualizarCliente`, `obtenerEstadoCuenta`, `listarBloqueos`, `crearBloqueo`, `obtenerBloqueo` y `levantarBloqueo`.
 - `src/operaciones/index.ts` solo asocia cada `operationId` con su manejador. Las rutas, validaciones y autorizaciones por rol siguen saliendo del OpenAPI, según ADR 003.
 - Se calcula `rolesEfectivos = rolesDelToken ∩ rolesDeLaOperacion`; `sub = clienteId` se exige únicamente si ese conjunto es `[CLIENTE]`. OPERADOR puede leer perfiles y administrar bloqueos. SERVICIO solo llega a `obtenerEstadoCuenta` porque las demás rutas no admiten ese rol.
-- Los errores genéricos conservan `about:blank`. Los errores de dominio usan `/errores/perfil-ya-existe`, `/errores/idempotencia-reutilizada`, `/errores/bloqueo-ya-levantado`, `/errores/bloqueo-vencido` y `/errores/bloqueo-no-vigente`, sin cambiar los códigos declarados por el contrato.
+- Los errores genéricos conservan `about:blank`. Los errores de dominio usan `/errores/perfil-ya-existe`, `/errores/idempotencia-reutilizada`, `/errores/bloqueo-ya-levantado`, `/errores/bloqueo-vencido`, `/errores/bloqueo-hasta-fuera-de-rango` y `/errores/bloqueo-no-vigente`, sin cambiar los códigos declarados por el contrato.
 
 ## Datos
 
@@ -44,7 +48,7 @@ No se guarda `estado`: se calcula con `EXISTS` sobre bloqueos vigentes. La clave
 - `bloqueo_id uuid PRIMARY KEY`, generado por M2.
 - `cliente_id uuid NOT NULL REFERENCES clientes(cliente_id)`.
 - `motivo varchar(500) NOT NULL` y no vacío.
-- `hasta timestamptz NULL`, validada antes de insertar para que sea posterior al instante de la transacción.
+- `hasta timestamptz NULL`. Que sea posterior al instante de creación lo comprueba el mismo `INSERT`, condicionado a `hasta > clock_timestamp()` (el valor de `creado_en`), y no el reloj del servicio (RF-2.6.1.1).
 - `creado_en timestamptz NOT NULL DEFAULT clock_timestamp()`, `creado_por text NOT NULL`.
 - El campo `desde` que expone el contrato se mapea a `creado_en`; no se persiste otra marca temporal.
 - `levantado_en timestamptz NULL`, `levantado_por text NULL`, `motivo_levantamiento varchar(500) NULL`.
@@ -83,6 +87,21 @@ estado = existe(vigente) ? BLOQUEADO : ACTIVO
 4. Ejecutar el alta, guardar la respuesta y confirmar.
 5. La restricción única sigue protegiendo el perfil cuando distintas claves compiten por el mismo `clienteId`.
 
+### Crear bloqueo: orden de las reglas (RF-2.6.1.1 a RF-2.6.1.3)
+1. El contrato valida la solicitud (400).
+2. El servicio pasa `hasta` a UTC (`instanteUtc`). Si cae después del año 9999, `BloqueoHastaFueraDeRango` (422, `/errores/bloqueo-hasta-fuera-de-rango`) sin ir a la base: no depende del momento, así que ninguna repetición pudo haber dado 201. Si cae antes del año 0001, va a la base como `-infinity`, que PostgreSQL acepta en `timestamptz` y es anterior a cualquier instante. No hay ninguna comparación con `Date.now()`.
+3. `conIdempotencia()`: la misma clave, cliente y cuerpo devuelven la respuesta guardada, aunque `hasta` ya haya pasado (RF-2.6.1.3); otro cuerpo, 422 `idempotencia-reutilizada`.
+4. Dentro del alta, el repositorio comprueba el perfil (404) y después hace el `INSERT` condicional. Si no inserta, `BloqueoVencido` (422); el error deshace la transacción, y con ella la reserva de la clave.
+
+```text
+crearBloqueo(hasta):
+  si hasta > 9999-12-31T23:59:59.999Z (UTC) → 422 bloqueo-hasta-fuera-de-rango
+  enBase = hasta < 0001-01-01T00:00:00Z ? '-infinity' : ISO UTC de hasta
+  conIdempotencia(clave, cliente, cuerpo):
+    exigirPerfil → 404
+    INSERT … WHERE hasta IS NULL OR hasta > clock_timestamp() → sin fila: 422 bloqueo-vencido
+```
+
 ### Levantar bloqueo
 Un `UPDATE ... WHERE cliente_id = $1 AND bloqueo_id = $2 AND levantado_en IS NULL AND (hasta IS NULL OR hasta > CURRENT_TIMESTAMP)` guarda los tres datos de levantamiento. Si no cambia filas, una lectura distingue 404, 409 por ya levantado y 409 por vencido. La operación no borra ni altera el motivo original.
 
@@ -94,6 +113,7 @@ Se limita con `LIMIT size OFFSET page * size`; el total se cuenta con el mismo f
 - HTTP: las ocho operaciones; 201/200/404/409/422; `Location`; PATCH parcial; filtro `vigente`; tokens CLIENTE+OPERADOR; SERVICIO rechazado fuera de estado de cuenta; respuestas problem+json.
 - Integración: migración up/down; transacciones; perfil único bajo concurrencia; idempotencia igual/diferente, concurrente y entre dos clientes; bloqueo con `hasta` pasada; actualización sin perder campos; historial conservado; levantamiento concurrente o vencido; estado y lista de vigentes consistentes.
 - Contrato: las ocho operaciones dejan de figurar pendientes y Schemathesis las prueba contra el servicio levantado.
+- Orden de las reglas de `crearBloqueo`: alta con `hasta` cercana, repetida con la misma clave cuando ya venció, devuelve el mismo 201 y no crea otro bloqueo; con otro cuerpo, 422 `idempotencia-reutilizada`; cliente sin perfil con `hasta` pasada (también del año `0000`), 404; año `0000` con perfil, 422 `bloqueo-vencido`; después del año 9999, 422 `bloqueo-hasta-fuera-de-rango`.
 - Al registrar los nuevos manejadores, se actualiza `pruebas/integracion/arranque.test.ts`, que inicialmente espera que la única operación implementada sea `verificarSalud`.
 
 ## Trazabilidad
@@ -102,6 +122,7 @@ Se limita con `LIMIT size OFFSET page * size`; el total se cuenta con el mismo f
 |---|---|
 | RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1 | Tabla `clientes`, servicio, manejadores y pruebas HTTP/integración |
 | RF-2.6, RF-2.6.1, RF-2.6.2, RF-2.6.3, RF-2.6.3.1, RF-2.6.4 | Tabla `bloqueos_cliente`, consultas de vigencia, operaciones y pruebas |
+| RF-2.6.1.1, RF-2.6.1.2, RF-2.6.1.3 | «Crear bloqueo: orden de las reglas»: `INSERT` condicional, `BloqueoHastaFueraDeRango` antes de la idempotencia y repetición idempotente; pruebas HTTP con base |
 | RNF-03 | Registro desde OpenAPI, errores y prueba de contrato |
 | RNF-05 | Migración propia y repositorio SQL |
 | RNF-07 | Pruebas unitarias, HTTP, integración y contrato |
@@ -113,6 +134,8 @@ Se limita con `LIMIT size OFFSET page * size`; el total se cuenta con el mismo f
 - SQL explícito y funciones de repositorio pequeñas, siguiendo la spec base; no se agrega ORM ni dependencia.
 - El estado se deriva, no se almacena.
 - La idempotencia se resuelve en la misma transacción que el efecto para no dejar respuestas sin efecto ni efectos sin respuesta.
+- En `crearBloqueo`, solo el límite del año 9999 se comprueba antes de la idempotencia. Descartado: un chequeo previo de `hasta` contra el reloj del servicio, porque una repetición tardía respondía 422 en vez del 201 guardado y un cliente sin perfil, 422 en vez de 404.
+- Un `hasta` anterior al año 0001 va a la base como `-infinity` y no se rechaza aparte. Descartado: rechazarlo en el servicio, porque daría 422 antes del 404 de un cliente sin perfil.
 - El ADR 004 documenta las transacciones y la idempotencia reutilizable, porque las specs #5 y futuras escrituras las comparten.
 
 ## Dudas abiertas
