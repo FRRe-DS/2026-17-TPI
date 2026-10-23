@@ -8,7 +8,7 @@ Depende de: la migración de perfiles (T1 de la spec #4) debe estar mergeada en 
   - Hecho cuando: pruebas con PostgreSQL real crean direcciones con y sin datos opcionales, las convierten al esquema del contrato y nunca encuentran una dirección bajo otro cliente.
 - [x] **T3. Implementar listado, filtro, orden y paginación estable.** RF-2.2.1
   - Hecho cuando: integración verifica favoritas, recientes, lista completa, totales, límites, empates de fecha y página fuera del total.
-- [ ] **T4. Implementar actualización parcial y borrado físico.** RF-2.2.3, RF-2.2.4, RF-2.2.4.1
+- [x] **T4. Implementar actualización parcial y borrado físico.** RF-2.2.3, RF-2.2.4, RF-2.2.4.1
   - Hecho cuando: PATCH modifica solo lo enviado y conserva `creadoEn`; DELETE elimina una sola fila, devuelve 404 al repetirse y no afecta direcciones de otro cliente.
 - [ ] **T5. Integrar rol efectivo, propiedad e idempotencia en el servicio.** RF-2.2, RF-2.2.5, RNF-08
   - Hecho cuando: pruebas cubren CLIENTE propio/ajeno, CLIENTE+OPERADOR para lecturas y escrituras, y el POST repetido o concurrente con la misma clave produce un solo registro, mientras otro cuerpo da 422.

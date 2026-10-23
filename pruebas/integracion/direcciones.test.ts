@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
 import type { Consultar } from '../../src/bd/transaccion.js';
-import { crearDireccion, listarDirecciones, obtenerDireccion } from '../../src/direcciones/repositorio.js';
+import { actualizarDireccion, crearDireccion, eliminarDireccion, listarDirecciones, obtenerDireccion } from '../../src/direcciones/repositorio.js';
 import { Conflicto, NoEncontrado } from '../../src/errores.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
@@ -692,6 +692,199 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
       const pagina = await listarDirecciones(consultar, clienteId, { page: 0, size: 20 });
 
       expect(pagina.items).toEqual([sin, creada]);
+    });
+  });
+
+  describe('actualizarDireccion() (RF-2.2.3)', () => {
+    const completa = async () => {
+      const clienteId = await cliente();
+      const original = await crearDireccion(consultar, clienteId, nuevoId(), {
+        tipo: 'FAVORITA',
+        alias: 'Casa',
+        texto: 'Calle Falsa 123',
+        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+      });
+      return { clienteId, original };
+    };
+    const falla = (promesa: Promise<unknown>) =>
+      promesa.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+    it('cambia solo el campo enviado y conserva los demás, también creadoEn', async () => {
+      for (const [cambios, esperado] of [
+        [{ tipo: 'RECIENTE' as const }, { tipo: 'RECIENTE' }],
+        [{ alias: 'Trabajo' }, { alias: 'Trabajo' }],
+        [{ texto: 'Otra calle 456' }, { texto: 'Otra calle 456' }],
+        [{ coordenadas: { latitud: 10, longitud: -20 } }, { coordenadas: { latitud: 10, longitud: -20 } }],
+      ] as const) {
+        const { clienteId, original } = await completa();
+
+        const cambiada = await actualizarDireccion(consultar, clienteId, original.direccionId, cambios);
+
+        expect(cambiada).toEqual({ ...original, ...esperado });
+        expect(await obtenerDireccion(consultar, clienteId, original.direccionId)).toEqual(cambiada);
+      }
+    });
+
+    it('varios campos a la vez, y las coordenadas se reemplazan juntas', async () => {
+      const { clienteId, original } = await completa();
+
+      const cambiada = await actualizarDireccion(consultar, clienteId, original.direccionId, {
+        tipo: 'RECIENTE',
+        texto: 'Nuevo texto',
+        coordenadas: { latitud: 0, longitud: 180 },
+      });
+
+      expect(cambiada).toEqual({
+        ...original,
+        tipo: 'RECIENTE',
+        texto: 'Nuevo texto',
+        coordenadas: { latitud: 0, longitud: 180 },
+      });
+    });
+
+    it('un alias vacío reemplaza al alias: no es lo mismo que no enviarlo', async () => {
+      const { clienteId, original } = await completa();
+
+      const cambiada = await actualizarDireccion(consultar, clienteId, original.direccionId, { alias: '' });
+
+      expect(cambiada.alias).toBe('');
+    });
+
+    it('agrega alias y coordenadas a una dirección que no los tenía', async () => {
+      const clienteId = await cliente();
+      const minima = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'RECIENTE', texto: 'Plaza 25' });
+
+      const cambiada = await actualizarDireccion(consultar, clienteId, minima.direccionId, {
+        alias: 'Plaza',
+        coordenadas: { latitud: 1.5, longitud: 2.5 },
+      });
+
+      expect(cambiada).toEqual({ ...minima, alias: 'Plaza', coordenadas: { latitud: 1.5, longitud: 2.5 } });
+    });
+
+    it('no toca a otra dirección del mismo cliente', async () => {
+      const { clienteId, original } = await completa();
+      const vecina = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'RECIENTE', texto: 'Vecina' });
+
+      await actualizarDireccion(consultar, clienteId, original.direccionId, { texto: 'Cambiada' });
+
+      expect(await obtenerDireccion(consultar, clienteId, vecina.direccionId)).toEqual(vecina);
+    });
+
+    it('sin campos devuelve la dirección tal cual, sin cambiarla', async () => {
+      const { clienteId, original } = await completa();
+
+      expect(await actualizarDireccion(consultar, clienteId, original.direccionId, {})).toEqual(original);
+    });
+
+    it('el texto va como parámetro: comillas y punto y coma se guardan tal cual', async () => {
+      const { clienteId, original } = await completa();
+      const texto = `Calle O'Higgins 1; DROP TABLE direcciones_cliente; --`;
+
+      expect((await actualizarDireccion(consultar, clienteId, original.direccionId, { texto })).texto).toBe(texto);
+    });
+
+    it('la dirección de otro cliente es NoEncontrado y queda como estaba', async () => {
+      const { clienteId, original } = await completa();
+      const otro = await cliente();
+
+      const error = await falla(actualizarDireccion(consultar, otro, original.direccionId, { texto: 'Robada' }));
+
+      expect(error).toBeInstanceOf(NoEncontrado);
+      expect(await obtenerDireccion(consultar, clienteId, original.direccionId)).toEqual(original);
+    });
+
+    it('una dirección inexistente, o con cambios vacíos de un cliente sin ella, es NoEncontrado', async () => {
+      const clienteId = await cliente();
+
+      expect(await falla(actualizarDireccion(consultar, clienteId, nuevoId(), { texto: 'X' }))).toBeInstanceOf(NoEncontrado);
+      expect(await falla(actualizarDireccion(consultar, clienteId, nuevoId(), {}))).toBeInstanceOf(NoEncontrado);
+    });
+
+    it('dos actualizaciones a la vez de campos distintos se aplican las dos', async () => {
+      const { clienteId, original } = await completa();
+
+      await Promise.all([
+        actualizarDireccion(consultar, clienteId, original.direccionId, { alias: 'Nuevo alias' }),
+        actualizarDireccion(consultar, clienteId, original.direccionId, { texto: 'Nuevo texto' }),
+      ]);
+
+      expect(await obtenerDireccion(consultar, clienteId, original.direccionId)).toEqual({
+        ...original,
+        alias: 'Nuevo alias',
+        texto: 'Nuevo texto',
+      });
+    });
+  });
+
+  describe('eliminarDireccion() (RF-2.2.4, RF-2.2.4.1)', () => {
+    const falla = (promesa: Promise<unknown>) =>
+      promesa.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+    it('borra la fila de la base y ya no se consulta ni se lista', async () => {
+      const clienteId = await cliente();
+      const direccion = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'FAVORITA', texto: 'A borrar' });
+
+      await eliminarDireccion(consultar, clienteId, direccion.direccionId);
+
+      const restan = await consultar('SELECT 1 FROM direcciones_cliente WHERE direccion_id = $1', [direccion.direccionId]);
+      expect(restan.rowCount).toBe(0);
+      expect(await falla(obtenerDireccion(consultar, clienteId, direccion.direccionId))).toBeInstanceOf(NoEncontrado);
+      expect((await listarDirecciones(consultar, clienteId, { page: 0, size: 20 })).totalElementos).toBe(0);
+    });
+
+    it('elimina una sola fila: las otras direcciones del cliente quedan', async () => {
+      const clienteId = await cliente();
+      const borrada = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'FAVORITA', texto: 'Mismo texto' });
+      const igual = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'FAVORITA', texto: 'Mismo texto' });
+
+      await eliminarDireccion(consultar, clienteId, borrada.direccionId);
+
+      expect(await obtenerDireccion(consultar, clienteId, igual.direccionId)).toEqual(igual);
+      expect((await listarDirecciones(consultar, clienteId, { page: 0, size: 20 })).totalElementos).toBe(1);
+    });
+
+    it('repetir el borrado es NoEncontrado', async () => {
+      const clienteId = await cliente();
+      const direccion = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'RECIENTE', texto: 'Una vez' });
+      await eliminarDireccion(consultar, clienteId, direccion.direccionId);
+
+      expect(await falla(eliminarDireccion(consultar, clienteId, direccion.direccionId))).toBeInstanceOf(NoEncontrado);
+    });
+
+    it('la dirección de otro cliente es NoEncontrado y no se borra', async () => {
+      const propietario = await cliente();
+      const otro = await cliente();
+      const ajena = await crearDireccion(consultar, propietario, nuevoId(), { tipo: 'FAVORITA', texto: 'Ajena' });
+
+      const error = await falla(eliminarDireccion(consultar, otro, ajena.direccionId));
+
+      expect(error).toBeInstanceOf(NoEncontrado);
+      expect(await obtenerDireccion(consultar, propietario, ajena.direccionId)).toEqual(ajena);
+    });
+
+    it('una dirección inexistente es NoEncontrado', async () => {
+      expect(await falla(eliminarDireccion(consultar, await cliente(), nuevoId()))).toBeInstanceOf(NoEncontrado);
+    });
+
+    it('dos borrados a la vez de la misma dirección: uno la borra y el otro no la encuentra', async () => {
+      const clienteId = await cliente();
+      const direccion = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'FAVORITA', texto: 'Carrera' });
+
+      const resultados = await Promise.allSettled([
+        eliminarDireccion(consultar, clienteId, direccion.direccionId),
+        eliminarDireccion(consultar, clienteId, direccion.direccionId),
+      ]);
+
+      expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const rechazo = resultados.find((r) => r.status === 'rejected');
+      expect(rechazo?.status === 'rejected' && rechazo.reason).toBeInstanceOf(NoEncontrado);
     });
   });
 });

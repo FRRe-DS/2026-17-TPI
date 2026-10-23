@@ -54,3 +54,20 @@
   - `page * size` se topa en `Number.MAX_SAFE_INTEGER`: una página gigante desbordaría el `OFFSET` de la base y daría un 500; con el tope da una página vacía.
   - Con tablas chicas no se mira el plan de ejecución: no se comprobó con `EXPLAIN` que la base use los índices. Es una deuda menor, si el listado se llega a notar lento.
 
+### T4 — Actualización parcial y borrado físico · commit `005/T4`
+- Qué cambió:
+  - [src/direcciones/repositorio.ts](../../src/direcciones/repositorio.ts): `actualizarDireccion()` cambia solo los campos recibidos y devuelve la dirección completa; `eliminarDireccion()` borra la fila. Las dos buscan por `(cliente_id, direccion_id)`.
+  - [src/direcciones/modelo.ts](../../src/direcciones/modelo.ts): el tipo `DireccionCambios`, del contrato.
+- Por qué así:
+  - El PATCH usa `COALESCE($n, columna)`, como `actualizarPerfil()` de la 004: el contrato no admite null en ningún campo, así que `null` quiere decir «no se envió» y la columna conserva su valor. Un alias vacío no es null y sí reemplaza. El plan hablaba de armar el `UPDATE` solo con las propiedades presentes; el efecto es el mismo (los campos ausentes no cambian, `creado_en` tampoco) y evita construir SQL a mano. Las coordenadas se reemplazan juntas, como pide el check de la base. No se pueden quitar: el contrato no lo permite (spec, Casos límite).
+  - Un `UPDATE` es atómico: dos PATCH a la vez de campos distintos se aplican uno detrás del otro y ninguno pisa al otro (RNF-08 no lo pide aquí, pero la prueba lo deja asentado).
+  - El `DELETE` es físico (spec, Decisiones). Si no borró ninguna fila, `NoEncontrado`: sirve igual para «ya borrada» (RF-2.2.4.1), «de otro cliente» y «nunca existió».
+- Cómo se conecta: T5 las envuelve en el servicio (rol efectivo y propiedad) y T6 las expone como `actualizarDireccion` y `eliminarDireccion`; el 204 sin cuerpo lo arma el manejador.
+- Tests: [pruebas/integracion/direcciones.test.ts](../../pruebas/integracion/direcciones.test.ts), bloques `actualizarDireccion()` y `eliminarDireccion()`, con PostgreSQL real:
+  - PATCH de cada campo por separado (el resto y `creadoEn` quedan), varios a la vez, alias vacío, alta de alias y coordenadas en una dirección que no los tenía, sin campos, texto con comillas, sin tocar a una vecina, de otro cliente (queda como estaba), inexistente y dos PATCH simultáneos;
+  - DELETE que borra la fila y la saca de la consulta y del listado, una sola fila entre dos de igual texto, repetido, de otro cliente (no se borra), inexistente y dos simultáneos (uno gana, el otro `NoEncontrado`).
+  - En rojo primero: `actualizarDireccion is not a function` y `eliminarDireccion is not a function`.
+- Para mirar con atención:
+  - Sin campos, `actualizarDireccion()` no ejecuta el `UPDATE` y devuelve la dirección: el contrato exige al menos uno (`minProperties: 1`), así que ese caso ya sale como 400 antes de llegar acá.
+  - No hay prueba unitaria de «armado de cambios» (el plan la preveía) porque con `COALESCE` no hay armado que probar: lo cubre la integración.
+

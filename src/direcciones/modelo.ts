@@ -3,6 +3,7 @@ import type { components } from '../generado/contrato.js';
 // Los esquemas del contrato (RNF-03): la API habla con estas formas, así que son también las del dominio.
 export type Direccion = components['schemas']['Direccion'];
 export type DireccionNueva = components['schemas']['DireccionNueva'];
+export type DireccionCambios = components['schemas']['DireccionCambios'];
 export type TipoDireccion = components['schemas']['TipoDireccion'];
 export type PaginaDirecciones = components['schemas']['PaginaDirecciones'];
 
