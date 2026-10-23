@@ -3,7 +3,7 @@ import type { Identidad } from '../auth/tokens.js';
 import { conIdempotencia, type RespuestaIdempotente } from '../bd/idempotencia.js';
 import type { BaseDeDatos } from '../bd/pool.js';
 import type { Consultar } from '../bd/transaccion.js';
-import { BloqueoVencido, NoProcesable, SinPermiso, SolicitudInvalida } from '../errores.js';
+import { BloqueoHastaFueraDeRango, SinPermiso, SolicitudInvalida } from '../errores.js';
 import type {
   Bloqueo,
   BloqueoNuevo,
@@ -53,7 +53,9 @@ export function exigirPropietario(identidad: Identidad, clienteId: string, roles
 // último minuto UTC del día; fracción de cualquier largo; y `Z`, `z` o un desplazamiento ±HH, ±HHMM o ±HH:MM de hasta 23:59.
 const FECHA_HORA = /^(\d{4})-(\d\d)-(\d\d)[Tt\s](\d\d):(\d\d):(\d\d)(?:\.(\d+))?(?:[Zz]|([+-])(\d\d)(?::?(\d\d))?)$/;
 
-// El último milisegundo que se puede devolver en el formato del contrato, que pide el año con cuatro cifras.
+// El primer y el último milisegundo que se pueden escribir con el año en cuatro cifras, como pide el formato del contrato. Antes
+// del primero hay que usar setUTCFullYear: Date.UTC tomaría el año 1 como 1901.
+const PRIMER_INSTANTE = new Date(0).setUTCFullYear(1, 0, 1);
 const ULTIMO_INSTANTE = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
 
 // El instante de `texto`, un date-time ya validado contra el contrato, en milisegundos UTC. No se le deja a PostgreSQL, que
@@ -131,10 +133,11 @@ export async function obtenerEstadoCuenta(
 // Bloquea a `clienteId` (RF-2.6.1) con la Idempotency-Key `clave` (RNF-08): 201 con Location, o la respuesta guardada si la
 // solicitud se repite. Solo llega OPERADOR (el contrato), y su sub queda como autor. El sujeto de la idempotencia es ese sub y
 // el cliente es el de la ruta, que también va en la huella: la misma clave sirve para otro cliente. El bloqueoId lo genera M2.
-// `hasta` se pasa a UTC (`instanteUtc`) antes de todo. Si ya pasó según el reloj del servicio, 422 sin ir a la base: entre
-// otras, cubre el año 0000, que el contrato admite y PostgreSQL no. Si cae después del año 9999 en UTC, 422: no se podría
-// devolver en el formato del contrato. A la base va en UTC, y la comparación exacta, con el instante de creación, la hace el
-// repositorio. La huella guarda el cuerpo tal como llegó.
+// `hasta` se pasa a UTC (`instanteUtc`). Antes de la idempotencia solo se rechaza lo que nunca pudo crearse: un `hasta` después
+// del año 9999 en UTC (RF-2.6.1.2). Que ya haya pasado no se mira acá: si no, repetir un alta ya hecha daría 422 en vez de su
+// 201 (RF-2.6.1.3), y un cliente sin perfil, 422 en vez de 404. Lo decide el repositorio, después del perfil, contra el
+// instante de creación de la base (RF-2.6.1.1). Uno anterior al año 0001, que el contrato admite y PostgreSQL no lee, va como
+// `-infinity`, anterior a cualquier instante. La huella guarda el cuerpo tal como llegó.
 export async function crearBloqueo(
   pool: BaseDeDatos,
   identidad: Identidad,
@@ -143,11 +146,9 @@ export async function crearBloqueo(
   datos: BloqueoNuevo,
 ): Promise<RespuestaIdempotente> {
   const hasta = datos.hasta === undefined ? undefined : instanteUtc(datos.hasta);
-  if (hasta !== undefined && hasta <= Date.now()) throw new BloqueoVencido();
-  if (hasta !== undefined && hasta > ULTIMO_INSTANTE) {
-    throw new NoProcesable('El fin del bloqueo tiene que ser anterior al año 10000 (UTC)');
-  }
-  const enUtc = hasta === undefined ? datos : { ...datos, hasta: new Date(hasta).toISOString() };
+  if (hasta !== undefined && hasta > ULTIMO_INSTANTE) throw new BloqueoHastaFueraDeRango();
+  const enBase = hasta === undefined ? undefined : hasta < PRIMER_INSTANTE ? '-infinity' : new Date(hasta).toISOString();
+  const enUtc = enBase === undefined ? datos : { ...datos, hasta: enBase };
   const cliente = normalizarUuid(clienteId);
   const solicitud = {
     operacion: 'crearBloqueo',

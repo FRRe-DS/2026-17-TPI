@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as esperar } from 'node:timers/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
@@ -460,6 +461,78 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
       expect(respuesta.statusCode).toBe(404);
       expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
       expect(respuesta.json().detail).toBe('No existe el cliente pedido');
+    });
+
+    describe('el orden de las reglas: idempotencia, perfil y después la fecha (RF-2.6.1.1 a RF-2.6.1.3)', () => {
+      const VENCIDO = {
+        type: '/errores/bloqueo-vencido',
+        title: 'Bloqueo vencido',
+        status: 422,
+        detail: 'El fin del bloqueo tiene que ser posterior a su creación',
+      };
+      const total = async (app: ReturnType<typeof crear>, clienteId: string) =>
+        (await app.lecturaBloqueos(OPERADOR, `/api/v1/clientes/${clienteId}/bloqueos`)).json().totalElementos;
+
+      it('repetida con la misma clave cuando su hasta ya pasó: el mismo 201, y con otro cuerpo, 422 idempotencia-reutilizada (RF-2.6.1.3)', async () => {
+        const app = crear();
+        const [clienteId, clave] = [await conPerfil(app), randomUUID()];
+        const hasta = new Date(Date.now() + 1500).toISOString();
+        const primera = await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente', hasta });
+        expect(primera.statusCode).toBe(201);
+
+        await esperar(Date.parse(hasta) - Date.now() + 200);
+        expect((await app.estadoCuenta(clienteId, clienteId)).json().estado).toBe('ACTIVO');
+        const repetida = await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente', hasta });
+        const otroCuerpo = await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Otro motivo', hasta });
+
+        expect(repetida.statusCode).toBe(201);
+        expect(repetida.json()).toEqual(primera.json());
+        expect(repetida.headers.location).toBe(primera.headers.location);
+        expect([otroCuerpo.statusCode, otroCuerpo.json().type]).toEqual([422, '/errores/idempotencia-reutilizada']);
+        expect(await total(app, clienteId)).toBe(1);
+      });
+
+      it.each(['2020-01-01T00:00:00Z', '0000-01-01T00:00:00Z', '0000-12-31T23:59:59+23:59'])(
+        'un cliente sin perfil con hasta %s, ya pasada: 404, porque el perfil va antes que la fecha',
+        async (hasta) => {
+          const respuesta = await crear().altaBloqueo(OPERADOR, randomUUID(), randomUUID(), { motivo: 'x', hasta });
+
+          expect(respuesta.statusCode).toBe(404);
+          expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+          expect(respuesta.json().detail).toBe('No existe el cliente pedido');
+        },
+      );
+
+      it.each(['2020-01-01T00:00:00Z', '0000-01-01T00:00:00Z', '0000-12-31T23:59:59+23:59'])(
+        'con perfil y hasta %s, ya pasada: 422 bloqueo-vencido sin crear nada, y la clave queda libre (RF-2.6.1.1)',
+        async (hasta) => {
+          const app = crear();
+          const [clienteId, clave] = [await conPerfil(app), randomUUID()];
+
+          const respuesta = await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente', hasta });
+
+          expect(respuesta.statusCode).toBe(422);
+          expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+          expect(respuesta.json()).toEqual({ ...VENCIDO, instance: `/api/v1/clientes/${clienteId}/bloqueos` });
+          expect(respuesta.body).not.toContain('Deuda pendiente');
+          expect(await total(app, clienteId)).toBe(0);
+          const sinHasta = await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente' });
+          expect(sinHasta.statusCode).toBe(201);
+        },
+      );
+
+      it('hasta después del año 9999 en UTC: 422 bloqueo-hasta-fuera-de-rango, también sin perfil, y nada creado (RF-2.6.1.2)', async () => {
+        const app = crear();
+        const clienteId = await conPerfil(app);
+        const hasta = '9999-12-31T23:00:00-05:00';
+
+        const conPerfilRespuesta = await app.altaBloqueo(OPERADOR, clienteId, randomUUID(), { motivo: 'x', hasta });
+        const sinPerfil = await app.altaBloqueo(OPERADOR, randomUUID(), randomUUID(), { motivo: 'x', hasta });
+
+        expect([conPerfilRespuesta.statusCode, conPerfilRespuesta.json().type]).toEqual([422, '/errores/bloqueo-hasta-fuera-de-rango']);
+        expect([sinPerfil.statusCode, sinPerfil.json().type]).toEqual([422, '/errores/bloqueo-hasta-fuera-de-rango']);
+        expect(await total(app, clienteId)).toBe(0);
+      });
     });
 
     it('el historial: página por defecto (0 de 20), orden del más nuevo al más antiguo, filtro y totales', async () => {

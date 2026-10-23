@@ -22,7 +22,7 @@
 | `src/clientes/servicio.ts` | Rol efectivo, propiedad, idempotencia, `hasta` en UTC | RF-2.1.1.1, RF-2.1.2.1, RF-2.6.1 | T5, T7, T8, T10 |
 | `src/clientes/operaciones.ts` | Los ocho manejadores HTTP | RNF-03 | T5 a T8 |
 | `src/operaciones/index.ts` | Registra los ocho `operationId` | RNF-03 | T9 |
-| `src/errores.ts` | Errores de dominio: `perfil-ya-existe`, `idempotencia-reutilizada`, `bloqueo-vencido`, `bloqueo-ya-levantado`, `bloqueo-no-vigente` | RF-2.1.3, RF-2.6.3.1 | T3 a T8, T10 |
+| `src/errores.ts` | Errores de dominio: `perfil-ya-existe`, `idempotencia-reutilizada`, `bloqueo-vencido`, `bloqueo-hasta-fuera-de-rango`, `bloqueo-ya-levantado`, `bloqueo-no-vigente` | RF-2.1.3, RF-2.6.1.1, RF-2.6.1.2, RF-2.6.3.1 | T3 a T8, T10, T11 |
 | `schemathesis.toml`, `scripts/contrato-test.mjs` | Ajuste acotado de Schemathesis (fuera de la tabla del plan) | RNF-07.2 | T10 |
 | `pruebas/unitarias/clientes.test.ts`, `pruebas/integracion/clientes.test.ts` | Conversiones y reglas; persistencia, transacciones y concurrencia | RNF-07 | T1 a T8 |
 | `pruebas/http/clientes.test.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` | HTTP sin base y con base, y la matriz de roles (los dos últimos, fuera de la tabla del plan) | RNF-03, RNF-07 | T5 a T10 |
@@ -328,3 +328,25 @@ npm test && npm run contrato:test
   - Un texto con sustitutos UTF-16 sueltos (`\ud8ef`) no falla: Node lo guarda como U+FFFD. Cambia el dato sin avisar; el contrato no dice nada al respecto.
   - La fracción de `hasta` se corta al milisegundo, la precisión con la que se responde.
   - La tabla «Estructura» del plan no nombra `src/bd/idempotencia.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` ni `schemathesis.toml`. Están en el mapa de arriba. Si el grupo quiere que el plan coincida, se ajusta con `/sdd-change`.
+
+### T11 — Idempotencia de `crearBloqueo` antes que el vencimiento de `hasta`, y tipo propio para el año 9999 · commit `004/T11`
+- Qué cambió:
+  - [src/clientes/servicio.ts](../../src/clientes/servicio.ts), `crearBloqueo`: ya no compara `hasta` con `Date.now()`. Antes de `conIdempotencia()` solo rechaza un `hasta` posterior al año 9999 en UTC, con `BloqueoHastaFueraDeRango`. Uno anterior al año 0001 (`PRIMER_INSTANTE`) va a la base como `-infinity`.
+  - [src/errores.ts](../../src/errores.ts): `BloqueoHastaFueraDeRango` (422, `/errores/bloqueo-hasta-fuera-de-rango`) reemplaza a `NoProcesable`, que era un 422 con `about:blank` y no tenía otro uso.
+  - [src/clientes/repositorio.ts](../../src/clientes/repositorio.ts): solo el comentario de `crearBloqueo`. Su `INSERT` condicional ya era la comparación definitiva, y ahora es la única.
+- Por qué así: lo pidió el cambio de spec (#47), que salió de la primera validación. El chequeo previo con el reloj del servicio corría antes de la idempotencia. Una repetición con la misma clave y el mismo cuerpo, después de vencido `hasta`, respondía 422 en lugar del 201 guardado (RF-2.6.1.3, RNF-08), y un cliente sin perfil, 422 en lugar de 404. Ahora el orden es: año 9999 → idempotencia → perfil (404) → `INSERT` (422 `bloqueo-vencido`), como en plan.md, «Crear bloqueo: orden de las reglas». El año 9999 sí va antes porque no depende del momento: ninguna repetición pudo haber dado 201.
+- Cómo se conecta: el 422 `bloqueo-vencido` sale ahora dentro del alta de `conIdempotencia()`; el error deshace la transacción y, con ella, la reserva de la clave, así que la misma clave sirve después con otro cuerpo. `schemathesis.toml` no cambia: el 422 sigue declarado en `crearBloqueo`.
+- Tests:
+  - [pruebas/unitarias/clientes.test.ts](../../pruebas/unitarias/clientes.test.ts): la forma de `BloqueoHastaFueraDeRango`.
+  - [pruebas/http/clientes.test.ts](../../pruebas/http/clientes.test.ts) (sin base): dos `hasta` después del año 9999 en UTC dan 422 con el tipo propio y sin el motivo. Salieron de acá los casos de 2020 y año `0000`: ya no se rechazan sin ir a la base.
+  - [pruebas/integracion/clientes-http.test.ts](../../pruebas/integracion/clientes-http.test.ts), bloque «el orden de las reglas»:
+    - un alta con `hasta` a 1,5 s, repetida con la misma clave cuando ya venció, devuelve el mismo 201 y `Location`, y con otro cuerpo da 422 `idempotencia-reutilizada`, con un solo bloqueo;
+    - un cliente sin perfil con `hasta` en 2020 o en el año `0000` (también con desplazamiento `+23:59`) da 404;
+    - con perfil, esas fechas dan 422 `bloqueo-vencido`, no crean nada y dejan la clave libre;
+    - el año 9999 da 422 `bloqueo-hasta-fuera-de-rango`, con perfil o sin él, sin crear nada.
+  - En rojo primero: fallaron 8 (el 201 repetido, los tres 404, los tres `type` propios y el constructor nuevo).
+  - `npm test` (2444), lint, build y `contrato:test` (9 operaciones, 3580 casos) en verde.
+- Para mirar con atención:
+  - Queda sin efecto el aviso de T7 sobre relojes desfasados entre el contenedor de M2 y PostgreSQL: el servicio ya no mira su reloj para `hasta`.
+  - La prueba de la repetición espera unos 1,7 s reales, porque el vencimiento lo decide el reloj de la base y no se puede simular desde la prueba.
+  - `-infinity` no llega nunca a una respuesta: el `INSERT` no inserta y sale el 422.

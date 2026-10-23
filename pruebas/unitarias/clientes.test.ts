@@ -10,6 +10,7 @@ import {
 import { clienteDelToken, exigirPropietario, instanteUtc, normalizarUuid } from '../../src/clientes/servicio.js';
 import {
   aProblema,
+  BloqueoHastaFueraDeRango,
   BloqueoNoVigente,
   BloqueoVencido,
   BloqueoYaLevantado,
@@ -328,6 +329,21 @@ describe('BloqueoVencido (spec 004, Casos límite)', () => {
       title: 'Bloqueo vencido',
       status: 422,
       detail: 'El fin del bloqueo tiene que ser posterior a su creación',
+      instance: '/api/v1/clientes/x/bloqueos',
+    });
+  });
+});
+
+describe('BloqueoHastaFueraDeRango (RF-2.6.1.2)', () => {
+  it('es un 422 con su tipo propio, sin la fecha ni el motivo', () => {
+    const { codigo, cuerpo } = aProblema(new BloqueoHastaFueraDeRango(), '/api/v1/clientes/x/bloqueos');
+
+    expect(codigo).toBe(422);
+    expect(cuerpo).toEqual({
+      type: '/errores/bloqueo-hasta-fuera-de-rango',
+      title: 'Fin del bloqueo fuera de rango',
+      status: 422,
+      detail: 'El fin del bloqueo tiene que ser anterior al año 10000 (UTC)',
       instance: '/api/v1/clientes/x/bloqueos',
     });
   });

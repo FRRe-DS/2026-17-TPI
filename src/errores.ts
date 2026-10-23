@@ -128,6 +128,19 @@ export class BloqueoVencido extends Problema {
   }
 }
 
+// De `crearBloqueo`, cuando `hasta` cae después del año 9999 en UTC: no se podría devolver en el formato date-time del
+// contrato, que pide el año con cuatro cifras (RF-2.6.1.2). No lleva la fecha ni el motivo (RNF-19).
+export class BloqueoHastaFueraDeRango extends Problema {
+  constructor() {
+    super({
+      codigo: 422,
+      type: '/errores/bloqueo-hasta-fuera-de-rango',
+      title: 'Fin del bloqueo fuera de rango',
+      detail: 'El fin del bloqueo tiene que ser anterior al año 10000 (UTC)',
+    });
+  }
+}
+
 // De `levantarBloqueo`, cuando el bloqueo ya fue levantado (RF-2.6.3.1). No lleva el bloqueoId ni los motivos (RNF-19).
 export class BloqueoYaLevantado extends Problema {
   constructor() {
@@ -194,15 +207,6 @@ export class SolicitudIlegible extends Problema {
 export class SolicitudInvalida extends Problema {
   constructor(detail: string) {
     super({ codigo: 400, title: TITULO_SOLICITUD_INVALIDA, detail });
-  }
-}
-
-// De una regla de una operación que el esquema del contrato no puede expresar y que la operación declara con 422, como que el
-// fin de un bloqueo se pueda devolver en el formato del contrato (spec 004, T10). El `detail` no lleva datos de la solicitud
-// (RNF-19).
-export class NoProcesable extends Problema {
-  constructor(detail: string) {
-    super({ codigo: 422, title: 'Solicitud no procesable', detail });
   }
 }
 

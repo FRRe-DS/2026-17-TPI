@@ -239,36 +239,25 @@ describe('crearBloqueo: lo que se rechaza sin tocar la base (RF-2.6.1)', () => {
     expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
   });
 
-  it.each(['2020-01-01T00:00:00Z', '0000-01-01T00:00:00Z'])(
-    'hasta %s, ya pasada: 422 con tipo propio, sin tocar la base (spec 004, Casos límite)',
+  // Un `hasta` pasado no se rechaza acá: depende del instante de creación, que fija la base, y antes van el 404 y la
+  // idempotencia (RF-2.6.1.1, RF-2.6.1.3). Esas pruebas están en pruebas/integracion/clientes-http.test.ts.
+  it.each(['9999-12-31T23:59:59-23:59', '9999-12-31T23:00:00-05:00'])(
+    'hasta %s, después del año 9999 en UTC: 422 con tipo propio, sin tocar la base (RF-2.6.1.2)',
     async (hasta) => {
       const respuesta = await altaBloqueo(token(['OPERADOR']), { motivo: 'Deuda pendiente', hasta });
 
       expect(respuesta.statusCode).toBe(422);
       expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
       expect(respuesta.json()).toEqual({
-        type: '/errores/bloqueo-vencido',
-        title: 'Bloqueo vencido',
+        type: '/errores/bloqueo-hasta-fuera-de-rango',
+        title: 'Fin del bloqueo fuera de rango',
         status: 422,
-        detail: 'El fin del bloqueo tiene que ser posterior a su creación',
+        detail: 'El fin del bloqueo tiene que ser anterior al año 10000 (UTC)',
         instance: `/api/v1/clientes/${SUB}/bloqueos`,
       });
       expect(respuesta.body).not.toContain('Deuda pendiente');
     },
   );
-  it('hasta después del año 9999 en UTC: 422 sin tocar la base, porque no se podría devolver en el formato del contrato', async () => {
-    const respuesta = await altaBloqueo(token(['OPERADOR']), { motivo: 'Deuda pendiente', hasta: '9999-12-31T23:59:59-23:59' });
-
-    expect(respuesta.statusCode).toBe(422);
-    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
-    expect(respuesta.json()).toEqual({
-      type: 'about:blank',
-      title: 'Solicitud no procesable',
-      status: 422,
-      detail: 'El fin del bloqueo tiene que ser anterior al año 10000 (UTC)',
-      instance: `/api/v1/clientes/${SUB}/bloqueos`,
-    });
-  });
 });
 
 describe('listarBloqueos y obtenerBloqueo: lo que se rechaza sin tocar la base (RF-2.6.2)', () => {
