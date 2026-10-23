@@ -6,6 +6,7 @@ import {
   actualizarCliente,
   crearBloqueo,
   crearCliente,
+  levantarBloqueo,
   listarBloqueos,
   obtenerBloqueo,
   obtenerCliente,
@@ -45,7 +46,7 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
   function crear() {
     const logs = capturarLogs();
     const app = crearApp(
-      { crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta, crearBloqueo, listarBloqueos, obtenerBloqueo },
+      { crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta, crearBloqueo, listarBloqueos, obtenerBloqueo, levantarBloqueo },
       { contrato, pool, flujoLog: logs.flujo });
     const autorizacion = (sub: string, roles: Rol[]) => `Bearer ${armarToken({ claims: { sub, roles } })}`;
     return {
@@ -75,6 +76,9 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
       // `url` es la ruta del recurso: el historial (con su query) o un bloqueo, por ejemplo la de Location.
       lecturaBloqueos: (sub: string, url: string, roles: Rol[] = ['OPERADOR']) =>
         app.inject({ method: 'GET', url, headers: { authorization: autorizacion(sub, roles) } }),
+      // `url` es la de un bloqueo, por ejemplo la de Location.
+      levantamiento: (sub: string, url: string, payload: object, roles: Rol[] = ['OPERADOR']) =>
+        app.inject({ method: 'PATCH', url, headers: { authorization: autorizacion(sub, roles) }, payload }),
       cambio: (sub: string, clienteId: string, payload: object, roles: Rol[] = ['CLIENTE']) =>
         app.inject({
           method: 'PATCH',
@@ -498,6 +502,115 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
 
       const texto = app.logs.texto();
       for (const dato of ['Motivo-confidencial', clave, 'Bearer']) expect(texto).not.toContain(dato);
+    });
+  });
+
+  describe('levantarBloqueo (RF-2.6.3, RF-2.6.3.1)', () => {
+    const OPERADOR = 'operador-que-levanta';
+    // Un cliente con un bloqueo vigente: su Location y el bloqueo.
+    const conBloqueo = async (app: ReturnType<typeof crear>) => {
+      const clienteId = randomUUID();
+      await app.alta(clienteId, randomUUID());
+      const alta = await app.altaBloqueo('operador-que-bloquea', clienteId, randomUUID(), { motivo: 'Deuda pendiente' });
+      return { clienteId, url: alta.headers.location as string, bloqueo: alta.json() };
+    };
+
+    it('200 con el bloqueo levantado por el sub del token; el historial lo conserva y la cuenta queda ACTIVA', async () => {
+      const app = crear();
+      const { clienteId, url, bloqueo } = await conBloqueo(app);
+
+      const respuesta = await app.levantamiento(OPERADOR, url, { motivo: 'Pagó la deuda' });
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(respuesta.headers['content-type']).toMatch(/^application\/json/);
+      const levantado = respuesta.json();
+      expect(levantado).toEqual({
+        ...bloqueo,
+        vigente: false,
+        levantadoEn: expect.any(String),
+        levantadoPor: OPERADOR,
+        motivoLevantamiento: 'Pagó la deuda',
+      });
+      expect((await app.lecturaBloqueos(OPERADOR, url)).json()).toEqual(levantado);
+      expect((await app.lecturaBloqueos(OPERADOR, `/api/v1/clientes/${clienteId}/bloqueos`)).json().items).toEqual([levantado]);
+      expect((await app.estadoCuenta(clienteId, clienteId)).json()).toMatchObject({ estado: 'ACTIVO', bloqueosVigentes: [] });
+    });
+
+    it('levantarlo otra vez: 409 bloqueo-ya-levantado en problem+json, sin cambiarlo', async () => {
+      const app = crear();
+      const { url } = await conBloqueo(app);
+      const levantado = (await app.levantamiento(OPERADOR, url, { motivo: 'Pagó' })).json();
+
+      const respuesta = await app.levantamiento('otro-operador', url, { motivo: 'Otra vez' });
+
+      expect(respuesta.statusCode).toBe(409);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+      expect(respuesta.json()).toEqual({
+        type: '/errores/bloqueo-ya-levantado',
+        title: 'Bloqueo ya levantado',
+        status: 409,
+        detail: 'El bloqueo ya fue levantado',
+        instance: url,
+      });
+      expect((await app.lecturaBloqueos(OPERADOR, url)).json()).toEqual(levantado);
+    });
+
+    it('uno vencido: 409 bloqueo-no-vigente, y sigue sin datos de levantamiento (spec 004, Casos límite)', async () => {
+      const app = crear();
+      const { url, bloqueo } = await conBloqueo(app);
+      await pool.consultar(`UPDATE bloqueos_cliente SET hasta = now() - interval '1 second' WHERE bloqueo_id = $1`, [
+        bloqueo.bloqueoId,
+      ]);
+
+      const respuesta = await app.levantamiento(OPERADOR, url, { motivo: 'Pagó' });
+
+      expect(respuesta.statusCode).toBe(409);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+      expect(respuesta.json()).toMatchObject({ type: '/errores/bloqueo-no-vigente', title: 'Bloqueo no vigente', status: 409 });
+      const despues = (await app.lecturaBloqueos(OPERADOR, url)).json();
+      expect(despues.vigente).toBe(false);
+      expect(despues).not.toHaveProperty('levantadoEn');
+    });
+
+    it('dos levantamientos a la vez: un 200 y un 409 bloqueo-ya-levantado (RNF-08)', async () => {
+      const app = crear();
+      const { url } = await conBloqueo(app);
+
+      const respuestas = await Promise.all([
+        app.levantamiento('operador-a', url, { motivo: 'Uno' }),
+        app.levantamiento('operador-b', url, { motivo: 'Otro' }),
+      ]);
+
+      expect(respuestas.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+      const ganador = respuestas.find((r) => r.statusCode === 200);
+      expect(respuestas.find((r) => r.statusCode === 409)?.json().type).toBe('/errores/bloqueo-ya-levantado');
+      expect((await app.lecturaBloqueos(OPERADOR, url)).json()).toEqual(ganador?.json());
+    });
+
+    it('uno de otro cliente, o uno que no existe: 404 en problem+json', async () => {
+      const app = crear();
+      const { bloqueo } = await conBloqueo(app);
+      const otro = randomUUID();
+      await app.alta(otro, randomUUID());
+
+      for (const url of [`/api/v1/clientes/${otro}/bloqueos/${bloqueo.bloqueoId}`, `/api/v1/clientes/${otro}/bloqueos/${randomUUID()}`]) {
+        const respuesta = await app.levantamiento(OPERADOR, url, { motivo: 'Pagó' });
+
+        expect(respuesta.statusCode).toBe(404);
+        expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+        expect(respuesta.json().detail).toBe('No existe el bloqueo pedido');
+      }
+    });
+
+    it('los logs no tienen motivos ni tokens (RNF-19)', async () => {
+      const app = crear();
+      const { url } = await conBloqueo(app);
+
+      await app.levantamiento(OPERADOR, url, { motivo: 'Motivo-confidencial-1' });
+      await app.levantamiento(OPERADOR, url, { motivo: 'Motivo-confidencial-2' });
+
+      const texto = app.logs.texto();
+      for (const dato of ['Motivo-confidencial', 'Bearer']) expect(texto).not.toContain(dato);
     });
   });
 

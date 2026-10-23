@@ -12,6 +12,7 @@ import {
   actualizarPerfil,
   crearBloqueo,
   crearPerfil,
+  levantarBloqueo,
   listarBloqueos,
   obtenerBloqueo,
   obtenerEstadoCuenta,
@@ -19,7 +20,9 @@ import {
 } from '../../src/clientes/repositorio.js';
 import {
   BaseNoDisponible,
+  BloqueoNoVigente,
   BloqueoVencido,
+  BloqueoYaLevantado,
   Conflicto,
   IdempotenciaReutilizada,
   NoEncontrado,
@@ -1348,6 +1351,151 @@ describe('el repositorio de perfiles (RF-2.1, RF-2.1.1, RF-2.1.2, RF-2.1.3, RF-2
       const deOtro = await listarBloqueos(consultar, otro, { page: 0, size: 100 });
       const ids = new Set(deOtro.items.map((b) => b.bloqueoId));
       expect(pagina.items.some((b) => ids.has(b.bloqueoId))).toBe(false);
+    });
+  });
+
+  describe('levantarBloqueo (RF-2.6.3, RF-2.6.3.1, RF-2.6.4)', () => {
+    const conPerfil = async () => {
+      const clienteId = nuevoId();
+      await crearPerfil(consultar, clienteId, ANA);
+      return clienteId;
+    };
+    // Un bloqueo vigente recién creado por 'operador-1'.
+    const conBloqueo = async (clienteId: string, datos: { motivo: string; hasta?: string } = { motivo: 'Deuda pendiente' }) =>
+      (await crearBloqueo(consultar, clienteId, nuevoId(), datos, 'operador-1')).bloqueoId;
+    // La fila tal como está guardada, para ver que un rechazo no la tocó.
+    const fila = async (bloqueoId: string) =>
+      (await pool.consultar('SELECT * FROM bloqueos_cliente WHERE bloqueo_id = $1', [bloqueoId])).rows[0];
+
+    it('guarda juntos autor, instante y motivo, y devuelve el bloqueo ya no vigente con el resto intacto', async () => {
+      const clienteId = await conPerfil();
+      const bloqueoId = await conBloqueo(clienteId, { motivo: 'Deuda pendiente', hasta: '2099-01-01T00:00:00Z' });
+      const antes = await obtenerBloqueo(consultar, clienteId, bloqueoId);
+
+      const levantado = await levantarBloqueo(consultar, clienteId, bloqueoId, 'Pagó la deuda', 'operador-9');
+
+      expect(levantado).toEqual({
+        ...antes,
+        vigente: false,
+        levantadoEn: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z$/),
+        levantadoPor: 'operador-9',
+        motivoLevantamiento: 'Pagó la deuda',
+      });
+      expect(Date.parse(levantado.levantadoEn as string)).toBeGreaterThanOrEqual(Date.parse(antes.creadoEn));
+      expect(await obtenerBloqueo(consultar, clienteId, bloqueoId)).toEqual(levantado);
+    });
+
+    it('el historial conserva el bloqueo levantado, entre los no vigentes, y la cuenta vuelve a ACTIVO', async () => {
+      const clienteId = await conPerfil();
+      const bloqueoId = await conBloqueo(clienteId);
+
+      const levantado = await levantarBloqueo(consultar, clienteId, bloqueoId, 'Pagó', 'operador-2');
+
+      expect((await listarBloqueos(consultar, clienteId, { page: 0, size: 20 })).items).toEqual([levantado]);
+      expect((await listarBloqueos(consultar, clienteId, { vigente: false, page: 0, size: 20 })).items).toEqual([levantado]);
+      expect(await obtenerEstadoCuenta(consultar, clienteId)).toEqual({ clienteId, estado: 'ACTIVO', bloqueosVigentes: [] });
+    });
+
+    it('levantar uno de dos deja la cuenta BLOQUEADA con el otro (spec 004, Casos límite)', async () => {
+      const clienteId = await conPerfil();
+      const [primero, segundo] = [await conBloqueo(clienteId), await conBloqueo(clienteId)];
+
+      await levantarBloqueo(consultar, clienteId, primero, 'Pagó', 'operador-2');
+
+      const cuenta = await obtenerEstadoCuenta(consultar, clienteId);
+      expect([cuenta.estado, cuenta.bloqueosVigentes.map((b) => b.bloqueoId)]).toEqual(['BLOQUEADO', [segundo]]);
+    });
+
+    it('uno ya levantado: BloqueoYaLevantado (409) y la fila queda como estaba (RF-2.6.3.1)', async () => {
+      const clienteId = await conPerfil();
+      const bloqueoId = await conBloqueo(clienteId);
+      await levantarBloqueo(consultar, clienteId, bloqueoId, 'Pagó', 'operador-2');
+      const guardada = await fila(bloqueoId);
+
+      const error = await fallaCon(levantarBloqueo(consultar, clienteId, bloqueoId, 'Otra vez', 'operador-3'));
+
+      expect(error).toBeInstanceOf(BloqueoYaLevantado);
+      expect(error).toMatchObject({ codigo: 409, type: '/errores/bloqueo-ya-levantado' });
+      expect(await fila(bloqueoId)).toEqual(guardada);
+    });
+
+    it('uno vencido: BloqueoNoVigente (409) y sigue sin datos de levantamiento (spec 004, Casos límite)', async () => {
+      const clienteId = await conPerfil();
+      const bloqueoId = await conBloqueo(clienteId);
+      await pool.consultar(`UPDATE bloqueos_cliente SET hasta = now() - interval '1 second' WHERE bloqueo_id = $1`, [bloqueoId]);
+      const guardada = await fila(bloqueoId);
+
+      const error = await fallaCon(levantarBloqueo(consultar, clienteId, bloqueoId, 'Pagó', 'operador-2'));
+
+      expect(error).toBeInstanceOf(BloqueoNoVigente);
+      expect(error).toMatchObject({ codigo: 409, type: '/errores/bloqueo-no-vigente' });
+      expect(await fila(bloqueoId)).toEqual(guardada);
+      expect(guardada).toMatchObject({ levantado_en: null, levantado_por: null, motivo_levantamiento: null });
+    });
+
+    it('uno de otro cliente, o uno que no existe, es NoEncontrado y no se toca (spec 004, Casos límite)', async () => {
+      const [uno, otro] = [await conPerfil(), await conPerfil()];
+      const bloqueoId = await conBloqueo(otro);
+
+      for (const [clienteId, id] of [[uno, bloqueoId], [otro, nuevoId()], [nuevoId(), bloqueoId]]) {
+        const error = await fallaCon(levantarBloqueo(consultar, clienteId as string, id as string, 'Pagó', 'operador-2'));
+
+        expect(error).toBeInstanceOf(NoEncontrado);
+        expect(error).toMatchObject({ detail: 'No existe el bloqueo pedido' });
+      }
+      expect((await fila(bloqueoId))?.levantado_en).toBeNull();
+    });
+
+    it('mientras otro levantamiento tiene la fila, el segundo lo espera y da BloqueoYaLevantado; queda el primero (RNF-08)', async () => {
+      const clienteId = await conPerfil();
+      const bloqueoId = await conBloqueo(clienteId);
+      const esperandoLaFila = `SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%UPDATE bloqueos_cliente%'`;
+      let segundo: Promise<unknown> = Promise.resolve();
+
+      const primero = await transaccion(pool, async (enTransaccion) => {
+        const levantado = await levantarBloqueo(enTransaccion, clienteId, bloqueoId, 'Primero', 'operador-a');
+        segundo = fallaCon(levantarBloqueo(consultar, clienteId, bloqueoId, 'Segundo', 'operador-b'));
+        await vi.waitFor(async () => expect((await pool.consultar(esperandoLaFila)).rows).toEqual([{ n: 1 }]), {
+          timeout: 1500,
+          interval: 20,
+        });
+        return levantado;
+      });
+
+      expect(await segundo).toBeInstanceOf(BloqueoYaLevantado);
+      expect(await obtenerBloqueo(consultar, clienteId, bloqueoId)).toEqual(primero);
+    });
+
+    it('dos levantamientos a la vez: uno sale, el otro da BloqueoYaLevantado, y la fila es la del que salió (RNF-08)', async () => {
+      const clienteId = await conPerfil();
+      const bloqueoIds = await Promise.all(Array.from({ length: 10 }, () => conBloqueo(clienteId)));
+
+      for (const bloqueoId of bloqueoIds) {
+        const resultados = await Promise.allSettled([
+          levantarBloqueo(consultar, clienteId, bloqueoId, 'Uno', 'operador-a'),
+          levantarBloqueo(consultar, clienteId, bloqueoId, 'Otro', 'operador-b'),
+        ]);
+
+        expect(resultados.map((resultado) => resultado.status).sort()).toEqual(['fulfilled', 'rejected']);
+        const ganador = resultados.find((resultado) => resultado.status === 'fulfilled');
+        const perdedor = resultados.find((resultado) => resultado.status === 'rejected');
+        expect(perdedor?.reason).toBeInstanceOf(BloqueoYaLevantado);
+        expect(await obtenerBloqueo(consultar, clienteId, bloqueoId)).toEqual(ganador?.value);
+      }
+    });
+
+    it('dentro de una transacción, un rechazo no la deja abortada', async () => {
+      const clienteId = await conPerfil();
+      const [vencido, vigente] = [await conBloqueo(clienteId), await conBloqueo(clienteId)];
+      await pool.consultar(`UPDATE bloqueos_cliente SET hasta = now() - interval '1 second' WHERE bloqueo_id = $1`, [vencido]);
+
+      const despues = await transaccion(pool, async (enTransaccion) => {
+        await fallaCon(levantarBloqueo(enTransaccion, clienteId, vencido, 'x', 'o'));
+        return levantarBloqueo(enTransaccion, clienteId, vigente, 'Sigue', 'o');
+      });
+
+      expect(despues.motivoLevantamiento).toBe('Sigue');
     });
   });
 

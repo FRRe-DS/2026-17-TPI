@@ -1,5 +1,5 @@
 import type { Consultar } from '../bd/transaccion.js';
-import { BloqueoVencido, NoEncontrado, PerfilYaExiste } from '../errores.js';
+import { BloqueoNoVigente, BloqueoVencido, BloqueoYaLevantado, NoEncontrado, PerfilYaExiste } from '../errores.js';
 import {
   aBloqueo,
   aCliente,
@@ -146,6 +146,41 @@ export async function obtenerBloqueo(consultar: Consultar, clienteId: string, bl
   const fila = rows[0];
   if (fila === undefined) throw new NoEncontrado(NO_EXISTE_BLOQUEO);
   return aBloqueo(fila);
+}
+
+// Levanta el bloqueo `bloqueoId` de `clienteId` (RF-2.6.3): guarda juntos, en una sola sentencia, el autor (el sub del
+// operador), el instante y el motivo, y no toca nada más ni borra la fila. Solo cambia uno vigente en ese instante, el mismo
+// CURRENT_TIMESTAMP que queda como `levantado_en`. Dos levantamientos a la vez: el segundo espera el bloqueo de la fila y, si
+// el primero confirma, vuelve a evaluar la condición sobre la fila nueva y no cambia nada (RNF-08). Si no cambió nada, otra
+// sentencia, con su propia instantánea, dice por qué (RF-2.6.3.1): no existe o es de otro cliente (`NoEncontrado`), ya fue
+// levantado (`BloqueoYaLevantado`) o venció (`BloqueoNoVigente`). En la misma sentencia la lectura vería la instantánea de
+// antes del otro levantamiento, y lo tomaría por vencido. Ninguno de los tres estados se deshace, así que la lectura no puede
+// contradecir al UPDATE. Ningún rechazo es un error de la base: dentro de una transacción no la aborta.
+export async function levantarBloqueo(
+  consultar: Consultar,
+  clienteId: string,
+  bloqueoId: string,
+  motivo: string,
+  autor: string,
+): Promise<Bloqueo> {
+  const { rows } = await consultar<FilaBloqueo>(
+    `WITH levantado AS (
+       UPDATE bloqueos_cliente
+       SET levantado_en = CURRENT_TIMESTAMP, levantado_por = $3, motivo_levantamiento = $4
+       WHERE cliente_id = $1 AND bloqueo_id = $2 AND ${BLOQUEO_VIGENTE}
+       RETURNING *
+     ) SELECT ${COLUMNAS_BLOQUEO} FROM levantado b`,
+    [clienteId, bloqueoId, autor, motivo],
+  );
+  const fila = rows[0];
+  if (fila !== undefined) return aBloqueo(fila);
+  const { rows: estado } = await consultar<{ levantado: boolean }>(
+    'SELECT levantado_en IS NOT NULL AS levantado FROM bloqueos_cliente WHERE cliente_id = $1 AND bloqueo_id = $2',
+    [clienteId, bloqueoId],
+  );
+  const actual = estado[0];
+  if (actual === undefined) throw new NoEncontrado(NO_EXISTE_BLOQUEO);
+  throw actual.levantado ? new BloqueoYaLevantado() : new BloqueoNoVigente();
 }
 
 // Lo que se pide del historial: el filtro de vigencia, si lo hay, y la página (desde 0).

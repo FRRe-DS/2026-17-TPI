@@ -128,6 +128,31 @@ export class BloqueoVencido extends Problema {
   }
 }
 
+// De `levantarBloqueo`, cuando el bloqueo ya fue levantado (RF-2.6.3.1). No lleva el bloqueoId ni los motivos (RNF-19).
+export class BloqueoYaLevantado extends Problema {
+  constructor() {
+    super({
+      codigo: 409,
+      type: '/errores/bloqueo-ya-levantado',
+      title: 'Bloqueo ya levantado',
+      detail: 'El bloqueo ya fue levantado',
+    });
+  }
+}
+
+// De `levantarBloqueo`, cuando el bloqueo venció por su fecha sin que nadie lo levantara (RF-2.6.3.1, spec 004, Casos
+// límite). No lleva el bloqueoId ni la fecha (RNF-19).
+export class BloqueoNoVigente extends Problema {
+  constructor() {
+    super({
+      codigo: 409,
+      type: '/errores/bloqueo-no-vigente',
+      title: 'Bloqueo no vigente',
+      detail: 'El bloqueo ya venció: no se puede levantar',
+    });
+  }
+}
+
 // Del cliente de módulos, una vez agotados los intentos (RNF-13.3). `modulo` es cómo se lo nombra, por ejemplo «M6», y la
 // `cause`, lo que falló en el último intento: la registra el manejador de errores (RNF-14.8).
 export class ModuloNoDisponible extends Problema {

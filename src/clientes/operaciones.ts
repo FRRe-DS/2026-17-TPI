@@ -1,7 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import type { Identidad } from '../auth/tokens.js';
 import type { Manejador } from '../contrato/operaciones.js';
-import type { BloqueoNuevo, ClienteCambios, ClienteNuevo } from './modelo.js';
+import type { BloqueoNuevo, ClienteCambios, ClienteNuevo, LevantamientoBloqueo } from './modelo.js';
 import type { PedidoHistorial } from './repositorio.js';
 import * as servicio from './servicio.js';
 
@@ -73,4 +73,14 @@ export const obtenerBloqueo: Manejador = async (request) =>
     request.server.pool,
     clienteIdDe(request),
     (request.params as { bloqueoId: string }).bloqueoId,
+  );
+
+// PATCH /api/v1/clientes/{clienteId}/bloqueos/{bloqueoId}: 200 con el bloqueo levantado.
+export const levantarBloqueo: Manejador = async (request) =>
+  servicio.levantarBloqueo(
+    request.server.pool,
+    identidadDe(request),
+    clienteIdDe(request),
+    (request.params as { bloqueoId: string }).bloqueoId,
+    request.body as LevantamientoBloqueo,
   );

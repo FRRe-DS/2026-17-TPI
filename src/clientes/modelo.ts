@@ -7,6 +7,7 @@ export type ClienteCambios = components['schemas']['ClienteCambios'];
 export type Bloqueo = components['schemas']['Bloqueo'];
 export type EstadoCuenta = components['schemas']['EstadoCuenta'];
 export type BloqueoNuevo = components['schemas']['BloqueoNuevo'];
+export type LevantamientoBloqueo = components['schemas']['LevantamientoBloqueo'];
 export type PaginaBloqueos = components['schemas']['PaginaBloqueos'];
 
 // Una fila del perfil como la entrega `repositorio.ts`: `fecha_nacimiento` ya como texto AAAA-MM-DD (pg lo daría como un

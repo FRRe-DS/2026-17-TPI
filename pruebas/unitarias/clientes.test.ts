@@ -8,7 +8,16 @@ import {
   type FilaCliente,
 } from '../../src/clientes/modelo.js';
 import { clienteDelToken, exigirPropietario, normalizarUuid } from '../../src/clientes/servicio.js';
-import { aProblema, BloqueoVencido, NoEncontrado, PerfilYaExiste, SinPermiso, SolicitudInvalida } from '../../src/errores.js';
+import {
+  aProblema,
+  BloqueoNoVigente,
+  BloqueoVencido,
+  BloqueoYaLevantado,
+  NoEncontrado,
+  PerfilYaExiste,
+  SinPermiso,
+  SolicitudInvalida,
+} from '../../src/errores.js';
 
 const CLIENTE_ID = '6f1c1d1e-3b0a-4f55-9a6b-0d7a8f4c2e11';
 
@@ -286,5 +295,17 @@ describe('BloqueoVencido (spec 004, Casos límite)', () => {
       detail: 'El fin del bloqueo tiene que ser posterior a su creación',
       instance: '/api/v1/clientes/x/bloqueos',
     });
+  });
+});
+
+describe('BloqueoYaLevantado y BloqueoNoVigente (RF-2.6.3.1, spec 004, Casos límite)', () => {
+  it.each([
+    ['BloqueoYaLevantado', new BloqueoYaLevantado(), '/errores/bloqueo-ya-levantado', 'Bloqueo ya levantado', 'El bloqueo ya fue levantado'],
+    ['BloqueoNoVigente', new BloqueoNoVigente(), '/errores/bloqueo-no-vigente', 'Bloqueo no vigente', 'El bloqueo ya venció: no se puede levantar'],
+  ])('%s es un 409 con su tipo propio, sin ids ni motivos', (_nombre, error, type, title, detail) => {
+    const { codigo, cuerpo } = aProblema(error, '/api/v1/clientes/x/bloqueos/y');
+
+    expect(codigo).toBe(409);
+    expect(cuerpo).toEqual({ type, title, status: 409, detail, instance: '/api/v1/clientes/x/bloqueos/y' });
   });
 });

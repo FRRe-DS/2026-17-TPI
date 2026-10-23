@@ -3,6 +3,7 @@ import {
   actualizarCliente,
   crearBloqueo,
   crearCliente,
+  levantarBloqueo,
   listarBloqueos,
   obtenerBloqueo,
   obtenerCliente,
@@ -27,7 +28,7 @@ const token = (roles: Rol[], sub = SUB) => bearer({ claims: { sub, roles } });
 
 function crear() {
   return crearApp(
-    { crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta, crearBloqueo, listarBloqueos, obtenerBloqueo },
+    { crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta, crearBloqueo, listarBloqueos, obtenerBloqueo, levantarBloqueo },
     { contrato },
   );
 }
@@ -278,5 +279,48 @@ describe('listarBloqueos y obtenerBloqueo: lo que se rechaza sin tocar la base (
   it('un bloqueoId o un clienteId que no es UUID, 400', async () => {
     expect((await unBloqueo(token(['OPERADOR']), 'no-es-un-uuid')).statusCode).toBe(400);
     expect((await historial(token(['OPERADOR']), '', 'no-es-un-uuid')).statusCode).toBe(400);
+  });
+});
+
+const levantamiento = (
+  encabezados: Record<string, string>,
+  payload: unknown = { motivo: 'Pagó la deuda' },
+  bloqueoId = BLOQUEO,
+  clienteId = SUB,
+) =>
+  crear().inject({
+    method: 'PATCH',
+    url: `/api/v1/clientes/${clienteId}/bloqueos/${bloqueoId}`,
+    headers: encabezados,
+    payload: payload as object,
+  });
+
+describe('levantarBloqueo: lo que se rechaza sin tocar la base (RF-2.6.3)', () => {
+  it('sin token, 401', async () => {
+    expect((await levantamiento({})).statusCode).toBe(401);
+  });
+
+  it.each([[['CLIENTE']], [['SERVICIO']], [['CONDUCTOR']]] as Rol[][][])('con %j, 403: solo OPERADOR levanta', async (roles) => {
+    const respuesta = await levantamiento(token(roles));
+
+    expect(respuesta.statusCode).toBe(403);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+  });
+
+  it.each([
+    ['sin motivo', {}],
+    ['con motivo vacío', { motivo: '' }],
+    ['con motivo de 501 caracteres', { motivo: 'x'.repeat(501) }],
+    ['con un campo de más', { motivo: 'x', levantadoPor: 'otro' }],
+  ])('un cuerpo %s, 400', async (_caso, payload) => {
+    const respuesta = await levantamiento(token(['OPERADOR']), payload);
+
+    expect(respuesta.statusCode).toBe(400);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+  });
+
+  it('un bloqueoId o un clienteId que no es UUID, 400', async () => {
+    expect((await levantamiento(token(['OPERADOR']), undefined, 'no-es-un-uuid')).statusCode).toBe(400);
+    expect((await levantamiento(token(['OPERADOR']), undefined, BLOQUEO, 'no-es-un-uuid')).statusCode).toBe(400);
   });
 });

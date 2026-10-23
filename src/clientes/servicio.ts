@@ -4,7 +4,16 @@ import { conIdempotencia, type RespuestaIdempotente } from '../bd/idempotencia.j
 import type { BaseDeDatos } from '../bd/pool.js';
 import type { Consultar } from '../bd/transaccion.js';
 import { BloqueoVencido, SinPermiso, SolicitudInvalida } from '../errores.js';
-import type { Bloqueo, BloqueoNuevo, Cliente, ClienteCambios, ClienteNuevo, EstadoCuenta, PaginaBloqueos } from './modelo.js';
+import type {
+  Bloqueo,
+  BloqueoNuevo,
+  Cliente,
+  ClienteCambios,
+  ClienteNuevo,
+  EstadoCuenta,
+  LevantamientoBloqueo,
+  PaginaBloqueos,
+} from './modelo.js';
 import * as repositorio from './repositorio.js';
 import { actualizarPerfil, crearPerfil, obtenerPerfil, type PedidoHistorial } from './repositorio.js';
 
@@ -136,4 +145,22 @@ export async function listarBloqueos(
 // El bloqueo `bloqueoId` de `clienteId` (RF-2.6.2). Solo llega OPERADOR. 404 si no es de ese cliente.
 export async function obtenerBloqueo(pool: BaseDeDatos, clienteId: string, bloqueoId: string): Promise<Bloqueo> {
   return repositorio.obtenerBloqueo(delPool(pool), normalizarUuid(clienteId), normalizarUuid(bloqueoId));
+}
+
+// Levanta el bloqueo `bloqueoId` de `clienteId` (RF-2.6.3). Solo llega OPERADOR (el contrato), y su sub queda como autor. 404
+// si no es de ese cliente; 409 si ya fue levantado o venció (RF-2.6.3.1).
+export async function levantarBloqueo(
+  pool: BaseDeDatos,
+  identidad: Identidad,
+  clienteId: string,
+  bloqueoId: string,
+  { motivo }: LevantamientoBloqueo,
+): Promise<Bloqueo> {
+  return repositorio.levantarBloqueo(
+    delPool(pool),
+    normalizarUuid(clienteId),
+    normalizarUuid(bloqueoId),
+    motivo,
+    identidad.sub,
+  );
 }
