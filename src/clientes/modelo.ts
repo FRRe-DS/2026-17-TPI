@@ -4,6 +4,8 @@ import type { components } from '../generado/contrato.js';
 export type Cliente = components['schemas']['Cliente'];
 export type ClienteNuevo = components['schemas']['ClienteNuevo'];
 export type ClienteCambios = components['schemas']['ClienteCambios'];
+export type Bloqueo = components['schemas']['Bloqueo'];
+export type EstadoCuenta = components['schemas']['EstadoCuenta'];
 
 // Una fila del perfil como la entrega `repositorio.ts`: `fecha_nacimiento` ya como texto AAAA-MM-DD (pg lo daría como un
 // `Date` a medianoche de la zona del proceso, y la fecha podría correrse un día), y `bloqueado`, si el cliente tiene al menos
@@ -30,5 +32,47 @@ export function aCliente(fila: FilaCliente): Cliente {
     estado: fila.bloqueado ? 'BLOQUEADO' : 'ACTIVO',
     creadoEn: fila.creado_en.toISOString(),
     actualizadoEn: fila.actualizado_en.toISOString(),
+  };
+}
+
+// Una fila de bloqueo como la entrega `repositorio.ts`: `vigente` ya calculado por la base con el mismo instante que el resto
+// de la consulta (RF-2.6.4), y las columnas opcionales en null. Las marcas de tiempo llegan como `Date`.
+export type FilaBloqueo = {
+  bloqueo_id: string;
+  motivo: string;
+  vigente: boolean;
+  hasta: Date | null;
+  creado_en: Date;
+  creado_por: string;
+  levantado_en: Date | null;
+  levantado_por: string | null;
+  motivo_levantamiento: string | null;
+};
+
+// De la fila al esquema `Bloqueo`. `desde` es `creado_en`: no se guarda otra marca (plan, Datos). Los campos opcionales sin
+// valor no están: el contrato no admite null. Un bloqueo vencido por su fecha no lleva campos de levantamiento.
+export function aBloqueo(fila: FilaBloqueo): Bloqueo {
+  const creadoEn = fila.creado_en.toISOString();
+  return {
+    bloqueoId: fila.bloqueo_id,
+    motivo: fila.motivo,
+    vigente: fila.vigente,
+    desde: creadoEn,
+    ...(fila.hasta === null ? {} : { hasta: fila.hasta.toISOString() }),
+    creadoEn,
+    creadoPor: fila.creado_por,
+    ...(fila.levantado_en === null ? {} : { levantadoEn: fila.levantado_en.toISOString() }),
+    ...(fila.levantado_por === null ? {} : { levantadoPor: fila.levantado_por }),
+    ...(fila.motivo_levantamiento === null ? {} : { motivoLevantamiento: fila.motivo_levantamiento }),
+  };
+}
+
+// El estado de cuenta (RF-2.6): el estado sale de los mismos bloqueos vigentes que se devuelven, así que no pueden
+// contradecirse. Con al menos uno es BLOQUEADO; sin ninguno, ACTIVO.
+export function aEstadoCuenta(clienteId: string, vigentes: FilaBloqueo[]): EstadoCuenta {
+  return {
+    clienteId,
+    estado: vigentes.length > 0 ? 'BLOQUEADO' : 'ACTIVO',
+    bloqueosVigentes: vigentes.map(aBloqueo),
   };
 }

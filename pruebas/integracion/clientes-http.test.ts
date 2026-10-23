@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
-import { actualizarCliente, crearCliente, obtenerCliente } from '../../src/clientes/operaciones.js';
+import { actualizarCliente, crearCliente, obtenerCliente, obtenerEstadoCuenta } from '../../src/clientes/operaciones.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { crearApp } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
@@ -36,7 +36,7 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
 
   function crear() {
     const logs = capturarLogs();
-    const app = crearApp({ crearCliente, obtenerCliente, actualizarCliente }, { contrato, pool, flujoLog: logs.flujo });
+    const app = crearApp({ crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta }, { contrato, pool, flujoLog: logs.flujo });
     const autorizacion = (sub: string, roles: Rol[]) => `Bearer ${armarToken({ claims: { sub, roles } })}`;
     return {
       logs,
@@ -49,6 +49,12 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
         }),
       lectura: (sub: string, clienteId: string, roles: Rol[] = ['CLIENTE']) =>
         app.inject({ method: 'GET', url: `/api/v1/clientes/${clienteId}`, headers: { authorization: autorizacion(sub, roles) } }),
+      estadoCuenta: (sub: string, clienteId: string, roles: Rol[] = ['CLIENTE']) =>
+        app.inject({
+          method: 'GET',
+          url: `/api/v1/clientes/${clienteId}/estado-cuenta`,
+          headers: { authorization: autorizacion(sub, roles) },
+        }),
       cambio: (sub: string, clienteId: string, payload: object, roles: Rol[] = ['CLIENTE']) =>
         app.inject({
           method: 'PATCH',
@@ -210,6 +216,91 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
         detail: 'No existe el cliente pedido',
         instance: `/api/v1/clientes/${sub}`,
       });
+    });
+  });
+
+  describe('obtenerEstadoCuenta', () => {
+    const bloquear = (clienteId: string, motivo: string, hasta = 'NULL') =>
+      pool.consultar(
+        `INSERT INTO bloqueos_cliente (bloqueo_id, cliente_id, motivo, creado_por, hasta) VALUES ($1, $2, $3, 'operador-1', ${hasta})`,
+        [randomUUID(), clienteId, motivo],
+      );
+
+    it('el CLIENTE ve su cuenta ACTIVA, sin bloqueos vigentes (RF-2.6)', async () => {
+      const { alta, estadoCuenta } = crear();
+      const sub = randomUUID();
+      await alta(sub, randomUUID());
+
+      const respuesta = await estadoCuenta(sub, sub);
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(respuesta.headers['content-type']).toMatch(/^application\/json/);
+      expect(respuesta.json()).toEqual({ clienteId: sub, estado: 'ACTIVO', bloqueosVigentes: [] });
+    });
+
+    it('con bloqueos vigentes es BLOQUEADO y los trae todos; los vencidos no (RF-2.6, RF-2.6.4)', async () => {
+      const { alta, estadoCuenta } = crear();
+      const sub = randomUUID();
+      await alta(sub, randomUUID());
+      await bloquear(sub, 'Indefinido');
+      await bloquear(sub, 'Futuro', `now() + interval '1 day'`);
+      await bloquear(sub, 'Vencido', `now() - interval '1 second'`);
+
+      const respuesta = await estadoCuenta(sub, sub);
+
+      expect(respuesta.statusCode).toBe(200);
+      const cuenta = respuesta.json();
+      expect(cuenta).toMatchObject({ clienteId: sub, estado: 'BLOQUEADO' });
+      expect(cuenta.bloqueosVigentes.map((b: { motivo: string }) => b.motivo).sort()).toEqual(['Futuro', 'Indefinido']);
+    });
+
+    it('un OPERADOR, CLIENTE+OPERADOR sobre otro y un SERVICIO consultan la cuenta de cualquiera (RF-2.6)', async () => {
+      const { alta, estadoCuenta } = crear();
+      const sub = randomUUID();
+      await alta(sub, randomUUID());
+      await bloquear(sub, 'Indefinido');
+
+      for (const roles of [['OPERADOR'], ['CLIENTE', 'OPERADOR'], ['SERVICIO']] as Rol[][]) {
+        const respuesta = await estadoCuenta(randomUUID(), sub, roles);
+
+        expect(respuesta.statusCode, roles.join('+')).toBe(200);
+        expect(respuesta.json()).toMatchObject({ clienteId: sub, estado: 'BLOQUEADO' });
+      }
+    });
+
+    it('un CLIENTE no ve la cuenta de otro: 403 (RF-2.1.1.1)', async () => {
+      const { alta, estadoCuenta } = crear();
+      const otro = randomUUID();
+      await alta(otro, randomUUID());
+
+      expect((await estadoCuenta(randomUUID(), otro)).statusCode).toBe(403);
+    });
+
+    it('una cuenta que no existe: 404 en problem+json, también para SERVICIO', async () => {
+      const sub = randomUUID();
+
+      const respuesta = await crear().estadoCuenta(randomUUID(), sub, ['SERVICIO']);
+
+      expect(respuesta.statusCode).toBe(404);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+      expect(respuesta.json()).toEqual({
+        type: 'about:blank',
+        title: 'No encontrado',
+        status: 404,
+        detail: 'No existe el cliente pedido',
+        instance: `/api/v1/clientes/${sub}/estado-cuenta`,
+      });
+    });
+
+    it('con el clienteId en mayúsculas en la ruta, es la misma cuenta', async () => {
+      const { alta, estadoCuenta } = crear();
+      const sub = randomUUID();
+      await alta(sub, randomUUID());
+
+      const respuesta = await estadoCuenta(sub, sub.toUpperCase());
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(respuesta.json().clienteId).toBe(sub);
     });
   });
 

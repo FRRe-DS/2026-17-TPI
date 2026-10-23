@@ -153,3 +153,26 @@ Se escribe al validar la spec.
   - La respuesta de `crearCliente` sale de `idempotencias` (jsonb) y sus claves vienen en otro orden que las de `obtenerCliente`. El contenido es el mismo y JSON no fija el orden, pero las pruebas comparan objetos y no texto.
   - Me equivoqué con la `Idempotency-Key`: creí que el contrato no tenía largo máximo y empecé a guardar su SHA-256. Tiene `maxLength: 255`, igual que la columna, así que lo revertí. Una clave de 256 da 400 antes de llegar al manejador.
   - El 403 por propiedad tiene un `detail` propio. Es distinto del 403 por rol, para que quien consume la API sepa por qué.
+
+### T6 — Vigencia y estado de cuenta consistente · commit `004/T6`
+- Qué cambió:
+  - [src/clientes/repositorio.ts](../../src/clientes/repositorio.ts): `obtenerEstadoCuenta(consultar, clienteId)`. Una sola sentencia con `clientes LEFT JOIN bloqueos_cliente` filtrado por `BLOQUEO_VIGENTE` devuelve una fila por bloqueo vigente (del más nuevo al más antiguo), o una sin bloqueo si no hay ninguno; sin filas, `NoEncontrado` (404). `COLUMNAS_BLOQUEO` es la lista de columnas de `FilaBloqueo` con `vigente` calculado; T7 la reutiliza para el historial.
+  - [src/clientes/modelo.ts](../../src/clientes/modelo.ts): `Bloqueo` y `EstadoCuenta` (tipos del contrato), `FilaBloqueo`, `aBloqueo()` y `aEstadoCuenta()`. El estado sale de la cantidad de bloqueos vigentes que se devuelven.
+  - [src/clientes/servicio.ts](../../src/clientes/servicio.ts): `obtenerEstadoCuenta`, con `exigirPropietario` antes de ir a la base. [src/clientes/operaciones.ts](../../src/clientes/operaciones.ts): el manejador `obtenerEstadoCuenta`.
+- Por qué así:
+  - `estado` y `bloqueosVigentes` no pueden contradecirse porque el primero se deduce de la segunda, y ambas salen de una misma sentencia, con un mismo `CURRENT_TIMESTAMP` (plan, «Estado y vigencia»). No hace falta una transacción de lectura aparte: una sentencia ya es una sola instantánea.
+  - La vigencia vive solo en SQL (`BLOQUEO_VIGENTE`), no hay una segunda versión en TypeScript que pueda diferir de la de `obtenerPerfil`.
+  - `desde` es `creado_en`; un bloqueo vencido por su fecha no lleva `levantadoEn`, `levantadoPor` ni `motivoLevantamiento`: no está levantado (spec, Casos límite).
+  - La propiedad se exige solo si el único rol efectivo es CLIENTE: OPERADOR, CLIENTE+OPERADOR y SERVICIO ven cualquier cuenta (RF-2.6).
+- Cómo se conecta: el manejador queda sin registrar en [src/operaciones/index.ts](../../src/operaciones/index.ts); eso es T9. Las pruebas lo pasan a `crearApp`.
+- Tests:
+  - [pruebas/unitarias/clientes.test.ts](../../pruebas/unitarias/clientes.test.ts): `aBloqueo()` (campos, `desde`, fin, levantado, vencido sin campos de levantamiento) y `aEstadoCuenta()` (ACTIVO sin bloqueos, BLOQUEADO con uno o varios, orden recibido).
+  - [pruebas/integracion/clientes.test.ts](../../pruebas/integracion/clientes.test.ts), bloque `obtenerEstadoCuenta`: sin bloqueos; indefinido; futuro; vencido; levantado (con y sin fin); varios mezclados con orden; levantar uno de dos y luego el último; un bloqueo que vence solo en 700 ms; bloqueos de otro cliente; `estado`, `bloqueosVigentes` y el estado de `obtenerPerfil` coinciden en seis casos; 40 lecturas con bloqueos entrando y venciendo sin contradicciones; 404.
+  - [pruebas/http/clientes.test.ts](../../pruebas/http/clientes.test.ts) (sin base): 401, 403 por propiedad (también CLIENTE+CONDUCTOR), 403 por rol, 400 por `clienteId` inválido. [pruebas/integracion/clientes-http.test.ts](../../pruebas/integracion/clientes-http.test.ts): 200 ACTIVO, 200 BLOQUEADO con vigentes y sin vencidos, OPERADOR, CLIENTE+OPERADOR y SERVICIO sobre otro, 403, 404 problem+json y `clienteId` en mayúsculas.
+  - En rojo primero: faltaban `aBloqueo`, `aEstadoCuenta` y `obtenerEstadoCuenta`, y fallaron las 70 pruebas nuevas y las de los archivos que los importan. Mutación de control: reemplazando la condición de `hasta` por `TRUE` fallan 5 (vencido, varios, vence solo, y las dos del estado en HTTP y repositorio).
+  - `npm test` (2247), lint, build y spec-check en verde.
+- Para mirar con atención:
+  - El LEFT JOIN usa `levantado_en` y `hasta` sin alias dentro de `BLOQUEO_VIGENTE`: es inequívoco porque `clientes` no tiene esas columnas. Si alguien las agrega, la consulta fallará con «ambiguous», no devolverá datos mal.
+  - Un bloqueo cuyo `hasta` coincide exactamente con el instante de la consulta no es vigente (`hasta > CURRENT_TIMESTAMP` es estricto), igual que la regla de la spec. La prueba de vencimiento natural espera 1 s sobre un fin de 700 ms.
+  - La prueba de «40 lecturas» confirma que no hay contradicción, pero la garantía es estructural (una sentencia, estado deducido), no estadística.
+

@@ -1,6 +1,15 @@
 import type { Consultar } from '../bd/transaccion.js';
 import { NoEncontrado, PerfilYaExiste } from '../errores.js';
-import { aCliente, type Cliente, type ClienteCambios, type ClienteNuevo, type FilaCliente } from './modelo.js';
+import {
+  aCliente,
+  aEstadoCuenta,
+  type Cliente,
+  type ClienteCambios,
+  type ClienteNuevo,
+  type EstadoCuenta,
+  type FilaBloqueo,
+  type FilaCliente,
+} from './modelo.js';
 
 // Las consultas de perfiles (plan, Estructura). Cada función recibe `consultar`, el del pool (`PoolBd.consultar`) o el de una
 // `transaccion()`, así sirve dentro de la idempotencia de las altas (T3) y fuera de ella. Los errores de la base salen como
@@ -15,6 +24,11 @@ const BLOQUEO_VIGENTE = 'levantado_en IS NULL AND (hasta IS NULL OR hasta > CURR
 const COLUMNAS = `p.cliente_id, p.nombre, p.apellido, p.telefono, to_char(p.fecha_nacimiento, 'YYYY-MM-DD') AS fecha_nacimiento,
   p.creado_en, p.actualizado_en,
   EXISTS (SELECT 1 FROM bloqueos_cliente b WHERE b.cliente_id = p.cliente_id AND ${BLOQUEO_VIGENTE}) AS bloqueado`;
+
+// Las columnas de `FilaBloqueo` para una relación con alias `b`. `vigente` se calcula con el mismo predicado y el mismo
+// instante que el resto de la consulta.
+const COLUMNAS_BLOQUEO = `b.bloqueo_id, b.motivo, (${BLOQUEO_VIGENTE}) AS vigente, b.hasta, b.creado_en, b.creado_por,
+  b.levantado_en, b.levantado_por, b.motivo_levantamiento`;
 
 const NO_EXISTE = 'No existe el cliente pedido';
 
@@ -63,4 +77,21 @@ export async function actualizarPerfil(consultar: Consultar, clienteId: string, 
   const fila = rows[0];
   if (fila === undefined) throw new NoEncontrado(NO_EXISTE);
   return aCliente(fila);
+}
+
+// El estado de cuenta de `clienteId` (RF-2.6): el perfil y sus bloqueos vigentes en una sola sentencia, así que comparten
+// instantánea e instante (CURRENT_TIMESTAMP), y el estado se deduce de los mismos bloqueos que se devuelven. El LEFT JOIN
+// trae una fila por bloqueo vigente, del más nuevo al más antiguo, o una sola con el bloqueo en null si no tiene ninguno. Sin
+// perfil, `NoEncontrado` (RF-2.1.3.1).
+export async function obtenerEstadoCuenta(consultar: Consultar, clienteId: string): Promise<EstadoCuenta> {
+  const { rows } = await consultar<{ cliente_id: string } & { [K in keyof FilaBloqueo]: FilaBloqueo[K] | null }>(
+    `SELECT p.cliente_id, ${COLUMNAS_BLOQUEO}
+     FROM clientes p
+     LEFT JOIN bloqueos_cliente b ON b.cliente_id = p.cliente_id AND ${BLOQUEO_VIGENTE}
+     WHERE p.cliente_id = $1
+     ORDER BY b.creado_en DESC, b.bloqueo_id DESC`,
+    [clienteId],
+  );
+  if (rows.length === 0) throw new NoEncontrado(NO_EXISTE);
+  return aEstadoCuenta(clienteId, rows.filter((fila) => fila.bloqueo_id !== null) as FilaBloqueo[]);
 }

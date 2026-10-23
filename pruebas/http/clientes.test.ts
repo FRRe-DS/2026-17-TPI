@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actualizarCliente, crearCliente, obtenerCliente } from '../../src/clientes/operaciones.js';
+import { actualizarCliente, crearCliente, obtenerCliente, obtenerEstadoCuenta } from '../../src/clientes/operaciones.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { crearApp } from '../ayudas/app.js';
 import { bearer } from '../ayudas/tokens.js';
@@ -18,7 +18,7 @@ type Rol = 'CLIENTE' | 'CONDUCTOR' | 'OPERADOR' | 'SERVICIO';
 const token = (roles: Rol[], sub = SUB) => bearer({ claims: { sub, roles } });
 
 function crear() {
-  return crearApp({ crearCliente, obtenerCliente, actualizarCliente }, { contrato });
+  return crearApp({ crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta }, { contrato });
 }
 
 const alta = (encabezados: Record<string, string>, payload: unknown = ANA) =>
@@ -110,6 +110,35 @@ describe('obtenerCliente: lo que se rechaza sin tocar la base', () => {
 
   it('un clienteId que no es UUID, 400', async () => {
     expect((await lectura(token(['OPERADOR']), 'no-es-un-uuid')).statusCode).toBe(400);
+  });
+});
+
+const estadoCuenta = (encabezados: Record<string, string>, clienteId = SUB) =>
+  crear().inject({ method: 'GET', url: `/api/v1/clientes/${clienteId}/estado-cuenta`, headers: encabezados });
+
+describe('obtenerEstadoCuenta: lo que se rechaza sin tocar la base (RF-2.6)', () => {
+  it('sin token, 401', async () => {
+    expect((await estadoCuenta({})).statusCode).toBe(401);
+  });
+
+  it('un CLIENTE que pide la cuenta de otro, 403 antes de mirar si existe', async () => {
+    const respuesta = await estadoCuenta(token(['CLIENTE']), OTRO);
+
+    expect(respuesta.statusCode).toBe(403);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.json()).toMatchObject({ status: 403, detail: 'El perfil pedido es de otro cliente' });
+  });
+
+  it('CLIENTE+CONDUCTOR sigue siendo solo CLIENTE para esta operación: 403 sobre otra cuenta', async () => {
+    expect((await estadoCuenta(token(['CLIENTE', 'CONDUCTOR']), OTRO)).statusCode).toBe(403);
+  });
+
+  it('un CONDUCTOR solo no consulta cuentas: 403 por el rol', async () => {
+    expect((await estadoCuenta(token(['CONDUCTOR']))).statusCode).toBe(403);
+  });
+
+  it('un clienteId que no es UUID, 400', async () => {
+    expect((await estadoCuenta(token(['OPERADOR']), 'no-es-un-uuid')).statusCode).toBe(400);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aCliente, type FilaCliente } from '../../src/clientes/modelo.js';
+import { aBloqueo, aCliente, aEstadoCuenta, type FilaBloqueo, type FilaCliente } from '../../src/clientes/modelo.js';
 import { clienteDelToken, exigirPropietario, normalizarUuid } from '../../src/clientes/servicio.js';
 import { aProblema, NoEncontrado, PerfilYaExiste, SinPermiso, SolicitudInvalida } from '../../src/errores.js';
 
@@ -150,5 +150,90 @@ describe('exigirPropietario(): la propiedad solo se exige si CLIENTE es el únic
 
   it('un OPERADOR no usa la regla de propiedad', () => {
     expect(exigir(['OPERADOR'], OTRO, LECTURA)).not.toThrow();
+  });
+});
+
+const BLOQUEO_ID = 'b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+
+// Una fila de bloqueo como la entrega pg: sin fin ni levantamiento, vigente.
+const filaBloqueo = (cambios: Partial<FilaBloqueo> = {}): FilaBloqueo => ({
+  bloqueo_id: BLOQUEO_ID,
+  motivo: 'Deuda pendiente',
+  vigente: true,
+  hasta: null,
+  creado_en: new Date('2026-10-23T10:00:00.789Z'),
+  creado_por: 'operador-1',
+  levantado_en: null,
+  levantado_por: null,
+  motivo_levantamiento: null,
+  ...cambios,
+});
+
+describe('aBloqueo(): de la fila al esquema Bloqueo del contrato (RF-2.6, RF-2.6.4)', () => {
+  it('un bloqueo sin fin ni levantamiento: solo los campos que existen, y desde es creadoEn', () => {
+    const bloqueo = aBloqueo(filaBloqueo());
+
+    expect(bloqueo).toStrictEqual({
+      bloqueoId: BLOQUEO_ID,
+      motivo: 'Deuda pendiente',
+      vigente: true,
+      desde: '2026-10-23T10:00:00.789Z',
+      creadoEn: '2026-10-23T10:00:00.789Z',
+      creadoPor: 'operador-1',
+    });
+  });
+
+  it('con fin, hasta sale en ISO 8601', () => {
+    const bloqueo = aBloqueo(filaBloqueo({ hasta: new Date('2026-12-01T00:00:00.000Z') }));
+
+    expect(bloqueo.hasta).toBe('2026-12-01T00:00:00.000Z');
+  });
+
+  it('levantado: quién, cuándo y por qué, y deja de ser vigente', () => {
+    const bloqueo = aBloqueo(
+      filaBloqueo({
+        vigente: false,
+        levantado_en: new Date('2026-10-23T11:00:00.000Z'),
+        levantado_por: 'operador-2',
+        motivo_levantamiento: 'Pagó',
+      }),
+    );
+
+    expect(bloqueo).toMatchObject({
+      vigente: false,
+      levantadoEn: '2026-10-23T11:00:00.000Z',
+      levantadoPor: 'operador-2',
+      motivoLevantamiento: 'Pagó',
+    });
+  });
+
+  it('vencido por su fecha no es un levantamiento: no lleva campos de levantamiento (spec 004, Casos límite)', () => {
+    const bloqueo = aBloqueo(filaBloqueo({ vigente: false, hasta: new Date('2026-10-23T10:30:00.000Z') }));
+
+    expect(bloqueo.vigente).toBe(false);
+    expect(bloqueo).not.toHaveProperty('levantadoEn');
+    expect(bloqueo).not.toHaveProperty('levantadoPor');
+    expect(bloqueo).not.toHaveProperty('motivoLevantamiento');
+  });
+});
+
+describe('aEstadoCuenta(): el estado sale de los bloqueos vigentes que lo acompañan (RF-2.6)', () => {
+  it('sin bloqueos vigentes: ACTIVO y la lista vacía', () => {
+    expect(aEstadoCuenta(CLIENTE_ID, [])).toStrictEqual({ clienteId: CLIENTE_ID, estado: 'ACTIVO', bloqueosVigentes: [] });
+  });
+
+  it('con uno: BLOQUEADO y ese bloqueo', () => {
+    const cuenta = aEstadoCuenta(CLIENTE_ID, [filaBloqueo()]);
+
+    expect(cuenta.estado).toBe('BLOQUEADO');
+    expect(cuenta.bloqueosVigentes).toEqual([expect.objectContaining({ bloqueoId: BLOQUEO_ID, vigente: true })]);
+  });
+
+  it('con varios: BLOQUEADO y todos, en el orden recibido', () => {
+    const otro = 'c4b2d3e5-6f7a-4b8c-9dae-1f2a3b4c5d6e';
+    const cuenta = aEstadoCuenta(CLIENTE_ID, [filaBloqueo({ bloqueo_id: otro }), filaBloqueo()]);
+
+    expect(cuenta.estado).toBe('BLOQUEADO');
+    expect(cuenta.bloqueosVigentes.map((bloqueo) => bloqueo.bloqueoId)).toEqual([otro, BLOQUEO_ID]);
   });
 });

@@ -3,8 +3,8 @@ import { conIdempotencia, type RespuestaIdempotente } from '../bd/idempotencia.j
 import type { BaseDeDatos } from '../bd/pool.js';
 import type { Consultar } from '../bd/transaccion.js';
 import { SinPermiso, SolicitudInvalida } from '../errores.js';
-import type { Cliente, ClienteCambios, ClienteNuevo } from './modelo.js';
-import { actualizarPerfil, crearPerfil, obtenerPerfil } from './repositorio.js';
+import type { Cliente, ClienteCambios, ClienteNuevo, EstadoCuenta } from './modelo.js';
+import { actualizarPerfil, crearPerfil, obtenerEstadoCuenta as leerEstadoCuenta, obtenerPerfil } from './repositorio.js';
 
 // Las reglas de las operaciones de perfil que el contrato no expresa (plan, Estructura): el rol efectivo, la propiedad, el
 // clienteId que sale del token y la idempotencia del alta. No sabe de HTTP: lo llama `operaciones.ts`.
@@ -81,4 +81,16 @@ export async function actualizarCliente(
 ): Promise<Cliente> {
   exigirPropietario(identidad, clienteId, rolesOperacion);
   return actualizarPerfil(delPool(pool), normalizarUuid(clienteId), cambios);
+}
+
+// El estado de cuenta de `clienteId` (RF-2.6), si quien llama puede verlo: su dueño, un OPERADOR o un SERVICIO (M5 y M9). La
+// propiedad se exige solo si el único rol efectivo es CLIENTE. 404 si no existe el perfil.
+export async function obtenerEstadoCuenta(
+  pool: BaseDeDatos,
+  identidad: Identidad,
+  rolesOperacion: readonly string[],
+  clienteId: string,
+): Promise<EstadoCuenta> {
+  exigirPropietario(identidad, clienteId, rolesOperacion);
+  return leerEstadoCuenta(delPool(pool), normalizarUuid(clienteId));
 }
