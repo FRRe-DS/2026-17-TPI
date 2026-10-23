@@ -2,7 +2,7 @@
 
 Tareas delicadas: T3 (idempotencia concurrente) y T8 (levantamiento concurrente) se implementan con Opus. El primer PR de implementación debe incluir T1 a T3, para desbloquear la FK de las specs #5/#6 y la idempotencia de la #5.
 
-- [ ] **T1. Crear la migración de perfiles, bloqueos e idempotencias con restricciones e índices.** RF-2.1, RF-2.1.3, RF-2.6.1, RF-2.6.4, RNF-05, RNF-08
+- [x] **T1. Crear la migración de perfiles, bloqueos e idempotencias con restricciones e índices.** RF-2.1, RF-2.1.3, RF-2.6.1, RF-2.6.4, RNF-05, RNF-08
   - Hecho cuando: una prueba de integración aplica y revierte la migración creada con `--migrations-dir migraciones`, inspecciona claves, checks e índices, y demuestra que la base rechaza un segundo perfil, un levantamiento incompleto, un `crearBloqueo` sin cliente de la ruta (23514) y una segunda idempotencia de `crearCliente` con el mismo sujeto y clave, aunque su `cliente_id` sea nulo (23505), y que acepta la misma clave de `crearBloqueo` para dos clientes distintos.
 - [ ] **T2. Implementar `transaccion()` con el tiempo máximo y la clasificación de errores de la base.** RNF-08
   - Hecho cuando: pruebas de integración comprueban COMMIT, ROLLBACK, 409 ante `23505`, 503 ante base indisponible y el límite de 2 s por sentencia.
