@@ -111,9 +111,9 @@ async function exigirPerfil(consultar: Consultar, clienteId: string): Promise<vo
 // Crea el bloqueo `bloqueoId` de `clienteId` (RF-2.6.1), con `autor` (el sub del operador) como `creado_por`. Sin perfil,
 // `NoEncontrado` (404), antes de mirar la fecha. `hasta` tiene que ser posterior al instante de creación: el mismo
 // clock_timestamp() es `creado_en` y la referencia de la comparación, así que `desde` (= `creadoEn`) nunca queda después de
-// `hasta`; si no lo es, no inserta y da `BloqueoVencido` (422). `hasta` se pasa como texto: PostgreSQL entiende todas las
-// formas de date-time que admite el contrato. Ninguno de los dos rechazos es un error de la base, así que dentro de una
-// transacción no la abortan.
+// `hasta`; si no lo es, no inserta y da `BloqueoVencido` (422). `hasta` llega como texto: el servicio ya lo pasó a UTC, porque
+// PostgreSQL no lee todos los desplazamientos que admite el contrato. Ninguno de los dos rechazos es un error de la base, así
+// que dentro de una transacción no la abortan.
 export async function crearBloqueo(
   consultar: Consultar,
   clienteId: string,

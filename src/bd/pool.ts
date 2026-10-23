@@ -1,6 +1,6 @@
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 import type { Config } from '../config.js';
-import { BaseNoDisponible, Conflicto } from '../errores.js';
+import { BaseNoDisponible, Conflicto, SolicitudInvalida } from '../errores.js';
 
 // Cuántas conexiones abre el pool como máximo (plan, Datos).
 const CONEXIONES_MAXIMAS = 10;
@@ -10,6 +10,12 @@ const MARGEN_CORTE_BASE_MS = 500;
 
 // SQLSTATE de unique_violation.
 const UNIQUE_VIOLATION = '23505';
+
+// SQLSTATE con los que PostgreSQL rechaza el carácter nulo (U+0000), que no guarda: 22021 en un texto y 22P05 en un jsonb. El
+// contrato lo admite en los textos, así que es un 400 y no un 500. pg siempre manda UTF-8 válido: de este lado, 22021 solo
+// puede ser el nulo.
+const CODIGOS_NULO: ReadonlySet<string> = new Set(['22021', '22P05']);
+const DETALLE_NULO = 'Un texto de la solicitud tiene el carácter nulo (U+0000), que no se puede guardar';
 
 // Cuando falla con uno de estos códigos, la base no está: los de red de Node, y los SQLSTATE 57P01 (admin_shutdown, la base
 // se está apagando o cortó la sesión) y 57P03 (cannot_connect_now, todavía está arrancando). Además, todo el que empieza con
@@ -56,16 +62,18 @@ export async function conTiempoMaximo<T>(promesa: Promise<T>, ms: number): Promi
   }
 }
 
-// Qué le corresponde a un error de la base: el `Conflicto` del 409 (RNF-08.1) o `BaseNoDisponible`, el del 503
-// (RNF-14.2), con el error original en `cause` para que el manejador de errores lo registre (RNF-14.8). Cualquier otro
+// Qué le corresponde a un error de la base: el `Conflicto` del 409 (RNF-08.1), `SolicitudInvalida` (400) ante el carácter nulo
+// o `BaseNoDisponible`, el del 503 (RNF-14.2), con el error original en `cause` para que el manejador de errores lo registre
+// (RNF-14.8). Cualquier otro
 // devuelve `undefined`: queda como está para que el manejador de errores lo responda con un 500 y lo registre entero
 // (RNF-03.3). La respuesta no lleva ni la restricción ni la consulta, que sí tiene el original.
-export function clasificarError(error: unknown): Conflicto | BaseNoDisponible | undefined {
+export function clasificarError(error: unknown): Conflicto | SolicitudInvalida | BaseNoDisponible | undefined {
   if (!(error instanceof Error)) return undefined;
   if (error instanceof TiempoAgotado) return new BaseNoDisponible({ cause: error });
   // En un error de pg, `code` es el SQLSTATE si lo contestó la base, y el código de Node si falló el socket.
   const { code } = error as { code?: unknown };
   if (code === UNIQUE_VIOLATION) return new Conflicto();
+  if (typeof code === 'string' && CODIGOS_NULO.has(code)) return new SolicitudInvalida(DETALLE_NULO);
   if (typeof code === 'string' && (CODIGOS_SIN_BASE.has(code) || code.startsWith('08'))) {
     return new BaseNoDisponible({ cause: error });
   }

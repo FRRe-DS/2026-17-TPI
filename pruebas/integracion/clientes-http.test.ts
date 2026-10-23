@@ -398,6 +398,21 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
       expect((await app.estadoCuenta(clienteId, clienteId)).json()).toMatchObject({ estado: 'BLOQUEADO', bloqueosVigentes: [bloqueo] });
     });
 
+    it.each([
+      ['9389-01-20T16:00:33+16:42', '9389-01-19T23:18:33.000Z'],
+      ['2099-01-01T00:00:00-23:59', '2099-01-01T23:59:00.000Z'],
+      ['2098-12-31t23:59:60z', '2099-01-01T00:00:00.000Z'],
+      ['9999-12-31T23:59:59.999999Z', '9999-12-31T23:59:59.999Z'],
+    ])('hasta %s, que PostgreSQL no lee tal cual o que está en un borde: 201 con hasta %s', async (hasta, esperado) => {
+      const app = crear();
+      const clienteId = await conPerfil(app);
+
+      const respuesta = await app.altaBloqueo(OPERADOR, clienteId, randomUUID(), { motivo: 'x', hasta });
+
+      expect(respuesta.statusCode).toBe(201);
+      expect(respuesta.json().hasta).toBe(esperado);
+    });
+
     it('la misma Idempotency-Key y el mismo cuerpo: la misma respuesta y un solo bloqueo (RNF-08)', async () => {
       const app = crear();
       const [clienteId, clave] = [await conPerfil(app), randomUUID()];
@@ -611,6 +626,33 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
 
       const texto = app.logs.texto();
       for (const dato of ['Motivo-confidencial', 'Bearer']) expect(texto).not.toContain(dato);
+    });
+  });
+
+  describe('un texto con el carácter nulo, que PostgreSQL no guarda (spec 004, T10)', () => {
+    const NULO = 'Ana\u0000Gómez';
+
+    it('en las cuatro operaciones que escriben: 400 en problem+json y nada guardado', async () => {
+      const app = crear();
+      const clienteId = randomUUID();
+      await app.alta(clienteId, randomUUID());
+      const alta = await app.altaBloqueo('operador', clienteId, randomUUID(), { motivo: 'Deuda pendiente' });
+
+      const respuestas = [
+        await app.alta(randomUUID(), randomUUID(), { ...ANA, nombre: NULO }),
+        await app.cambio(clienteId, clienteId, { apellido: NULO }),
+        await app.altaBloqueo('operador', clienteId, randomUUID(), { motivo: NULO }),
+        await app.levantamiento('operador', alta.headers.location as string, { motivo: NULO }),
+      ];
+
+      for (const respuesta of respuestas) {
+        expect(respuesta.statusCode).toBe(400);
+        expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+        expect(respuesta.json().detail).toBe('Un texto de la solicitud tiene el carácter nulo (U+0000), que no se puede guardar');
+      }
+      expect((await app.lectura(clienteId, clienteId)).json().apellido).toBe(ANA.apellido);
+      const historial = (await app.lecturaBloqueos('operador', `/api/v1/clientes/${clienteId}/bloqueos`)).json();
+      expect([historial.totalElementos, historial.items[0].vigente]).toEqual([1, true]);
     });
   });
 

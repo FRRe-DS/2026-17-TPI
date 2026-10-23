@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { cargarContrato, type Contrato } from '../../src/contrato/cargar.js';
@@ -215,5 +216,46 @@ describe('listarOperaciones: qué cuenta como operación', () => {
     });
 
     expect(listarOperaciones(contrato, {}).pendientes.map(({ operationId }) => operationId)).toEqual(['altaB', 'listaB', 'listaA']);
+  });
+});
+
+// schemathesis.toml, la configuración con la que `npm run contrato:test` corre Schemathesis (spec 004, T10). El ajuste es
+// acotado a propósito: no genera el carácter nulo, que PostgreSQL no guarda, y `positive_data_acceptance` acepta además el 422
+// solo en las operaciones que lo declaran en el contrato. Se lee sin una biblioteca de TOML: el archivo es chico y de forma fija.
+describe('schemathesis.toml: el ajuste de Schemathesis queda acotado (RNF-07.2)', () => {
+  const texto = readFileSync(fileURLToPath(new URL('../../schemathesis.toml', import.meta.url)), 'utf8');
+  const sinComentarios = texto.replace(/#.*$/gm, '');
+  // Lo que Schemathesis acepta por defecto en positive_data_acceptance, tal como lo informa al fallar.
+  const POR_DEFECTO = ['"2xx"', '"3xx"', '401', '403', '404', '409', '429', '"5xx"'];
+  const bloques = sinComentarios.split('[[operations]]').slice(1);
+  const contrato = cargarContrato();
+  const respuestasDe = (operationId: string) => {
+    for (const ruta of Object.values(contrato.paths ?? {}) as Record<string, { operationId?: string; responses?: object }>[]) {
+      const operacion = Object.values(ruta).find((candidata) => candidata.operationId === operationId);
+      if (operacion !== undefined) return Object.keys(operacion.responses ?? {});
+    }
+    return undefined;
+  };
+
+  it('no genera el carácter nulo y no cambia ningún otro chequeo ni la generación', () => {
+    const encabezados = [...sinComentarios.matchAll(/^\s*\[([^\]]+)\]\s*$/gm)].map(([, nombre]) => nombre);
+    // Las tablas simples: solo [generation]. Los [[operations]] son los bloques de la otra prueba.
+    expect(encabezados).toEqual(['generation']);
+    expect(sinComentarios).toMatch(/^\s*allow-x00\s*=\s*false\s*$/m);
+    expect(sinComentarios.match(/=/g)?.length).toBe(1 + bloques.length * 2);
+  });
+
+  it('acepta 422 solo en crearCliente y crearBloqueo, que lo declaran en el contrato, y ningún otro código de más', () => {
+    const operaciones = bloques.map((bloque) => {
+      const operationId = /include-operation-id\s*=\s*"([^"]+)"/.exec(bloque)?.[1];
+      const lista = /checks\.positive_data_acceptance\.expected-statuses\s*=\s*\[([^\]]*)\]/.exec(bloque)?.[1];
+      return { operationId, estados: (lista ?? '').split(',').map((estado) => estado.trim()).filter(Boolean) };
+    });
+
+    expect(operaciones.map(({ operationId }) => operationId)).toEqual(['crearCliente', 'crearBloqueo']);
+    for (const { operationId, estados } of operaciones) {
+      expect(estados.sort()).toEqual([...POR_DEFECTO, '422'].sort());
+      expect(respuestasDe(operationId as string)).toContain('422');
+    }
   });
 });

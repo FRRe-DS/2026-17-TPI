@@ -197,6 +197,15 @@ export class SolicitudInvalida extends Problema {
   }
 }
 
+// De una regla de una operación que el esquema del contrato no puede expresar y que la operación declara con 422, como que el
+// fin de un bloqueo se pueda devolver en el formato del contrato (spec 004, T10). El `detail` no lleva datos de la solicitud
+// (RNF-19).
+export class NoProcesable extends Problema {
+  constructor(detail: string) {
+    super({ codigo: 422, title: 'Solicitud no procesable', detail });
+  }
+}
+
 const JSON_INVALIDO: DatosProblema = {
   codigo: 400,
   title: TITULO_SOLICITUD_INVALIDA,

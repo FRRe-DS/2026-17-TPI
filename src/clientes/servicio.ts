@@ -3,7 +3,7 @@ import type { Identidad } from '../auth/tokens.js';
 import { conIdempotencia, type RespuestaIdempotente } from '../bd/idempotencia.js';
 import type { BaseDeDatos } from '../bd/pool.js';
 import type { Consultar } from '../bd/transaccion.js';
-import { BloqueoVencido, SinPermiso, SolicitudInvalida } from '../errores.js';
+import { BloqueoVencido, NoProcesable, SinPermiso, SolicitudInvalida } from '../errores.js';
 import type {
   Bloqueo,
   BloqueoNuevo,
@@ -47,6 +47,28 @@ export function exigirPropietario(identidad: Identidad, clienteId: string, roles
   if (soloCliente && normalizarUuid(identidad.sub) !== normalizarUuid(clienteId)) {
     throw new SinPermiso('El perfil pedido es de otro cliente');
   }
+}
+
+// Un date-time como lo admite el validador del contrato (Ajv, RFC 3339): separador `T`, `t` o espacio; segundo 60 solo en el
+// último minuto UTC del día; fracción de cualquier largo; y `Z`, `z` o un desplazamiento ±HH, ±HHMM o ±HH:MM de hasta 23:59.
+const FECHA_HORA = /^(\d{4})-(\d\d)-(\d\d)[Tt\s](\d\d):(\d\d):(\d\d)(?:\.(\d+))?(?:[Zz]|([+-])(\d\d)(?::?(\d\d))?)$/;
+
+// El último milisegundo que se puede devolver en el formato del contrato, que pide el año con cuatro cifras.
+const ULTIMO_INSTANTE = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+
+// El instante de `texto`, un date-time ya validado contra el contrato, en milisegundos UTC. No se le deja a PostgreSQL, que
+// rechaza los desplazamientos de más de ±15:59 que el contrato admite (sería un 500), ni a Date.parse, que no lee el
+// separador en minúscula ni el segundo 60. La fracción se corta al milisegundo, la precisión con la que se responde. El año va
+// con setUTCFullYear: Date.UTC tomaría 0099 como 1999. El segundo 60 pasa al minuto siguiente, como en PostgreSQL.
+export function instanteUtc(texto: string): number {
+  const partes = FECHA_HORA.exec(texto);
+  if (partes === null) throw new Error('Un date-time llegó sin pasar por el validador del contrato');
+  const [, año, mes, dia, hora, minuto, segundo, fraccion = '', signo, horasDesp = '0', minutosDesp = '0'] = partes;
+  const instante = new Date(0);
+  instante.setUTCFullYear(Number(año), Number(mes) - 1, Number(dia));
+  instante.setUTCHours(Number(hora), Number(minuto), Number(segundo), Number(fraccion.slice(0, 3).padEnd(3, '0')));
+  const desplazamiento = (Number(horasDesp) * 60 + Number(minutosDesp)) * 60_000;
+  return instante.getTime() - (signo === '-' ? -desplazamiento : signo === '+' ? desplazamiento : 0);
 }
 
 // `consultar` del pool, para el repositorio: es un método y necesita su `this`.
@@ -109,8 +131,10 @@ export async function obtenerEstadoCuenta(
 // Bloquea a `clienteId` (RF-2.6.1) con la Idempotency-Key `clave` (RNF-08): 201 con Location, o la respuesta guardada si la
 // solicitud se repite. Solo llega OPERADOR (el contrato), y su sub queda como autor. El sujeto de la idempotencia es ese sub y
 // el cliente es el de la ruta, que también va en la huella: la misma clave sirve para otro cliente. El bloqueoId lo genera M2.
-// Un `hasta` ya pasado según el reloj del servicio da 422 sin ir a la base: entre otras, cubre el año 0000, que el contrato
-// admite y PostgreSQL no. La comparación exacta, con el instante de creación, la hace el repositorio.
+// `hasta` se pasa a UTC (`instanteUtc`) antes de todo. Si ya pasó según el reloj del servicio, 422 sin ir a la base: entre
+// otras, cubre el año 0000, que el contrato admite y PostgreSQL no. Si cae después del año 9999 en UTC, 422: no se podría
+// devolver en el formato del contrato. A la base va en UTC, y la comparación exacta, con el instante de creación, la hace el
+// repositorio. La huella guarda el cuerpo tal como llegó.
 export async function crearBloqueo(
   pool: BaseDeDatos,
   identidad: Identidad,
@@ -118,7 +142,12 @@ export async function crearBloqueo(
   clave: string,
   datos: BloqueoNuevo,
 ): Promise<RespuestaIdempotente> {
-  if (datos.hasta !== undefined && Date.parse(datos.hasta) <= Date.now()) throw new BloqueoVencido();
+  const hasta = datos.hasta === undefined ? undefined : instanteUtc(datos.hasta);
+  if (hasta !== undefined && hasta <= Date.now()) throw new BloqueoVencido();
+  if (hasta !== undefined && hasta > ULTIMO_INSTANTE) {
+    throw new NoProcesable('El fin del bloqueo tiene que ser anterior al año 10000 (UTC)');
+  }
+  const enUtc = hasta === undefined ? datos : { ...datos, hasta: new Date(hasta).toISOString() };
   const cliente = normalizarUuid(clienteId);
   const solicitud = {
     operacion: 'crearBloqueo',
@@ -128,7 +157,7 @@ export async function crearBloqueo(
     huella: { cuerpo: datos, ruta: { clienteId: cliente } },
   };
   return conIdempotencia(pool, solicitud, async (consultar) => {
-    const bloqueo = await repositorio.crearBloqueo(consultar, cliente, randomUUID(), datos, identidad.sub);
+    const bloqueo = await repositorio.crearBloqueo(consultar, cliente, randomUUID(), enUtc, identidad.sub);
     return { estado: 201, ubicacion: `/api/v1/clientes/${cliente}/bloqueos/${bloqueo.bloqueoId}`, cuerpo: bloqueo };
   });
 }

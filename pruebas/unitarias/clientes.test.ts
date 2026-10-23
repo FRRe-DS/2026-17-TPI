@@ -7,7 +7,7 @@ import {
   type FilaBloqueo,
   type FilaCliente,
 } from '../../src/clientes/modelo.js';
-import { clienteDelToken, exigirPropietario, normalizarUuid } from '../../src/clientes/servicio.js';
+import { clienteDelToken, exigirPropietario, instanteUtc, normalizarUuid } from '../../src/clientes/servicio.js';
 import {
   aProblema,
   BloqueoNoVigente,
@@ -128,6 +128,41 @@ describe('clienteDelToken(): el clienteId de quien crea su perfil es su sub (RF-
       });
     },
   );
+});
+
+describe('instanteUtc(): el instante de un date-time del contrato, en milisegundos UTC (spec 004, Casos límite)', () => {
+  const utc = (texto: string) => new Date(instanteUtc(texto)).toISOString();
+
+  it.each([
+    ['2099-01-01T00:00:00Z', '2099-01-01T00:00:00.000Z'],
+    ['2099-01-01T05:30:00+05:30', '2099-01-01T00:00:00.000Z'],
+    ['2099-01-01T05:30:00+0530', '2099-01-01T00:00:00.000Z'],
+    ['2099-01-01T05:00:00+05', '2099-01-01T00:00:00.000Z'],
+    ['2099-01-01t00:00:00z', '2099-01-01T00:00:00.000Z'],
+    ['2099-01-01 00:00:00Z', '2099-01-01T00:00:00.000Z'],
+    ['2099-01-01T00:00:00.123456Z', '2099-01-01T00:00:00.123Z'],
+    ['2099-01-01T00:00:00.5Z', '2099-01-01T00:00:00.500Z'],
+  ])('%s es %s', (texto, esperado) => {
+    expect(utc(texto)).toBe(esperado);
+  });
+
+  it('admite los desplazamientos de hasta ±23:59 que acepta el contrato y PostgreSQL no (más de ±15:59)', () => {
+    expect(utc('9389-01-20T16:00:33+16:42')).toBe('9389-01-19T23:18:33.000Z');
+    expect(utc('2099-01-01T00:00:00-23:59')).toBe('2099-01-01T23:59:00.000Z');
+  });
+
+  it('el segundo intercalar pasa al minuto siguiente, como en PostgreSQL', () => {
+    expect(utc('2098-12-31T23:59:60Z')).toBe('2099-01-01T00:00:00.000Z');
+  });
+
+  it('un año de dos cifras no se confunde con el siglo XX, y el año 0000 queda antes del 0001', () => {
+    expect(utc('0099-06-01T00:00:00Z')).toBe('0099-06-01T00:00:00.000Z');
+    expect(instanteUtc('0000-12-31T23:59:59Z')).toBeLessThan(instanteUtc('0001-01-01T00:00:00Z'));
+  });
+
+  it('el último día del año 9999 con desplazamiento negativo cae en el año 10000', () => {
+    expect(instanteUtc('9999-12-31T23:59:59-23:59')).toBeGreaterThan(Date.UTC(9999, 11, 31, 23, 59, 59, 999));
+  });
 });
 
 describe('exigirPropietario(): la propiedad solo se exige si CLIENTE es el único rol efectivo (RF-2.1.1.1, RF-2.1.2.1)', () => {

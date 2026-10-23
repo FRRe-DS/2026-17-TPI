@@ -256,6 +256,19 @@ describe('crearBloqueo: lo que se rechaza sin tocar la base (RF-2.6.1)', () => {
       expect(respuesta.body).not.toContain('Deuda pendiente');
     },
   );
+  it('hasta después del año 9999 en UTC: 422 sin tocar la base, porque no se podría devolver en el formato del contrato', async () => {
+    const respuesta = await altaBloqueo(token(['OPERADOR']), { motivo: 'Deuda pendiente', hasta: '9999-12-31T23:59:59-23:59' });
+
+    expect(respuesta.statusCode).toBe(422);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.json()).toEqual({
+      type: 'about:blank',
+      title: 'Solicitud no procesable',
+      status: 422,
+      detail: 'El fin del bloqueo tiene que ser anterior al año 10000 (UTC)',
+      instance: `/api/v1/clientes/${SUB}/bloqueos`,
+    });
+  });
 });
 
 describe('listarBloqueos y obtenerBloqueo: lo que se rechaza sin tocar la base (RF-2.6.2)', () => {

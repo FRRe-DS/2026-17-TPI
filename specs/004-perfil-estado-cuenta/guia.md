@@ -1,7 +1,65 @@
 # Guía — Spec 004 Perfil y estado de cuenta
 
 ## Visión general
-Se escribe al validar la spec.
+**Qué se construyó y para qué.** Las ocho operaciones de perfil y estado de cuenta de M2. Un cliente crea, consulta y actualiza su perfil; un operador bloquea clientes, consulta el historial de bloqueos y los levanta; y M5/M9 (rol SERVICIO) preguntan si un cliente puede operar. El estado (ACTIVO o BLOQUEADO) no se guarda: se calcula en cada lectura a partir de los bloqueos vigentes, y el historial nunca se borra.
+
+**Recorrido de una petición** (`PATCH /api/v1/clientes/{clienteId}/bloqueos/{bloqueoId}`, levantar un bloqueo). Lo común a todas las operaciones está en la guía de la [spec 003](../003-base-servicio/guia.md):
+1. Token y rol: `registrarPermisos` deja pasar solo a OPERADOR, que es lo que declara el contrato para esta operación. Los ids y el cuerpo los valida Ajv contra el contrato.
+2. El manejador `levantarBloqueo` ([clientes/operaciones.ts](../../src/clientes/operaciones.ts)) lee la ruta y el cuerpo y llama al servicio.
+3. `levantarBloqueo` ([clientes/servicio.ts](../../src/clientes/servicio.ts)) normaliza los UUID y toma el `sub` del token como autor. En las lecturas con dueño, `exigirPropietario` aplica la regla del rol efectivo.
+4. `levantarBloqueo` ([clientes/repositorio.ts](../../src/clientes/repositorio.ts)) ejecuta un UPDATE condicional por vigencia. Si no cambió nada, una segunda lectura decide entre 404, 409 `bloqueo-ya-levantado` y 409 `bloqueo-no-vigente`.
+5. `aBloqueo` ([clientes/modelo.ts](../../src/clientes/modelo.ts)) convierte la fila al esquema `Bloqueo`. Un error es un `Problema` ([errores.ts](../../src/errores.ts)) y sale en problem+json.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos | Tareas |
+|---|---|---|---|
+| `migraciones/1792723535129_perfil-bloqueos.sql` | Tablas `clientes`, `bloqueos_cliente` e `idempotencias`, con restricciones con nombre | RF-2.1, RF-2.6.1, RNF-05, RNF-08 | T1, V |
+| `src/bd/transaccion.ts` | `transaccion()` con tope por sentencia y errores clasificados | RNF-08 | T2 |
+| `src/bd/idempotencia.ts` | `conIdempotencia()`, reutilizable por la spec 005 (fuera de la tabla del plan) | RF-2.1, RF-2.6.1, RNF-08 | T3 |
+| `src/bd/pool.ts` | `clasificarError`: además, el carácter nulo da 400 | RNF-03 | V, T10 |
+| `src/clientes/modelo.ts` | Tipos del contrato y de fila, y sus conversiones | RF-2.1, RF-2.6 | T4, T6, T7, T8 |
+| `src/clientes/repositorio.ts` | SQL de perfiles y bloqueos; `BLOQUEO_VIGENTE`, la única definición de vigencia | RF-2.1 a RF-2.6.4 | T4, T6, T7, T8 |
+| `src/clientes/servicio.ts` | Rol efectivo, propiedad, idempotencia, `hasta` en UTC | RF-2.1.1.1, RF-2.1.2.1, RF-2.6.1 | T5, T7, T8, T10 |
+| `src/clientes/operaciones.ts` | Los ocho manejadores HTTP | RNF-03 | T5 a T8 |
+| `src/operaciones/index.ts` | Registra los ocho `operationId` | RNF-03 | T9 |
+| `src/errores.ts` | Errores de dominio: `perfil-ya-existe`, `idempotencia-reutilizada`, `bloqueo-vencido`, `bloqueo-ya-levantado`, `bloqueo-no-vigente` | RF-2.1.3, RF-2.6.3.1 | T3 a T8, T10 |
+| `schemathesis.toml`, `scripts/contrato-test.mjs` | Ajuste acotado de Schemathesis (fuera de la tabla del plan) | RNF-07.2 | T10 |
+| `pruebas/unitarias/clientes.test.ts`, `pruebas/integracion/clientes.test.ts` | Conversiones y reglas; persistencia, transacciones y concurrencia | RNF-07 | T1 a T8 |
+| `pruebas/http/clientes.test.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` | HTTP sin base y con base, y la matriz de roles (los dos últimos, fuera de la tabla del plan) | RNF-03, RNF-07 | T5 a T10 |
+
+**Decisiones clave** (detalle en [plan.md](plan.md) y en las entradas de abajo):
+- El estado se calcula y no se guarda, con `BLOQUEO_VIGENTE` en SQL y un mismo `CURRENT_TIMESTAMP` en cada sentencia: `estado` y `bloqueosVigentes` no pueden contradecirse (T6). Descartado: una columna `estado`, que habría que mantener al día cuando un bloqueo vence solo.
+- Lo que no puede duplicarse lo garantiza la base: clave primaria del perfil, restricción única de idempotencia y UPDATE condicional para levantar (T1, T3, T8; RNF-08). Descartado: comprobar antes en código, que pierde ante dos solicitudes a la vez.
+- La propiedad se exige solo si el único rol efectivo es CLIENTE (rol efectivo = roles del token ∩ roles de la operación; T5, T9).
+- `hasta` se pasa a UTC en el servicio y no lo interpreta PostgreSQL, que rechaza desplazamientos que el contrato admite (T10).
+
+**Conceptos que conviene entender.** Idempotencia con `Idempotency-Key`: la misma clave y el mismo cuerpo devuelven la respuesta guardada. READ COMMITTED y el bloqueo de fila: el segundo UPDATE espera al primero y vuelve a evaluar su condición. Rol efectivo. Paginación estable (orden total con desempate por id). Schemathesis y sus fases (examples, coverage, fuzzing, stateful).
+
+**Cómo probarlo uno mismo** (comprobado el 2026-10-23 contra el compose; los tokens los firma el comando de tokens del contenedor):
+```bash
+docker compose up -d --build --wait
+CLI=$(cat /proc/sys/kernel/random/uuid); B=http://localhost:8082/api/v1/clientes
+token() { docker compose exec -T m2 node dist/herramientas/token.js --sub "$1" --roles "$2"; }
+TC=$(token "$CLI" CLIENTE); TO=$(token operador-1 OPERADOR); TS=$(token m5-solicitud SERVICIO)
+curl -i -X POST $B -H "Authorization: Bearer $TC" -H 'Idempotency-Key: alta-1' -H 'Content-Type: application/json' \
+  -d '{"nombre":"Ana","apellido":"Gómez","telefono":"+5493624000000"}'        # 201 y Location; repetida, 201 igual; otra clave, 409 perfil-ya-existe
+curl -X PATCH $B/$CLI -H "Authorization: Bearer $TC" -H 'Content-Type: application/json' -d '{"telefono":"+5493624111111"}'   # 200
+curl -i -X POST $B/$CLI/bloqueos -H "Authorization: Bearer $TO" -H 'Idempotency-Key: bloqueo-1' \
+  -H 'Content-Type: application/json' -d '{"motivo":"Deuda pendiente"}'     # 201, creadoPor operador-1; con hasta pasada, 422 bloqueo-vencido
+curl $B/$CLI/estado-cuenta -H "Authorization: Bearer $TS"                   # 200 BLOQUEADO con el bloqueo; SERVICIO en $B/$CLI, 403
+curl -X PATCH http://localhost:8082<Location del bloqueo> -H "Authorization: Bearer $TO" \
+  -H 'Content-Type: application/json' -d '{"motivo":"Pagó la deuda"}'       # 200 levantado; otra vez, 409 bloqueo-ya-levantado
+curl "$B/$CLI/bloqueos?vigente=false" -H "Authorization: Bearer $TO"        # 200, el levantado sigue en el historial
+curl $B/$CLI/estado-cuenta -H "Authorization: Bearer $TC"                   # 200 ACTIVO; sobre otro cliente, 403
+npm test && npm run contrato:test
+```
+
+**Preguntas de comprobación** (la respuesta, entre paréntesis, dice dónde buscarla):
+1. Un bloqueo con `hasta` a las 10:00 y nadie lo levanta: ¿qué estado da la cuenta a las 10:01 y qué campos tiene el bloqueo? (`BLOQUEO_VIGENTE`, `aBloqueo`; T6).
+2. Dos operadores levantan el mismo bloqueo a la vez: ¿qué recibe cada uno y por qué la clasificación del 409 va en una segunda sentencia? (`levantarBloqueo` del repositorio; T8).
+3. Un token con CLIENTE+OPERADOR pide el perfil de otro y después lo quiere actualizar: ¿qué recibe en cada caso? (`exigirPropietario`; T5, T9).
+4. Un operador reintenta un alta de bloqueo con la misma clave, pero para otro cliente: ¿se crea un bloqueo nuevo? (huella y sujeto en `servicio.crearBloqueo`; T3, T7).
+5. ¿Por qué `contrato:test` acepta 422 en `crearCliente` y `crearBloqueo`, y en ninguna otra operación? (`schemathesis.toml`; T10).
 
 ## Tareas
 ### T1 — Migración de perfiles, bloqueos e idempotencias · commit `004/T1`
@@ -245,3 +303,28 @@ Se escribe al validar la spec.
 - Para mirar con atención:
   - La matriz de roles está escrita a mano en la prueba y se compara con el contrato: es doble llave a propósito. Si el contrato cambia un rol, hay que cambiar las dos y entender por qué.
   - El 500 de «llega a la base» es del pool falso, no un comportamiento del servicio. Los resultados reales con base de cada operación están en `clientes-http.test.ts`.
+
+### T10 — Validar contrato, regresión y documentación de la spec · commit `004/T10`
+- Qué cambió: `npm run contrato:test` corrió Schemathesis sobre las nueve operaciones (las ocho y `/health`). La primera corrida encontró dos 500 reales, que se arreglaron, y dos 422 acordados que el chequeo `positive_data_acceptance` toma por rechazos indebidos.
+  - [src/clientes/servicio.ts](../../src/clientes/servicio.ts): `instanteUtc(texto)` pasa un date-time del contrato a milisegundos UTC, con las mismas formas que admite Ajv. `crearBloqueo` lo usa para el chequeo previo y le manda la base en UTC. Si `hasta` cae después del año 9999 en UTC, `NoProcesable` (422, `about:blank`).
+  - [src/bd/pool.ts](../../src/bd/pool.ts): `clasificarError` convierte 22021 y 22P05 (el carácter nulo en un texto o un jsonb) en `SolicitudInvalida` (400).
+  - [src/errores.ts](../../src/errores.ts): `NoProcesable`, el 422 genérico. [src/clientes/repositorio.ts](../../src/clientes/repositorio.ts): solo el comentario de `crearBloqueo`.
+  - [schemathesis.toml](../../schemathesis.toml) (nuevo) y [scripts/contrato-test.mjs](../../scripts/contrato-test.mjs), que lo monta en el contenedor y se lo pasa con `--config-file`.
+- Por qué así:
+  - **500 por desplazamiento horario.** `hasta: 9389-01-20T16:00:33+16:42` cumple el contrato (Ajv admite hasta ±23:59), pero PostgreSQL solo entiende hasta ±15:59 (22009, un 500). La decisión de T7 de pasar el texto tal cual queda reemplazada: el servicio calcula el instante, y así el chequeo previo y la base usan el mismo valor. No se usa `Date.parse`, que no lee el separador en minúscula ni el segundo 60.
+  - **Año 10000.** Con un desplazamiento negativo, el último día de 9999 cae en 10000 UTC, y la respuesta no se podría escribir con el año de cuatro cifras que pide el formato. 422 y no 400, porque es una regla que el esquema no expresa, y `crearBloqueo` declara 422 («la regla de negocio no se cumple»).
+  - **500 por el carácter nulo.** PostgreSQL no guarda U+0000 en un texto, y el contrato lo admite en `nombre`, `apellido` y `motivo`. Se ataja en `clasificarError` y no campo por campo: sirve para cualquier texto, también para los de las specs siguientes, y la transacción se deshace igual.
+  - **Ajuste de Schemathesis (Lautaro lo eligió el 2026-10-23 entre: ajuste acotado, dejarlo fallando o llevarlo al grupo).** `positive_data_acceptance` acepta además el 422 solo en `crearCliente` y `crearBloqueo`, que lo declaran en el contrato: Idempotency-Key reutilizada con otro cuerpo, `hasta` pasada y año 10000. `generation.allow-x00 = false` deja de generar el carácter nulo, como recomienda la documentación de Schemathesis para bases que no lo guardan; el manejo del nulo lo prueban nuestras pruebas. Ningún otro chequeo cambia. Descartado: sumar 400 a los aceptados, que dejaría de detectar rechazos indebidos por validación.
+- Cómo se conecta: `contrato-test.mjs` (spec 003) sigue igual en lo demás. El archivo vive en la raíz y no en `contrato/`, que solo se toca desde una rama `contrato/`.
+- Tests:
+  - [pruebas/unitarias/clientes.test.ts](../../pruebas/unitarias/clientes.test.ts): `instanteUtc` con `Z`, `+05:30`, `+0530`, `+05`, `t`/`z` en minúscula, espacio, fracción larga y corta, ±16:42 y −23:59, segundo 60, año 0099 y año 0000, y el borde del año 10000.
+  - [pruebas/unitarias/bd.test.ts](../../pruebas/unitarias/bd.test.ts): 22021 y 22P05 dan `SolicitudInvalida`.
+  - [pruebas/http/clientes.test.ts](../../pruebas/http/clientes.test.ts): año 10000 en UTC, 422 sin tocar la base. [pruebas/integracion/clientes-http.test.ts](../../pruebas/integracion/clientes-http.test.ts): cuatro `hasta` de borde dan 201 con el instante en UTC; un texto con el nulo da 400 en las cuatro operaciones que escriben, sin guardar nada.
+  - [pruebas/unitarias/contrato-test.test.ts](../../pruebas/unitarias/contrato-test.test.ts): `schemathesis.toml` solo tiene `allow-x00 = false` y dos bloques de operación, cada uno con los valores por defecto más 422, y el contrato declara 422 en las dos operaciones.
+  - En rojo primero: 15 por la fecha, 4 por el nulo y el 422, y la del `schemathesis.toml`, que todavía no existía.
+  - `npm run contrato:test`: dos corridas con 4115 y 4021 casos, todos bien, en las cuatro fases. `npm test` (2436), lint, build, `spec-check` y el lint del contrato (3 avisos, ningún error; el contrato no cambió) en verde. Los ejemplos de la visión general se corrieron contra el compose.
+- Para mirar con atención:
+  - Schemathesis avisa «Schema validation mismatch» en `crearBloqueo` (y a veces en `crearCliente`): la mayoría de las fechas que genera ya pasaron, o repite la clave. Es un aviso, no una falla, y se explica por la regla de `hasta` futura que el esquema no puede expresar.
+  - Un texto con sustitutos UTF-16 sueltos (`\ud8ef`) no falla: Node lo guarda como U+FFFD. Cambia el dato sin avisar; el contrato no dice nada al respecto.
+  - La fracción de `hasta` se corta al milisegundo, la precisión con la que se responde.
+  - La tabla «Estructura» del plan no nombra `src/bd/idempotencia.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` ni `schemathesis.toml`. Están en el mapa de arriba. Si el grupo quiere que el plan coincida, se ajusta con `/sdd-change`.

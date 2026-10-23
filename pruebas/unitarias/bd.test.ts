@@ -1,6 +1,6 @@
 import net, { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
+import { BaseNoDisponible, Conflicto, SolicitudInvalida } from '../../src/errores.js';
 import { clasificarError, conTiempoMaximo, crearPool, type PoolBd, TiempoAgotado } from '../../src/bd/pool.js';
 
 // Un error con el `code` con el que llega de pg (el SQLSTATE si lo contesta el servidor, o el código de Node si falla el
@@ -19,6 +19,18 @@ describe('clasificarError (RNF-08.1, RNF-14.2)', () => {
     expect(problema).toBeInstanceOf(Conflicto);
     expect(JSON.stringify(problema)).not.toMatch(/clientes_documento_key|30111222|duplicate/);
     expect(problema?.message).not.toMatch(/clientes_documento_key|30111222|duplicate/);
+  });
+
+  // PostgreSQL no guarda el carácter nulo en un texto (22021) ni en un jsonb (22P05), y el contrato lo admite: es un 400 y no
+  // un 500 (spec 004, T10). pg siempre manda UTF-8 válido, así que de este lado 22021 solo puede ser el nulo.
+  it.each([
+    ['22021 (character_not_in_repertoire)', conCodigo('22021', 'invalid byte sequence for encoding "UTF8": 0x00')],
+    ['22P05 (untranslatable_character)', conCodigo('22P05', 'unsupported Unicode escape sequence')],
+  ])('%s es SolicitudInvalida, el 400, sin el texto de la base', (_caso, error) => {
+    const problema = clasificarError(error);
+
+    expect(problema).toBeInstanceOf(SolicitudInvalida);
+    expect(problema).toMatchObject({ codigo: 400, detail: 'Un texto de la solicitud tiene el carácter nulo (U+0000), que no se puede guardar' });
   });
 
   // La lista del plan (Datos): los códigos de red de Node, los SQLSTATE 08xxx, 57P01 y 57P03 y los mensajes del cliente.
