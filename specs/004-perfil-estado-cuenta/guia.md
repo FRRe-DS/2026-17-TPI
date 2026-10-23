@@ -47,3 +47,26 @@ Se escribe al validar la spec.
   - Con un corte por tiempo, `conTiempoMaximo` y el `query_timeout` de pg disparan en el mismo milisegundo: la causa del 503 es `TiempoAgotado` o `Query read timeout`, según cuál llegue primero. La prueba acepta las dos.
   - Una sentencia cortada por tiempo sigue corriendo en la base hasta que termina (no hay `statement_timeout` en la base). Una sentencia que espera un bloqueo de fila podría retener los suyos un tiempo más. Queda anotado para T3, que reserva filas de `idempotencias`.
   - `fn` no debe dejar consultas sin esperar: la conexión vuelve al pool al terminar.
+
+### T3 — Idempotencia transaccional reutilizable para las altas · commit `004/T3`
+- Qué cambió:
+  - [src/bd/idempotencia.ts](../../src/bd/idempotencia.ts), `conIdempotencia(pool, solicitud, alta)`: dentro de una `transaccion()`, reserva la clave en `idempotencias` (`INSERT … ON CONFLICT ON CONSTRAINT idempotencias_unica DO NOTHING`), ejecuta `alta`, guarda su respuesta (código, `Location` y cuerpo) y devuelve lo guardado.
+  - Si la clave ya estaba, `repetida()` lee la fila con `FOR UPDATE`: con la misma huella devuelve la respuesta guardada sin llamar a `alta`; con otra, lanza `IdempotenciaReutilizada`.
+  - La identidad (`SolicitudIdempotente`) es operación, sujeto del token, `clienteId` de la ruta (o `null`) y clave. `huella()` es el SHA-256 del JSON de cuerpo y parámetros de ruta, con las claves ordenadas.
+  - [src/errores.ts](../../src/errores.ts), `IdempotenciaReutilizada`: 422 con `type: /errores/idempotencia-reutilizada`, sin la clave en el mensaje (RNF-19).
+- Por qué así: el plan («Crear perfil o bloqueo con idempotencia») y el ADR 004 piden la reserva y el efecto en la misma transacción. Así no puede quedar una respuesta sin efecto ni un efecto sin respuesta (RNF-08). Está en `src/bd/` y no en `src/clientes/servicio.ts` (donde la ubica la tabla del plan) porque no sabe nada de clientes y la 005 la reusa tal cual. El servicio de T5 decide qué pasarle.
+- Cómo se conecta: usa `transaccion()` de T2, así que hereda el tope de 2 s, el 409 y el 503. `alta` recibe el `consultar` de la transacción y tiene que hacer todo con él. La llaman los manejadores de `crearCliente` (T5) y `crearBloqueo` (T7), y las altas de direcciones de la 005.
+- Tests: [pruebas/integracion/clientes.test.ts](../../pruebas/integracion/clientes.test.ts), bloque «conIdempotencia()», con altas de perfil y de bloqueo escritas en la prueba:
+  - la primera vez ejecuta el alta una vez y guarda operación, sujeto, `cliente_id` nulo, clave, hash, estado, ubicación y respuesta;
+  - un alta que falla no deja reserva: la misma clave la vuelve a ejecutar;
+  - la misma solicitud, en secuencia, en otro orden de campos o cinco a la vez, da un solo efecto y respuestas idénticas;
+  - otro cuerpo da 422 sin ejecutar el alta ni tocar lo guardado; dos cuerpos distintos a la vez con la misma clave dan uno bien, un 422 y un solo efecto;
+  - la misma clave para otro `clienteId` crea el segundo bloqueo, y la de otro sujeto es otra solicitud;
+  - dos claves distintas a la vez para el mismo perfil dejan uno, y el otro da `Conflicto`, con una sola reserva.
+  - En rojo primero: con un esbozo que lanzaba, fallaron las 10. Mutación de control: sin `ON CONFLICT … DO NOTHING`, fallan las 5 de repetición y 422.
+  - `npm test` (2140), lint, build y spec-check en verde. La de `clientes.test.ts` se corrió tres veces seguidas sin fallas.
+- Para mirar con atención:
+  - La primera respuesta también sale de lo guardado (`UPDATE … RETURNING`), no del valor que devolvió `alta`. `jsonb` reordena las claves, y sin esto la primera respuesta y las repetidas tenían el mismo contenido en distinto orden. Por eso el cuerpo que devuelve `alta` tiene que estar ya en la forma del contrato: un `Date` volvería como texto.
+  - La concurrencia la resuelve la restricción única: la segunda reserva espera a que termine la transacción de la primera. Si la primera confirma, la segunda lee su respuesta; si falla, la segunda hace el alta. Si la primera tarda más de 2 s, la segunda da 503.
+  - Los errores no se guardan: un alta que falla (409, 404, 422 de negocio) deshace la reserva y la misma clave puede volver a intentarla.
+  - La huella no incluye el sujeto ni la operación, que ya están en la identidad. Si un cuerpo trae un campo `undefined`, `JSON.stringify` lo omite: da lo mismo que no mandarlo.

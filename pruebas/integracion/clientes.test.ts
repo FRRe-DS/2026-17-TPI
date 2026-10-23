@@ -6,8 +6,9 @@ import { Client } from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd, TiempoAgotado } from '../../src/bd/pool.js';
+import { conIdempotencia, type RespuestaIdempotente, type SolicitudIdempotente } from '../../src/bd/idempotencia.js';
 import { type Consultar, transaccion } from '../../src/bd/transaccion.js';
-import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
+import { BaseNoDisponible, Conflicto, IdempotenciaReutilizada } from '../../src/errores.js';
 import { puertoLibre } from '../ayudas/arranque.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
@@ -544,6 +545,245 @@ describe('transaccion() sobre la base de la migración (RNF-08.1, RNF-14.2)', ()
       });
 
       expect(performance.now() - desde).toBeGreaterThan(TIEMPO_BD_MS);
+    });
+  });
+});
+
+describe('conIdempotencia() sobre la base de la migración (RF-2.1, RF-2.6.1, RNF-08)', () => {
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await base?.borrar();
+  });
+
+  type Perfil = { nombre: string; apellido: string; telefono: string };
+  const ANA: Perfil = { nombre: 'Ana', apellido: 'Gómez', telefono: '+5493624000000' };
+
+  // Un alta de perfil como la de crearCliente: el cliente es el sujeto, y la ruta no lleva clienteId.
+  const solicitudDePerfil = (sujeto: string, clave: string, cuerpo: Perfil = ANA): SolicitudIdempotente => ({
+    operacion: 'crearCliente',
+    sujeto,
+    clienteId: null,
+    clave,
+    huella: { cuerpo, parametros: {} },
+  });
+
+  const altaDePerfil = (clienteId: string, cuerpo: Perfil = ANA) =>
+    vi.fn(async (consultar: Consultar): Promise<RespuestaIdempotente> => {
+      const { rows } = await consultar<{ creado_en: Date }>(
+        `INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, $2, $3, $4) RETURNING creado_en`,
+        [clienteId, cuerpo.nombre, cuerpo.apellido, cuerpo.telefono],
+      );
+      return {
+        estado: 201,
+        ubicacion: `/api/v1/clientes/${clienteId}`,
+        cuerpo: { clienteId, ...cuerpo, creadoEn: rows[0]?.creado_en.toISOString() },
+      };
+    });
+
+  // Un alta de bloqueo como la de crearBloqueo: el sujeto es el operador, y la ruta lleva el cliente.
+  const solicitudDeBloqueo = (clienteId: string, clave: string, motivo = 'Deuda pendiente'): SolicitudIdempotente => ({
+    operacion: 'crearBloqueo',
+    sujeto: 'operador-1',
+    clienteId,
+    clave,
+    huella: { cuerpo: { motivo }, parametros: { clienteId } },
+  });
+
+  const altaDeBloqueo = (clienteId: string, motivo = 'Deuda pendiente') =>
+    vi.fn(async (consultar: Consultar): Promise<RespuestaIdempotente> => {
+      const bloqueoId = nuevoId();
+      await consultar(
+        `INSERT INTO bloqueos_cliente (bloqueo_id, cliente_id, motivo, creado_por) VALUES ($1, $2, $3, 'operador-1')`,
+        [bloqueoId, clienteId, motivo],
+      );
+      return {
+        estado: 201,
+        ubicacion: `/api/v1/clientes/${clienteId}/bloqueos/${bloqueoId}`,
+        cuerpo: { bloqueoId, motivo },
+      };
+    });
+
+  const cuantos = async (tabla: 'clientes' | 'bloqueos_cliente', clienteId: string) =>
+    (await pool.consultar<{ n: number }>(`SELECT count(*)::int AS n FROM ${tabla} WHERE cliente_id = $1`, [clienteId]))
+      .rows[0]?.n;
+
+  const fallaCon = (promesa: Promise<unknown>) =>
+    promesa.then(
+      () => expect.unreachable('el alta no falló'),
+      (error: unknown) => error,
+    );
+
+  // Un perfil ya creado, sin idempotencia: el cliente de los bloqueos.
+  async function clienteExistente(): Promise<string> {
+    const clienteId = nuevoId();
+    await altaDePerfil(clienteId)((sql, parametros) => pool.consultar(sql, parametros));
+    return clienteId;
+  }
+
+  describe('la primera vez', () => {
+    it('ejecuta el alta una vez, devuelve su respuesta y la guarda con la huella, en la misma transacción', async () => {
+      const clienteId = nuevoId();
+      const alta = altaDePerfil(clienteId);
+
+      const respuesta = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), alta);
+
+      expect(alta).toHaveBeenCalledTimes(1);
+      expect(respuesta).toEqual({
+        estado: 201,
+        ubicacion: `/api/v1/clientes/${clienteId}`,
+        cuerpo: expect.objectContaining({ clienteId, nombre: 'Ana' }),
+      });
+      const guardadas = await pool.consultar(
+        `SELECT operacion, sujeto, cliente_id, clave, hash_solicitud, estado, ubicacion, respuesta FROM idempotencias
+         WHERE sujeto = $1`,
+        [clienteId],
+      );
+      expect(guardadas.rows).toEqual([
+        {
+          operacion: 'crearCliente',
+          sujeto: clienteId,
+          cliente_id: null,
+          clave: 'clave-1',
+          hash_solicitud: expect.stringMatching(/^[0-9a-f]{64}$/),
+          estado: 201,
+          ubicacion: respuesta.ubicacion,
+          respuesta: respuesta.cuerpo,
+        },
+      ]);
+    });
+
+    it('si el alta falla, no queda la reserva: la misma clave vuelve a ejecutarla', async () => {
+      const clienteId = nuevoId();
+      const propio = new Error('la regla de negocio no se cumple');
+      const fallida = vi.fn(async (consultar: Consultar) => {
+        await altaDePerfil(clienteId)(consultar);
+        throw propio;
+      });
+
+      expect(await fallaCon(conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), fallida))).toBe(propio);
+      expect(await cuantos('clientes', clienteId)).toBe(0);
+
+      const alta = altaDePerfil(clienteId);
+      await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), alta);
+      expect(alta).toHaveBeenCalledTimes(1);
+      expect(await cuantos('clientes', clienteId)).toBe(1);
+    });
+  });
+
+  describe('la misma solicitud repetida (RNF-08)', () => {
+    it('devuelve la respuesta guardada sin repetir el alta', async () => {
+      const clienteId = nuevoId();
+      const primera = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+      const alta = altaDePerfil(clienteId);
+
+      const segunda = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), alta);
+
+      expect(alta).not.toHaveBeenCalled();
+      expect(segunda).toEqual(primera);
+      expect(await cuantos('clientes', clienteId)).toBe(1);
+    });
+
+    it('el mismo cuerpo con los campos en otro orden es la misma solicitud', async () => {
+      const clienteId = nuevoId();
+      const primera = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+      const desordenado = { telefono: ANA.telefono, apellido: ANA.apellido, nombre: ANA.nombre };
+
+      const segunda = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1', desordenado), altaDePerfil(clienteId));
+
+      expect(segunda).toEqual(primera);
+    });
+
+    it('cinco a la vez: un solo efecto, y las cinco reciben la misma respuesta', async () => {
+      const clienteId = nuevoId();
+      const altas = Array.from({ length: 5 }, () => altaDePerfil(clienteId));
+
+      const respuestas = await Promise.all(
+        altas.map((alta) => conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), alta)),
+      );
+
+      expect(altas.reduce((veces, alta) => veces + alta.mock.calls.length, 0)).toBe(1);
+      expect(new Set(respuestas.map((respuesta) => JSON.stringify(respuesta))).size).toBe(1);
+      expect(respuestas[0]?.estado).toBe(201);
+      expect(await cuantos('clientes', clienteId)).toBe(1);
+    });
+  });
+
+  describe('la misma clave con otra solicitud da IdempotenciaReutilizada, el 422', () => {
+    it('otro cuerpo: 422 con su tipo, sin ejecutar el alta ni tocar la respuesta guardada', async () => {
+      const clienteId = nuevoId();
+      const primera = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+      const otro = { ...ANA, nombre: 'Beatriz' };
+      const alta = altaDePerfil(clienteId, otro);
+
+      const error = await fallaCon(conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1', otro), alta));
+
+      expect(error).toBeInstanceOf(IdempotenciaReutilizada);
+      expect(error).toMatchObject({ codigo: 422, type: '/errores/idempotencia-reutilizada' });
+      expect(alta).not.toHaveBeenCalled();
+      expect(await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId))).toEqual(primera);
+    });
+
+    it('dos cuerpos distintos a la vez con la misma clave: uno sale, el otro da 422, y hay un solo efecto', async () => {
+      const clienteId = nuevoId();
+      const otro = { ...ANA, nombre: 'Beatriz' };
+
+      const resultados = await Promise.allSettled([
+        conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId)),
+        conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1', otro), altaDePerfil(clienteId, otro)),
+      ]);
+
+      expect(resultados.map((resultado) => resultado.status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(resultados.find((resultado) => resultado.status === 'rejected')?.reason).toBeInstanceOf(IdempotenciaReutilizada);
+      expect(await cuantos('clientes', clienteId)).toBe(1);
+    });
+  });
+
+  describe('lo que no es la misma solicitud', () => {
+    it('la misma clave para otro clienteId crea el segundo bloqueo, con su propia respuesta (RF-2.6.1)', async () => {
+      const [uno, otro] = [await clienteExistente(), await clienteExistente()];
+
+      const primera = await conIdempotencia(pool, solicitudDeBloqueo(uno, 'clave-compartida'), altaDeBloqueo(uno));
+      const segunda = await conIdempotencia(pool, solicitudDeBloqueo(otro, 'clave-compartida'), altaDeBloqueo(otro));
+
+      expect(segunda.ubicacion).not.toBe(primera.ubicacion);
+      expect(segunda.ubicacion).toContain(otro);
+      expect([await cuantos('bloqueos_cliente', uno), await cuantos('bloqueos_cliente', otro)]).toEqual([1, 1]);
+    });
+
+    it('la misma clave de otro sujeto es otra solicitud', async () => {
+      const clienteId = await clienteExistente();
+      const deOtroOperador = { ...solicitudDeBloqueo(clienteId, 'clave-1'), sujeto: 'operador-2' };
+
+      await conIdempotencia(pool, solicitudDeBloqueo(clienteId, 'clave-1'), altaDeBloqueo(clienteId));
+      const alta = altaDeBloqueo(clienteId);
+      await conIdempotencia(pool, deOtroOperador, alta);
+
+      expect(alta).toHaveBeenCalledTimes(1);
+      expect(await cuantos('bloqueos_cliente', clienteId)).toBe(2);
+    });
+
+    it('dos claves distintas para el mismo perfil a la vez: la restricción única deja uno, y el otro da Conflicto', async () => {
+      const clienteId = nuevoId();
+
+      const resultados = await Promise.allSettled([
+        conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId)),
+        conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-2'), altaDePerfil(clienteId)),
+      ]);
+
+      expect(resultados.map((resultado) => resultado.status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(resultados.find((resultado) => resultado.status === 'rejected')?.reason).toBeInstanceOf(Conflicto);
+      expect(await cuantos('clientes', clienteId)).toBe(1);
+      const reservas = await pool.consultar('SELECT clave FROM idempotencias WHERE sujeto = $1', [clienteId]);
+      expect(reservas.rowCount).toBe(1);
     });
   });
 });
