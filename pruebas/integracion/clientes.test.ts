@@ -3,8 +3,12 @@ import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
+import { crearPool, type PoolBd, TiempoAgotado } from '../../src/bd/pool.js';
+import { type Consultar, transaccion } from '../../src/bd/transaccion.js';
+import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
+import { puertoLibre } from '../ayudas/arranque.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
 // La migración de la spec 004: se crea con `--migrations-dir migraciones`, que le pone la marca de tiempo (plan, Datos).
@@ -268,5 +272,278 @@ describe('la migración perfil-bloqueos se revierte (RNF-05.1)', () => {
     expect((await tablas(base.urlBd)).filter((tabla) => TABLAS.includes(String(tabla)))).toEqual([]);
     expect(await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS })).toEqual(MIGRACION);
     expect(await tablas(base.urlBd)).toEqual(expect.arrayContaining(TABLAS));
+  });
+});
+
+describe('transaccion() sobre la base de la migración (RNF-08.1, RNF-14.2)', () => {
+  // Lo que se acepta por encima del tiempo de base: la máquina de CI puede ir lenta.
+  const MARGEN_MS = 1000;
+  // Node puede disparar un temporizador unos milisegundos antes de lo que mide performance.now().
+  const TOLERANCIA_MS = 20;
+
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+
+  const alta = (consultar: Consultar, clienteId: string) =>
+    consultar(`INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Gómez', '+5493624000000')`, [
+      clienteId,
+    ]);
+
+  // Si el perfil quedó guardado, mirado desde otra conexión del pool.
+  const existe = async (clienteId: string) =>
+    (await pool.consultar('SELECT 1 FROM clientes WHERE cliente_id = $1', [clienteId])).rowCount === 1;
+
+  const fallaCon = (promesa: Promise<unknown>) =>
+    promesa.then(
+      () => expect.unreachable('la transacción no falló'),
+      (error: unknown) => error,
+    );
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterAll(async () => {
+    await base?.borrar();
+  });
+
+  // Un pool por prueba, para que las que miran sus conexiones no vean las de otra.
+  beforeEach(() => {
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterEach(async () => {
+    await pool.end();
+  });
+
+  describe('COMMIT', () => {
+    it('guarda lo que hizo la función, devuelve su resultado y suelta la conexión', async () => {
+      const [uno, otro] = [nuevoId(), nuevoId()];
+
+      const resultado = await transaccion(pool, async (consultar) => {
+        await alta(consultar, uno);
+        await alta(consultar, otro);
+        return 'listo';
+      });
+
+      expect(resultado).toBe('listo');
+      expect([await existe(uno), await existe(otro)]).toEqual([true, true]);
+      expect(pool.idleCount).toBe(pool.totalCount);
+    });
+
+    it('hasta el COMMIT, otra conexión no ve lo que hizo la función', async () => {
+      const clienteId = nuevoId();
+
+      await transaccion(pool, async (consultar) => {
+        await alta(consultar, clienteId);
+        expect(await existe(clienteId)).toBe(false);
+      });
+
+      expect(await existe(clienteId)).toBe(true);
+    });
+
+    it('la función recibe las filas de sus consultas', async () => {
+      const filasDeLaFuncion = await transaccion(pool, async (consultar) =>
+        (await consultar<{ n: number }>('SELECT $1::int + 1 AS n', [41])).rows,
+      );
+
+      expect(filasDeLaFuncion).toEqual([{ n: 42 }]);
+    });
+  });
+
+  describe('ROLLBACK', () => {
+    it('si la función falla, deshace lo que hizo, relanza su error tal cual y suelta la conexión', async () => {
+      const clienteId = nuevoId();
+      const propio = new Error('la regla de negocio no se cumple');
+
+      const error = await fallaCon(
+        transaccion(pool, async (consultar) => {
+          await alta(consultar, clienteId);
+          throw propio;
+        }),
+      );
+
+      expect(error).toBe(propio);
+      expect(await existe(clienteId)).toBe(false);
+      expect(pool.idleCount).toBe(pool.totalCount);
+    });
+
+    it('la conexión vuelve sana: la transacción siguiente sale bien', async () => {
+      await fallaCon(
+        transaccion(pool, async () => {
+          throw new Error('falla');
+        }),
+      );
+      const clienteId = nuevoId();
+
+      await transaccion(pool, (consultar) => alta(consultar, clienteId));
+
+      expect(await existe(clienteId)).toBe(true);
+    });
+  });
+
+  describe('una restricción única da Conflicto, el 409 (RNF-08.1)', () => {
+    it('deshace también lo anterior de la misma transacción', async () => {
+      const [existente, nuevo] = [nuevoId(), nuevoId()];
+      await transaccion(pool, (consultar) => alta(consultar, existente));
+
+      const error = await fallaCon(
+        transaccion(pool, async (consultar) => {
+          await alta(consultar, nuevo);
+          await alta(consultar, existente);
+        }),
+      );
+
+      expect(error).toBeInstanceOf(Conflicto);
+      expect(await existe(nuevo)).toBe(false);
+      expect(pool.idleCount).toBe(pool.totalCount);
+    });
+
+    it('dos transacciones a la vez con el mismo cliente: una confirma, la otra da Conflicto (RNF-08)', async () => {
+      const clienteId = nuevoId();
+
+      const resultados = await Promise.allSettled([
+        transaccion(pool, (consultar) => alta(consultar, clienteId)),
+        transaccion(pool, (consultar) => alta(consultar, clienteId)),
+      ]);
+
+      expect(resultados.map((resultado) => resultado.status).sort()).toEqual(['fulfilled', 'rejected']);
+      expect(resultados.find((resultado) => resultado.status === 'rejected')?.reason).toBeInstanceOf(Conflicto);
+      const guardados = await pool.consultar('SELECT count(*)::int AS n FROM clientes WHERE cliente_id = $1', [clienteId]);
+      expect(guardados.rows).toEqual([{ n: 1 }]);
+    });
+  });
+
+  describe('otro error de la base sale tal cual, para el 500 (RNF-03.3)', () => {
+    it('una tabla que no existe: el error de pg con su código, y la transacción deshecha', async () => {
+      const clienteId = nuevoId();
+
+      const error = await fallaCon(
+        transaccion(pool, async (consultar) => {
+          await alta(consultar, clienteId);
+          await consultar('SELECT * FROM tabla_que_no_existe');
+        }),
+      );
+
+      expect(error).toMatchObject({ code: '42P01' });
+      expect(await existe(clienteId)).toBe(false);
+      expect(pool.idleCount).toBe(pool.totalCount);
+    });
+  });
+
+  describe('sin base da BaseNoDisponible, el 503 (RNF-14.2)', () => {
+    it('una base que no acepta conexiones: la causa en `cause` y la función sin llamar', async () => {
+      const sinBase = crearPool({ urlBd: `postgres://m2:clave@127.0.0.1:${await puertoLibre()}/m2`, tiempoBdMs: TIEMPO_BD_MS });
+      const funcion = vi.fn();
+      try {
+        const error = await fallaCon(transaccion(sinBase, funcion));
+
+        expect(error).toBeInstanceOf(BaseNoDisponible);
+        expect((error as Error).cause).toMatchObject({ code: 'ECONNREFUSED' });
+        expect(funcion).not.toHaveBeenCalled();
+      } finally {
+        await sinBase.end();
+      }
+    });
+
+    // Corta, desde una sesión aparte, las sesiones de esta base que cumplen `donde`, como si la base se reiniciara. Devuelve
+    // cuántas cortó.
+    const cortarSesiones = async (donde: string) =>
+      (
+        await filas(
+          base.urlBd,
+          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+           WHERE datname = current_database() AND pid <> pg_backend_pid() AND ${donde}`,
+        )
+      ).length;
+
+    it('una sentencia en curso que la base corta: BaseNoDisponible con el 57P01, y la transacción deshecha', async () => {
+      const clienteId = nuevoId();
+
+      const error = await fallaCon(
+        transaccion(pool, async (consultar) => {
+          await alta(consultar, clienteId);
+          const dormir = consultar('SELECT pg_sleep(10)');
+          // El corte la rechaza mientras se espera a `cortarSesiones()`: sin esto, quedaría un rato sin atender.
+          dormir.catch(() => {});
+          await vi.waitFor(async () => expect(await cortarSesiones(`query LIKE '%pg_sleep%'`)).toBe(1));
+          await dormir;
+        }),
+      );
+
+      expect(error).toBeInstanceOf(BaseNoDisponible);
+      expect((error as Error).cause).toMatchObject({ code: '57P01' });
+      expect(pool.totalCount).toBe(0);
+      expect(await existe(clienteId)).toBe(false);
+    });
+
+    // Sin un oyente de 'error' en la conexión prestada, esto tira el proceso: Vitest lo cuenta como error de la corrida.
+    it('una transacción que la base corta entre dos sentencias: la siguiente da BaseNoDisponible, y el proceso sigue', async () => {
+      const clienteId = nuevoId();
+
+      const error = await fallaCon(
+        transaccion(pool, async (consultar) => {
+          await alta(consultar, clienteId);
+          expect(await cortarSesiones(`state = 'idle in transaction'`)).toBe(1);
+          await new Promise((listo) => setTimeout(listo, 100));
+          await alta(consultar, nuevoId());
+        }),
+      );
+
+      expect(error).toBeInstanceOf(BaseNoDisponible);
+      expect((error as Error).cause).toMatchObject({ code: '57P01' });
+      expect(pool.totalCount).toBe(0);
+      expect(await existe(clienteId)).toBe(false);
+    });
+  });
+
+  describe('cada sentencia tiene el tope del tiempo de base, 2 s por defecto (RNF-14.2)', () => {
+    it('una sentencia más lenta da BaseNoDisponible en ese tiempo, con el corte como causa', async () => {
+      const clienteId = nuevoId();
+      const desde = performance.now();
+
+      const error = await fallaCon(
+        transaccion(pool, async (consultar) => {
+          await alta(consultar, clienteId);
+          await consultar('SELECT pg_sleep(10)');
+        }),
+      );
+      const duracion = performance.now() - desde;
+
+      expect(error).toBeInstanceOf(BaseNoDisponible);
+      // Cortan a la vez `conTiempoMaximo` y el query_timeout de pg: la causa es el que llegó primero.
+      expect(String((error as Error).cause)).toMatch(new RegExp(`${new TiempoAgotado(TIEMPO_BD_MS).message}|Query read timeout`));
+      expect(duracion).toBeGreaterThanOrEqual(TIEMPO_BD_MS - TOLERANCIA_MS);
+      expect(duracion).toBeLessThan(TIEMPO_BD_MS + MARGEN_MS);
+    });
+
+    // Si la conexión volviera al pool, la consulta cortada la seguiría ocupando: la siguiente esperaría detrás, y su
+    // transacción, abierta, seguiría con los bloqueos de sus filas.
+    it('descarta la conexión de la sentencia cortada, sin esperar a la base, y lo hecho queda deshecho', async () => {
+      const clienteId = nuevoId();
+
+      await fallaCon(
+        transaccion(pool, async (consultar) => {
+          await alta(consultar, clienteId);
+          await consultar('SELECT pg_sleep(10)');
+        }),
+      );
+
+      expect(pool.totalCount).toBe(0);
+      expect(await existe(clienteId)).toBe(false);
+    });
+
+    it('el tope es por sentencia, no por transacción: dos sentencias que juntas lo pasan salen bien', async () => {
+      const segundos = (TIEMPO_BD_MS * 0.6) / 1000;
+      const desde = performance.now();
+
+      await transaccion(pool, async (consultar) => {
+        await consultar('SELECT pg_sleep($1)', [segundos]);
+        await consultar('SELECT pg_sleep($1)', [segundos]);
+      });
+
+      expect(performance.now() - desde).toBeGreaterThan(TIEMPO_BD_MS);
+    });
   });
 });

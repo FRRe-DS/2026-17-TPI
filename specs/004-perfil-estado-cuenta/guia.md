@@ -24,3 +24,26 @@ Se escribe al validar la spec.
   - El plan nombra el archivo `<marca>_perfil_bloqueos.sql`, con guion bajo, pero su comando (`create perfil-bloqueos`) genera `<marca>_perfil-bloqueos.sql`. Se siguió el comando.
   - `idempotencias` no tiene clave foránea a `clientes`: el plan no la pide. Cómo se trata un `crearBloqueo` para un cliente que no existe lo resuelven T3 y T7; como la reserva va en la misma transacción que el alta, un alta que falla la deshace también.
   - Que `hasta` sea futura no lo controla la base: el plan lo valida antes de insertar (T7).
+
+### T2 — `transaccion()` con el tiempo máximo y la clasificación de errores de la base · commit `004/T2`
+- Qué cambió:
+  - [src/bd/transaccion.ts](../../src/bd/transaccion.ts), `transaccion(pool, fn)`: pide una conexión al pool, ejecuta `BEGIN`, le pasa a `fn` una función `consultar` (tipo `Consultar`) que corre sobre esa conexión, y termina con `COMMIT`, o con `ROLLBACK` si algo falla, y entonces relanza el error. Devuelve lo que devuelve `fn`.
+  - Cada sentencia, también `BEGIN`, `COMMIT`, `ROLLBACK` y el pedido de la conexión, pasa por `conTiempoMaximo` y `clasificarError` de [src/bd/pool.ts](../../src/bd/pool.ts): `23505` da `Conflicto` (409), sin base o sin respuesta da `BaseNoDisponible` (503) con la causa en `cause`, y el resto sale tal cual, para el 500. Un error propio de `fn` también sale tal cual.
+  - `deshacer()`: después de un `BaseNoDisponible`, la conexión se descarta (`release(true)`) sin `ROLLBACK`; si el `ROLLBACK` falla, también se descarta.
+  - [src/bd/pool.ts](../../src/bd/pool.ts): `PoolBd.tiempoBdMs` pasó de privado a público y de solo lectura, para que `transaccion()` use el mismo tope.
+- Por qué así: el plan («Transacciones») pide el mismo tope de 2 s y la misma clasificación que `consultar()`. Es la base de la idempotencia de T3 y de las altas de la 005 (RNF-08). Una conexión que tuvo un corte por tiempo sigue ocupada en la base: si volviera al pool, la sentencia siguiente esperaría detrás de ella. Por eso se descarta, y la base deshace la transacción al perder la sesión.
+- Cómo se conecta: reusa las piezas de [src/bd/pool.ts](../../src/bd/pool.ts) sin cambiar `consultar()`. Recibe un `PoolTransaccional` (`connect` y `tiempoBdMs` del `PoolBd`). Hoy no la usa ningún manejador: la usan T3 (idempotencia) y T4 (repositorio).
+- Tests: [pruebas/integracion/clientes.test.ts](../../pruebas/integracion/clientes.test.ts), bloque «transaccion()», con la base migrada y un pool nuevo por prueba:
+  - COMMIT: guarda, devuelve el resultado de `fn` y suelta la conexión; otra conexión no ve los cambios hasta el `COMMIT`; `fn` recibe las filas de sus consultas.
+  - ROLLBACK: un error propio de `fn` sale idéntico (`toBe`), lo hecho no queda y la conexión sirve para la transacción siguiente.
+  - 409: un duplicado da `Conflicto` y deshace también lo anterior de la misma transacción; dos transacciones a la vez con el mismo `cliente_id` dan una confirmada, un `Conflicto` y una sola fila.
+  - 500: una tabla que no existe sale con su `42P01`, y la transacción queda deshecha.
+  - 503: una base que no acepta conexiones (`ECONNREFUSED` en `cause`) no llega a llamar a `fn`; una sentencia en curso que la base corta y una transacción cortada entre dos sentencias dan `BaseNoDisponible` con `57P01`, deshacen lo hecho y descartan la conexión.
+  - Tope: `pg_sleep(10)` da `BaseNoDisponible` entre 2 s y 3 s, con la conexión descartada y lo anterior deshecho; dos sentencias de 1,2 s cada una salen bien, porque el tope es por sentencia y no por transacción.
+  - En rojo primero: sin el módulo no cargaba el archivo. Con un esbozo que solo llamaba a `pool.consultar` (sin `BEGIN` ni `COMMIT`) fallaron 7. Mutación de control: sin el oyente de `'error'`, la prueba del corte entre sentencias falla con errores sin atender.
+  - `npm test` (2130), lint, build y spec-check en verde. La de `clientes.test.ts` se corrió tres veces seguidas sin fallas.
+- Para mirar con atención:
+  - Mientras la conexión está prestada, pg-pool no escucha su evento `'error'`. Si la base la corta entre dos sentencias, pg lo emite sin oyente y se cae el proceso. `transaccion()` pone un oyente, guarda el primer error y lo usa como causa del 503 de la sentencia siguiente (si no, esa sentencia fallaría con un mensaje que `clasificarError` no reconoce, y sería un 500). Una conexión descartada conserva el oyente, porque pg todavía puede emitir el corte.
+  - Con un corte por tiempo, `conTiempoMaximo` y el `query_timeout` de pg disparan en el mismo milisegundo: la causa del 503 es `TiempoAgotado` o `Query read timeout`, según cuál llegue primero. La prueba acepta las dos.
+  - Una sentencia cortada por tiempo sigue corriendo en la base hasta que termina (no hay `statement_timeout` en la base). Una sentencia que espera un bloqueo de fila podría retener los suyos un tiempo más. Queda anotado para T3, que reserva filas de `idempotencias`.
+  - `fn` no debe dejar consultas sin esperar: la conexión vuelve al pool al terminar.
