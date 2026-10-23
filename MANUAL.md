@@ -1,6 +1,6 @@
 # Manual del grupo — M2 Clientes
 
-Cómo empezar a trabajar en este repo, uses Claude Code o Codex. Las reglas completas para los agentes están en `AGENTS.md`; este manual es para las personas.
+Cómo empezar a trabajar en este repo, uses Claude Code, Codex o Antigravity. Las reglas completas para los agentes están en `AGENTS.md`; este manual es para las personas.
 
 ## 1. Preparar tu máquina (una vez)
 
@@ -46,8 +46,12 @@ Cómo empezar a trabajar en este repo, uses Claude Code o Codex. Las reglas comp
 - No tiene hooks. Al empezar, pídele "lee EN-CURSO.local.md si existe"; antes de cortar, pídele que lo actualice.
 - No tiene subagentes: la revisión la hace quien aprueba el PR.
 
-### Antigravity (para entender, no para construir)
-La regla `@explicador` (`.agents/rules/explicador.md`) explica sin tocar nada, con las skills `explicar-spec`, `explicar-cambios`, `explicar-pr` y `mapa-proyecto`. Sirve para entender lo que hizo otro integrante o para preparar la revisión de un PR.
+### Antigravity (con Gemini)
+- Con una versión reciente del IDE, lee `AGENTS.md` como regla y encuentra las mismas skills en `.agents/skills/`. Puedes construir con él igual que con Claude Code o Codex, siguiendo la sección 3.
+- Las skills se cargan cuando la tarea coincide con su descripción, y las de este repo piden que las pidas tú: nómbralas, por ejemplo «usa la skill sdd-implement en la tarea T26 de 003-base-servicio».
+- No tiene hooks. Al empezar, pídele "lee EN-CURSO.local.md si existe"; antes de cortar, pídele que lo actualice.
+- Revisa `node -v` en la terminal del agente: tiene que dar v24. Antigravity puede arrancar con un PATH mínimo y no leer `~/.bashrc`.
+- Para entender sin tocar nada, activa la regla `@explicador` (`.agents/rules/explicador.md`): explica con las skills `explicar-spec`, `explicar-cambios`, `explicar-pr` y `mapa-proyecto`. Sirve para entender lo que hizo otra persona o para preparar la revisión de un PR. No la actives para construir.
 
 ## 3. Cómo se trabaja
 

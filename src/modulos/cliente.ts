@@ -14,27 +14,37 @@ type OpcionesCliente = {
   nombre: string;
   urlBase: string;
   tiempoMs: number;
-  reintentos: number; // Su uso lógico está delegado a T25
+  // Cuántas veces se vuelve a intentar un GET que falló. Los demás métodos no se reintentan.
+  reintentos: number;
   encabezadoCorrelacion: string;
-}
+};
+
+// La pausa entre un intento y el siguiente (plan, Integraciones).
+const PAUSA_REINTENTO_MS = 200;
+
+// Que un intento no obtuvo respuesta del módulo: corte por tiempo, red caída, 5xx o cuerpo que no es JSON. Es lo que
+// se reintenta; no sale del cliente, que al final lanza `ModuloNoDisponible`.
+class IntentoFallido extends Error {}
+
+const pausar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function crearClienteModulo({
   nombre,
   urlBase,
   tiempoMs,
+  reintentos,
   encabezadoCorrelacion,
 }: OpcionesCliente): ClienteModulo {
-  async function ejecutar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
+  // Un intento: devuelve la respuesta del módulo, que puede ser un 4xx, o lanza `IntentoFallido`.
+  async function intentar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
     try {
-    // Se utiliza AbortSignal para asegurar el corte por tiempo global (conexión y cuerpo compartido)
+      // La señal corre desde antes del `fetch`: el plazo incluye la conexión, los encabezados y el cuerpo (RNF-13.1).
       const senal = AbortSignal.timeout(tiempoMs);
       const encabezados: Record<string, string> = {
         Accept: 'application/json',
         [encabezadoCorrelacion]: idCorrelacion,
       };
-      if (cuerpo !== undefined) {
-        encabezados['Content-Type'] = 'application/json';
-      }
+      if (cuerpo !== undefined) encabezados['Content-Type'] = 'application/json';
 
       const respuesta = await fetch(`${urlBase}${ruta}`, {
         method: metodo,
@@ -43,27 +53,34 @@ export function crearClienteModulo({
         signal: senal,
         redirect: 'error',
       });
-
-      // Lectura del cuerpo con la misma senal: cuenta para el corte por tiempo
+      // Se lee con la misma señal: el cuerpo también cuenta para el corte.
       const texto = await respuesta.text();
-      // Las respuestas de la familia 4xx regresan directamente sin activar reintentos innecesarios
-      if (respuesta.status >= 400 && respuesta.status < 500) {
-        let cuerpoParsed: unknown;
-        try {
-          cuerpoParsed = JSON.parse(texto);
-        } catch {
-          cuerpoParsed = texto;
-        }
-        return { estado: respuesta.status, cuerpo: cuerpoParsed };
-      }
 
-      if (respuesta.status < 400) {
-        // 2xx/3xx: debe ser JSON; si no, es falta de disponibilidad
-        const cuerpoParsed = JSON.parse(texto) as unknown;
-        return { estado: respuesta.status, cuerpo: cuerpoParsed };
+      if (respuesta.status >= 500) throw new IntentoFallido();
+      // Un 4xx es una respuesta del módulo: se devuelve tal cual, sin reintento. Si no es JSON, va el texto.
+      if (respuesta.status >= 400) {
+        try {
+          return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown };
+        } catch {
+          return { estado: respuesta.status, cuerpo: texto };
+        }
       }
+      // Una respuesta que no es un error tiene que ser JSON; si no, el módulo no está bien.
+      return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown };
     } catch {
-      throw new ModuloNoDisponible(nombre);
+      throw new IntentoFallido();
+    }
+  }
+
+  // Los GET se reintentan; un POST, PUT o DELETE no, porque repetirlo podría hacer el efecto dos veces (RNF-13.2).
+  async function ejecutar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
+    const intentos = metodo === 'GET' ? 1 + reintentos : 1;
+    for (let intento = 1; intento <= intentos; intento++) {
+      try {
+        return await intentar(metodo, ruta, cuerpo, idCorrelacion);
+      } catch {
+        if (intento < intentos) await pausar(PAUSA_REINTENTO_MS);
+      }
     }
     throw new ModuloNoDisponible(nombre);
   }

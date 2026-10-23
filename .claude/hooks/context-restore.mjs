@@ -27,6 +27,18 @@ function specsPendientes(dir) {
   return salida.slice(-3);
 }
 
+// Límite de lo que se lee de EN-CURSO.local.md: por bytes, porque con líneas largas un tope por líneas no acota nada.
+const MAX_BYTES = 4000;
+
+function recortar(texto) {
+  const bytes = Buffer.from(texto, 'utf8');
+  if (bytes.length <= MAX_BYTES) return texto;
+  // Un corte en mitad de un carácter deja un reemplazo al final; se descarta junto con la línea incompleta.
+  const corte = bytes.subarray(0, MAX_BYTES).toString('utf8');
+  const entero = corte.slice(0, Math.max(corte.lastIndexOf('\n'), 0));
+  return `${entero}\n[recortado: el archivo sigue en EN-CURSO.local.md]`;
+}
+
 function main() {
   const entrada = JSON.parse(fs.readFileSync(0, 'utf8'));
   try { fs.unlinkSync(path.join(os.tmpdir(), `claude-ctx-${entrada.session_id}.json`)); } catch {}
@@ -34,7 +46,7 @@ function main() {
   const specs = specsPendientes(dir);
   const rama = git('branch --show-current', dir);
   let enCurso = '';
-  try { enCurso = fs.readFileSync(path.join(dir, 'EN-CURSO.local.md'), 'utf8').trim().split('\n').slice(0, 60).join('\n'); } catch {}
+  try { enCurso = recortar(fs.readFileSync(path.join(dir, 'EN-CURSO.local.md'), 'utf8').trim()); } catch {}
   const cambios = git('status --short', dir).split('\n').filter(Boolean).slice(0, 15);
   const commits = git('log --oneline -5', dir);
   const origen = { startup: 'inicio', resume: 'sesión retomada', clear: '/clear', compact: 'compactación' }[entrada.source] || entrada.source;
