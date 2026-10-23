@@ -1,7 +1,47 @@
 # Guía — Spec 003 Base del servicio
 
 ## Visión general
-Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [tasks.md](tasks.md)).
+**Qué se construyó y para qué.** El esqueleto de M2 sobre el que se montan las specs de negocio (004 a 008): un servicio Fastify con su base PostgreSQL en contenedores, que toma la configuración del entorno, expone solo lo que dice el contrato, responde todos los errores en un mismo formato (problem+json), exige token y rol, deja un log JSON por solicitud con su identificador de correlación y llama a otros módulos sin quedarse colgado. Del contrato v1 implementa solo `GET /health`; las demás operaciones figuran como pendientes.
+
+**Recorrido de una petición** (`GET /health`, o cualquier operación futura):
+1. Arranque, una sola vez: [servidor.ts](../../src/servidor.ts) llama a `arrancar` ([arranque.ts](../../src/arranque.ts)), que lee el entorno (`cargarConfig`, [config.ts](../../src/config.ts)), carga el contrato (`cargarContrato`, [contrato/cargar.ts](../../src/contrato/cargar.ts)), arma la app (`construirApp`, [app.ts](../../src/app.ts)), aplica las migraciones (`migrar`, [bd/migraciones.ts](../../src/bd/migraciones.ts)) y recién entonces escucha en el puerto.
+2. Llega la solicitud: `idCorrelacion` ([correlacion.ts](../../src/correlacion.ts)) toma el `X-Request-Id` si es válido o genera un UUID.
+3. Hooks `onRequest`, en este orden ([app.ts](../../src/app.ts)): 503 si el servicio se está deteniendo, 404 si la ruta no existe, y token y rol con `verificarToken` y `autorizar` ([auth/](../../src/auth/), hook de `registrarPermisos`). `/health` es pública, así que no pide token.
+4. Fastify valida parámetros y cuerpo con los esquemas del contrato (`crearCompilador`, [contrato/validacion.ts](../../src/contrato/validacion.ts)). Las rutas las registró `registrarOperaciones` ([contrato/operaciones.ts](../../src/contrato/operaciones.ts)) solo para las operaciones con manejador en [operaciones/index.ts](../../src/operaciones/index.ts).
+5. El manejador (`verificarSalud`, [salud.ts](../../src/salud.ts)) consulta la base con `consultar` ([bd/pool.ts](../../src/bd/pool.ts)), que corta a los 2 s.
+6. Si algo lanza un error, `responderProblema` ([errores-fastify.ts](../../src/errores-fastify.ts)) lo convierte con `aProblema` ([errores.ts](../../src/errores.ts)) en problem+json. Ante un 503 por la base o por otro módulo, registra la causa con el id de la solicitud.
+7. Al salir, `onSend` agrega el `X-Request-Id` a la respuesta, y `onResponse` escribe la línea de log (`registrarSolicitud`, [logs.ts](../../src/logs.ts)), sin token, cuerpos ni query strings.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos |
+|---|---|---|
+| `config.ts` | Variables de entorno, valores por defecto y errores sin valores | RNF-06.1, RNF-06.2 |
+| `errores.ts`, `errores-fastify.ts` | Errores problem+json, también los que Node y Fastify responden antes de una ruta | RNF-03.1 a RNF-03.3 |
+| `contrato/` | Carga del contrato, rutas y 405 desde él, validación con Ajv 2020 | RNF-03.2, RNF-03.4, RNF-07.2 |
+| `auth/` | Validación de tokens HS256 y permisos por rol | RNF-12.1 a RNF-12.4 |
+| `herramientas/token.ts` | Comando que genera tokens de prueba | RNF-12.5 |
+| `correlacion.ts`, `logs.ts` | Id de correlación, logs JSON y limpieza de secretos | RNF-14.3 a RNF-14.8, RNF-19 |
+| `bd/` | Pool con tiempo máximo y migraciones con bloqueo | RNF-05, RNF-08.1, RNF-14.2 |
+| `modulos/cliente.ts` | Cliente para otros módulos: corte por intento, reintento en GET, 503 | RNF-13, RNF-14.7 |
+| `arranque.ts`, `servidor.ts` | Arranque en orden y parada ordenada ante SIGTERM o SIGINT | RNF-04.5, RNF-05.2, RNF-05.3 |
+| `Dockerfile`, `docker-compose.yml`, `ejemplo.env` | Imagen, servicio y base con configuración de ejemplo | RNF-04, RNF-06.3 |
+| `scripts/contrato-test.mjs`, `.github/workflows/ci.yml` | Prueba de contrato con Schemathesis y CI | RNF-07.2, RNF-17 |
+
+**Decisiones clave** (detalle en [plan.md](plan.md), «Decisiones», en [spec.md](spec.md), «Decisiones», y en los ADR):
+- Las rutas y sus esquemas salen del contrato con un registro propio y corto ([ADR de la base](../../docs/adr/003-base-servicio.md)). Descartado: escribirlos a mano en cada spec, que se separaría del contrato sin que nada falle, y una librería como fastify-openapi-glue, con reglas propias que habría que aprender.
+- Tokens HS256 con una sola clave por entorno, lo más simple mientras no exista M1. JWKS queda para el acuerdo #9 (spec, «Fuera de alcance»).
+- SQL explícito, sin ORM, para que las restricciones únicas de RNF-08 queden a la vista ([ADR del stack](../../docs/adr/003-stack.md); descartados Prisma y Drizzle).
+
+**Conceptos que conviene entender.** Los hooks de Fastify (`onRequest`, `onSend`, `onResponse`) y su orden, que define qué error gana (RNF-03.5). problem+json (RFC 9457). Identificador de correlación: un mismo id en la respuesta y en todas las líneas de log de esa solicitud. Migraciones con bloqueo consultivo: dos procesos no aplican la misma dos veces. Testcontainers: las pruebas de integración levantan un PostgreSQL real y lo descartan al terminar.
+
+**Cómo probarlo uno mismo** (más en el [README](../../README.md)):
+```bash
+docker compose up -d --build --wait
+curl -i -H 'X-Request-Id: prueba-1' http://localhost:8082/health   # 200, {"estado":"ok"} y el mismo X-Request-Id
+curl -i -X POST http://localhost:8082/health                        # 405 en problem+json, con Allow: GET
+docker compose logs m2 | grep prueba-1                              # la línea de log de esa solicitud
+npm test && npm run contrato:test
+```
 
 ## Tareas
 
