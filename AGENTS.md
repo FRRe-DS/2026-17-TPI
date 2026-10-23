@@ -56,6 +56,5 @@ Si dos fuentes se contradicen, para y pregunta.
 - 🚫 Nunca: editar `contrato/` fuera de una rama `contrato/`, pushear a `main`, desactivar tests o checks para que pase CI, leer `.env`, reescribir historia publicada.
 
 ## Trampas conocidas
-- Hasta el bloque E de la spec base (#3) no existe `docker-compose.yml`: `docker compose` falla, y el job `contract-test` de CI omite sus pasos con un aviso.
 - Node 20 está fuera de soporte: usar Node 24 (`nvm use 24`).
 - `docker` sin sudo, y por lo tanto Testcontainers, exige estar en el grupo `docker`.
