@@ -1,6 +1,6 @@
 # Spec 004 — Perfil y estado de cuenta
 
-Estado: aprobada
+Estado: implementada
 Issue: #4
 Etapa: TP1
 Responsable: @polettolucciano

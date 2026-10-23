@@ -19,13 +19,15 @@
 | `src/bd/pool.ts` | `clasificarError`: además, el carácter nulo da 400 | RNF-03 | V, T10 |
 | `src/clientes/modelo.ts` | Tipos del contrato y de fila, y sus conversiones | RF-2.1, RF-2.6 | T4, T6, T7, T8 |
 | `src/clientes/repositorio.ts` | SQL de perfiles y bloqueos; `BLOQUEO_VIGENTE`, la única definición de vigencia | RF-2.1 a RF-2.6.4 | T4, T6, T7, T8, T10, T11 |
-| `src/clientes/servicio.ts` | Rol efectivo, propiedad, idempotencia, `hasta` en UTC y su límite del año 9999 | RF-2.1.1.1, RF-2.1.2.1, RF-2.6.1 a RF-2.6.1.3 | T5, T7, T8, T10, T11 |
+| `src/clientes/servicio.ts` | Rol efectivo, propiedad, idempotencia, `fechaNacimiento` guardable, `hasta` en UTC y su límite del año 9999 | RF-2.1.1.1, RF-2.1.2.1, RF-2.1.4, RF-2.6.1 a RF-2.6.1.3 | T5, T7, T8, T10, T11, T12 |
 | `src/clientes/operaciones.ts` | Los ocho manejadores HTTP | RNF-03 | T5 a T8 |
 | `src/operaciones/index.ts` | Registra los ocho `operationId` | RNF-03 | T9 |
 | `src/errores.ts` | Errores de dominio: `perfil-ya-existe`, `idempotencia-reutilizada`, `bloqueo-vencido`, `bloqueo-hasta-fuera-de-rango`, `bloqueo-ya-levantado`, `bloqueo-no-vigente` | RF-2.1.3, RF-2.6.1.1, RF-2.6.1.2, RF-2.6.3.1 | T3 a T8, T10, T11 |
+| `src/logs.ts` | `serializar`: de un error de datos de la base (SQLSTATE 22…) no guarda el mensaje ni el encabezado de la traza | RNF-19 | T12 |
 | `schemathesis.toml`, `scripts/contrato-test.mjs` | Ajuste acotado de Schemathesis | RNF-07.2 | T10 |
 | `pruebas/unitarias/clientes.test.ts`, `pruebas/integracion/clientes.test.ts` | Conversiones y reglas; persistencia, transacciones y concurrencia | RNF-07 | T1 a T8 |
-| `pruebas/http/clientes.test.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` | HTTP sin base y con base, y la matriz de roles | RNF-03, RNF-07 | T5 a T11 |
+| `pruebas/http/clientes.test.ts`, `pruebas/integracion/clientes-http.test.ts`, `pruebas/http/roles-clientes.test.ts` | HTTP sin base y con base, y la matriz de roles | RNF-03, RNF-07 | T5 a T12 |
+| `pruebas/unitarias/secretos.test.ts` | El serializador ante errores de la clase 22 | RNF-19 | T12 |
 
 **Decisiones clave** (detalle en [plan.md](plan.md) y en las entradas de abajo):
 - El estado se calcula y no se guarda, con `BLOQUEO_VIGENTE` en SQL y un mismo `CURRENT_TIMESTAMP` en cada sentencia: `estado` y `bloqueosVigentes` no pueden contradecirse (T6). Descartado: una columna `estado`, que habría que mantener al día cuando un bloqueo vence solo.
@@ -33,6 +35,7 @@
 - La propiedad se exige solo si el único rol efectivo es CLIENTE (rol efectivo = roles del token ∩ roles de la operación; T5, T9).
 - `hasta` se pasa a UTC en el servicio y no lo interpreta PostgreSQL, que rechaza desplazamientos que el contrato admite (T10).
 - En `crearBloqueo`, antes de la idempotencia solo se rechaza lo que nunca pudo crearse (un `hasta` después del año 9999, 422 `bloqueo-hasta-fuera-de-rango`); el perfil (404) y la fecha pasada (422 `bloqueo-vencido`) se miran después, dentro del alta. Así, repetir un alta ya hecha devuelve su 201 aunque el `hasta` haya pasado (T11; RF-2.6.1.3, RNF-08). Descartado: comparar `hasta` con el reloj del servicio antes de la idempotencia, que daba 422 a una repetición legítima.
+- Los valores que el contrato admite y la base no guarda dan 400, no 500: la `fechaNacimiento` del año `0000` se rechaza en el servicio antes de la idempotencia y de la propiedad, y el carácter nulo lo traduce `clasificarError` (T10, T12; RF-2.1.4). Y si un error de datos que nadie previó llega a un 500, el log guarda su código y su pila, no el valor (T12; RNF-19). Descartado: traducir el 22008 a 400, que también puede venir de un error del propio servicio.
 
 **Conceptos que conviene entender.** Idempotencia con `Idempotency-Key`: la misma clave y el mismo cuerpo devuelven la respuesta guardada. READ COMMITTED y el bloqueo de fila: el segundo UPDATE espera al primero y vuelve a evaluar su condición. Rol efectivo. Paginación estable (orden total con desempate por id). Schemathesis y sus fases (examples, coverage, fuzzing, stateful).
 
@@ -372,9 +375,18 @@ npm test && npm run contrato:test
   - [pruebas/http/clientes.test.ts](../../pruebas/http/clientes.test.ts) (sin base, con `POOL_FALSO`): el año `0000` (también el 29 de febrero) da 400 con el cuerpo exacto al crear y al actualizar, solo o con otros campos, y también sobre otro perfil.
   - [pruebas/integracion/clientes-http.test.ts](../../pruebas/integracion/clientes-http.test.ts): con base, el PATCH del año `0000` no cambia nada, ni los otros campos enviados; el alta no crea el perfil y deja libre la clave; `0001-01-01` y `9999-12-31` se guardan y vuelven iguales. Bloque «un error de datos de la base que nadie previó»: el error real de pg de `SELECT $1::date` con `0000-01-01`, por el serializador y por HTTP (un manejador de prueba que lo provoca): 500, y el log tiene el `22008` y no la fecha.
   - [pruebas/unitarias/secretos.test.ts](../../pruebas/unitarias/secretos.test.ts): 22008, 22P02 y 22001 con el valor en el mensaje; mensaje de varias líneas; sin pila; como causa de otro error; códigos que no son de la clase 22 (23505, numérico, `0822`) y el error 23502 de siempre quedan igual.
-  - En rojo primero: 16 (la de `0001`/`9999` ya pasaba y queda como regresión).
-  - `npm test` (2465), lint, build y `contrato:test` (9 operaciones, 2172 casos) en verde. Contra el compose, el POST con `0000-01-01` da 400 y la fecha no aparece en los logs.
+  - En rojo primero: 16 de 21. Ya pasaban, y quedan como regresión, la de `0001`/`9999` y las 4 unitarias de los errores que no son de la clase 22.
+  - `npm test` (2465), lint, build y `contrato:test` (9 operaciones; 2172 casos en esa corrida, la cantidad varía en cada una) en verde. Contra el compose, el POST con `0000-01-01` da 400 y la fecha no aparece en los logs.
 - Para mirar con atención:
   - La regla es del año, no de la fecha: `0000-02-29` también es 400 aunque el formato lo admita como bisiesto.
   - Un 500 por un error de la clase 22 ahora se diagnostica por el código, la pila y el id de correlación, sin el texto de pg. Es lo que se eligió en el plan.
   - Queda pendiente avisar al Grupo 1 para que el contrato excluya el año `0000` y el carácter nulo.
+
+### Validación con T12 — spec 004 contra la implementación · commit `004/V: validación`
+- Qué se comprobó (2026-10-23, `/sdd-validate`, 3.ª vez): cada requisito de spec.md, también RF-2.1.4 y RNF-19 ampliado, tiene prueba automática en verde (`npm test`, 2465 pruebas en 28 archivos), y las ocho operaciones pasan `npm run contrato:test` (9 operaciones con `/health`, 3491 casos, todas las fases). Lint, build y `spec-check` en verde. Revisión independiente (`reviewer`) del cambio desde la validación anterior: aprobada.
+- Evidencia en vivo contra el compose rehecho (localhost:8082), con curl, de todos los requisitos funcionales. Las de T12: `POST` con `fechaNacimiento` `0000-01-01`, 400, y el perfil no se crea (la misma clave crea después el bueno); `PATCH` con `0000-06-30`, 400 sin cambiar nada; un CLIENTE sobre otro perfil con el año `0000`, 400 y no 403; `0001-01-01` y `9999-12-31` se guardan y vuelven iguales. Los logs de esa corrida no tienen nombres, teléfonos, motivos, claves, tokens ni las fechas enviadas (RNF-19).
+- Qué cambió: «Estado: implementada» en spec.md; el mapa y las decisiones de la Visión general, con T12; en la entrada T12, la cuenta de pruebas en rojo y la cantidad de casos de Schemathesis.
+- Para mirar con atención (de la revisión; ninguno bloquea):
+  - `soloLaPila` corta la traza en la primera línea `    at …`. Un mensaje de la clase 22 que citara un valor con un salto de línea seguido de `    at` dejaría el resto en la traza. Hoy no se llega con datos de la solicitud: las conversiones de tipo (fechas, uuid, enteros) no admiten saltos de línea, y el texto con el carácter nulo da 22021, que no cita el valor.
+  - Un `sub` de OPERADOR de más de unos 2 KB podría dar 500 en `crearBloqueo` (54000: no entra en el índice único de `idempotencias`), sin datos en el log. No se reprodujo. El `sub` lo firma M1 y el contrato no lo acota; cubrirlo sería un `/sdd-change`.
+  - `tasks.md` y el plan dicen `SELECT '0000-01-01'::date`; la prueba usa `SELECT $1::date` con el valor como parámetro, que da el mismo 22008 y se parece más al camino real.
