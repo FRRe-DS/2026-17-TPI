@@ -71,3 +71,28 @@
   - Sin campos, `actualizarDireccion()` no ejecuta el `UPDATE` y devuelve la dirección: el contrato exige al menos uno (`minProperties: 1`), así que ese caso ya sale como 400 antes de llegar acá.
   - No hay prueba unitaria de «armado de cambios» (el plan la preveía) porque con `COALESCE` no hay armado que probar: lo cubre la integración.
 
+### T5 — Rol efectivo, propiedad e idempotencia en el servicio · commit `005/T5`
+- Qué cambió:
+  - [src/direcciones/servicio.ts](../../src/direcciones/servicio.ts): las cinco operaciones (`crearDireccion`, `listarDirecciones`, `obtenerDireccion`, `actualizarDireccion`, `eliminarDireccion`). Cada una exige la propiedad, normaliza los ids de la ruta y llama al repositorio. El alta, además, va con idempotencia y comprueba el perfil.
+  - [src/clientes/repositorio.ts](../../src/clientes/repositorio.ts): `exigirPerfil()` pasa a ser exportada, sin otros cambios, para que el alta de direcciones la use.
+- Por qué así:
+  - Propiedad: se reutiliza `exigirPropietario()` de la 004 ([src/clientes/servicio.ts](../../src/clientes/servicio.ts)) y no se arma un segundo mecanismo. Los roles efectivos son los del token que admite la operación; solo si quedan exactamente en `[CLIENTE]` se exige `sub = clienteId`. Como las lecturas admiten CLIENTE y OPERADOR y las escrituras solo CLIENTE, CLIENTE+OPERADOR lee direcciones ajenas pero solo escribe las propias (RF-2.2.5, spec, Contrato y dependencias). El 403 va antes de cualquier consulta: un CLIENTE no averigua si existe otro perfil.
+  - Alta (plan, Lógica, Crear): propiedad → reserva de la clave con `conIdempotencia()` ([src/bd/idempotencia.ts](../../src/bd/idempotencia.ts)) → dentro de la misma transacción, `exigirPerfil()` y el `INSERT`. Sin perfil, `NoEncontrado`: la transacción se deshace, no queda reserva y la misma clave sirve cuando el perfil exista. Comprobarlo antes del `INSERT` evita que la clave foránea (23503) termine en un 500 (lo anotado en T2).
+  - Idempotencia: `operacion = 'crearDireccion'`; el sujeto es el sub normalizado, que por la propiedad es el cliente de la ruta; `cliente_id` es siempre ese cliente, nunca null; la huella lleva el cuerpo tal como llegó y el cliente de la ruta. La reserva es por operación: la misma clave en `crearBloqueo` no choca. Otro cuerpo con la misma clave da `IdempotenciaReutilizada` (422, spec, Decisiones).
+  - Las lecturas y escrituras sobre una dirección no consultan el perfil aparte: sin perfil no puede haber direcciones (clave foránea), así que el 404 del repositorio ya cubre ese caso. El listado sí lo distingue, desde T3.
+- Cómo se conecta: T6 lo llama desde `src/direcciones/operaciones.ts`, pasando los roles de la operación (`request.routeOptions.config.permisos`) como en [src/clientes/operaciones.ts](../../src/clientes/operaciones.ts), y arma el 201 con `Location` a partir de `RespuestaIdempotente`.
+- Tests:
+  - [pruebas/unitarias/direcciones.test.ts](../../pruebas/unitarias/direcciones.test.ts), con un pool que falla si se usa: CLIENTE ajeno da 403 en las cinco sin tocar la base; el dueño (también con mayúsculas y `urn:uuid:`) llega a la base; OPERADOR lee; CLIENTE+OPERADOR lee ajeno pero no escribe; CLIENTE+SERVICIO ajeno da 403; el detalle del 403 no lleva ids.
+  - [pruebas/integracion/direcciones.test.ts](../../pruebas/integracion/direcciones.test.ts), bloque «el servicio de direcciones con la base»:
+    - el alta da 201 con `Location`, guarda la reserva con operación, sujeto y cliente, y responde en minúsculas;
+    - sin perfil da 404 y no deja reserva; con el perfil creado, la misma clave hace el alta;
+    - un alta ajena da 403 sin reserva;
+    - CLIENTE+OPERADOR escribe solo en lo propio;
+    - idempotencia: misma clave y mismo cuerpo, también con los campos reordenados; otro cuerpo da 422; misma clave en dos clientes y en `crearBloqueo`;
+    - concurrencia: cinco altas iguales a la vez dan una sola fila, y cuatro con cuerpos distintos dan un 201, tres 422 y una fila;
+    - las lecturas y escrituras se prueban por rol, con ids en mayúsculas, con un cliente sin perfil y con direcciones ajenas o ya borradas.
+  - En rojo primero: no existía `src/direcciones/servicio.ts`. Las pruebas de concurrencia pasaron en 8 corridas seguidas.
+- Para mirar con atención:
+  - El servicio confía en que `registrarPermisos` ya rechazó los tokens sin un rol admitido, igual que en la 004: un OPERADOR solo, llamando directo a `crearDireccion` sin pasar por HTTP, no tendría rol efectivo y no se le exigiría propiedad. Por HTTP no llega (403 de `autorizar`); lo comprobará T6.
+  - `idempotencias` tiene un CHECK que exige `cliente_id` para `crearBloqueo`, pero no para `crearDireccion`. El código siempre lo pone; sumar el CHECK sería un cambio de esquema que no pide la spec.
+

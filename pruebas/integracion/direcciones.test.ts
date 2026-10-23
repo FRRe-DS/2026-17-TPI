@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Identidad } from '../../src/auth/tokens.js';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
 import type { Consultar } from '../../src/bd/transaccion.js';
 import { actualizarDireccion, crearDireccion, eliminarDireccion, listarDirecciones, obtenerDireccion } from '../../src/direcciones/repositorio.js';
-import { Conflicto, NoEncontrado } from '../../src/errores.js';
+import * as servicio from '../../src/direcciones/servicio.js';
+import { Conflicto, IdempotenciaReutilizada, NoEncontrado, SinPermiso } from '../../src/errores.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
 // La migración de la spec 005: se crea con `--migrations-dir migraciones`, que le pone la marca de tiempo (plan, Datos).
@@ -888,3 +890,321 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
     });
   });
 });
+
+describe('el servicio de direcciones con la base: propiedad, perfil e idempotencia (RF-2.2, RF-2.2.5, RNF-08)', () => {
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+
+  // Los roles de cada operación, como los da el contrato.
+  const LECTURA = ['CLIENTE', 'OPERADOR'] as const;
+  const ESCRITURA = ['CLIENTE'] as const;
+  const CASA = { tipo: 'FAVORITA' as const, alias: 'Casa', texto: 'Calle Falsa 123', coordenadas: { latitud: -27.45, longitud: -58.98 } };
+
+  const como = (sub: string, roles: Identidad['roles'] = ['CLIENTE']): Identidad => ({ sub, roles });
+
+  const cliente = async () => {
+    const clienteId = nuevoId();
+    await pool.consultar(
+      `INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Gómez', '+5493624000000')`,
+      [clienteId],
+    );
+    return clienteId;
+  };
+
+  // El alta de `clienteId` por su dueño, con la clave y el cuerpo dados.
+  const alta = (clienteId: string, clave: string, datos: object = CASA) =>
+    servicio.crearDireccion(pool, como(clienteId), ESCRITURA, clienteId, clave, datos as typeof CASA);
+
+  const cuantas = async (clienteId: string) =>
+    (await pool.consultar<{ n: number }>('SELECT count(*)::int AS n FROM direcciones_cliente WHERE cliente_id = $1', [clienteId]))
+      .rows[0]?.n;
+
+  const reservas = async (clave: string) =>
+    (
+      await pool.consultar(
+        'SELECT operacion, sujeto, cliente_id, estado, ubicacion FROM idempotencias WHERE clave = $1 ORDER BY sujeto',
+        [clave],
+      )
+    ).rows;
+
+  const falla = (promesa: Promise<unknown>) =>
+    promesa.then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await base?.borrar();
+  });
+
+  describe('crearDireccion', () => {
+    it('201 con la dirección del contrato y Location a ella; la guarda bajo el cliente de la ruta (RF-2.2)', async () => {
+      const clienteId = await cliente();
+
+      const respuesta = await alta(clienteId, nuevoId());
+
+      expect(respuesta.estado).toBe(201);
+      const cuerpo = respuesta.cuerpo as { direccionId: string };
+      expect(cuerpo).toEqual({ direccionId: expect.any(String), ...CASA, creadoEn: expect.any(String) });
+      expect(respuesta.ubicacion).toBe(`/api/v1/clientes/${clienteId}/direcciones/${cuerpo.direccionId}`);
+      expect(await servicio.obtenerDireccion(pool, como(clienteId), LECTURA, clienteId, cuerpo.direccionId)).toEqual(cuerpo);
+    });
+
+    it('el direccionId lo genera M2: dos altas con claves distintas dan dos ids y dos filas, aunque el cuerpo sea igual', async () => {
+      const clienteId = await cliente();
+
+      const una = await alta(clienteId, nuevoId());
+      const otra = await alta(clienteId, nuevoId());
+
+      expect((una.cuerpo as { direccionId: string }).direccionId).not.toBe((otra.cuerpo as { direccionId: string }).direccionId);
+      expect(await cuantas(clienteId)).toBe(2);
+    });
+
+    it('un clienteId en mayúsculas en la ruta: se guarda y responde en minúsculas, como lo da la base', async () => {
+      const clienteId = await cliente();
+
+      const respuesta = await servicio.crearDireccion(pool, como(clienteId), ESCRITURA, clienteId.toUpperCase(), nuevoId(), CASA);
+
+      expect(respuesta.ubicacion).toMatch(new RegExp(`^/api/v1/clientes/${clienteId}/direcciones/[0-9a-f-]{36}$`));
+      expect(await cuantas(clienteId)).toBe(1);
+    });
+
+    it('la reserva de idempotencia guarda la operación, el sub como sujeto, el cliente de la ruta y la respuesta', async () => {
+      const clienteId = await cliente();
+      const clave = nuevoId();
+
+      const respuesta = await alta(clienteId, clave);
+
+      expect(await reservas(clave)).toEqual([
+        { operacion: 'crearDireccion', sujeto: clienteId, cliente_id: clienteId, estado: 201, ubicacion: respuesta.ubicacion },
+      ]);
+    });
+
+    it('sin perfil: NoEncontrado, sin dirección ni reserva; con el perfil creado, la misma clave hace el alta', async () => {
+      const clienteId = nuevoId();
+      const clave = nuevoId();
+
+      expect(await falla(alta(clienteId, clave))).toBeInstanceOf(NoEncontrado);
+      expect(await reservas(clave)).toEqual([]);
+
+      await pool.consultar(
+        `INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Gómez', '+5493624000000')`,
+        [clienteId],
+      );
+      expect((await alta(clienteId, clave)).estado).toBe(201);
+      expect(await cuantas(clienteId)).toBe(1);
+    });
+
+    it('un CLIENTE para otro cliente: SinPermiso antes que el perfil y la clave; no deja reserva ni dirección (RF-2.2.5)', async () => {
+      const dueño = await cliente();
+      const clave = nuevoId();
+
+      const ajeno = await falla(servicio.crearDireccion(pool, como(nuevoId()), ESCRITURA, dueño, clave, CASA));
+      const sinPerfil = await falla(servicio.crearDireccion(pool, como(nuevoId()), ESCRITURA, nuevoId(), clave, CASA));
+
+      expect(ajeno).toBeInstanceOf(SinPermiso);
+      expect(sinPerfil).toBeInstanceOf(SinPermiso);
+      expect(await reservas(clave)).toEqual([]);
+      expect(await cuantas(dueño)).toBe(0);
+    });
+
+    it('CLIENTE+OPERADOR crea en su propio perfil, pero no en el de otro', async () => {
+      const propio = await cliente();
+      const otro = await cliente();
+      const identidad = como(propio, ['CLIENTE', 'OPERADOR']);
+
+      expect((await servicio.crearDireccion(pool, identidad, ESCRITURA, propio, nuevoId(), CASA)).estado).toBe(201);
+      expect(await falla(servicio.crearDireccion(pool, identidad, ESCRITURA, otro, nuevoId(), CASA))).toBeInstanceOf(SinPermiso);
+      expect(await cuantas(otro)).toBe(0);
+    });
+
+    describe('idempotencia (RNF-08)', () => {
+      it('la misma clave y el mismo cuerpo: la misma respuesta, Location incluida, y una sola dirección', async () => {
+        const clienteId = await cliente();
+        const clave = nuevoId();
+
+        const primera = await alta(clienteId, clave);
+        const segunda = await alta(clienteId, clave);
+
+        expect(segunda).toEqual(primera);
+        expect(await cuantas(clienteId)).toBe(1);
+      });
+
+      it('el mismo cuerpo con los campos en otro orden es la misma solicitud', async () => {
+        const clienteId = await cliente();
+        const clave = nuevoId();
+        const primera = await alta(clienteId, clave);
+
+        const reordenado = { coordenadas: { longitud: -58.98, latitud: -27.45 }, texto: 'Calle Falsa 123', alias: 'Casa', tipo: 'FAVORITA' };
+
+        expect(await alta(clienteId, clave, reordenado)).toEqual(primera);
+        expect(await cuantas(clienteId)).toBe(1);
+      });
+
+      it('la misma clave con otro cuerpo: IdempotenciaReutilizada (422), sin otra dirección ni cambiar la primera', async () => {
+        const clienteId = await cliente();
+        const clave = nuevoId();
+        const primera = await alta(clienteId, clave);
+        const direccionId = (primera.cuerpo as { direccionId: string }).direccionId;
+
+        for (const otro of [{ ...CASA, texto: 'Otra calle' }, { tipo: 'FAVORITA', texto: 'Calle Falsa 123' }, { ...CASA, alias: '' }]) {
+          expect(await falla(alta(clienteId, clave, otro))).toBeInstanceOf(IdempotenciaReutilizada);
+        }
+        expect(await cuantas(clienteId)).toBe(1);
+        expect(await servicio.obtenerDireccion(pool, como(clienteId), LECTURA, clienteId, direccionId)).toEqual(primera.cuerpo);
+      });
+
+      it('la misma clave en dos clientes distintos son dos solicitudes: cada uno tiene su dirección', async () => {
+        const [uno, otro] = [await cliente(), await cliente()];
+        const clave = nuevoId();
+
+        const deUno = await alta(uno, clave);
+        const deOtro = await alta(otro, clave, { tipo: 'RECIENTE', texto: 'Otra' });
+
+        expect([deUno.estado, deOtro.estado]).toEqual([201, 201]);
+        expect([await cuantas(uno), await cuantas(otro)]).toEqual([1, 1]);
+        expect(await reservas(clave)).toHaveLength(2);
+      });
+
+      it('la misma clave en crearBloqueo no choca: la reserva es por operación', async () => {
+        const clienteId = await cliente();
+        const clave = nuevoId();
+        await pool.consultar(
+          `INSERT INTO idempotencias (operacion, sujeto, cliente_id, clave, hash_solicitud, estado) VALUES ('crearBloqueo', $1, $2, $3, 'x', 201)`,
+          [clienteId, clienteId, clave],
+        );
+
+        expect((await alta(clienteId, clave)).estado).toBe(201);
+        expect(await cuantas(clienteId)).toBe(1);
+      });
+
+      it('cinco altas a la vez con la misma clave y el mismo cuerpo: las cinco con la misma respuesta y una sola dirección', async () => {
+        const clienteId = await cliente();
+        const clave = nuevoId();
+
+        const respuestas = await Promise.all(Array.from({ length: 5 }, () => alta(clienteId, clave)));
+
+        expect(new Set(respuestas.map((r) => JSON.stringify(r))).size).toBe(1);
+        expect(respuestas[0]?.estado).toBe(201);
+        expect(await cuantas(clienteId)).toBe(1);
+        expect(await reservas(clave)).toHaveLength(1);
+      });
+
+      it('altas a la vez con la misma clave y cuerpos distintos: un 201, el resto 422, y una sola dirección', async () => {
+        const clienteId = await cliente();
+        const clave = nuevoId();
+
+        const resultados = await Promise.allSettled(
+          ['Uno', 'Dos', 'Tres', 'Cuatro'].map((texto) => alta(clienteId, clave, { tipo: 'FAVORITA', texto })),
+        );
+
+        const hechas = resultados.filter((r) => r.status === 'fulfilled');
+        const rechazos = resultados.flatMap((r) => (r.status === 'rejected' ? [r.reason] : []));
+        expect(hechas).toHaveLength(1);
+        expect(rechazos).toHaveLength(3);
+        expect(rechazos.every((e) => e instanceof IdempotenciaReutilizada)).toBe(true);
+        expect(await cuantas(clienteId)).toBe(1);
+      });
+    });
+  });
+
+  describe('lecturas: listarDirecciones y obtenerDireccion (RF-2.2.1, RF-2.2.2, RF-2.2.5)', () => {
+    it('el dueño, un OPERADOR y CLIENTE+OPERADOR ajeno leen; un CLIENTE ajeno recibe SinPermiso', async () => {
+      const dueño = await cliente();
+      const { cuerpo } = await alta(dueño, nuevoId());
+      const { direccionId } = cuerpo as { direccionId: string };
+
+      for (const identidad of [como(dueño), como(nuevoId(), ['OPERADOR']), como(nuevoId(), ['CLIENTE', 'OPERADOR'])]) {
+        expect(await servicio.obtenerDireccion(pool, identidad, LECTURA, dueño, direccionId)).toEqual(cuerpo);
+        expect((await servicio.listarDirecciones(pool, identidad, LECTURA, dueño, { page: 0, size: 20 })).items).toEqual([cuerpo]);
+      }
+      const ajeno = como(nuevoId());
+      expect(await falla(servicio.obtenerDireccion(pool, ajeno, LECTURA, dueño, direccionId))).toBeInstanceOf(SinPermiso);
+      expect(await falla(servicio.listarDirecciones(pool, ajeno, LECTURA, dueño, { page: 0, size: 20 }))).toBeInstanceOf(
+        SinPermiso,
+      );
+    });
+
+    it('los ids de la ruta en mayúsculas encuentran la dirección', async () => {
+      const dueño = await cliente();
+      const { cuerpo } = await alta(dueño, nuevoId());
+      const { direccionId } = cuerpo as { direccionId: string };
+
+      expect(
+        await servicio.obtenerDireccion(pool, como(dueño), LECTURA, dueño.toUpperCase(), direccionId.toUpperCase()),
+      ).toEqual(cuerpo);
+    });
+
+    it('un OPERADOR sobre un cliente sin perfil: NoEncontrado al listar y al consultar', async () => {
+      const operador = como(nuevoId(), ['OPERADOR']);
+
+      expect(await falla(servicio.listarDirecciones(pool, operador, LECTURA, nuevoId(), { page: 0, size: 20 }))).toBeInstanceOf(
+        NoEncontrado,
+      );
+      expect(await falla(servicio.obtenerDireccion(pool, operador, LECTURA, nuevoId(), nuevoId()))).toBeInstanceOf(NoEncontrado);
+    });
+
+    it('un OPERADOR no ve la dirección de un cliente bajo otro: NoEncontrado (RF-2.2.2.1)', async () => {
+      const [dueño, otro] = [await cliente(), await cliente()];
+      const { direccionId } = (await alta(dueño, nuevoId())).cuerpo as { direccionId: string };
+
+      expect(
+        await falla(servicio.obtenerDireccion(pool, como(nuevoId(), ['OPERADOR']), LECTURA, otro, direccionId)),
+      ).toBeInstanceOf(NoEncontrado);
+    });
+  });
+
+  describe('escrituras: actualizarDireccion y eliminarDireccion (RF-2.2.3, RF-2.2.4, RF-2.2.5)', () => {
+    it('el dueño actualiza y borra la suya, también con los ids en mayúsculas', async () => {
+      const dueño = await cliente();
+      const { cuerpo } = await alta(dueño, nuevoId());
+      const { direccionId } = cuerpo as { direccionId: string };
+
+      const cambiada = await servicio.actualizarDireccion(pool, como(dueño), ESCRITURA, dueño.toUpperCase(), direccionId.toUpperCase(), {
+        texto: 'Nuevo texto',
+      });
+      await servicio.eliminarDireccion(pool, como(dueño), ESCRITURA, dueño.toUpperCase(), direccionId.toUpperCase());
+
+      expect(cambiada).toEqual({ ...(cuerpo as object), texto: 'Nuevo texto' });
+      expect(await cuantas(dueño)).toBe(0);
+    });
+
+    it('un CLIENTE ajeno y CLIENTE+OPERADOR ajeno reciben SinPermiso, y la dirección queda como estaba', async () => {
+      const dueño = await cliente();
+      const { cuerpo } = await alta(dueño, nuevoId());
+      const { direccionId } = cuerpo as { direccionId: string };
+
+      for (const identidad of [como(nuevoId()), como(nuevoId(), ['CLIENTE', 'OPERADOR'])]) {
+        expect(
+          await falla(servicio.actualizarDireccion(pool, identidad, ESCRITURA, dueño, direccionId, { texto: 'Ajeno' })),
+        ).toBeInstanceOf(SinPermiso);
+        expect(await falla(servicio.eliminarDireccion(pool, identidad, ESCRITURA, dueño, direccionId))).toBeInstanceOf(SinPermiso);
+      }
+      expect(await servicio.obtenerDireccion(pool, como(dueño), LECTURA, dueño, direccionId)).toEqual(cuerpo);
+    });
+
+    it('el dueño sobre una dirección que no es suya, o ya borrada: NoEncontrado', async () => {
+      const [dueño, otro] = [await cliente(), await cliente()];
+      const { direccionId } = (await alta(otro, nuevoId())).cuerpo as { direccionId: string };
+      const propia = (await alta(dueño, nuevoId())).cuerpo as { direccionId: string };
+      await servicio.eliminarDireccion(pool, como(dueño), ESCRITURA, dueño, propia.direccionId);
+
+      expect(
+        await falla(servicio.actualizarDireccion(pool, como(dueño), ESCRITURA, dueño, direccionId, { texto: 'X' })),
+      ).toBeInstanceOf(NoEncontrado);
+      expect(await falla(servicio.eliminarDireccion(pool, como(dueño), ESCRITURA, dueño, direccionId))).toBeInstanceOf(NoEncontrado);
+      expect(
+        await falla(servicio.eliminarDireccion(pool, como(dueño), ESCRITURA, dueño, propia.direccionId)),
+      ).toBeInstanceOf(NoEncontrado);
+      expect(await cuantas(otro)).toBe(1);
+    });
+  });
+});
+

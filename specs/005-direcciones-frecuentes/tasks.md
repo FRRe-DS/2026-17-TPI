@@ -10,7 +10,7 @@ Depende de: la migración de perfiles (T1 de la spec #4) debe estar mergeada en 
   - Hecho cuando: integración verifica favoritas, recientes, lista completa, totales, límites, empates de fecha y página fuera del total.
 - [x] **T4. Implementar actualización parcial y borrado físico.** RF-2.2.3, RF-2.2.4, RF-2.2.4.1
   - Hecho cuando: PATCH modifica solo lo enviado y conserva `creadoEn`; DELETE elimina una sola fila, devuelve 404 al repetirse y no afecta direcciones de otro cliente.
-- [ ] **T5. Integrar rol efectivo, propiedad e idempotencia en el servicio.** RF-2.2, RF-2.2.5, RNF-08
+- [x] **T5. Integrar rol efectivo, propiedad e idempotencia en el servicio.** RF-2.2, RF-2.2.5, RNF-08
   - Hecho cuando: pruebas cubren CLIENTE propio/ajeno, CLIENTE+OPERADOR para lecturas y escrituras, y el POST repetido o concurrente con la misma clave produce un solo registro, mientras otro cuerpo da 422.
 - [ ] **T6. Exponer y registrar las cinco operaciones del contrato.** RF-2.2, RF-2.2.1, RF-2.2.2, RF-2.2.2.1, RF-2.2.3, RF-2.2.4, RF-2.2.4.1, RF-2.2.5, RNF-03, RNF-19
   - Hecho cuando: pruebas HTTP cubren todos los códigos, roles, `Location`, 204 sin cuerpo y errores problem+json, y comprueban que logs no contienen textos, alias, coordenadas ni claves.
