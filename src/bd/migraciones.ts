@@ -22,34 +22,45 @@ export type OpcionesMigrar = {
   dir?: string;
   // Recibe lo que cuenta node-pg-migrate. Sin él no se escribe nada: la salida estándar solo lleva logs en JSON (RNF-14.5).
   log?: (mensaje: string) => void;
+  // La señal de parada que llega durante el arranque (RNF-04.5): si se aborta, migrar() deja de esperar, como con el plazo.
+  parada?: AbortSignal;
 };
+
+const interrumpidas = () => new Error('Las migraciones se interrumpieron por la parada');
 
 // El esquema cambia solo con migraciones versionadas (RNF-05.1): aplica en orden las que faltan, cada una una sola vez,
 // y devuelve el nombre de las que aplicó (ninguno si ya estaban todas). Abre su propia conexión y la cierra al terminar.
-// Si la fase no termina en el plazo, cierra la conexión sin esperar a la migración en curso y falla (RNF-05.3).
+// Si la fase no termina en el plazo, o llega la parada, cierra la conexión sin esperar a la migración en curso y falla
+// (RNF-05.3, RNF-04.5). Con la parada ya abortada, falla sin conectarse.
 export async function migrar({
   urlBd,
   tiempoBdMs,
   plazoMs = PLAZO_MIGRACIONES_MS,
   dir = DIR_MIGRACIONES,
   log = () => {},
+  parada,
 }: OpcionesMigrar): Promise<string[]> {
+  if (parada?.aborted) throw interrumpidas();
   const cliente = new Client({ connectionString: urlBd, connectionTimeoutMillis: tiempoBdMs });
   // Si la base corta la conexión (un reinicio, pg_terminate_backend), pg emite 'error' y, sin oyente, el proceso se cae con
   // una traza y sin la línea JSON del motivo (RNF-05.3, RNF-14.5). No hace falta hacer nada más: la consulta en curso, o la
   // siguiente, falla con el corte, y migrar() lo devuelve como cualquier otro error.
   cliente.on('error', () => {});
-  const vencido = Promise.withResolvers<never>();
-  const plazo = setTimeout(() => {
-    // Con una consulta en curso, end() corta el socket en el acto. La base deshace la migración y suelta el bloqueo
-    // cuando termina la sentencia que estaba corriendo y ve que la conexión ya no está.
+  const cortado = Promise.withResolvers<never>();
+  // Con una consulta en curso, end() corta el socket en el acto. La base deshace la migración y suelta el bloqueo cuando
+  // termina la sentencia que estaba corriendo y ve que la conexión ya no está.
+  const cortar = (motivo: Error) => {
     void cliente.end();
-    vencido.reject(new Error(`Las migraciones no terminaron en ${plazoMs} ms`));
-  }, plazoMs);
+    cortado.reject(motivo);
+  };
+  const plazo = setTimeout(() => cortar(new Error(`Las migraciones no terminaron en ${plazoMs} ms`)), plazoMs);
+  const alAbortar = () => cortar(interrumpidas());
+  parada?.addEventListener('abort', alAbortar, { once: true });
   try {
-    return await Promise.race([aplicarPendientes(cliente, dir, log), vencido.promise]);
+    return await Promise.race([aplicarPendientes(cliente, dir, log), cortado.promise]);
   } finally {
     clearTimeout(plazo);
+    parada?.removeEventListener('abort', alAbortar);
   }
 }
 
