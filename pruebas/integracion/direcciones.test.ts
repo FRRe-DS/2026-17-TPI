@@ -248,8 +248,8 @@ describe('la migración direcciones (RF-2.2, RNF-05.1)', () => {
       const clienteId = nuevoId();
       await perfil(clienteId);
 
-      expect(await codigoDe(direccion({ clienteId, latitud: -27.45 }))).toBe(CHECK);
-      expect(await codigoDe(direccion({ clienteId, longitud: -58.98 }))).toBe(CHECK);
+      expect(await codigoDe(direccion({ clienteId, latitud: -45.12 }))).toBe(CHECK);
+      expect(await codigoDe(direccion({ clienteId, longitud: -30.56 }))).toBe(CHECK);
     });
 
     it('rechaza una latitud fuera de [-90, 90] y una longitud fuera de [-180, 180]', async () => {
@@ -366,7 +366,7 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
         tipo: 'FAVORITA',
         alias: 'Casa',
         texto: 'Calle Falsa 123',
-        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+        coordenadas: { latitud: -45.1234, longitud: -30.5678 },
       });
 
       expect(creada).toEqual({
@@ -374,7 +374,7 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
         tipo: 'FAVORITA',
         alias: 'Casa',
         texto: 'Calle Falsa 123',
-        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+        coordenadas: { latitud: -45.1234, longitud: -30.5678 },
         creadoEn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
       });
       const guardada = await pool.consultar(
@@ -382,7 +382,7 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
         [direccionId],
       );
       expect(guardada.rows).toEqual([
-        { cliente_id: clienteId, tipo: 'FAVORITA', alias: 'Casa', texto: 'Calle Falsa 123', latitud: -27.4511, longitud: -58.9867 },
+        { cliente_id: clienteId, tipo: 'FAVORITA', alias: 'Casa', texto: 'Calle Falsa 123', latitud: -45.1234, longitud: -30.5678 },
       ]);
     });
 
@@ -392,13 +392,13 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
 
       const creada = await crearDireccion(consultar, clienteId, direccionId, {
         tipo: 'RECIENTE',
-        texto: 'Av. Sarmiento 1234',
+        texto: 'Pasaje Inventado 456',
       });
 
       expect(creada).toEqual({
         direccionId,
         tipo: 'RECIENTE',
-        texto: 'Av. Sarmiento 1234',
+        texto: 'Pasaje Inventado 456',
         creadoEn: expect.any(String),
       });
       const guardada = await pool.consultar('SELECT alias, latitud, longitud FROM direcciones_cliente WHERE direccion_id = $1', [
@@ -501,7 +501,7 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
         tipo: 'FAVORITA',
         alias: 'Casa',
         texto: 'Calle Falsa 123',
-        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+        coordenadas: { latitud: -45.1234, longitud: -30.5678 },
       });
       const minima = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'RECIENTE', texto: 'Plaza 25' });
 
@@ -687,7 +687,7 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
         tipo: 'FAVORITA',
         alias: 'Casa',
         texto: 'Calle Falsa 123',
-        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+        coordenadas: { latitud: -45.1234, longitud: -30.5678 },
       });
       const sin = await crearDireccion(consultar, clienteId, nuevoId(), { tipo: 'RECIENTE', texto: 'Plaza 25' });
 
@@ -704,7 +704,7 @@ describe('el repositorio de direcciones: alta y consulta por cliente (RF-2.2, RF
         tipo: 'FAVORITA',
         alias: 'Casa',
         texto: 'Calle Falsa 123',
-        coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+        coordenadas: { latitud: -45.1234, longitud: -30.5678 },
       });
       return { clienteId, original };
     };
@@ -898,7 +898,7 @@ describe('el servicio de direcciones con la base: propiedad, perfil e idempotenc
   // Los roles de cada operación, como los da el contrato.
   const LECTURA = ['CLIENTE', 'OPERADOR'] as const;
   const ESCRITURA = ['CLIENTE'] as const;
-  const CASA = { tipo: 'FAVORITA' as const, alias: 'Casa', texto: 'Calle Falsa 123', coordenadas: { latitud: -27.45, longitud: -58.98 } };
+  const CASA = { tipo: 'FAVORITA' as const, alias: 'Casa', texto: 'Calle Falsa 123', coordenadas: { latitud: -45.12, longitud: -30.56 } };
 
   const como = (sub: string, roles: Identidad['roles'] = ['CLIENTE']): Identidad => ({ sub, roles });
 
@@ -1042,7 +1042,7 @@ describe('el servicio de direcciones con la base: propiedad, perfil e idempotenc
         const clave = nuevoId();
         const primera = await alta(clienteId, clave);
 
-        const reordenado = { coordenadas: { longitud: -58.98, latitud: -27.45 }, texto: 'Calle Falsa 123', alias: 'Casa', tipo: 'FAVORITA' };
+        const reordenado = { coordenadas: { longitud: -30.56, latitud: -45.12 }, texto: 'Calle Falsa 123', alias: 'Casa', tipo: 'FAVORITA' };
 
         expect(await alta(clienteId, clave, reordenado)).toEqual(primera);
         expect(await cuantas(clienteId)).toBe(1);

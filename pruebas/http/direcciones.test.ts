@@ -18,7 +18,7 @@ const contrato = cargarContrato();
 const SUB = '6f1c1d1e-3b0a-4f55-9a6b-0d7a8f4c2e11';
 const OTRO = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 const DIRECCION = 'b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
-const CASA = { tipo: 'FAVORITA', alias: 'Casa', texto: 'Calle Falsa 123', coordenadas: { latitud: -27.45, longitud: -58.98 } };
+const CASA = { tipo: 'FAVORITA', alias: 'Casa', texto: 'Calle Falsa 123', coordenadas: { latitud: -45.12, longitud: -30.56 } };
 const PROBLEMA_JSON = /^application\/problem\+json/;
 
 type Rol = 'CLIENTE' | 'CONDUCTOR' | 'OPERADOR' | 'SERVICIO';

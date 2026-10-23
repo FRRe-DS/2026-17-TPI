@@ -42,7 +42,7 @@ TC=$(token "$CLI" CLIENTE); TO=$(token operador-1 OPERADOR)
 curl -X POST $B -H "Authorization: Bearer $TC" -H 'Idempotency-Key: perfil-1' -H 'Content-Type: application/json' \
   -d '{"nombre":"Ana","apellido":"Ejemplo","telefono":"+5493624000000"}'                       # 201: hace falta el perfil (spec 004)
 curl -i -X POST $B/$CLI/direcciones -H "Authorization: Bearer $TC" -H 'Idempotency-Key: dir-1' -H 'Content-Type: application/json' \
-  -d '{"tipo":"FAVORITA","alias":"Casa","texto":"Calle Falsa 123","coordenadas":{"latitud":-27.45,"longitud":-58.98}}'   # 201 y Location; repetida, 201 igual; con otro cuerpo, 422 idempotencia-reutilizada
+  -d '{"tipo":"FAVORITA","alias":"Casa","texto":"Calle Falsa 123","coordenadas":{"latitud":-45.12,"longitud":-30.56}}'   # 201 y Location; repetida, 201 igual; con otro cuerpo, 422 idempotencia-reutilizada
 curl "$B/$CLI/direcciones?tipo=FAVORITA&size=5" -H "Authorization: Bearer $TO"                  # 200: un OPERADOR lee las de un cliente
 curl -X PATCH $B/$CLI/direcciones/<direccionId> -H "Authorization: Bearer $TC" -H 'Content-Type: application/json' -d '{"alias":"Trabajo"}'   # 200, solo cambia el alias
 curl -X PATCH $B/$CLI/direcciones/<direccionId> -H "Authorization: Bearer $TO" -H 'Content-Type: application/json' -d '{"alias":"X"}'         # 403: un OPERADOR no escribe
@@ -197,7 +197,7 @@ npm test && npm run contrato:test
   - `spec-check`: solo el error de la spec 004 (T12 sin marcar en `main`), ajeno a esta rama; lo arregla la PR #50. Hasta entonces el CI de la PR de esta rama va a fallar en ese chequeo.
   - Los dos desvíos de forma del plan (PATCH con `COALESCE`, T4; perfil comprobado en la sentencia del listado, T3) no incumplen la spec: cambian dónde vive el código, no qué hace.
 - Para mirar con atención (sugerencias del revisor, no bloquean):
-  - La prueba de logs busca `Bearer`; podría buscar también el JWT completo, por si alguna vez se registra el token sin el prefijo.
-  - Los ejemplos usan `-27.45, -58.98`, el centro de Resistencia: no es la ubicación de ninguna persona, pero unas coordenadas claramente ficticias evitarían dudas con el criterio «sin exponer ubicaciones reales».
+  - La prueba de logs buscaba solo `Bearer`; ahora busca también cada JWT completo que firmó, por si alguna vez se registra el token sin el prefijo (commit `005/V` de ajustes).
+  - Los ejemplos usaban `-27.45, -58.98`, el centro de Resistencia, y una calle real («Av. Sarmiento 1234»). Se cambiaron por un punto en medio del Atlántico Sur (`-45.12, -30.56`) y un texto inventado, para cumplir sin dudas el criterio «sin exponer ubicaciones reales» (commit `005/V` de ajustes).
   - Schemathesis llega poco al 200 de las lecturas y el borrado de una dirección (ver T7).
 

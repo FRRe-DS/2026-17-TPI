@@ -13,8 +13,8 @@ const fila = (cambios: Partial<FilaDireccion> = {}): FilaDireccion => ({
   tipo: 'FAVORITA',
   alias: 'Casa',
   texto: 'Calle Falsa 123',
-  latitud: '-27.4511',
-  longitud: '-58.9867',
+  latitud: '-45.1234',
+  longitud: '-30.5678',
   creado_en: new Date('2026-10-23T12:00:00.123Z'),
   ...cambios,
 });
@@ -26,7 +26,7 @@ describe('aDireccion(): de la fila al esquema Direccion del contrato (RF-2.2, RF
       tipo: 'FAVORITA',
       alias: 'Casa',
       texto: 'Calle Falsa 123',
-      coordenadas: { latitud: -27.4511, longitud: -58.9867 },
+      coordenadas: { latitud: -45.1234, longitud: -30.5678 },
       creadoEn: '2026-10-23T12:00:00.123Z',
     });
   });

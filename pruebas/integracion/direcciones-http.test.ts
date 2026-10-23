@@ -21,7 +21,7 @@ import { armarToken } from '../ayudas/tokens.js';
 const TIEMPO_BD_MS = 2000;
 const contrato = cargarContrato();
 const PROBLEMA_JSON = /^application\/problem\+json/;
-const CASA = { tipo: 'FAVORITA', alias: 'Casa', texto: 'Calle Falsa 123', coordenadas: { latitud: -27.45, longitud: -58.98 } };
+const CASA = { tipo: 'FAVORITA', alias: 'Casa', texto: 'Calle Falsa 123', coordenadas: { latitud: -45.12, longitud: -30.56 } };
 
 type Rol = 'CLIENTE' | 'CONDUCTOR' | 'OPERADOR' | 'SERVICIO';
 
@@ -56,9 +56,16 @@ describe('las operaciones de direcciones con la base (RF-2.2 a RF-2.2.5)', () =>
       { crearDireccion, listarDirecciones, obtenerDireccion, actualizarDireccion, eliminarDireccion },
       { contrato, pool, flujoLog: logs.flujo },
     );
-    const autorizacion = (sub: string, roles: Rol[]) => `Bearer ${armarToken({ claims: { sub, roles } })}`;
+    // Los JWT que firma la prueba, para buscarlos enteros en los logs (RNF-19).
+    const tokens: string[] = [];
+    const autorizacion = (sub: string, roles: Rol[]) => {
+      const token = armarToken({ claims: { sub, roles } });
+      tokens.push(token);
+      return `Bearer ${token}`;
+    };
     return {
       logs,
+      tokens,
       alta: (sub: string, clienteId: string, clave: string, payload: object = CASA, roles: Rol[] = ['CLIENTE']) =>
         app.inject({
           method: 'POST',
@@ -475,9 +482,9 @@ describe('las operaciones de direcciones con la base (RF-2.2 a RF-2.2.5)', () =>
     });
   });
 
-  describe('los logs no tienen textos, alias, coordenadas, claves ni tokens (RNF-19)', () => {
+  describe('los logs no tienen textos, alias, coordenadas, claves ni tokens, ni con prefijo ni sin él (RNF-19)', () => {
     it('ni en las respuestas buenas ni en los rechazos', async () => {
-      const { alta, lectura, cambio, baja, logs } = crear();
+      const { alta, lectura, cambio, baja, logs, tokens } = crear();
       const clienteId = await cliente();
       const clave = 'clave-secreta-de-idempotencia-17';
       const secreto = {
@@ -515,9 +522,11 @@ describe('las operaciones de direcciones con la base (RF-2.2 a RF-2.2.5)', () =>
         '55.5555555',
         clave,
         'Bearer',
+        ...tokens,
       ]) {
         expect(texto).not.toContain(dato);
       }
+      expect(tokens.length).toBeGreaterThan(0);
     });
   });
 });
