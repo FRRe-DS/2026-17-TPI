@@ -88,6 +88,19 @@ export class Conflicto extends Problema {
   }
 }
 
+// De `conIdempotencia()`, cuando la Idempotency-Key ya se usó con otra solicitud (spec 004, Criterios). No lleva la clave
+// (RNF-19).
+export class IdempotenciaReutilizada extends Problema {
+  constructor() {
+    super({
+      codigo: 422,
+      type: '/errores/idempotencia-reutilizada',
+      title: 'Clave de idempotencia reutilizada',
+      detail: 'La Idempotency-Key ya se usó con otra solicitud',
+    });
+  }
+}
+
 // Del cliente de módulos, una vez agotados los intentos (RNF-13.3). `modulo` es cómo se lo nombra, por ejemplo «M6», y la
 // `cause`, lo que falló en el último intento: la registra el manejador de errores (RNF-14.8).
 export class ModuloNoDisponible extends Problema {

@@ -5,6 +5,9 @@ import { BaseNoDisponible, Conflicto } from '../errores.js';
 // Cuántas conexiones abre el pool como máximo (plan, Datos).
 const CONEXIONES_MAXIMAS = 10;
 
+// Cuánto después del tiempo de base corta la base una sentencia por su cuenta (statement_timeout).
+const MARGEN_CORTE_BASE_MS = 500;
+
 // SQLSTATE de unique_violation.
 const UNIQUE_VIOLATION = '23505';
 
@@ -73,13 +76,23 @@ export function clasificarError(error: unknown): Conflicto | BaseNoDisponible | 
 // El pool de conexiones de la base de este módulo. Todo acceso a la base de esta spec y de las siguientes pasa por
 // `consultar()`, no por `query()`, que no corta a tiempo ni traduce los errores.
 export class PoolBd extends Pool {
-  readonly #tiempoBdMs: number;
+  // El tope de cada sentencia, que también usa `transaccion()` (src/bd/transaccion.ts).
+  readonly tiempoBdMs: number;
 
   constructor({ urlBd, tiempoBdMs }: Pick<Config, 'urlBd' | 'tiempoBdMs'>, registrar: RegistrarError = () => {}) {
     // Sin connectionTimeoutMillis, pg espera para siempre una conexión a una base colgada; sin query_timeout, una consulta
     // cortada por `consultar()` seguiría ocupando su conexión hasta que la base termine, y el pool se quedaría sin ellas.
-    super({ connectionString: urlBd, max: CONEXIONES_MAXIMAS, connectionTimeoutMillis: tiempoBdMs, query_timeout: tiempoBdMs });
-    this.#tiempoBdMs = tiempoBdMs;
+    // statement_timeout es el corte de la base: la base no lee el cierre de una conexión descartada hasta terminar la
+    // sentencia en curso, y sin él esa sentencia seguiría corriendo, con su transacción abierta y sus bloqueos, ocupando una
+    // sesión de la base. Llega `MARGEN_CORTE_BASE_MS` después del de M2, para que el que responde sea siempre el de M2.
+    super({
+      connectionString: urlBd,
+      max: CONEXIONES_MAXIMAS,
+      connectionTimeoutMillis: tiempoBdMs,
+      query_timeout: tiempoBdMs,
+      statement_timeout: tiempoBdMs + MARGEN_CORTE_BASE_MS,
+    });
+    this.tiempoBdMs = tiempoBdMs;
     // Una conexión inactiva que la base corta (un reinicio, un apagado) emite 'error' en el pool, y sin oyente tira el
     // proceso. El pool descarta esa conexión y abre otra cuando haga falta.
     this.on('error', (error) => registrar(error, 'Falló una conexión inactiva del pool de la base de datos'));
@@ -93,7 +106,7 @@ export class PoolBd extends Pool {
     parametros?: unknown[],
   ): Promise<QueryResult<Fila>> {
     try {
-      return await conTiempoMaximo(this.query<Fila>(sql, parametros), this.#tiempoBdMs);
+      return await conTiempoMaximo(this.query<Fila>(sql, parametros), this.tiempoBdMs);
     } catch (error) {
       throw clasificarError(error) ?? error;
     }
