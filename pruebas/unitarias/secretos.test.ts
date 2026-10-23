@@ -255,6 +255,67 @@ describe('serializarError: lo que el log guarda de un error, ya limpio (RNF-03.3
       expect(Object.keys(registrado).sort()).toEqual(['codigo', 'columna', 'mensaje', 'restriccion', 'tabla', 'tipo', 'traza']);
       expect(JSON.stringify(registrado)).not.toContain('ana@example.com');
     });
+
+    it('fuera de la clase 22, el mensaje y la traza quedan como están', () => {
+      const registrado = serializar(errorDePg);
+
+      expect(registrado.mensaje).toBe(errorDePg.message);
+      expect(registrado.traza).toBe(errorDePg.stack);
+    });
+  });
+
+  // Los errores de datos de la base (SQLSTATE 22…, data_exception) citan el valor que rechazaron (spec 004, RNF-19).
+  describe('un error de datos de pg (SQLSTATE 22…)', () => {
+    const MENSAJE_OMITIDO = 'Error de datos de la base: mensaje omitido';
+    const deDatos = (code: string, mensaje: string) => {
+      const error = Object.assign(new Error(mensaje), { code, severity: 'ERROR', routine: 'DateTimeParseError' });
+      error.name = 'error';
+      return error;
+    };
+
+    it.each([
+      ['22008', 'date/time field value out of range: "0000-01-01"', '0000-01-01'],
+      ['22P02', 'invalid input syntax for type uuid: "Ana Gómez"', 'Ana Gómez'],
+      ['22001', 'value too long for type character varying(100): Anastasia', 'Anastasia'],
+    ])('%s: guarda un mensaje fijo, el código y la traza sin el valor', (code, mensaje, valor) => {
+      const error = deDatos(code, mensaje);
+
+      const registrado = serializar(error);
+
+      expect(registrado).toMatchObject({ tipo: 'Error', codigo: code, mensaje: MENSAJE_OMITIDO });
+      expect(registrado.traza).toMatch(/^\s+at /);
+      expect(error.stack?.split('\n').slice(1).join('\n')).toBe(registrado.traza);
+      expect(JSON.stringify(registrado)).not.toContain(valor);
+    });
+
+    it('un mensaje de varias líneas tampoco queda en la traza', () => {
+      const registrado = serializar(deDatos('22008', 'primera línea con "0000-01-01"\nsegunda con "Ana"'));
+
+      expect(JSON.stringify(registrado)).not.toMatch(/0000-01-01|Ana/);
+      expect(registrado.traza).toMatch(/^\s+at /);
+    });
+
+    it('sin líneas de la pila, no guarda traza', () => {
+      const error = Object.assign(deDatos('22008', 'out of range: "0000-01-01"'), { stack: 'error: out of range: "0000-01-01"' });
+
+      expect(serializar(error)).toEqual({ tipo: 'Error', codigo: '22008', mensaje: MENSAJE_OMITIDO });
+    });
+
+    it('también cuando es la causa de otro error', () => {
+      const registrado = serializar(new Error('falló el alta', { cause: deDatos('22008', 'out of range: "0000-01-01"') }));
+
+      expect(registrado.mensaje).toBe('falló el alta');
+      expect(registrado.causa).toMatchObject({ codigo: '22008', mensaje: MENSAJE_OMITIDO });
+      expect(JSON.stringify(registrado)).not.toContain('0000-01-01');
+    });
+
+    it.each([
+      ['de otra clase que empieza con 2', '23505'],
+      ['numérico', 22008],
+      ['que contiene 22 pero no empieza así', '0822'],
+    ])('un código %s no es de la clase 22: el mensaje queda', (_caso, code) => {
+      expect(serializar(Object.assign(new Error('con "0000-01-01"'), { code })).mensaje).toBe('con "0000-01-01"');
+    });
   });
 
   it('sin traza si el stack no es un texto', () => {

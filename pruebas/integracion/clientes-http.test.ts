@@ -14,6 +14,8 @@ import {
   obtenerEstadoCuenta,
 } from '../../src/clientes/operaciones.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
+import type { Manejador } from '../../src/contrato/operaciones.js';
+import { serializarError } from '../../src/logs.js';
 import { crearApp } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs } from '../ayudas/logs.js';
@@ -357,6 +359,43 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
 
       expect(respuesta.statusCode).toBe(403);
       expect((await lectura(sub, sub)).json()).toEqual(creado.json());
+    });
+  });
+
+  describe('la fecha de nacimiento: el año 0000 no, del 0001 al 9999 sí (RF-2.1.4)', () => {
+    it('una del año 0000 da 400 y el perfil no cambia, ni siquiera los otros campos enviados', async () => {
+      const { alta, cambio, lectura } = crear();
+      const sub = randomUUID();
+      const creado = (await alta(sub, randomUUID())).json();
+
+      const respuesta = await cambio(sub, sub, { nombre: 'Beatriz', fechaNacimiento: '0000-06-15' });
+
+      expect(respuesta.statusCode).toBe(400);
+      expect((await lectura(sub, sub)).json()).toEqual(creado);
+    });
+
+    it('una del año 0000 al crear da 400 y no crea el perfil; la misma clave después crea el bueno', async () => {
+      const { alta, lectura } = crear();
+      const [sub, clave] = [randomUUID(), randomUUID()];
+
+      expect((await alta(sub, clave, { ...ANA, fechaNacimiento: '0000-06-15' })).statusCode).toBe(400);
+      expect((await lectura(sub, sub)).statusCode).toBe(404);
+      expect((await alta(sub, clave)).statusCode).toBe(201);
+    });
+
+    it('0001-01-01 y 9999-12-31 se guardan y vuelven iguales', async () => {
+      const { alta, cambio, lectura } = crear();
+      const sub = randomUUID();
+
+      const creado = await alta(sub, randomUUID(), { ...ANA, fechaNacimiento: '0001-01-01' });
+      expect(creado.statusCode).toBe(201);
+      expect(creado.json().fechaNacimiento).toBe('0001-01-01');
+      expect((await lectura(sub, sub)).json().fechaNacimiento).toBe('0001-01-01');
+
+      const cambiado = await cambio(sub, sub, { fechaNacimiento: '9999-12-31' });
+      expect(cambiado.statusCode).toBe(200);
+      expect(cambiado.json().fechaNacimiento).toBe('9999-12-31');
+      expect((await lectura(sub, sub)).json().fechaNacimiento).toBe('9999-12-31');
     });
   });
 
@@ -726,6 +765,41 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
       expect((await app.lectura(clienteId, clienteId)).json().apellido).toBe(ANA.apellido);
       const historial = (await app.lecturaBloqueos('operador', `/api/v1/clientes/${clienteId}/bloqueos`)).json();
       expect([historial.totalElementos, historial.items[0].vigente]).toEqual([1, true]);
+    });
+  });
+
+  describe('un error de datos de la base que nadie previó: 500 sin el valor en el log (RNF-19)', () => {
+    // El error real de pg cuando la base rechaza un valor: su mensaje lo cita (`date/time field value out of range: "…"`).
+    const VALOR = '0000-01-01';
+    const errorDeDatos = () => pool.consultar('SELECT $1::date', [VALOR]).then(() => expect.unreachable(), (error) => error);
+
+    it('el serializador guarda el código y la traza, pero no el valor', async () => {
+      const error = await errorDeDatos();
+      expect(error.message).toContain(VALOR);
+
+      const registrado = serializarError(error, []);
+
+      expect(registrado).toMatchObject({ codigo: '22008', mensaje: 'Error de datos de la base: mensaje omitido' });
+      expect(registrado.traza).toMatch(/^\s+at /);
+      expect(JSON.stringify(registrado)).not.toContain(VALOR);
+    });
+
+    it('por HTTP: 500 genérico, y la línea del error tiene el código y no el valor', async () => {
+      const logs = capturarLogs();
+      const fallaConDatos: Manejador = async (request) => request.server.pool.consultar('SELECT $1::date', [VALOR]);
+      const app = crearApp({ obtenerCliente: fallaConDatos }, { contrato, pool, flujoLog: logs.flujo });
+      const sub = randomUUID();
+
+      const respuesta = await app.inject({
+        method: 'GET',
+        url: `/api/v1/clientes/${sub}`,
+        headers: { authorization: `Bearer ${armarToken({ claims: { sub, roles: ['CLIENTE'] } })}` },
+      });
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(respuesta.body).not.toContain(VALOR);
+      expect(logs.texto()).toContain('22008');
+      expect(logs.texto()).not.toContain(VALOR);
     });
   });
 

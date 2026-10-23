@@ -187,6 +187,41 @@ describe('actualizarCliente: lo que se rechaza sin tocar la base', () => {
   });
 });
 
+describe('una fecha de nacimiento del año 0000, que el contrato admite y la base no guarda: 400 sin tocarla (RF-2.1.4)', () => {
+  const RECHAZO = {
+    type: 'about:blank',
+    title: 'Solicitud inválida',
+    status: 400,
+    detail: 'La fecha de nacimiento tiene que ser del año 0001 o posterior',
+  };
+
+  it.each(['0000-01-01', '0000-12-31', '0000-02-29'])('al crear el perfil con %s', async (fechaNacimiento) => {
+    const respuesta = await alta(token(['CLIENTE']), { ...ANA, fechaNacimiento });
+
+    expect(respuesta.statusCode).toBe(400);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.json()).toEqual({ ...RECHAZO, instance: '/api/v1/clientes' });
+    expect(respuesta.body).not.toContain(fechaNacimiento);
+  });
+
+  it.each(['0000-01-01', '0000-12-31'])('al actualizar el perfil con %s, sola o con otros campos', async (fechaNacimiento) => {
+    for (const cuerpo of [{ fechaNacimiento }, { nombre: 'Beatriz', fechaNacimiento }]) {
+      const respuesta = await cambio(token(['CLIENTE']), cuerpo);
+
+      expect(respuesta.statusCode).toBe(400);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+      expect(respuesta.json()).toEqual({ ...RECHAZO, instance: `/api/v1/clientes/${SUB}` });
+    }
+  });
+
+  it('antes que la regla de propiedad: un CLIENTE sobre otro perfil también recibe el 400', async () => {
+    const respuesta = await cambio(token(['CLIENTE']), { fechaNacimiento: '0000-01-01' }, OTRO);
+
+    expect(respuesta.statusCode).toBe(400);
+    expect(respuesta.json().detail).toBe(RECHAZO.detail);
+  });
+});
+
 const BLOQUEO = 'b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
 
 const altaBloqueo = (encabezados: Record<string, string>, payload: unknown = { motivo: 'Deuda pendiente' }, clienteId = SUB) =>

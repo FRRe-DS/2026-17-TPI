@@ -52,7 +52,7 @@ export function secretosDeAutorizacion(valor: string | undefined): string[] {
 
 // Lo que el log guarda de un error. Es una lista cerrada de campos, no el error entero: sus demás propiedades pueden traer
 // encabezados, la configuración o datos de una fila. De un error de pg guarda la tabla, la columna y la restricción, pero
-// no `detail` ni `where`, que traen datos de la fila.
+// no `detail` ni `where`, que traen datos de la fila; de uno de datos (SQLSTATE 22…), tampoco el mensaje.
 export type ErrorRegistrado = {
   tipo: string;
   codigo?: string;
@@ -73,6 +73,20 @@ const CAMPOS_DE_PG = [
 // Cuántos errores de la cadena de `cause` se guardan, contado el primero: corta también una cadena que se cierra en círculo.
 const NIVELES = 5;
 
+// Lo que se guarda en vez del mensaje de un error de datos de la base: los de la clase 22 de SQLSTATE (data_exception) citan
+// el valor que rechazaron, por ejemplo `date/time field value out of range: "0000-01-01"` (spec 004, RNF-19). Quedan el
+// código y la pila para diagnosticarlo.
+const MENSAJE_OMITIDO = 'Error de datos de la base: mensaje omitido';
+const esErrorDeDatos = (code: unknown) => typeof code === 'string' && code.startsWith('22');
+
+// La pila sin su encabezado, que repite el mensaje (puede tener varias líneas): desde la primera línea `at …`. Sin ninguna,
+// `undefined`.
+function soloLaPila(traza: string): string | undefined {
+  const lineas = traza.split('\n');
+  const primera = lineas.findIndex((linea) => /^\s+at /.test(linea));
+  return primera === -1 ? undefined : lineas.slice(primera).join('\n');
+}
+
 function serializar(valor: unknown, limpiar: (texto: string) => string, nivel: number): ErrorRegistrado {
   const error = valor as Record<string, unknown> | null;
   if (typeof error !== 'object' || error === null || typeof error.message !== 'string') {
@@ -81,12 +95,14 @@ function serializar(valor: unknown, limpiar: (texto: string) => string, nivel: n
   }
 
   const constructor: unknown = error.constructor;
+  const deDatos = esErrorDeDatos(error.code);
   const registrado: ErrorRegistrado = {
     tipo: limpiar(typeof constructor === 'function' ? constructor.name : String(error.name)),
-    mensaje: limpiar(error.message),
+    mensaje: deDatos ? MENSAJE_OMITIDO : limpiar(error.message),
   };
   if (typeof error.code === 'string' || typeof error.code === 'number') registrado.codigo = limpiar(String(error.code));
-  if (typeof error.stack === 'string') registrado.traza = limpiar(error.stack);
+  const traza = typeof error.stack === 'string' ? (deDatos ? soloLaPila(error.stack) : error.stack) : undefined;
+  if (traza !== undefined) registrado.traza = limpiar(traza);
   for (const [campo, destino] of CAMPOS_DE_PG) {
     const dato = error[campo];
     if (typeof dato === 'string') registrado[destino] = limpiar(dato);
