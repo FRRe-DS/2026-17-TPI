@@ -10,7 +10,7 @@ Tareas delicadas: T3 (idempotencia concurrente), T8 (levantamiento concurrente) 
   - Hecho cuando: con `transaccion()`, pruebas con PostgreSQL real demuestran que la misma solicitud concurrente produce un solo efecto y la misma respuesta, otro cuerpo da 422 y reutilizar una clave para otro `clienteId` crea el segundo bloqueo.
 - [x] **T4. Implementar el repositorio de perfiles y sus transformaciones.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1
   - Hecho cuando: las pruebas de integración crean, consultan y actualizan parcialmente un perfil, conservan campos no enviados, devuelven 404 cuando falta y resisten dos altas concurrentes sin duplicar.
-- [ ] **T5. Exponer crear, obtener y actualizar perfil con rol efectivo y errores del contrato.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RNF-03, RNF-19
+- [x] **T5. Exponer crear, obtener y actualizar perfil con rol efectivo y errores del contrato.** RF-2.1, RF-2.1.1, RF-2.1.1.1, RF-2.1.2, RF-2.1.2.1, RF-2.1.3, RF-2.1.3.1, RNF-03, RNF-19
   - Hecho cuando: pruebas HTTP cubren 201, `Location`, 200, 400, 403, 404, 409 y 422; CLIENTE+OPERADOR puede consultar otro perfil pero no actualizarlo; y logs no contienen datos personales ni claves.
 - [ ] **T6. Implementar vigencia y estado de cuenta consistente.** RF-2.6, RF-2.6.4
   - Hecho cuando: pruebas unitarias e integración cubren bloqueos indefinidos, futuros, vencidos y levantados, varios bloqueos simultáneos y coincidencia entre `estado` y `bloqueosVigentes`.

@@ -120,3 +120,36 @@ Se escribe al validar la spec.
   - La cobertura de la vigencia aquí es mínima (vigente, levantado, vencido). Los casos de T6 (indefinidos, futuros, varios simultáneos, coincidencia con `bloqueosVigentes`) los cubre esa tarea.
   - `actualizarPerfil` no distingue entre «no enviado» y `null`: si algún día el contrato admite borrar la fecha de nacimiento, hará falta otra forma de decirlo.
   - Los datos personales del perfil no se registran en ningún lado: ninguna de estas funciones escribe logs y los errores no llevan el `clienteId` (RNF-19).
+
+### T5 — Crear, obtener y actualizar perfil con rol efectivo y errores del contrato · commit `004/T5`
+- Qué cambió:
+  - [src/clientes/operaciones.ts](../../src/clientes/operaciones.ts): los manejadores `crearCliente`, `obtenerCliente` y `actualizarCliente`. Toman la identidad, los roles de la operación (`routeOptions.config.permisos`), el `clienteId`, la `Idempotency-Key` y el cuerpo, llaman al servicio y arman la respuesta. `crearCliente` pone `Location` y el código que devuelve la idempotencia.
+  - [src/clientes/servicio.ts](../../src/clientes/servicio.ts):
+    - `clienteDelToken` saca el `clienteId` del `sub`; si no es UUID, `SolicitudInvalida` (400).
+    - `exigirPropietario` calcula los roles efectivos (token ∩ operación, sin repetidos) y exige `sub = clienteId` solo si son exactamente `[CLIENTE]`; si no, `SinPermiso` (403).
+    - `normalizarUuid` deja el UUID en minúsculas y sin `urn:uuid:`.
+    - `crearCliente` llama a `crearPerfil` dentro de `conIdempotencia`; `obtenerCliente` y `actualizarCliente` exigen la propiedad antes de ir a la base.
+  - [src/errores.ts](../../src/errores.ts): `SolicitudInvalida(detail)` (400 genérico) y `SinPermiso` con `detail` opcional («El perfil pedido es de otro cliente»).
+  - [src/bd/pool.ts](../../src/bd/pool.ts): `BaseDeDatos`, el tipo de `request.server.pool`, suma `connect` y `tiempoBdMs` para que los manejadores puedan abrir una `transaccion()`. `PoolTransaccional` sale de ahí. `POOL_FALSO` y los dos pools falsos de [pruebas/http/correlacion-logs.test.ts](../../pruebas/http/correlacion-logs.test.ts) se completaron.
+- Por qué así:
+  - La propiedad va antes de buscar el perfil: un CLIENTE no puede averiguar si existe el de otro (403 antes que 404).
+  - Los repetidos se quitan porque, con `['CLIENTE','CLIENTE']`, contar roles se saltearía la regla.
+  - El UUID se normaliza porque el formato `uuid` del contrato (Ajv) admite mayúsculas y `urn:uuid:`, que PostgreSQL no devuelve o no acepta. Así coinciden el `sub`, la ruta, la base y la huella (el aviso de la revisión).
+  - La huella de `crearCliente` es solo el cuerpo: la ruta no tiene parámetros. El sujeto es el `clienteId` del token.
+  - Las rutas, los roles y la validación siguen saliendo del contrato (ADR 003). Registrar estos manejadores en [src/operaciones/index.ts](../../src/operaciones/index.ts) es parte de T9, junto con [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts).
+- Cómo se conecta: las pruebas pasan los tres manejadores a `crearApp` con el contrato real (`cargarContrato()`). El token y el rol los resuelve `registrarPermisos`, la validación el compilador del contrato, y los errores `responderProblema`.
+- Tests:
+  - [pruebas/unitarias/clientes.test.ts](../../pruebas/unitarias/clientes.test.ts): `normalizarUuid`, `clienteDelToken` con cinco `sub` que no son UUID, y `exigirPropietario`: dueño, otro, CLIENTE+OPERADOR en lectura y escritura, CLIENTE+CONDUCTOR, CLIENTE repetido y OPERADOR.
+  - [pruebas/http/clientes.test.ts](../../pruebas/http/clientes.test.ts), con `POOL_FALSO` (si tocaran la base darían 500): 401 sin token; 403 por rol (OPERADOR, SERVICIO o CONDUCTOR al crear; SERVICIO al leer; OPERADOR al actualizar); 403 por propiedad (CLIENTE, CLIENTE+CONDUCTOR y CLIENTE+OPERADOR al actualizar); 400 por `sub` que no es UUID (sin el `sub` en la respuesta), sin `Idempotency-Key`, por cuerpos inválidos, por un `clienteId` que no es UUID y por un PATCH vacío o con campos de más.
+  - [pruebas/integracion/clientes-http.test.ts](../../pruebas/integracion/clientes-http.test.ts), con la base real:
+    - 201 con perfil, `Location` y `sub` en mayúsculas normalizado; misma clave, misma respuesta; otra huella, 422 con su tipo; otra clave, 409 `perfil-ya-existe` sin cambiar el perfil;
+    - a la vez: claves distintas dan 201 y 409 con un solo perfil, y la misma clave da dos 201 iguales; clave de 255 sirve y la de 256 da 400;
+    - 200 del dueño (también con la ruta en mayúsculas), de OPERADOR y de CLIENTE+OPERADOR sobre otro; 404 en problem+json;
+    - PATCH parcial 200 que conserva lo demás, 404, y CLIENTE+OPERADOR sobre otro da 403 sin cambiar nada;
+    - los logs de todo ese recorrido no tienen nombre, apellido, teléfono, fechas, la clave ni el token.
+  - En rojo primero: sin los módulos no cargaban; con esbozos fallaron 31 (pasaban los 401, los 403 por rol y los 400 del contrato, que ya resuelve la base del servicio). Mutaciones de control: sin la regla de propiedad fallan 9, y sin quitar repetidos falla la de CLIENTE repetido.
+  - `npm test` (2217), lint, build y spec-check en verde. Las HTTP con base, tres corridas sin fallas.
+- Para mirar con atención:
+  - La respuesta de `crearCliente` sale de `idempotencias` (jsonb) y sus claves vienen en otro orden que las de `obtenerCliente`. El contenido es el mismo y JSON no fija el orden, pero las pruebas comparan objetos y no texto.
+  - Me equivoqué con la `Idempotency-Key`: creí que el contrato no tenía largo máximo y empecé a guardar su SHA-256. Tiene `maxLength: 255`, igual que la columna, así que lo revertí. Una clave de 256 da 400 antes de llegar al manejador.
+  - El 403 por propiedad tiene un `detail` propio. Es distinto del 403 por rol, para que quien consume la API sepa por qué.

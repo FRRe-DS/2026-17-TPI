@@ -4,7 +4,7 @@ import type { BaseDeDatos } from '../../src/bd/pool.js';
 import type { Manejador, Manejadores } from '../../src/contrato/operaciones.js';
 import { BaseNoDisponible, Conflicto } from '../../src/errores.js';
 import { crearClienteModulo } from '../../src/modulos/cliente.js';
-import { CONFIG, crearApp } from '../ayudas/app.js';
+import { CONFIG, crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { capturarLogs } from '../ayudas/logs.js';
 import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 import { escuchar, leerRespuesta, porSocket } from '../ayudas/socket.js';
@@ -536,7 +536,7 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
     const causa = Object.assign(new Error(`connect ECONNREFUSED con ${URL_BD}, ${CLAVE} y ${TOKEN}`), {
       code: 'ECONNREFUSED',
     });
-    const caida: BaseDeDatos = { consultar: async () => Promise.reject(new BaseNoDisponible({ cause: causa })) };
+    const caida: BaseDeDatos = { ...POOL_FALSO, consultar: async () => Promise.reject(new BaseNoDisponible({ cause: causa })) };
     const { app, logs } = crear({ probarPublica: consultaLaBase }, caida);
 
     const respuesta = await app.inject({
@@ -615,7 +615,7 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
   });
 
   it('sin un id en la solicitud, la línea trae el UUID que devuelve la respuesta', async () => {
-    const caida: BaseDeDatos = { consultar: async () => Promise.reject(new BaseNoDisponible({ cause: new Error('x') })) };
+    const caida: BaseDeDatos = { ...POOL_FALSO, consultar: async () => Promise.reject(new BaseNoDisponible({ cause: new Error('x') })) };
     const { app, logs } = crear({ probarPublica: consultaLaBase }, caida);
 
     const respuesta = await app.inject({ method: 'GET', url: '/pruebas/publica' });

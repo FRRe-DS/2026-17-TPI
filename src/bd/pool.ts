@@ -1,4 +1,4 @@
-import { Pool, type QueryResult, type QueryResultRow } from 'pg';
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 import type { Config } from '../config.js';
 import { BaseNoDisponible, Conflicto } from '../errores.js';
 
@@ -113,9 +113,10 @@ export class PoolBd extends Pool {
   }
 }
 
-// Lo único que necesitan los manejadores de la base: consultar. El `PoolBd` lo cumple, y las pruebas HTTP le pasan un pool
-// falso cuando no hace falta la base. Cerrar el pool no les toca: lo hace quien lo crea.
-export type BaseDeDatos = Pick<PoolBd, 'consultar'>;
+// Lo único que necesitan los manejadores de la base: consultar y, para las altas de la spec 004 en adelante, abrir una
+// `transaccion()` (src/bd/transaccion.ts), que pide una conexión y usa el mismo tiempo de base. El `PoolBd` lo cumple, y las
+// pruebas HTTP le pasan un pool falso cuando no hace falta la base. Cerrar el pool no les toca: lo hace quien lo crea.
+export type BaseDeDatos = Pick<PoolBd, 'consultar' | 'tiempoBdMs'> & { connect(): Promise<PoolClient> };
 
 // El pool de la configuración. No se conecta hasta la primera consulta, y hay que cerrarlo con `end()` al detenerse.
 export function crearPool(config: Pick<Config, 'urlBd' | 'tiempoBdMs'>, registrar?: RegistrarError): PoolBd {

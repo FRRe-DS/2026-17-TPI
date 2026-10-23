@@ -55,10 +55,11 @@ export class NoAutenticado extends Problema {
   }
 }
 
-// De `autorizar`.
+// De `autorizar` o, con `detail`, de una regla de propiedad (`exigirPropietario`). El `detail` no lleva datos de la solicitud
+// (RNF-19).
 export class SinPermiso extends Problema {
-  constructor() {
-    super({ codigo: 403, title: 'Sin permiso', detail: 'El rol del token no permite esta operación' });
+  constructor(detail = 'El rol del token no permite esta operación') {
+    super({ codigo: 403, title: 'Sin permiso', detail });
   }
 }
 
@@ -147,6 +148,14 @@ const SOLICITUD_ILEGIBLE: DatosProblema = {
 export class SolicitudIlegible extends Problema {
   constructor() {
     super(SOLICITUD_ILEGIBLE);
+  }
+}
+
+// De una regla de una operación que el esquema del contrato no puede expresar, como que el sub del token sea un UUID para
+// crear un perfil (spec 004, Casos límite). El `detail` no lleva datos de la solicitud (RNF-19).
+export class SolicitudInvalida extends Problema {
+  constructor(detail: string) {
+    super({ codigo: 400, title: TITULO_SOLICITUD_INVALIDA, detail });
   }
 }
 

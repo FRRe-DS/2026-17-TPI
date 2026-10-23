@@ -30,11 +30,17 @@ export const contratoCon = (paths: object, extra: object = {}): Contrato => ({
   paths,
 });
 
-// El pool de las pruebas que no necesitan la base: si alguna llega a consultarla, falla y lo dice.
+const SIN_BASE = 'Esta prueba no tiene base de datos: pasá un pool en las opciones de crearApp';
+
+// El pool de las pruebas que no necesitan la base: si alguna llega a consultarla o a abrir una transacción, falla y lo dice.
 export const POOL_FALSO: BaseDeDatos = {
   consultar: async () => {
-    throw new Error('Esta prueba no tiene base de datos: pasá un pool en las opciones de crearApp');
+    throw new Error(SIN_BASE);
   },
+  connect: async () => {
+    throw new Error(SIN_BASE);
+  },
+  tiempoBdMs: 2000,
 };
 
 const abiertas: FastifyInstance[] = [];
