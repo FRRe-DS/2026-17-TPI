@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
-import { actualizarCliente, crearCliente, obtenerCliente, obtenerEstadoCuenta } from '../../src/clientes/operaciones.js';
+import {
+  actualizarCliente,
+  crearBloqueo,
+  crearCliente,
+  listarBloqueos,
+  obtenerBloqueo,
+  obtenerCliente,
+  obtenerEstadoCuenta,
+} from '../../src/clientes/operaciones.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { crearApp } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
@@ -36,7 +44,9 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
 
   function crear() {
     const logs = capturarLogs();
-    const app = crearApp({ crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta }, { contrato, pool, flujoLog: logs.flujo });
+    const app = crearApp(
+      { crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta, crearBloqueo, listarBloqueos, obtenerBloqueo },
+      { contrato, pool, flujoLog: logs.flujo });
     const autorizacion = (sub: string, roles: Rol[]) => `Bearer ${armarToken({ claims: { sub, roles } })}`;
     return {
       logs,
@@ -55,6 +65,16 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
           url: `/api/v1/clientes/${clienteId}/estado-cuenta`,
           headers: { authorization: autorizacion(sub, roles) },
         }),
+      altaBloqueo: (sub: string, clienteId: string, clave: string, payload: object, roles: Rol[] = ['OPERADOR']) =>
+        app.inject({
+          method: 'POST',
+          url: `/api/v1/clientes/${clienteId}/bloqueos`,
+          headers: { authorization: autorizacion(sub, roles), 'idempotency-key': clave },
+          payload,
+        }),
+      // `url` es la ruta del recurso: el historial (con su query) o un bloqueo, por ejemplo la de Location.
+      lecturaBloqueos: (sub: string, url: string, roles: Rol[] = ['OPERADOR']) =>
+        app.inject({ method: 'GET', url, headers: { authorization: autorizacion(sub, roles) } }),
       cambio: (sub: string, clienteId: string, payload: object, roles: Rol[] = ['CLIENTE']) =>
         app.inject({
           method: 'PATCH',
@@ -332,6 +352,152 @@ describe('las operaciones de perfil con la base (RF-2.1, RF-2.1.1, RF-2.1.2, RF-
 
       expect(respuesta.statusCode).toBe(403);
       expect((await lectura(sub, sub)).json()).toEqual(creado.json());
+    });
+  });
+
+  describe('crearBloqueo, listarBloqueos y obtenerBloqueo (RF-2.6.1, RF-2.6.2)', () => {
+    const OPERADOR = 'operador-con-sub-propio';
+    const conPerfil = async (app: ReturnType<typeof crear>) => {
+      const sub = randomUUID();
+      await app.alta(sub, randomUUID());
+      return sub;
+    };
+
+    it('201 con el bloqueo, el autor del token, desde igual a creadoEn y Location; Location lo devuelve igual', async () => {
+      const app = crear();
+      const clienteId = await conPerfil(app);
+
+      const respuesta = await app.altaBloqueo(OPERADOR, clienteId, randomUUID(), { motivo: 'Deuda pendiente' });
+
+      expect(respuesta.statusCode).toBe(201);
+      const bloqueo = respuesta.json();
+      expect(bloqueo).toEqual({
+        bloqueoId: expect.any(String),
+        motivo: 'Deuda pendiente',
+        vigente: true,
+        desde: bloqueo.creadoEn,
+        creadoEn: expect.any(String),
+        creadoPor: OPERADOR,
+      });
+      expect(respuesta.headers.location).toBe(`/api/v1/clientes/${clienteId}/bloqueos/${bloqueo.bloqueoId}`);
+      const consulta = await app.lecturaBloqueos(randomUUID(), respuesta.headers.location as string);
+      expect([consulta.statusCode, consulta.json()]).toEqual([200, bloqueo]);
+    });
+
+    it('con hasta futura: 201 y la cuenta queda BLOQUEADA con ese bloqueo', async () => {
+      const app = crear();
+      const clienteId = await conPerfil(app);
+
+      const bloqueo = (await app.altaBloqueo(OPERADOR, clienteId, randomUUID(), { motivo: 'x', hasta: '2099-01-01T00:00:00Z' })).json();
+
+      expect(bloqueo.hasta).toBe('2099-01-01T00:00:00.000Z');
+      expect((await app.estadoCuenta(clienteId, clienteId)).json()).toMatchObject({ estado: 'BLOQUEADO', bloqueosVigentes: [bloqueo] });
+    });
+
+    it('la misma Idempotency-Key y el mismo cuerpo: la misma respuesta y un solo bloqueo (RNF-08)', async () => {
+      const app = crear();
+      const [clienteId, clave] = [await conPerfil(app), randomUUID()];
+
+      const [una, otra] = await Promise.all([
+        app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente' }),
+        app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente' }),
+      ]);
+      const repetida = await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente' });
+
+      expect([una.statusCode, otra.statusCode, repetida.statusCode]).toEqual([201, 201, 201]);
+      expect(otra.json()).toEqual(una.json());
+      expect(repetida.json()).toEqual(una.json());
+      expect(repetida.headers.location).toBe(una.headers.location);
+      expect((await app.lecturaBloqueos(OPERADOR, `/api/v1/clientes/${clienteId}/bloqueos`)).json().totalElementos).toBe(1);
+    });
+
+    it('la misma clave con otro cuerpo: 422 idempotencia-reutilizada, sin otro bloqueo', async () => {
+      const app = crear();
+      const [clienteId, clave] = [await conPerfil(app), randomUUID()];
+      await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Deuda pendiente' });
+
+      const respuesta = await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Otro motivo' });
+
+      expect(respuesta.statusCode).toBe(422);
+      expect(respuesta.json().type).toBe('/errores/idempotencia-reutilizada');
+      expect((await app.lecturaBloqueos(OPERADOR, `/api/v1/clientes/${clienteId}/bloqueos`)).json().totalElementos).toBe(1);
+    });
+
+    it('la misma clave del mismo operador para otro cliente crea su propio bloqueo', async () => {
+      const app = crear();
+      const [uno, otro, clave] = [await conPerfil(app), await conPerfil(app), randomUUID()];
+
+      const primero = await app.altaBloqueo(OPERADOR, uno, clave, { motivo: 'Deuda pendiente' });
+      const segundo = await app.altaBloqueo(OPERADOR, otro, clave, { motivo: 'Deuda pendiente' });
+
+      expect([primero.statusCode, segundo.statusCode]).toEqual([201, 201]);
+      expect(segundo.json().bloqueoId).not.toBe(primero.json().bloqueoId);
+      expect(segundo.headers.location).toContain(otro);
+    });
+
+    it('para un cliente sin perfil: 404 en problem+json', async () => {
+      const respuesta = await crear().altaBloqueo(OPERADOR, randomUUID(), randomUUID(), { motivo: 'x' });
+
+      expect(respuesta.statusCode).toBe(404);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+      expect(respuesta.json().detail).toBe('No existe el cliente pedido');
+    });
+
+    it('el historial: página por defecto (0 de 20), orden del más nuevo al más antiguo, filtro y totales', async () => {
+      const app = crear();
+      const clienteId = await conPerfil(app);
+      const motivos = [];
+      for (const motivo of ['Primero', 'Segundo', 'Tercero']) {
+        motivos.push((await app.altaBloqueo(OPERADOR, clienteId, randomUUID(), { motivo })).json().motivo);
+      }
+      await pool.consultar(`UPDATE bloqueos_cliente SET hasta = now() - interval '1 second' WHERE cliente_id = $1 AND motivo = 'Segundo'`, [
+        clienteId,
+      ]);
+      const url = `/api/v1/clientes/${clienteId}/bloqueos`;
+
+      const todo = (await app.lecturaBloqueos(OPERADOR, url)).json();
+      const vigentes = (await app.lecturaBloqueos(OPERADOR, `${url}?vigente=true`)).json();
+      const noVigentes = (await app.lecturaBloqueos(OPERADOR, `${url}?vigente=false`)).json();
+      const segunda = (await app.lecturaBloqueos(OPERADOR, `${url}?page=1&size=2`)).json();
+      const fuera = (await app.lecturaBloqueos(OPERADOR, `${url}?page=5&size=2`)).json();
+
+      expect(todo).toMatchObject({ page: 0, size: 20, totalElementos: 3, totalPaginas: 1 });
+      expect(todo.items.map((b: { motivo: string }) => b.motivo)).toEqual([...motivos].reverse());
+      expect(vigentes.items.map((b: { motivo: string }) => b.motivo)).toEqual(['Tercero', 'Primero']);
+      expect(noVigentes).toMatchObject({ totalElementos: 1, items: [{ motivo: 'Segundo', vigente: false }] });
+      expect(segunda).toMatchObject({ page: 1, size: 2, totalElementos: 3, totalPaginas: 2, items: [{ motivo: 'Primero' }] });
+      expect(fuera).toEqual({ page: 5, size: 2, totalElementos: 3, totalPaginas: 2, items: [] });
+    });
+
+    it('el historial de un cliente sin perfil: 404', async () => {
+      expect((await crear().lecturaBloqueos(OPERADOR, `/api/v1/clientes/${randomUUID()}/bloqueos`)).statusCode).toBe(404);
+    });
+
+    it('un bloqueo pedido por otro cliente es 404, como uno que no existe (spec 004, Casos límite)', async () => {
+      const app = crear();
+      const [uno, otro] = [await conPerfil(app), await conPerfil(app)];
+      const bloqueo = (await app.altaBloqueo(OPERADOR, otro, randomUUID(), { motivo: 'x' })).json();
+
+      for (const url of [`/api/v1/clientes/${uno}/bloqueos/${bloqueo.bloqueoId}`, `/api/v1/clientes/${otro}/bloqueos/${randomUUID()}`]) {
+        const respuesta = await app.lecturaBloqueos(OPERADOR, url);
+
+        expect(respuesta.statusCode).toBe(404);
+        expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+        expect(respuesta.json().detail).toBe('No existe el bloqueo pedido');
+      }
+    });
+
+    it('los logs no tienen motivos, claves ni tokens (RNF-19)', async () => {
+      const app = crear();
+      const [clienteId, clave] = [await conPerfil(app), 'clave-secreta-de-bloqueo-17'];
+
+      await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Motivo-confidencial-1' });
+      await app.altaBloqueo(OPERADOR, clienteId, clave, { motivo: 'Motivo-confidencial-2' });
+      await app.altaBloqueo(OPERADOR, clienteId, randomUUID(), { motivo: 'Motivo-confidencial-3', hasta: '2020-01-01T00:00:00Z' });
+      await app.lecturaBloqueos(OPERADOR, `/api/v1/clientes/${clienteId}/bloqueos`);
+
+      const texto = app.logs.texto();
+      for (const dato of ['Motivo-confidencial', clave, 'Bearer']) expect(texto).not.toContain(dato);
     });
   });
 

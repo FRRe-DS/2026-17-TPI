@@ -14,7 +14,7 @@ Tareas delicadas: T3 (idempotencia concurrente), T8 (levantamiento concurrente) 
   - Hecho cuando: pruebas HTTP cubren 201, `Location`, 200, 400, 403, 404, 409 y 422; CLIENTE+OPERADOR puede consultar otro perfil pero no actualizarlo; y logs no contienen datos personales ni claves.
 - [x] **T6. Implementar vigencia y estado de cuenta consistente.** RF-2.6, RF-2.6.4
   - Hecho cuando: pruebas unitarias e integración cubren bloqueos indefinidos, futuros, vencidos y levantados, varios bloqueos simultáneos y coincidencia entre `estado` y `bloqueosVigentes`.
-- [ ] **T7. Crear y consultar bloqueos con historial paginado.** RF-2.6.1, RF-2.6.2, RNF-03, RNF-08
+- [x] **T7. Crear y consultar bloqueos con historial paginado.** RF-2.6.1, RF-2.6.2, RNF-03, RNF-08
   - Hecho cuando: pruebas HTTP e integración cubren alta idempotente, autor del token, `Location`, `desde` igual a `creadoEn`, consulta individual, filtro de vigencia, totales, orden estable, página vacía, recursos de otro cliente como 404 y `hasta` pasada como 422 con tipo propio.
 - [ ] **T8. Levantar bloqueos sin borrar historial y proteger la concurrencia.** RF-2.6.3, RF-2.6.3.1, RF-2.6.4, RNF-08
   - Hecho cuando: se guardan juntos autor, instante y motivo; el historial conserva el bloqueo; dos levantamientos concurrentes producen un 200 y un 409; y levantar uno vencido responde 409 con `type: /errores/bloqueo-no-vigente`.

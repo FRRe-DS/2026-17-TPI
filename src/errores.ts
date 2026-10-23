@@ -115,6 +115,19 @@ export class IdempotenciaReutilizada extends Problema {
   }
 }
 
+// De `crearBloqueo`, cuando `hasta` no es posterior al instante de creación (spec 004, Casos límite). No lleva la fecha ni el
+// motivo (RNF-19).
+export class BloqueoVencido extends Problema {
+  constructor() {
+    super({
+      codigo: 422,
+      type: '/errores/bloqueo-vencido',
+      title: 'Bloqueo vencido',
+      detail: 'El fin del bloqueo tiene que ser posterior a su creación',
+    });
+  }
+}
+
 // Del cliente de módulos, una vez agotados los intentos (RNF-13.3). `modulo` es cómo se lo nombra, por ejemplo «M6», y la
 // `cause`, lo que falló en el último intento: la registra el manejador de errores (RNF-14.8).
 export class ModuloNoDisponible extends Problema {

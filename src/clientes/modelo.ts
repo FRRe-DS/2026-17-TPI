@@ -6,6 +6,8 @@ export type ClienteNuevo = components['schemas']['ClienteNuevo'];
 export type ClienteCambios = components['schemas']['ClienteCambios'];
 export type Bloqueo = components['schemas']['Bloqueo'];
 export type EstadoCuenta = components['schemas']['EstadoCuenta'];
+export type BloqueoNuevo = components['schemas']['BloqueoNuevo'];
+export type PaginaBloqueos = components['schemas']['PaginaBloqueos'];
 
 // Una fila del perfil como la entrega `repositorio.ts`: `fecha_nacimiento` ya como texto AAAA-MM-DD (pg lo daría como un
 // `Date` a medianoche de la zona del proceso, y la fecha podría correrse un día), y `bloqueado`, si el cliente tiene al menos
@@ -75,4 +77,10 @@ export function aEstadoCuenta(clienteId: string, vigentes: FilaBloqueo[]): Estad
     estado: vigentes.length > 0 ? 'BLOQUEADO' : 'ACTIVO',
     bloqueosVigentes: vigentes.map(aBloqueo),
   };
+}
+
+// Una página del historial (RF-2.6.2): los bloqueos de la página, en el orden recibido, y los totales del filtro. `page` y
+// `size` son los pedidos; una página fuera del total tiene `items` vacío.
+export function aPaginaBloqueos(filas: FilaBloqueo[], total: number, page: number, size: number): PaginaBloqueos {
+  return { page, size, totalElementos: total, totalPaginas: Math.ceil(total / size), items: filas.map(aBloqueo) };
 }

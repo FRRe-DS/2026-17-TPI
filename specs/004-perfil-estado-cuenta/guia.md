@@ -176,3 +176,34 @@ Se escribe al validar la spec.
   - Un bloqueo cuyo `hasta` coincide exactamente con el instante de la consulta no es vigente (`hasta > CURRENT_TIMESTAMP` es estricto), igual que la regla de la spec. La prueba de vencimiento natural espera 1 s sobre un fin de 700 ms.
   - La prueba de «40 lecturas» confirma que no hay contradicción, pero la garantía es estructural (una sentencia, estado deducido), no estadística.
 
+### T7 — Crear y consultar bloqueos con historial paginado · commit `004/T7`
+- Qué cambió:
+  - [src/clientes/repositorio.ts](../../src/clientes/repositorio.ts):
+    - `crearBloqueo(consultar, clienteId, bloqueoId, datos, autor)`: primero `exigirPerfil` (404), después un `INSERT … SELECT` que solo inserta si `hasta` es nula o posterior a `clock_timestamp()`, el mismo valor que queda en `creado_en`; si no inserta, `BloqueoVencido` (422).
+    - `obtenerBloqueo(consultar, clienteId, bloqueoId)`: busca por los dos ids; uno de otro cliente es 404 «No existe el bloqueo pedido».
+    - `listarBloqueos(consultar, clienteId, { vigente?, page, size })`: una sola sentencia con `clientes`, un `LATERAL` con el total del filtro y otro con la página (`ORDER BY creado_en DESC, bloqueo_id DESC LIMIT … OFFSET …`). Sin perfil, 404. Tipo `PedidoHistorial`.
+  - [src/clientes/modelo.ts](../../src/clientes/modelo.ts): `BloqueoNuevo`, `PaginaBloqueos` y `aPaginaBloqueos()` (totales y `totalPaginas = ceil(total / size)`).
+  - [src/clientes/servicio.ts](../../src/clientes/servicio.ts): `crearBloqueo` (chequeo previo de fecha pasada, `bloqueoId` con `randomUUID()`, alta dentro de `conIdempotencia` con sujeto = `sub` del operador, cliente de la ruta y huella `{ cuerpo, ruta: { clienteId } }`), `listarBloqueos` y `obtenerBloqueo` (normalizan los UUID de la ruta).
+  - [src/clientes/operaciones.ts](../../src/clientes/operaciones.ts): los manejadores `crearBloqueo` (201, `Location`), `listarBloqueos` y `obtenerBloqueo`.
+  - [src/errores.ts](../../src/errores.ts): `BloqueoVencido` (422, `type: /errores/bloqueo-vencido`).
+- Por qué así:
+  - `creado_en` y la referencia de `hasta` son el mismo `clock_timestamp()`, así que `desde` (= `creadoEn`) nunca queda después de `hasta`, y un bloqueo recién creado siempre es vigente.
+  - Los dos rechazos del alta (404 y 422) se deciden con lecturas y un `INSERT` condicional, no con errores de la base: dentro de la transacción de la idempotencia no la abortan, y como la transacción se deshace, tampoco queda la clave reservada.
+  - El servicio rechaza un `hasta` ya pasado según su reloj antes de ir a la base. Además de ahorrar la transacción, cubre el año 0000: el formato `date-time` del contrato (Ajv) lo admite y PostgreSQL no (sería un 500). Las demás formas raras que admite el contrato (`+05` sin minutos, segundo 60, separador en minúscula o espacio) PostgreSQL las entiende, así que `hasta` se le pasa como texto y no como `Date` de JS, que no las lee.
+  - La huella incluye el cliente de la ruta, y la fila de idempotencia lo guarda: la misma clave del mismo operador para otro cliente crea otro bloqueo (plan, «idempotencias»).
+  - Total y página en una sola sentencia: comparten instantánea e instante, y el total coincide con lo paginado aunque entren bloqueos o venzan en medio. El desempate por `bloqueo_id` hace estable el orden entre páginas.
+  - `OFFSET` es `min(page * size, MAX_SAFE_INTEGER)`: el contrato no pone máximo a `page`, y un valor enorme desbordaría el bigint (500); cualquier valor por encima del tope ya queda fuera del total y da `items` vacío.
+  - `page` y `size` llegan siempre al manejador: el validador (`useDefaults`) pone 0 y 20.
+- Cómo se conecta: los tres manejadores quedan sin registrar en [src/operaciones/index.ts](../../src/operaciones/index.ts) (T9). `crearBloqueo` reutiliza `conIdempotencia()` de T3 y `COLUMNAS_BLOQUEO` de T6; la cuenta pasa a BLOQUEADA porque `obtenerEstadoCuenta` lee la misma tabla.
+- Tests:
+  - [pruebas/unitarias/clientes.test.ts](../../pruebas/unitarias/clientes.test.ts): `aPaginaBloqueos` (forma, seis casos de `totalPaginas`, página fuera del total) y la respuesta de `BloqueoVencido`.
+  - [pruebas/integracion/clientes.test.ts](../../pruebas/integracion/clientes.test.ts): `crearBloqueo` (forma del contrato, autor, `desde` = `creadoEn`, `hasta` con desplazamiento horario, `hasta` pasada o igual a ahora sin crear nada, 404 antes que 422, la transacción sigue sirviendo tras un rechazo); `obtenerBloqueo` (otro cliente, inexistente, vencido y levantado con `vigente: false`); `listarBloqueos` (orden con empate, filtros `true` y `false`, tres páginas sin repetir, página fuera del total, `page = 1e23`, sin bloqueos, sin perfil, sin mezclar clientes).
+  - [pruebas/http/clientes.test.ts](../../pruebas/http/clientes.test.ts) (sin base): 401; 403 para CLIENTE, SERVICIO y CONDUCTOR; 400 sin `Idempotency-Key`, por cuerpos inválidos, por query inválida y por ids que no son UUID; 422 `bloqueo-vencido` con `hasta` en 2020 y en el año 0000, sin el motivo en la respuesta.
+  - [pruebas/integracion/clientes-http.test.ts](../../pruebas/integracion/clientes-http.test.ts): 201 con autor, `desde` y `Location`, y `Location` devuelve lo mismo; la cuenta queda BLOQUEADA; misma clave a la vez y repetida, un solo bloqueo y la misma respuesta; otra huella, 422 `idempotencia-reutilizada`; misma clave para otro cliente, otro bloqueo; 404 sin perfil; historial con página por defecto, orden, filtro, segunda página y página fuera; 404 para un bloqueo de otro cliente; los logs sin motivos, clave ni token.
+  - En rojo primero: fallaron 107 (no existían los módulos ni los manejadores). Mutaciones de control: invertir el desempate hace fallar 3; quitar la condición de `hasta` del `INSERT` hace fallar 2.
+  - `npm test` (2303), lint, build y spec-check en verde.
+- Para mirar con atención:
+  - El chequeo previo del servicio usa el reloj del contenedor de M2, y el definitivo, el de PostgreSQL. Con relojes desfasados, un `hasta` que cae entre los dos puede dar 422 en el servicio cuando la base lo habría aceptado. En el compose comparten el reloj del host.
+  - Los manejadores no escriben logs: ni el motivo ni el `sub` del operador salen en ellos (RNF-19). El `Location` lleva solo ids.
+  - `obtenerBloqueo` no comprueba el perfil aparte: sin perfil no puede haber bloqueos (clave foránea), y el 404 dice «bloqueo».
+

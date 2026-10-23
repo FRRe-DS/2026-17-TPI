@@ -1,10 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import type { Identidad } from '../auth/tokens.js';
 import { conIdempotencia, type RespuestaIdempotente } from '../bd/idempotencia.js';
 import type { BaseDeDatos } from '../bd/pool.js';
 import type { Consultar } from '../bd/transaccion.js';
-import { SinPermiso, SolicitudInvalida } from '../errores.js';
-import type { Cliente, ClienteCambios, ClienteNuevo, EstadoCuenta } from './modelo.js';
-import { actualizarPerfil, crearPerfil, obtenerEstadoCuenta as leerEstadoCuenta, obtenerPerfil } from './repositorio.js';
+import { BloqueoVencido, SinPermiso, SolicitudInvalida } from '../errores.js';
+import type { Bloqueo, BloqueoNuevo, Cliente, ClienteCambios, ClienteNuevo, EstadoCuenta, PaginaBloqueos } from './modelo.js';
+import * as repositorio from './repositorio.js';
+import { actualizarPerfil, crearPerfil, obtenerPerfil, type PedidoHistorial } from './repositorio.js';
 
 // Las reglas de las operaciones de perfil que el contrato no expresa (plan, Estructura): el rol efectivo, la propiedad, el
 // clienteId que sale del token y la idempotencia del alta. No sabe de HTTP: lo llama `operaciones.ts`.
@@ -92,5 +94,46 @@ export async function obtenerEstadoCuenta(
   clienteId: string,
 ): Promise<EstadoCuenta> {
   exigirPropietario(identidad, clienteId, rolesOperacion);
-  return leerEstadoCuenta(delPool(pool), normalizarUuid(clienteId));
+  return repositorio.obtenerEstadoCuenta(delPool(pool), normalizarUuid(clienteId));
+}
+
+// Bloquea a `clienteId` (RF-2.6.1) con la Idempotency-Key `clave` (RNF-08): 201 con Location, o la respuesta guardada si la
+// solicitud se repite. Solo llega OPERADOR (el contrato), y su sub queda como autor. El sujeto de la idempotencia es ese sub y
+// el cliente es el de la ruta, que también va en la huella: la misma clave sirve para otro cliente. El bloqueoId lo genera M2.
+// Un `hasta` ya pasado según el reloj del servicio da 422 sin ir a la base: entre otras, cubre el año 0000, que el contrato
+// admite y PostgreSQL no. La comparación exacta, con el instante de creación, la hace el repositorio.
+export async function crearBloqueo(
+  pool: BaseDeDatos,
+  identidad: Identidad,
+  clienteId: string,
+  clave: string,
+  datos: BloqueoNuevo,
+): Promise<RespuestaIdempotente> {
+  if (datos.hasta !== undefined && Date.parse(datos.hasta) <= Date.now()) throw new BloqueoVencido();
+  const cliente = normalizarUuid(clienteId);
+  const solicitud = {
+    operacion: 'crearBloqueo',
+    sujeto: identidad.sub,
+    clienteId: cliente,
+    clave,
+    huella: { cuerpo: datos, ruta: { clienteId: cliente } },
+  };
+  return conIdempotencia(pool, solicitud, async (consultar) => {
+    const bloqueo = await repositorio.crearBloqueo(consultar, cliente, randomUUID(), datos, identidad.sub);
+    return { estado: 201, ubicacion: `/api/v1/clientes/${cliente}/bloqueos/${bloqueo.bloqueoId}`, cuerpo: bloqueo };
+  });
+}
+
+// Una página del historial de bloqueos de `clienteId` (RF-2.6.2). Solo llega OPERADOR. 404 si no existe el perfil.
+export async function listarBloqueos(
+  pool: BaseDeDatos,
+  clienteId: string,
+  pedido: PedidoHistorial,
+): Promise<PaginaBloqueos> {
+  return repositorio.listarBloqueos(delPool(pool), normalizarUuid(clienteId), pedido);
+}
+
+// El bloqueo `bloqueoId` de `clienteId` (RF-2.6.2). Solo llega OPERADOR. 404 si no es de ese cliente.
+export async function obtenerBloqueo(pool: BaseDeDatos, clienteId: string, bloqueoId: string): Promise<Bloqueo> {
+  return repositorio.obtenerBloqueo(delPool(pool), normalizarUuid(clienteId), normalizarUuid(bloqueoId));
 }

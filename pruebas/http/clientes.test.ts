@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { actualizarCliente, crearCliente, obtenerCliente, obtenerEstadoCuenta } from '../../src/clientes/operaciones.js';
+import {
+  actualizarCliente,
+  crearBloqueo,
+  crearCliente,
+  listarBloqueos,
+  obtenerBloqueo,
+  obtenerCliente,
+  obtenerEstadoCuenta,
+} from '../../src/clientes/operaciones.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { crearApp } from '../ayudas/app.js';
 import { bearer } from '../ayudas/tokens.js';
@@ -18,7 +26,10 @@ type Rol = 'CLIENTE' | 'CONDUCTOR' | 'OPERADOR' | 'SERVICIO';
 const token = (roles: Rol[], sub = SUB) => bearer({ claims: { sub, roles } });
 
 function crear() {
-  return crearApp({ crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta }, { contrato });
+  return crearApp(
+    { crearCliente, obtenerCliente, actualizarCliente, obtenerEstadoCuenta, crearBloqueo, listarBloqueos, obtenerBloqueo },
+    { contrato },
+  );
 }
 
 const alta = (encabezados: Record<string, string>, payload: unknown = ANA) =>
@@ -172,5 +183,100 @@ describe('actualizarCliente: lo que se rechaza sin tocar la base', () => {
     ['con un nombre vacío', { nombre: '' }],
   ])('un PATCH %s, 400 (spec 004, Casos límite)', async (_caso, cuerpo) => {
     expect((await cambio(token(['CLIENTE']), cuerpo)).statusCode).toBe(400);
+  });
+});
+
+const BLOQUEO = 'b3a1c2d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+
+const altaBloqueo = (encabezados: Record<string, string>, payload: unknown = { motivo: 'Deuda pendiente' }, clienteId = SUB) =>
+  crear().inject({
+    method: 'POST',
+    url: `/api/v1/clientes/${clienteId}/bloqueos`,
+    headers: { 'idempotency-key': 'clave-1', ...encabezados },
+    payload: payload as object,
+  });
+
+const historial = (encabezados: Record<string, string>, query = '', clienteId = SUB) =>
+  crear().inject({ method: 'GET', url: `/api/v1/clientes/${clienteId}/bloqueos${query}`, headers: encabezados });
+
+const unBloqueo = (encabezados: Record<string, string>, bloqueoId = BLOQUEO, clienteId = SUB) =>
+  crear().inject({ method: 'GET', url: `/api/v1/clientes/${clienteId}/bloqueos/${bloqueoId}`, headers: encabezados });
+
+describe('crearBloqueo: lo que se rechaza sin tocar la base (RF-2.6.1)', () => {
+  it('sin token, 401', async () => {
+    expect((await altaBloqueo({})).statusCode).toBe(401);
+  });
+
+  it.each([[['CLIENTE']], [['SERVICIO']], [['CONDUCTOR']]] as Rol[][][])('con %j, 403: solo OPERADOR bloquea', async (roles) => {
+    const respuesta = await altaBloqueo(token(roles));
+
+    expect(respuesta.statusCode).toBe(403);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+  });
+
+  it('sin Idempotency-Key, 400 (el contrato la exige)', async () => {
+    const respuesta = await crear().inject({
+      method: 'POST',
+      url: `/api/v1/clientes/${SUB}/bloqueos`,
+      headers: token(['OPERADOR']),
+      payload: { motivo: 'Deuda pendiente' },
+    });
+
+    expect(respuesta.statusCode).toBe(400);
+  });
+
+  it.each([
+    ['sin motivo', {}],
+    ['con motivo vacío', { motivo: '' }],
+    ['con motivo de 501 caracteres', { motivo: 'x'.repeat(501) }],
+    ['con un campo de más', { motivo: 'x', creadoPor: 'otro' }],
+    ['con hasta que no es fecha y hora', { motivo: 'x', hasta: '2099-01-01' }],
+  ])('un cuerpo %s, 400', async (_caso, payload) => {
+    const respuesta = await altaBloqueo(token(['OPERADOR']), payload);
+
+    expect(respuesta.statusCode).toBe(400);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+  });
+
+  it.each(['2020-01-01T00:00:00Z', '0000-01-01T00:00:00Z'])(
+    'hasta %s, ya pasada: 422 con tipo propio, sin tocar la base (spec 004, Casos límite)',
+    async (hasta) => {
+      const respuesta = await altaBloqueo(token(['OPERADOR']), { motivo: 'Deuda pendiente', hasta });
+
+      expect(respuesta.statusCode).toBe(422);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+      expect(respuesta.json()).toEqual({
+        type: '/errores/bloqueo-vencido',
+        title: 'Bloqueo vencido',
+        status: 422,
+        detail: 'El fin del bloqueo tiene que ser posterior a su creación',
+        instance: `/api/v1/clientes/${SUB}/bloqueos`,
+      });
+      expect(respuesta.body).not.toContain('Deuda pendiente');
+    },
+  );
+});
+
+describe('listarBloqueos y obtenerBloqueo: lo que se rechaza sin tocar la base (RF-2.6.2)', () => {
+  it('sin token, 401', async () => {
+    expect((await historial({})).statusCode).toBe(401);
+    expect((await unBloqueo({})).statusCode).toBe(401);
+  });
+
+  it.each([[['CLIENTE']], [['SERVICIO']], [['CONDUCTOR']]] as Rol[][][])('con %j, 403: solo OPERADOR', async (roles) => {
+    expect((await historial(token(roles))).statusCode).toBe(403);
+    expect((await unBloqueo(token(roles))).statusCode).toBe(403);
+  });
+
+  it.each(['?page=-1', '?size=0', '?size=101', '?vigente=quizas', '?page=uno'])('la query %s, 400', async (query) => {
+    const respuesta = await historial(token(['OPERADOR']), query);
+
+    expect(respuesta.statusCode).toBe(400);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+  });
+
+  it('un bloqueoId o un clienteId que no es UUID, 400', async () => {
+    expect((await unBloqueo(token(['OPERADOR']), 'no-es-un-uuid')).statusCode).toBe(400);
+    expect((await historial(token(['OPERADOR']), '', 'no-es-un-uuid')).statusCode).toBe(400);
   });
 });

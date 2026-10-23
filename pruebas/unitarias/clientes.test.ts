@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { aBloqueo, aCliente, aEstadoCuenta, type FilaBloqueo, type FilaCliente } from '../../src/clientes/modelo.js';
+import {
+  aBloqueo,
+  aCliente,
+  aEstadoCuenta,
+  aPaginaBloqueos,
+  type FilaBloqueo,
+  type FilaCliente,
+} from '../../src/clientes/modelo.js';
 import { clienteDelToken, exigirPropietario, normalizarUuid } from '../../src/clientes/servicio.js';
-import { aProblema, NoEncontrado, PerfilYaExiste, SinPermiso, SolicitudInvalida } from '../../src/errores.js';
+import { aProblema, BloqueoVencido, NoEncontrado, PerfilYaExiste, SinPermiso, SolicitudInvalida } from '../../src/errores.js';
 
 const CLIENTE_ID = '6f1c1d1e-3b0a-4f55-9a6b-0d7a8f4c2e11';
 
@@ -235,5 +242,49 @@ describe('aEstadoCuenta(): el estado sale de los bloqueos vigentes que lo acompa
 
     expect(cuenta.estado).toBe('BLOQUEADO');
     expect(cuenta.bloqueosVigentes.map((bloqueo) => bloqueo.bloqueoId)).toEqual([otro, BLOQUEO_ID]);
+  });
+});
+
+describe('aPaginaBloqueos(): la página del historial con sus totales (RF-2.6.2)', () => {
+  it('los bloqueos de la página, en el orden recibido, con page y size pedidos', () => {
+    const pagina = aPaginaBloqueos([filaBloqueo()], 1, 0, 20);
+
+    expect(pagina).toStrictEqual({
+      page: 0,
+      size: 20,
+      totalElementos: 1,
+      totalPaginas: 1,
+      items: [aBloqueo(filaBloqueo())],
+    });
+  });
+
+  it.each([
+    [0, 20, 0],
+    [1, 20, 1],
+    [20, 20, 1],
+    [21, 20, 2],
+    [41, 20, 3],
+    [5, 1, 5],
+  ])('%i bloqueos de a %i: %i páginas', (total, size, paginas) => {
+    expect(aPaginaBloqueos([], total, 0, size).totalPaginas).toBe(paginas);
+  });
+
+  it('una página fuera del total: items vacío, con los totales correctos (spec 004, Casos límite)', () => {
+    expect(aPaginaBloqueos([], 3, 7, 2)).toStrictEqual({ page: 7, size: 2, totalElementos: 3, totalPaginas: 2, items: [] });
+  });
+});
+
+describe('BloqueoVencido (spec 004, Casos límite)', () => {
+  it('es un 422 con su tipo propio, sin la fecha ni el motivo', () => {
+    const { codigo, cuerpo } = aProblema(new BloqueoVencido(), '/api/v1/clientes/x/bloqueos');
+
+    expect(codigo).toBe(422);
+    expect(cuerpo).toEqual({
+      type: '/errores/bloqueo-vencido',
+      title: 'Bloqueo vencido',
+      status: 422,
+      detail: 'El fin del bloqueo tiene que ser posterior a su creación',
+      instance: '/api/v1/clientes/x/bloqueos',
+    });
   });
 });
