@@ -207,8 +207,20 @@ describe('GET /health: sale solo del contrato (RNF-03.4, ADR de la base)', () =>
     expect(post.json()).toEqual({ estado: 'ok', atendidoPor: 'el manejador del contrato' });
   });
 
-  it('el servicio trae el manejador de verificarSalud, la operación del contrato v1', () => {
-    expect(Object.keys(manejadores)).toEqual(['verificarSalud']);
+  it('el servicio trae el manejador de verificarSalud, la operación del contrato v1, y los ocho de la spec 004', () => {
+    expect(Object.keys(manejadores).sort()).toEqual(
+      [
+        'actualizarCliente',
+        'crearBloqueo',
+        'crearCliente',
+        'levantarBloqueo',
+        'listarBloqueos',
+        'obtenerBloqueo',
+        'obtenerCliente',
+        'obtenerEstadoCuenta',
+        'verificarSalud',
+      ].sort(),
+    );
   });
 
   it('verificarSalud en otra ruta del contrato no crea /health: la otra ruta la atiende y /health da 404', async () => {

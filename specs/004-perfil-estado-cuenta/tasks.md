@@ -18,7 +18,7 @@ Tareas delicadas: T3 (idempotencia concurrente), T8 (levantamiento concurrente) 
   - Hecho cuando: pruebas HTTP e integración cubren alta idempotente, autor del token, `Location`, `desde` igual a `creadoEn`, consulta individual, filtro de vigencia, totales, orden estable, página vacía, recursos de otro cliente como 404 y `hasta` pasada como 422 con tipo propio.
 - [x] **T8. Levantar bloqueos sin borrar historial y proteger la concurrencia.** RF-2.6.3, RF-2.6.3.1, RF-2.6.4, RNF-08
   - Hecho cuando: se guardan juntos autor, instante y motivo; el historial conserva el bloqueo; dos levantamientos concurrentes producen un 200 y un 409; y levantar uno vencido responde 409 con `type: /errores/bloqueo-no-vigente`.
-- [ ] **T9. Registrar las ocho operaciones y completar las pruebas por rol efectivo.** RF-2.1.1.1, RF-2.1.2.1, RF-2.6, RF-2.6.1, RF-2.6.2, RF-2.6.3, RF-2.6.3.1, RNF-07
+- [x] **T9. Registrar las ocho operaciones y completar las pruebas por rol efectivo.** RF-2.1.1.1, RF-2.1.2.1, RF-2.6, RF-2.6.1, RF-2.6.2, RF-2.6.3, RF-2.6.3.1, RNF-07
   - Hecho cuando: CLIENTE solo opera sobre sí mismo cuando es su único rol efectivo, CLIENTE+OPERADOR usa las lecturas de OPERADOR, SERVICIO solo obtiene estado de cuenta, `pruebas/integracion/arranque.test.ts` reconoce los ocho `operationId` y todos los rechazos tienen problem+json.
 - [ ] **T10. Validar contrato, regresión y documentación de la spec.** RNF-03, RNF-07, RNF-20
   - Hecho cuando: las ocho operaciones pasan `npm run contrato:test`; build, lint, `npm test` y `spec-check` quedan en verde; y `guia.md` contiene el mapa por tarea, decisiones, comandos y ejemplos de uso comprobados.

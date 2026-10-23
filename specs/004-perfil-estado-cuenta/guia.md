@@ -228,3 +228,20 @@ Se escribe al validar la spec.
 - Para mirar con atención:
   - Dentro de una transacción, `CURRENT_TIMESTAMP` es el inicio de la transacción, no el de la sentencia. Hoy nadie levanta dentro de una; si alguien lo hace en una transacción larga, la vigencia se evalúa contra ese instante.
   - La prueba del bloqueo de fila depende de que el pool tenga al menos tres conexiones (la transacción, el segundo levantamiento y la consulta a `pg_stat_activity`).
+
+### T9 — Registrar las ocho operaciones y completar las pruebas por rol efectivo · commit `004/T9`
+- Qué cambió:
+  - [src/operaciones/index.ts](../../src/operaciones/index.ts): `manejadores` suma `crearCliente`, `obtenerCliente`, `actualizarCliente`, `obtenerEstadoCuenta`, `listarBloqueos`, `crearBloqueo`, `obtenerBloqueo` y `levantarBloqueo`, de [src/clientes/operaciones.ts](../../src/clientes/operaciones.ts), junto a `verificarSalud`. No hay lógica nueva: las rutas, la validación y los roles siguen saliendo del contrato (ADR 003).
+- Por qué así:
+  - Con las ocho registradas, el servicio las expone y `npm run contrato:test` las incluye entre las implementadas (T10 lo valida).
+  - Las pruebas de roles usan los `manejadores` y el contrato reales del servicio, no un contrato armado: si alguien cambia el `security` del contrato o quita un manejador, fallan.
+- Cómo se conecta: arranque ([src/arranque.ts](../../src/arranque.ts)) y `contrato-test.mjs` leen `manejadores` de este archivo, así que no hubo que tocarlos. El registro de operaciones al arrancar ahora lista las ocho como implementadas.
+- Tests:
+  - [pruebas/http/roles-clientes.test.ts](../../pruebas/http/roles-clientes.test.ts) (archivo nuevo, no está en la tabla del plan; sin base, con `POOL_FALSO`: pasar la autorización llega a la base y da 500, un rechazo nunca la toca): los ocho `operationId` están registrados y el contrato declara los roles de la matriz; por cada operación, 401 en problem+json sin token y con firma ajena, y siete combinaciones de roles sobre el recurso propio (CLIENTE, OPERADOR, SERVICIO, CONDUCTOR, CLIENTE+OPERADOR, CLIENTE+CONDUCTOR, CLIENTE+SERVICIO) con llega a la base o 403 en problem+json; sobre el recurso de otro: solo CLIENTE y CLIENTE+CONDUCTOR reciben 403 en las tres operaciones con propiedad, CLIENTE+OPERADOR lee perfil y cuenta pero no actualiza, OPERADOR y SERVICIO llegan donde el contrato los admite, y SERVICIO recibe 403 en las otras siete.
+  - [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts): con el contrato del repositorio, el log de operaciones lista como implementadas las ocho y `verificarSalud`. La prueba de pendientes usaba `obtenerCliente` como ejemplo de operación sin manejador; ahora usa `listarDirecciones` (de la spec 005).
+  - [pruebas/integracion/salud.test.ts](../../pruebas/integracion/salud.test.ts): la prueba que fijaba `Object.keys(manejadores)` en `['verificarSalud']` ahora fija los nueve.
+  - En rojo primero: fallaron 86 (ninguna de las ocho estaba registrada, así que las rutas daban 404). Al registrar, solo quedó la prueba de pendientes de `arranque`, que se corrigió como se explica arriba.
+  - `npm test` (2414), lint, build y spec-check en verde.
+- Para mirar con atención:
+  - La matriz de roles está escrita a mano en la prueba y se compara con el contrato: es doble llave a propósito. Si el contrato cambia un rol, hay que cambiar las dos y entender por qué.
+  - El 500 de «llega a la base» es del pool falso, no un comportamiento del servicio. Los resultados reales con base de cada operación están en `clientes-http.test.ts`.
