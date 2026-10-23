@@ -1,7 +1,54 @@
 # Guía — Spec 003 Base del servicio
 
 ## Visión general
-Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [tasks.md](tasks.md)).
+**Qué se construyó y para qué.** El esqueleto de M2 sobre el que se montan las specs de negocio (004 a 008): un servicio Fastify con su base PostgreSQL en contenedores, que toma la configuración del entorno, expone solo lo que dice el contrato, responde todos los errores en un mismo formato (problem+json), exige token y rol, deja un log JSON por solicitud con su identificador de correlación y llama a otros módulos sin quedarse colgado. Del contrato v1 implementa solo `GET /health`; las demás operaciones figuran como pendientes.
+
+**Recorrido de una petición** (`GET /health`, o cualquier operación futura):
+1. Arranque, una sola vez: [servidor.ts](../../src/servidor.ts) llama a `arrancar` ([arranque.ts](../../src/arranque.ts)), que lee el entorno (`cargarConfig`, [config.ts](../../src/config.ts)), carga el contrato (`cargarContrato`, [contrato/cargar.ts](../../src/contrato/cargar.ts)), arma la app (`construirApp`, [app.ts](../../src/app.ts)), aplica las migraciones (`migrar`, [bd/migraciones.ts](../../src/bd/migraciones.ts)) y recién entonces escucha en el puerto.
+2. Llega la solicitud: `idCorrelacion` ([correlacion.ts](../../src/correlacion.ts)) toma el `X-Request-Id` si es válido o genera un UUID.
+3. Hooks `onRequest`, en este orden ([app.ts](../../src/app.ts)): 503 si el servicio se está deteniendo, 404 si la ruta no existe, y token y rol con `verificarToken` y `autorizar` ([auth/](../../src/auth/), hook de `registrarPermisos`). `/health` es pública, así que no pide token.
+4. Fastify valida parámetros y cuerpo con los esquemas del contrato (`crearCompilador`, [contrato/validacion.ts](../../src/contrato/validacion.ts)). Las rutas las registró `registrarOperaciones` ([contrato/operaciones.ts](../../src/contrato/operaciones.ts)) solo para las operaciones con manejador en [operaciones/index.ts](../../src/operaciones/index.ts).
+5. El manejador (`verificarSalud`, [salud.ts](../../src/salud.ts)) consulta la base con `consultar` ([bd/pool.ts](../../src/bd/pool.ts)), que corta a los 2 s.
+6. Si algo lanza un error, `responderProblema` ([errores-fastify.ts](../../src/errores-fastify.ts)) lo convierte con `aProblema` ([errores.ts](../../src/errores.ts)) en problem+json. Ante un 503 por la base o por otro módulo, registra la causa con el id de la solicitud.
+7. Al salir, `onSend` agrega el `X-Request-Id` a la respuesta, y `onResponse` escribe la línea de log (`registrarSolicitud`, [logs.ts](../../src/logs.ts)), sin token, cuerpos ni query strings.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos |
+|---|---|---|
+| `config.ts` | Variables de entorno, valores por defecto y errores sin valores | RNF-06.1, RNF-06.2 |
+| `errores.ts`, `errores-fastify.ts` | Errores problem+json, también los que Node y Fastify responden antes de una ruta | RNF-03.1 a RNF-03.3 |
+| `contrato/` | Carga del contrato, rutas y 405 desde él, validación con Ajv 2020 | RNF-03.2, RNF-03.4, RNF-07.2 |
+| `auth/` | Validación de tokens HS256 y permisos por rol | RNF-12.1 a RNF-12.4 |
+| `herramientas/token.ts` | Comando que genera tokens de prueba | RNF-12.5 |
+| `correlacion.ts`, `logs.ts` | Id de correlación, logs JSON y limpieza de secretos | RNF-14.3 a RNF-14.8, RNF-19 |
+| `bd/` | Pool con tiempo máximo y migraciones con bloqueo | RNF-05, RNF-08.1, RNF-14.2 |
+| `modulos/cliente.ts` | Cliente para otros módulos: corte por intento, reintento en GET, 503 | RNF-13, RNF-14.7 |
+| `arranque.ts`, `servidor.ts` | Arranque en orden y parada ordenada ante SIGTERM o SIGINT | RNF-04.5, RNF-05.2, RNF-05.3 |
+| `Dockerfile`, `docker-compose.yml`, `ejemplo.env` | Imagen, servicio y base con configuración de ejemplo | RNF-04, RNF-06.3 |
+| `scripts/contrato-test.mjs`, `.github/workflows/ci.yml` | Prueba de contrato con Schemathesis y CI | RNF-07.2, RNF-17 |
+
+**Decisiones clave** (detalle en [plan.md](plan.md), «Decisiones», en [spec.md](spec.md), «Decisiones», y en los ADR):
+- Las rutas y sus esquemas salen del contrato con un registro propio y corto ([ADR de la base](../../docs/adr/003-base-servicio.md)). Descartado: escribirlos a mano en cada spec, que se separaría del contrato sin que nada falle, y una librería como fastify-openapi-glue, con reglas propias que habría que aprender.
+- Tokens HS256 con una sola clave por entorno, lo más simple mientras no exista M1. JWKS queda para el acuerdo #9 (spec, «Fuera de alcance»).
+- SQL explícito, sin ORM, para que las restricciones únicas de RNF-08 queden a la vista ([ADR del stack](../../docs/adr/003-stack.md); descartados Prisma y Drizzle).
+
+**Conceptos que conviene entender.** Los hooks de Fastify (`onRequest`, `onSend`, `onResponse`) y su orden, que define qué error gana (RNF-03.5). problem+json (RFC 9457). Identificador de correlación: un mismo id en la respuesta y en todas las líneas de log de esa solicitud. Migraciones con bloqueo consultivo: dos procesos no aplican la misma dos veces. Testcontainers: las pruebas de integración levantan un PostgreSQL real y lo descartan al terminar.
+
+**Cómo probarlo uno mismo** (más en el [README](../../README.md)):
+```bash
+docker compose up -d --build --wait
+curl -i -H 'X-Request-Id: prueba-1' http://localhost:8082/health   # 200, {"estado":"ok"} y el mismo X-Request-Id
+curl -i -X POST http://localhost:8082/health                        # 405 en problem+json, con Allow: GET
+docker compose logs m2 | grep prueba-1                              # la línea de log de esa solicitud
+npm test && npm run contrato:test
+```
+
+**Preguntas de comprobación** (la respuesta, entre paréntesis, dice dónde buscarla):
+1. Llega `POST /no-existe` sin token y con un cuerpo roto mientras el servicio se está deteniendo: ¿qué código responde y por qué ese y no otro? (RNF-03.5 y el orden de los hooks en `construirApp`).
+2. ¿Qué hace que `GET /health` no pida token, y qué pasaría si el contrato la sacara? (`security: []` en el contrato; `registrarOperaciones`; T39).
+3. Una spec nueva suma una operación al contrato, pero todavía no su manejador: ¿qué responde el servicio a esa ruta y qué informa `npm run contrato:test`? (RNF-03.4 y RNF-07.2; `listarOperaciones`).
+4. Con la base colgada, ¿cuánto tarda `GET /health` en responder, qué responde y dónde queda la causa? (RNF-14.2 y RNF-14.8; `conTiempoMaximo` y `responderProblema`).
+5. ¿Por qué el healthcheck de `bd` en `docker-compose.yml` usa TCP y no el socket? (plan, «Trampas verificadas», imagen `postgres:18.6`).
 
 ## Tareas
 
@@ -1147,3 +1194,100 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts), «abortada mientras termina listen»: un `onTestFinished` llama a `detener({ corteMs: 100 })`, que devuelve la parada en curso o la hace, para que una falla temprana no deje el servidor escuchando el resto del archivo. Probado sacando el `detener()` de `arrancar`: falla solo esa prueba.
   - Rojo primero: fallaban las dos pruebas nuevas del cuerpo (la del cliente y la del log). Las dos sugerencias de la revisión (sumar el error a «Arranque interrumpido por la parada» y ajustar el tipo de las causas en salud y duplicados) quedaron fuera: la spec se cumple igual.
   - Con Node v24.15.0: `npm test` (2051), `npm run lint`, `npm run build` y `node scripts/spec-check.mjs --rama impl/003-bloque-h --base origin/main` pasan.
+
+### T26 — Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` · commit `003/T26`
+- Qué cambió:
+  - [Dockerfile](../../Dockerfile): dos etapas sobre `node:24.22.0-trixie-slim`. `construccion` hace `npm ci` y `npm run build` (que genera los tipos del contrato y compila a `dist/`). La de ejecución hace `npm ci --omit=dev --ignore-scripts`, trae `dist/` y `contrato/` de la primera, copia `migraciones/`, corre con `USER node` y `CMD ["node", "dist/servidor.js"]` en forma exec.
+  - [.dockerignore](../../.dockerignore): deja afuera `node_modules`, `dist`, `src/generado`, `.git`, `specs`, `docs`, `pruebas`, `scripts`, `ejemplo.env`, los `.env`, los archivos locales (`EN-CURSO.local.md`, `CLAUDE.local.md`, `.claude`, `.agents`) y los `*.md`.
+- Por qué así:
+  - `--ignore-scripts` en la etapa de ejecución: el proyecto tiene `prebuild`, `prelint` y `pretest` pero ningún `postinstall`; el flag impide que una dependencia de producción corra scripts al instalarse, y deja el resultado igual al del lockfile (RNF-04.2).
+  - `src/generado/` queda afuera del contexto porque se regenera en la construcción desde `contrato/`: así no se copia un archivo viejo.
+  - `contrato/` va a la imagen de ejecución porque `src/contrato/cargar.ts` lo busca relativo a `dist/contrato/`, y `migraciones/` porque `src/bd/migraciones.ts` hace lo mismo. Las dos rutas valen igual desde `src/` y desde `dist/`.
+  - `ejemplo.env` queda fuera de la imagen: la configuración llega por entorno (RNF-06), que en compose pone el `env_file`.
+- Cómo se conecta:
+  - T27 usa esta imagen en `docker-compose.yml` con `build: .` e `image: m2-clientes:0.1.0` (RNF-04.3). La etiqueta de este build es la misma, a mano.
+  - `.dockerignore` incluye `Dockerfile` y `docker-compose.yml`: no hacen falta dentro del contexto, y el cliente los lee igual.
+- Tests:
+  - [pruebas/unitarias/consistencia.test.ts](../../pruebas/unitarias/consistencia.test.ts), bloques nuevos: `imagenExacta` (3 que acepta y 7 que rechaza: sin etiqueta, `latest`, solo la mayor, sin el parche, digest); `Dockerfile` (dos etapas; las dos con imagen de versión exacta y la misma; `npm ci` en las dos y ningún `npm install`; la de ejecución con `--omit=dev`; `USER node` y el `CMD` exacto; `dist`, `contrato` y `migraciones` copiados en la de ejecución); `.dockerignore` (lo que debe dejar afuera y lo que la construcción necesita y no puede dejar).
+  - Rojo primero: el archivo de pruebas no cargaba (no había `Dockerfile`), y después, con el `Dockerfile` hecho, falló una sola, la de las carpetas copiadas, por un patrón demasiado estricto de la propia prueba (esperaba `--from` en todas): se corrigió la prueba, no el código.
+  - Comprobaciones a mano, de «Hecho cuando»: `docker build -t m2-clientes:0.1.0 .` termina bien (47 s en frío, 258 MB); `docker run --rm --entrypoint whoami m2-clientes:0.1.0` imprime `node`; sin variables, la imagen sale con 1 y nombra las cuatro obligatorias sin valores; `token.js` corre dentro.
+  - Con Node v24.15.0: `npm test` (2084), `npm run lint`, `npm run build` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - La prueba lee el `Dockerfile` por instrucciones y no entiende `ARG` en el `FROM` ni etapas con la imagen de otra etapa: hoy no los hay, y si se suman, la prueba de «dos etapas» y la de versión exacta lo van a avisar.
+  - No hay `HEALTHCHECK` en la imagen: lo pone compose (T27), con Node y `fetch`, porque la imagen no trae `curl`.
+  - La base es `node:24.22.0-trixie-slim`, la que fija el plan (Versiones a fijar); el plan no compara otras bases, así que la imagen pesa lo de esa base más las dependencias de producción (258 MB).
+
+### T27 — `docker-compose.yml` con el servicio y su base, y `ejemplo.env` documentado · commit `003/T27`
+- Qué cambió:
+  - [docker-compose.yml](../../docker-compose.yml): servicio `m2` (`build: .`, `image: m2-clientes:0.1.0`, `env_file: ejemplo.env`, `init: true`, el puerto `${M2_PUERTO:-8082}` publicado, `depends_on: bd` con `service_healthy`) y servicio `bd` (`postgres:18.6`, `env_file`, volumen `datos-bd` en `/var/lib/postgresql`, sin puerto publicado).
+  - [ejemplo.env](../../ejemplo.env): las diez variables de `M2_*` (Lógica 1) y `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`, cada una con un comentario y la forma `VARIABLE=${VARIABLE:-valor}`.
+- Por qué así:
+  - Los dos `healthcheck` siguen el plan. El de `m2` es Node con `fetch` (GET): la imagen no trae curl y `wget --spider` manda HEAD, que da 405. Lee el puerto de `process.env.M2_PUERTO` del contenedor, sin `$`, para que compose no lo interpole. El de `bd` usa `pg_isready -h 127.0.0.1`, por TCP, porque el servidor temporal de la inicialización solo escucha por socket, y `$$` para que las variables las lea el contenedor.
+  - `${VARIABLE:-valor}` en el `env_file`: compose lo interpola con el entorno de quien lo corre, así que una variable definida afuera manda sobre el ejemplo (RNF-06.3), y un clon limpio levanta sin crear archivos (RNF-04.4). Se probó con compose 2.40.3.
+  - `M2_URL_BD` repite usuario, contraseña y base de `POSTGRES_*`: es una URL con el host `bd`, y compose no interpola un valor dentro de otro del mismo archivo de forma fiable. Por eso se cambian juntos, y una prueba comprueba que coincidan.
+  - Los valores de `ejemplo.env` son solo de desarrollo (la clave tiene 32 caracteres o más, para que la acepte `cargarConfig`).
+- Cómo se conecta:
+  - Usa la imagen de T26. T28 prueba las fallas de arranque y la parada con este compose; T29 y T30 lo usan para `contrato:test` (`docker compose exec -T m2 …`) y en CI.
+  - La imagen de `bd` es `IMAGEN_POSTGRES` de [pruebas/ayudas/global.ts](../../pruebas/ayudas/global.ts): una prueba compara las dos.
+- Tests:
+  - [pruebas/unitarias/ejemplo-env.test.ts](../../pruebas/unitarias/ejemplo-env.test.ts) (nuevo, 7): las 13 variables y ninguna más; toda línea con la forma `${VARIABLE:-valor}`; un valor y un comentario arriba de cada una; sin repetidas; los valores pasan `cargarConfig`; los opcionales repiten los valores por defecto de RNF-06.1; y `M2_URL_BD` usa el usuario, la contraseña y la base de `POSTGRES_*`, con el host `bd`.
+  - [pruebas/unitarias/consistencia.test.ts](../../pruebas/unitarias/consistencia.test.ts): bloque `docker-compose.yml` (9): solo `m2` y `bd`; imágenes con versión exacta; la de `bd` es `IMAGEN_POSTGRES`; la de `m2` lleva la versión de `package.json`; `build`, `env_file`, `init`, `ports` y `depends_on`; la base sin puertos y con su volumen; los dos chequeos. `imagenExacta` ahora recibe cuántas partes tiene la versión: tres para Node, dos para `postgres:18.6`.
+  - Rojo primero: faltaban `ejemplo.env` y el compose, así que los dos archivos de prueba no cargaban. Después falló una sola: `imagenExacta` exigía X.Y.Z y rechazaba `postgres:18.6`, que RNF-04.1 da por exacta; se corrigió la prueba.
+  - Comprobaciones a mano, de «Hecho cuando»: `docker compose up -d --build --wait` termina con los dos servicios sanos en 10 s (con la imagen ya construida); `curl localhost:8082/health` da 200 con `{"estado":"ok"}`; `M2_PUERTO=9090 docker compose config` muestra 9090 y, levantado de verdad, `curl localhost:9090/health` da 200 (el chequeo también usó 9090). Desde un clon limpio de la rama, sin crear ni editar nada, `docker compose up -d --build --wait` también termina sano (9 s, con la capa de `npm ci` en caché) y `/health` da 200.
+  - Con Node v24.15.0: `npm test` (2101), `npm run lint` y `npm run build` pasan.
+- Para mirar con atención:
+  - Con el volumen ya creado, cambiar `POSTGRES_PASSWORD` no tiene efecto hasta `docker compose down -v`, que pierde los datos locales; lo documenta T31 en el README.
+  - `ejemplo.env` va afuera de la imagen (`.dockerignore`): la configuración llega por `env_file` en compose y por entorno en cualquier otro lado.
+  - `bd` no publica el puerto 5432 en la máquina (RNF-02.1, plan Datos): para mirar la base hay que usar `docker compose exec bd psql`.
+
+### T28 — Fallas al levantar y parada con docker compose · commit `003/T28`
+- Qué cambió: ningún archivo de código ni de pruebas. La tarea es una comprobación de lo que ya hacen `arrancar` (T38), `servidor.ts` y `detener()` (T40) dentro del compose de T27; el «Hecho cuando» pide mediciones con Docker, y el plan las deja como comprobaciones a mano (Pruebas: «Comprobaciones de compose de tasks.md») que repite el job `contract-test` en T30. Lo que se agrega es este registro y la marca en `tasks.md`.
+- Por qué así: las tres fallas ya estaban cubiertas por pruebas de integración con Testcontainers (`arranque.test.ts`, `parada.test.ts`), pero T28 pide ver lo mismo a través de compose y de la imagen: que `--wait` corte en vez de colgarse, que el motivo llegue a `docker compose logs`, y que la señal de `docker compose stop` llegue a Node con `init: true` y la forma exec del `CMD`.
+- Cómo se conecta: T30 pone en `ci.yml` la misma parada (menos de 10 s y código 0 con `docker inspect`); T31 documenta los comandos en el README.
+- Tests (mediciones a mano, con Docker 29.1.3 y compose 2.40.3, el 2026-10-22):
+  - `M2_CLAVE_TOKENS=corta docker compose up -d --wait`: termina con error («container … m2-1 exited (1)») en 4 s; `docker compose logs m2` trae una línea con `"variable":"M2_CLAVE_TOKENS"` y «tiene menos de 32 caracteres». El valor `corta` no aparece.
+  - `M2_URL_BD` con un servidor que no existe (`no-existe.invalido`): termina con error en 4 s, con `getaddrinfo ENOTFOUND no-existe.invalido` en el log. Con una IP sin ruta (`10.255.255.1`): termina con error en 5 s, con «timeout expired» (el tiempo de la base, 2 s). En los dos casos la contraseña de la URL, puesta a propósito reconocible, no aparece en los logs.
+  - Con el servicio sano, `docker compose stop m2`: 0,2 s, `docker inspect` muestra `ExitCode` 0, y el log termina en «Deteniendo el servicio» y «Servicio detenido» con `cortadas: 0`. Dos veces seguidas.
+  - Con Node v24.15.0: sin cambios en el código, `npm test` (2101) sigue como en T27.
+- Para mirar con atención:
+  - Las tres fallas cortan en segundos y no en el tope de 2 minutos: `m2` sale con 1 antes de tener healthcheck, y `--wait` lo toma como falla en cuanto el contenedor sale. El tope de 2 minutos recién importaría si el servicio quedara vivo pero sin ponerse sano (`start_period` de 30 s más 6 reintentos de 5 s, unos 60 s como mucho): no es un caso que esta tarea provoque.
+  - La causa de la falla de la base sale como el mensaje del error de `pg` o de red, no como un motivo con nombre: sirve para diagnosticar, y la contraseña se quita porque `registrarErrorInterno` y el serializador pasan por `limpiarSecretos`.
+  - Se midió con la imagen ya construida: en frío, el `docker compose up --build` suma lo que tarda `npm ci` (T26, 47 s).
+
+### T29 — Prueba de contrato con token del contenedor y Schemathesis, pasos 4 a 6 · commit `003/T29`
+- Qué cambió: `scripts/contrato-test.mjs` suma los pasos 4 a 6 del plan (Contrato). Si hay operaciones implementadas, comprueba que el servicio responde en `http://localhost:<M2_PUERTO o 8082>/health`, pide el token con `docker compose exec -T m2 node dist/herramientas/token.js` (con `cwd` en la raíz del repositorio) y corre `schemathesis/schemathesis:4.31.1` con `--network host`, la carpeta del contrato montada de solo lectura, un `--include-operation-id` por implementada y el `Authorization` con el token; termina con el código de Schemathesis. Sin implementadas, sigue igual: «nada para probar» y 0. Se quitó el aviso «llega con la tarea T29». `eslint.config.mjs` suma `fetch` y `AbortSignal` a los globales del script.
+- Por qué así: el plan da los comandos tal cual. El chequeo de `/health` va antes del token para dar un mensaje claro («Levántalo con `docker compose up -d --build --wait`») en vez del error de `docker compose exec`. El token no se imprime; Schemathesis hereda la salida, así que su informe se ve completo. Si lo corta una señal, cuenta como 1.
+- Cómo se conecta: T30 corre `npm run contrato:test` en el job `contract-test`, después de `docker compose up -d --build --wait`; T31 lo documenta en el README. Las specs #4 a #8 no tocan el script: cada manejador nuevo entra solo en la lista de implementadas y en el `--include-operation-id`.
+- Tests (a mano, con el servicio levantado por compose, el 2026-10-22; en rojo antes del cambio: con `contrato-salud.yml` listaba `verificarSalud` y avisaba, sin correr Schemathesis):
+  - `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml`: Schemathesis «Selected: 1/1», «No issues found», código 0.
+  - Con una copia de ese contrato con `const: otro` en `Salud.estado`: «Response violates schema», «1 failure», y `node scripts/contrato-test.mjs` termina con 1, el mismo código que da Schemathesis corrido a mano con ese contrato.
+  - `npm run contrato:test` (el v1 de `main`): 20 operaciones, 1 implementada y 19 pendientes; Schemathesis «Selected: 1/20», «No issues found» (109 casos en la corrida a mano previa), código 0.
+  - Con un contrato con solo `info`: «nada para probar», código 0, sin Docker.
+  - Con `M2_PUERTO=9999` (nada escucha): «El servicio no responde…», código 1.
+  - `npm run lint`, `npm run build` y `npm test` (2101) en verde.
+- Para mirar con atención:
+  - El token va en los argumentos de `docker run` y se ve en la lista de procesos mientras corre Schemathesis. Es un token de desarrollo firmado con la clave de `ejemplo.env`; el plan lo pide así y el script no lo escribe en ningún log.
+  - La URL es `localhost` con `--network host`: anda en Linux (local y CI). En Docker Desktop (macOS o Windows) `--network host` no comparte la red del host de la misma forma; si alguien del grupo corre la prueba ahí, hay que revisarlo.
+  - Schemathesis usa 1 para «encontró fallas», el mismo código que el script usa para «no se pudo leer algo»: el mensaje distingue los dos casos, el código no.
+
+### T30 — CI sin pasos omitidos, con salud, prueba de contrato y parada · commit `003/T30`
+- Qué cambió: en `.github/workflows/ci.yml`, `build-test` y `contract-test` pierden el paso «¿ya existe…?» y todos sus `if`: si falta `package.json` o `docker-compose.yml`, el job falla. `contract-test` suma, después de `docker compose up -d --build --wait`, el paso `salud` (`curl -fsS http://localhost:8082/health`), la prueba de contrato (ya estaba) y `parada en menos de 10 s con código 0`: mide `docker compose stop m2` y lee el código con `docker inspect`. «logs si falla» queda con `if: failure()`. El paso de levantar pasó a llamarse «levantar servicio y base» (no hay mocks todavía). En `AGENTS.md`, «Trampas conocidas» ya no nombra el compose que faltaba (la de `package.json` se había quitado en T1).
+- Por qué así: los nombres de los jobs no cambian porque la regla «Protección de main» los exige como checks; el comentario en `ci.yml` lo deja dicho. La parada mira el tiempo y el código: `docker compose stop` espera 10 s y después mata el proceso (código 137), así que una parada lenta falla por los dos lados. El job `contrato` conserva su condición sobre `paths`: no es de `package.json` ni de `docker-compose.yml`, y con el v1 corre siempre.
+- Cómo se conecta: es el check `contract-test` del PR del bloque E, que corre por primera vez los pasos 4 a 6 de T29 en GitHub. T31 documenta los mismos comandos en el README.
+- Tests (a mano, el 2026-10-22; en rojo antes del cambio: `ci.yml` tenía 5 menciones a `package.json` y `docker-compose.yml` y ninguna a `/health` ni a `docker compose stop`):
+  - En un clon limpio de la rama (con el `ci.yml` nuevo copiado), los `run` de cada job sacados del YAML con un script, en orden: `build-test` (`npm ci`, `build`, `lint`, `test` con 2101) termina con 0; `contract-test` termina con 0: `{"estado":"ok"}`, 20 operaciones (1 implementada y 19 pendientes), Schemathesis «Selected: 1/20» y «No issues found», y «Parada en 204 ms, código 0». Después, `docker compose down -v` en el clon (su volumen, no el del repositorio).
+  - `gh api repos/FRRe-DS/2026-17-TPI/rulesets/25173190`: «Protección de main» activa, con los checks `specs`, `contrato`, `build-test` y `contract-test`.
+  - `npm test` (2101) y `spec-check` en verde.
+- Para mirar con atención:
+  - Recién en el PR del bloque E se ve el job en GitHub: los pasos se probaron en local con Docker 29.1.3 y Linux, como `ubuntu-24.04`, pero el runner baja la imagen de Schemathesis y construye la del servicio en frío (cerca de un minuto más).
+  - Los `uses` (checkout y setup-node) no se pueden correr en local; se suplieron con el clon y Node 24.15.
+
+### T31 — README del servicio con diagrama · commit `003/T31`
+- Qué cambió: `README.md` nuevo en la raíz, el único archivo de la tarea. Dice qué hace el servicio hoy (la base, con solo `GET /health` implementada), el stack (con el ADR del stack), un diagrama Mermaid, los requisitos, cómo levantarlo, cómo correr las pruebas y la prueba de contrato, cómo generar un token, cómo crear una migración (con `--migrations-dir migraciones`), la tabla de variables con la nota de `M2_URL_BD`, `POSTGRES_*` y el volumen, y un mapa breve del repositorio.
+- Por qué así: el diagrama muestra con línea llena lo que ya funciona (la API y su base) y con línea punteada lo que el contrato define pero ninguna operación implementada usa todavía (M1, M5, M9 y M6), para que no parezca que M2 ya habla con ellos. El comando del token lleva `-T`, que el plan no tenía: sin él, `docker compose exec` reserva una terminal y agrega un `\r` al final del token si se lo corre desde una terminal interactiva (probado con `script`). La tabla de variables sale de `ejemplo.env` y de Lógica 1 del plan; las de `POSTGRES_*` figuran «solo para la base» porque las lee la imagen de PostgreSQL y no el servicio.
+- Cómo se conecta: no cambia código. RNF-20.1 queda cubierto; el comando `npm run contrato:test` y la parada son los de T29 y T30. Cuando lleguen los mocks de M1 y M6 (#2) y las operaciones de las specs 004 a 008, hay que actualizar el diagrama y la frase «Qué hace hoy».
+- Tests (a mano, el 2026-10-22, con Node 24.15 y Docker 29.1.3; en rojo antes: no existía `README.md`): cada comando del README, tal cual está escrito y en el orden en que aparece: `git config core.hooksPath .githooks`, `docker compose up -d --build --wait`, `curl -fsS http://localhost:8082/health` (`{"estado":"ok"}`), `docker compose logs m2`, `npm ci`, `npm test` (2101), `npm run build`, `npm run lint`, `npm run contrato:test` (sin fallas, también con `--contrato pruebas/ayudas/contrato-salud.yml`), el lint del contrato con Redocly y `node scripts/spec-check.mjs`; el token con y sin `--vence`, y capturado en `TOKEN=$(…)` (269 caracteres, sin `\r`); `M2_PUERTO=9090 docker compose up -d --build --wait` (responde en 9090 y deja de responder en 8082); `npx node-pg-migrate create … --migrations-dir migraciones` (crea el archivo en `migraciones/`, que se borró después); `docker compose stop m2`, `docker compose down` (conserva el volumen) y `docker compose down -v` (lo borra). El diagrama se validó con `mermaid.parse` (flowchart válido; un diagrama roto de control falla).
+- Para mirar con atención:
+  - El diagrama se validó por sintaxis, no se vio renderizado: conviene abrir el README en GitHub al revisar el PR.
+  - El ejemplo `curl -H "Authorization: Bearer $TOKEN" …/api/v1/<ruta>` lleva un marcador en la ruta: hoy no hay operación protegida implementada para probarlo de punta a punta. Lo que sí se probó es cada parte: el token se genera y el servicio lo acepta (los tests de T13 a T15, T35 y T37).
+  - La prueba de la migración dejó una corrida de `docker compose down -v` que borró el volumen local `datos-bd`, que solo tenía la migración inicial.

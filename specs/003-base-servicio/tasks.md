@@ -80,17 +80,17 @@ Depende de: bloque A (del código, usa solo lo de T3).
 ## Bloque E — Contenedores, prueba de contrato, CI y README
 Depende de: bloques B y C. Su PR cierra la spec, así que va después de D, de F, de G y de H.
 
-- [ ] **T26. Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.2
+- [x] **T26. Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.2
   - Hecho cuando: `docker build -t m2-clientes:0.1.0 .` termina bien; `docker run --rm --entrypoint whoami m2-clientes:0.1.0` imprime `node`; y `pruebas/unitarias/consistencia.test.ts` comprueba que el `Dockerfile` usa imágenes con versión exacta, nunca `latest`, e instala con `npm ci`.
-- [ ] **T27. `docker-compose.yml` con el servicio y su base, y `ejemplo.env` documentado (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.3, RNF-04.4, RNF-06.3
+- [x] **T27. `docker-compose.yml` con el servicio y su base, y `ejemplo.env` documentado (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.3, RNF-04.4, RNF-06.3
   - Hecho cuando: desde un clon limpio de la rama, `docker compose up -d --build --wait` termina con los dos servicios sanos y `curl localhost:8082/health` da 200; `M2_PUERTO=9090 docker compose config` muestra 9090; y `ejemplo-env.test.ts` y `consistencia.test.ts` comprueban las variables del ejemplo, que la etiqueta de la imagen es la versión de `package.json` y que la imagen de la base es la misma que en las pruebas.
-- [ ] **T28. Fallas al levantar y parada con docker compose (plan, Configuración, contenedores y CI).** RNF-04.4, RNF-04.5, RNF-05.3
+- [x] **T28. Fallas al levantar y parada con docker compose (plan, Configuración, contenedores y CI).** RNF-04.4, RNF-04.5, RNF-05.3
   - Hecho cuando: con `M2_CLAVE_TOKENS=corta`, `docker compose up -d --wait` termina con error en menos de 2 minutos y `docker compose logs m2` nombra la variable sin su valor; con `M2_URL_BD` apuntando a un servidor que no existe, también termina con error en menos de 2 minutos, con el motivo en los logs y sin la contraseña; y, con el servicio sano, `docker compose stop m2` tarda menos de 10 s y `docker inspect` muestra código 0.
-- [ ] **T29. Segunda parte de la prueba de contrato: token del contenedor y Schemathesis sobre lo implementado, pasos 4 a 6 (plan, Contrato).** RNF-07.2
+- [x] **T29. Segunda parte de la prueba de contrato: token del contenedor y Schemathesis sobre lo implementado, pasos 4 a 6 (plan, Contrato).** RNF-07.2
   - Hecho cuando: con el servicio levantado, `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml` pide un token al contenedor, corre Schemathesis solo sobre `verificarSalud` y pasa todos sus chequeos; si Schemathesis falla, el script termina con su código; con el contrato de `main` (el v1), corre Schemathesis solo sobre `verificarSalud`, lista las demás como pendientes y pasa; y con un contrato sin operaciones sigue informando que no hay nada para probar y termina con 0.
-- [ ] **T30. CI sin pasos omitidos, con salud, prueba de contrato y parada (plan, Configuración, contenedores y CI).** RNF-17.1, RNF-17.2, RNF-04.5
+- [x] **T30. CI sin pasos omitidos, con salud, prueba de contrato y parada (plan, Configuración, contenedores y CI).** RNF-17.1, RNF-17.2, RNF-04.5
   - Hecho cuando: `ci.yml` ya no tiene condiciones sobre `package.json` ni `docker-compose.yml`; los pasos de `build-test` y `contract-test`, corridos a mano en local y en el mismo orden, pasan, incluido el de parada (menos de 10 s y código 0); `gh api` muestra que la regla «Protección de main» sigue exigiendo los cuatro checks; y la trampa de AGENTS.md sobre el proyecto y el compose que faltaban ya no está.
-- [ ] **T31. README del servicio con diagrama (plan, Configuración, contenedores y CI).** RNF-20.1
+- [x] **T31. README del servicio con diagrama (plan, Configuración, contenedores y CI).** RNF-20.1
   - Hecho cuando: el README explica qué hace el servicio y con qué stack, cómo levantarlo, cómo correr las pruebas, cómo generar un token, cómo crear una migración (con `--migrations-dir migraciones`) y qué variables usa, con la nota sobre `M2_URL_BD`, `POSTGRES_*` y el volumen; incluye un diagrama Mermaid del servicio, su base y M1, M5, M6 y M9; y cada comando del README se probó tal cual está escrito.
 
 ## Bloque F — Cambio del 2026-10-20: tope de los tiempos, corte del cliente, versión de Node y rutas sin permisos

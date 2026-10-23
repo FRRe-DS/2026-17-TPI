@@ -1,6 +1,8 @@
 import { existsSync, globSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { IMAGEN_POSTGRES } from '../ayudas/global.js';
 import configuracionDeVitest from '../../vitest.config.js';
 
 // Una versión exacta es X.Y.Z, con prelanzamiento o build opcionales. Todo lo demás es un rango o una etiqueta:
@@ -120,5 +122,179 @@ describe('esRango', () => {
 
   it.each(['1.2.3', '0.0.1', '10.20.30', '1.2.3-beta.1', '1.2.3+build.5'])('acepta %s como exacta', (version) => {
     expect(esRango(version)).toBe(false);
+  });
+});
+
+// El nombre de una imagen con su etiqueta, como «node:24.22.0-trixie-slim». La versión exacta es la completa del producto:
+// X.Y.Z para Node y X.Y para PostgreSQL (`partes`). Sin etiqueta o con una incompleta (latest, 24, 24-slim, 24.22) no lo es
+// (RNF-04.1).
+const imagenExacta = (imagen: string, partes = 3): boolean =>
+  new RegExp(`^[^:@\\s]+:\\d+(\\.\\d+){${partes - 1}}(-[0-9A-Za-z.-]+)?$`).test(imagen);
+
+describe('imagenExacta', () => {
+  it.each(['node:24.22.0-trixie-slim', 'postgres:18.6.0', 'registro.local/node:1.2.3'])('acepta %s', (imagen) => {
+    expect(imagenExacta(imagen)).toBe(true);
+  });
+
+  it.each(['node', 'node:latest', 'node:24', 'node:24-trixie-slim', 'node:24.22', 'node:24.22-slim', 'node@sha256:abc'])(
+    'rechaza %s',
+    (imagen) => {
+      expect(imagenExacta(imagen)).toBe(false);
+    },
+  );
+
+  it('con dos partes acepta postgres:18.6 y rechaza postgres:18 y postgres:latest', () => {
+    expect(imagenExacta('postgres:18.6', 2)).toBe(true);
+    expect(imagenExacta('postgres:18', 2)).toBe(false);
+    expect(imagenExacta('postgres:latest', 2)).toBe(false);
+  });
+});
+
+// Las instrucciones de un Dockerfile, sin comentarios y con las líneas continuadas con «\» unidas.
+const instruccionesDe = (texto: string): string[] =>
+  texto
+    .replaceAll('\r\n', '\n')
+    .replace(/\\\n/g, ' ')
+    .split('\n')
+    .map((linea) => linea.trim())
+    .filter((linea) => linea !== '' && !linea.startsWith('#'));
+
+describe('Dockerfile (RNF-04.1, RNF-04.2)', () => {
+  const dockerfile = instruccionesDe(readFileSync(new URL('Dockerfile', raiz), 'utf8'));
+  const etapas = dockerfile.filter((linea) => /^FROM\s/i.test(linea));
+  // «FROM imagen AS nombre»: la imagen es el primer argumento que no es una opción (--platform=…).
+  const imagenDe = (linea: string) => linea.split(/\s+/).slice(1).find((parte) => !parte.startsWith('--')) ?? '';
+
+  it('tiene dos etapas, construcción y ejecución', () => {
+    expect(etapas).toHaveLength(2);
+  });
+
+  it('las dos parten de una imagen con versión exacta, nunca latest', () => {
+    expect(etapas.map(imagenDe).filter((imagen) => !imagenExacta(imagen))).toEqual([]);
+  });
+
+  it('las dos parten de la misma imagen', () => {
+    expect(new Set(etapas.map(imagenDe)).size).toBe(1);
+  });
+
+  it('instala con npm ci en las dos etapas y nunca con npm install', () => {
+    const instalaciones = dockerfile.filter((linea) => /^RUN\s.*\bnpm\s+(ci|install|i|add)\b/i.test(linea));
+    expect(instalaciones).toHaveLength(2);
+    expect(instalaciones.filter((linea) => !/\bnpm\s+ci\b/.test(linea))).toEqual([]);
+  });
+
+  it('la etapa de ejecución instala solo lo de producción', () => {
+    const ejecucion = dockerfile.slice(dockerfile.indexOf(etapas[1] ?? ''));
+    expect(ejecucion.some((linea) => /^RUN\s.*\bnpm\s+ci\b.*--omit=dev\b/.test(linea))).toBe(true);
+  });
+
+  it('corre con el usuario node y arranca con node dist/servidor.js en forma exec', () => {
+    expect(dockerfile.filter((linea) => /^USER\s/i.test(linea))).toEqual(['USER node']);
+    expect(dockerfile.at(-1)).toBe('CMD ["node", "dist/servidor.js"]');
+  });
+
+  it('la imagen de ejecución lleva dist, contrato y migraciones', () => {
+    const ejecucion = dockerfile.slice(dockerfile.indexOf(etapas[1] ?? ''));
+    const copias = ejecucion.filter((linea) => /^COPY\s/i.test(linea)).join('\n');
+    for (const carpeta of ['dist', 'contrato', 'migraciones']) expect(copias, carpeta).toMatch(new RegExp(`(^|[/\\s])${carpeta} `));
+  });
+});
+
+describe('.dockerignore (RNF-04.2)', () => {
+  const ignorados = readFileSync(new URL('.dockerignore', raiz), 'utf8')
+    .split('\n')
+    .map((linea) => linea.trim())
+    .filter((linea) => linea !== '' && !linea.startsWith('#'));
+
+  it.each(['node_modules', 'dist', '.git', 'specs', 'docs', 'pruebas', 'ejemplo.env', '.env', 'EN-CURSO.local.md'])(
+    'deja afuera %s',
+    (ruta) => {
+      expect(ignorados).toContain(ruta);
+    },
+  );
+
+  // Lo que la construcción necesita no puede quedar afuera.
+  it.each(['src', 'contrato', 'migraciones', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json'])(
+    'no deja afuera %s',
+    (ruta) => {
+      expect(ignorados.filter((linea) => linea === ruta || linea === `${ruta}/` || linea === '*')).toEqual([]);
+    },
+  );
+});
+
+type ServicioCompose = {
+  build?: string;
+  image?: string;
+  env_file?: string | string[];
+  init?: boolean;
+  ports?: string[];
+  depends_on?: { [servicio: string]: { condition?: string } };
+  healthcheck?: { test?: string[]; interval?: string; timeout?: string; retries?: number; start_period?: string };
+  volumes?: string[];
+};
+type Compose = { services?: { [nombre: string]: ServicioCompose | undefined }; volumes?: { [nombre: string]: unknown } };
+
+describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const m2 = compose.services?.['m2'];
+  const bd = compose.services?.['bd'];
+
+  it('declara solo los servicios m2 y bd', () => {
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'm2']);
+  });
+
+  it('las imágenes tienen versión exacta, nunca latest', () => {
+    expect(imagenExacta(m2?.image ?? '')).toBe(true);
+    expect(imagenExacta(bd?.image ?? '', 2)).toBe(true);
+  });
+
+  it('la imagen de la base es la misma que levantan las pruebas de integración', () => {
+    expect(bd?.image).toBe(IMAGEN_POSTGRES);
+  });
+
+  it('la etiqueta de la imagen de m2 es la versión de package.json', () => {
+    expect(m2?.image).toBe(`m2-clientes:${String(paquete['version'])}`);
+  });
+
+  it('m2 se construye con el Dockerfile de la raíz y usa ejemplo.env', () => {
+    expect(m2?.build).toBe('.');
+    expect([m2?.env_file].flat()).toEqual(['ejemplo.env']);
+    expect([bd?.env_file].flat()).toEqual(['ejemplo.env']);
+  });
+
+  it('m2 usa init, publica el puerto configurado (8082 por defecto) y espera a que la base esté sana', () => {
+    expect(m2?.init).toBe(true);
+    expect(m2?.ports).toEqual(['${M2_PUERTO:-8082}:${M2_PUERTO:-8082}']);
+    expect(m2?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
+  });
+
+  it('la base no publica ningún puerto y guarda sus datos en el volumen datos-bd', () => {
+    expect(bd?.ports).toBeUndefined();
+    expect(bd?.volumes).toEqual(['datos-bd:/var/lib/postgresql']);
+    expect(Object.keys(compose.volumes ?? {})).toEqual(['datos-bd']);
+  });
+
+  // La imagen de m2 no trae curl ni wget; el chequeo lo hace Node, con un GET (wget --spider manda HEAD y da 405).
+  it('el chequeo de m2 es un GET a /health con Node, en el puerto configurado', () => {
+    const [forma, programa, ...resto] = m2?.healthcheck?.test ?? [];
+    expect(forma).toBe('CMD');
+    expect(programa).toBe('node');
+    const codigo = resto.join(' ');
+    expect(codigo).toContain('fetch(');
+    expect(codigo).toContain('/health');
+    expect(codigo).toContain('process.env.M2_PUERTO');
+    expect(codigo).not.toContain('$');
+    expect(m2?.healthcheck).toMatchObject({ interval: '5s', timeout: '3s', retries: 6, start_period: '30s' });
+  });
+
+  // Por TCP (-h 127.0.0.1): el servidor temporal de la inicialización solo escucha por socket. Con $$, para que las
+  // variables las lea el contenedor y no compose.
+  it('el chequeo de la base usa pg_isready por TCP y las variables del contenedor', () => {
+    const prueba = (bd?.healthcheck?.test ?? []).join(' ');
+    expect(prueba).toContain('pg_isready');
+    expect(prueba).toContain('-h 127.0.0.1');
+    expect(prueba).toContain('$$POSTGRES_USER');
+    expect(prueba).toContain('$$POSTGRES_DB');
+    expect(bd?.healthcheck).toMatchObject({ interval: '2s', timeout: '2s', retries: 20 });
   });
 });
