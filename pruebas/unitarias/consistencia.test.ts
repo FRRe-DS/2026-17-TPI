@@ -122,3 +122,92 @@ describe('esRango', () => {
     expect(esRango(version)).toBe(false);
   });
 });
+
+// El nombre de una imagen con su etiqueta, como «node:24.22.0-trixie-slim». Sin etiqueta o con una que no empieza por X.Y.Z
+// (latest, 24, 24-slim) no es exacta (RNF-04.1).
+const imagenExacta = (imagen: string): boolean => /^[^:@\s]+:\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(imagen);
+
+describe('imagenExacta', () => {
+  it.each(['node:24.22.0-trixie-slim', 'postgres:18.6.0', 'registro.local/node:1.2.3'])('acepta %s', (imagen) => {
+    expect(imagenExacta(imagen)).toBe(true);
+  });
+
+  it.each(['node', 'node:latest', 'node:24', 'node:24-trixie-slim', 'node:24.22', 'node:24.22-slim', 'node@sha256:abc'])(
+    'rechaza %s',
+    (imagen) => {
+      expect(imagenExacta(imagen)).toBe(false);
+    },
+  );
+});
+
+// Las instrucciones de un Dockerfile, sin comentarios y con las líneas continuadas con «\» unidas.
+const instruccionesDe = (texto: string): string[] =>
+  texto
+    .replaceAll('\r\n', '\n')
+    .replace(/\\\n/g, ' ')
+    .split('\n')
+    .map((linea) => linea.trim())
+    .filter((linea) => linea !== '' && !linea.startsWith('#'));
+
+describe('Dockerfile (RNF-04.1, RNF-04.2)', () => {
+  const dockerfile = instruccionesDe(readFileSync(new URL('Dockerfile', raiz), 'utf8'));
+  const etapas = dockerfile.filter((linea) => /^FROM\s/i.test(linea));
+  // «FROM imagen AS nombre»: la imagen es el primer argumento que no es una opción (--platform=…).
+  const imagenDe = (linea: string) => linea.split(/\s+/).slice(1).find((parte) => !parte.startsWith('--')) ?? '';
+
+  it('tiene dos etapas, construcción y ejecución', () => {
+    expect(etapas).toHaveLength(2);
+  });
+
+  it('las dos parten de una imagen con versión exacta, nunca latest', () => {
+    expect(etapas.map(imagenDe).filter((imagen) => !imagenExacta(imagen))).toEqual([]);
+  });
+
+  it('las dos parten de la misma imagen', () => {
+    expect(new Set(etapas.map(imagenDe)).size).toBe(1);
+  });
+
+  it('instala con npm ci en las dos etapas y nunca con npm install', () => {
+    const instalaciones = dockerfile.filter((linea) => /^RUN\s.*\bnpm\s+(ci|install|i|add)\b/i.test(linea));
+    expect(instalaciones).toHaveLength(2);
+    expect(instalaciones.filter((linea) => !/\bnpm\s+ci\b/.test(linea))).toEqual([]);
+  });
+
+  it('la etapa de ejecución instala solo lo de producción', () => {
+    const ejecucion = dockerfile.slice(dockerfile.indexOf(etapas[1] ?? ''));
+    expect(ejecucion.some((linea) => /^RUN\s.*\bnpm\s+ci\b.*--omit=dev\b/.test(linea))).toBe(true);
+  });
+
+  it('corre con el usuario node y arranca con node dist/servidor.js en forma exec', () => {
+    expect(dockerfile.filter((linea) => /^USER\s/i.test(linea))).toEqual(['USER node']);
+    expect(dockerfile.at(-1)).toBe('CMD ["node", "dist/servidor.js"]');
+  });
+
+  it('la imagen de ejecución lleva dist, contrato y migraciones', () => {
+    const ejecucion = dockerfile.slice(dockerfile.indexOf(etapas[1] ?? ''));
+    const copias = ejecucion.filter((linea) => /^COPY\s/i.test(linea)).join('\n');
+    for (const carpeta of ['dist', 'contrato', 'migraciones']) expect(copias, carpeta).toMatch(new RegExp(`(^|[/\\s])${carpeta} `));
+  });
+});
+
+describe('.dockerignore (RNF-04.2)', () => {
+  const ignorados = readFileSync(new URL('.dockerignore', raiz), 'utf8')
+    .split('\n')
+    .map((linea) => linea.trim())
+    .filter((linea) => linea !== '' && !linea.startsWith('#'));
+
+  it.each(['node_modules', 'dist', '.git', 'specs', 'docs', 'pruebas', 'ejemplo.env', '.env', 'EN-CURSO.local.md'])(
+    'deja afuera %s',
+    (ruta) => {
+      expect(ignorados).toContain(ruta);
+    },
+  );
+
+  // Lo que la construcción necesita no puede quedar afuera.
+  it.each(['src', 'contrato', 'migraciones', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json'])(
+    'no deja afuera %s',
+    (ruta) => {
+      expect(ignorados.filter((linea) => linea === ruta || linea === `${ruta}/` || linea === '*')).toEqual([]);
+    },
+  );
+});

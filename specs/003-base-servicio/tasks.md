@@ -80,7 +80,7 @@ Depende de: bloque A (del código, usa solo lo de T3).
 ## Bloque E — Contenedores, prueba de contrato, CI y README
 Depende de: bloques B y C. Su PR cierra la spec, así que va después de D, de F, de G y de H.
 
-- [ ] **T26. Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.2
+- [x] **T26. Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.2
   - Hecho cuando: `docker build -t m2-clientes:0.1.0 .` termina bien; `docker run --rm --entrypoint whoami m2-clientes:0.1.0` imprime `node`; y `pruebas/unitarias/consistencia.test.ts` comprueba que el `Dockerfile` usa imágenes con versión exacta, nunca `latest`, e instala con `npm ci`.
 - [ ] **T27. `docker-compose.yml` con el servicio y su base, y `ejemplo.env` documentado (plan, Configuración, contenedores y CI).** RNF-04.1, RNF-04.3, RNF-04.4, RNF-06.3
   - Hecho cuando: desde un clon limpio de la rama, `docker compose up -d --build --wait` termina con los dos servicios sanos y `curl localhost:8082/health` da 200; `M2_PUERTO=9090 docker compose config` muestra 9090; y `ejemplo-env.test.ts` y `consistencia.test.ts` comprueban las variables del ejemplo, que la etiqueta de la imagen es la versión de `package.json` y que la imagen de la base es la misma que en las pruebas.

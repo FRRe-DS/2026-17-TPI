@@ -1147,3 +1147,25 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - [pruebas/integracion/arranque.test.ts](../../pruebas/integracion/arranque.test.ts), «abortada mientras termina listen»: un `onTestFinished` llama a `detener({ corteMs: 100 })`, que devuelve la parada en curso o la hace, para que una falla temprana no deje el servidor escuchando el resto del archivo. Probado sacando el `detener()` de `arrancar`: falla solo esa prueba.
   - Rojo primero: fallaban las dos pruebas nuevas del cuerpo (la del cliente y la del log). Las dos sugerencias de la revisión (sumar el error a «Arranque interrumpido por la parada» y ajustar el tipo de las causas en salud y duplicados) quedaron fuera: la spec se cumple igual.
   - Con Node v24.15.0: `npm test` (2051), `npm run lint`, `npm run build` y `node scripts/spec-check.mjs --rama impl/003-bloque-h --base origin/main` pasan.
+
+### T26 — Imagen del servicio: `Dockerfile` de dos etapas y `.dockerignore` · commit `003/T26`
+- Qué cambió:
+  - [Dockerfile](../../Dockerfile): dos etapas sobre `node:24.22.0-trixie-slim`. `construccion` hace `npm ci` y `npm run build` (que genera los tipos del contrato y compila a `dist/`). La de ejecución hace `npm ci --omit=dev --ignore-scripts`, trae `dist/` y `contrato/` de la primera, copia `migraciones/`, corre con `USER node` y `CMD ["node", "dist/servidor.js"]` en forma exec.
+  - [.dockerignore](../../.dockerignore): deja afuera `node_modules`, `dist`, `src/generado`, `.git`, `specs`, `docs`, `pruebas`, `scripts`, `ejemplo.env`, los `.env`, los archivos locales (`EN-CURSO.local.md`, `CLAUDE.local.md`, `.claude`, `.agents`) y los `*.md`.
+- Por qué así:
+  - `--ignore-scripts` en la etapa de ejecución: el proyecto tiene `prebuild`, `prelint` y `pretest` pero ningún `postinstall`; el flag impide que una dependencia de producción corra scripts al instalarse, y deja el resultado igual al del lockfile (RNF-04.2).
+  - `src/generado/` queda afuera del contexto porque se regenera en la construcción desde `contrato/`: así no se copia un archivo viejo.
+  - `contrato/` va a la imagen de ejecución porque `src/contrato/cargar.ts` lo busca relativo a `dist/contrato/`, y `migraciones/` porque `src/bd/migraciones.ts` hace lo mismo. Las dos rutas valen igual desde `src/` y desde `dist/`.
+  - `ejemplo.env` queda fuera de la imagen: la configuración llega por entorno (RNF-06), que en compose pone el `env_file`.
+- Cómo se conecta:
+  - T27 usa esta imagen en `docker-compose.yml` con `build: .` e `image: m2-clientes:0.1.0` (RNF-04.3). La etiqueta de este build es la misma, a mano.
+  - `.dockerignore` incluye `Dockerfile` y `docker-compose.yml`: no hacen falta dentro del contexto, y el cliente los lee igual.
+- Tests:
+  - [pruebas/unitarias/consistencia.test.ts](../../pruebas/unitarias/consistencia.test.ts), bloques nuevos: `imagenExacta` (3 que acepta y 7 que rechaza: sin etiqueta, `latest`, solo la mayor, sin el parche, digest); `Dockerfile` (dos etapas; las dos con imagen de versión exacta y la misma; `npm ci` en las dos y ningún `npm install`; la de ejecución con `--omit=dev`; `USER node` y el `CMD` exacto; `dist`, `contrato` y `migraciones` copiados en la de ejecución); `.dockerignore` (lo que debe dejar afuera y lo que la construcción necesita y no puede dejar).
+  - Rojo primero: el archivo de pruebas no cargaba (no había `Dockerfile`), y después, con el `Dockerfile` hecho, falló una sola, la de las carpetas copiadas, por un patrón demasiado estricto de la propia prueba (esperaba `--from` en todas): se corrigió la prueba, no el código.
+  - Comprobaciones a mano, de «Hecho cuando»: `docker build -t m2-clientes:0.1.0 .` termina bien (47 s en frío, 258 MB); `docker run --rm --entrypoint whoami m2-clientes:0.1.0` imprime `node`; sin variables, la imagen sale con 1 y nombra las cuatro obligatorias sin valores; `token.js` corre dentro.
+  - Con Node v24.15.0: `npm test` (2084), `npm run lint`, `npm run build` y `node scripts/spec-check.mjs` pasan.
+- Para mirar con atención:
+  - La prueba lee el `Dockerfile` por instrucciones y no entiende `ARG` en el `FROM` ni etapas con la imagen de otra etapa: hoy no los hay, y si se suman, la prueba de «dos etapas» y la de versión exacta lo van a avisar.
+  - No hay `HEALTHCHECK` en la imagen: lo pone compose (T27), con Node y `fetch`, porque la imagen no trae `curl`.
+  - La base es `node:24.22.0-trixie-slim`, la que fija el plan (Versiones a fijar); el plan no compara otras bases, así que la imagen pesa lo de esa base más las dependencias de producción (258 MB).
