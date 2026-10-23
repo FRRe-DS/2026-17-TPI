@@ -135,7 +135,7 @@ describe('la migración perfil-bloqueos (RF-2.1.3, RF-2.6.1, RNF-05.1, RNF-08.1)
       });
     });
 
-    it('bloqueos_cliente: clave primaria, clave foránea a clientes, motivo no vacío y levantamiento completo', async () => {
+    it('bloqueos_cliente: clave primaria, clave foránea a clientes, motivos no vacíos y levantamiento completo', async () => {
       expect(await restricciones(base.urlBd, 'bloqueos_cliente')).toEqual({
         bloqueos_cliente_pkey: { tipo: 'p', definicion: 'PRIMARY KEY (bloqueo_id)' },
         bloqueos_cliente_cliente_id_fkey: {
@@ -143,6 +143,10 @@ describe('la migración perfil-bloqueos (RF-2.1.3, RF-2.6.1, RNF-05.1, RNF-08.1)
           definicion: 'FOREIGN KEY (cliente_id) REFERENCES clientes(cliente_id)',
         },
         bloqueos_cliente_motivo_no_vacio: { tipo: 'c', definicion: expect.stringContaining('motivo') },
+        bloqueos_cliente_motivo_levantamiento_no_vacio: {
+          tipo: 'c',
+          definicion: expect.stringContaining('motivo_levantamiento'),
+        },
         bloqueos_cliente_levantamiento_completo: { tipo: 'c', definicion: expect.stringContaining('levantado_en') },
       });
     });
@@ -203,13 +207,20 @@ describe('la migración perfil-bloqueos (RF-2.1.3, RF-2.6.1, RNF-05.1, RNF-08.1)
       expect(await codigoDe(bloqueo(clienteId, ''))).toBe(CHECK);
     });
 
-    it('rechaza un levantamiento incompleto y acepta uno con los tres datos (RF-2.6.3)', async () => {
+    it('rechaza un levantamiento incompleto o con motivo vacío, y acepta uno con los tres datos (RF-2.6.3)', async () => {
       const clienteId = nuevoId();
       await alta(clienteId);
       await bloqueo(clienteId);
 
       const incompleto = bd.query(`UPDATE bloqueos_cliente SET levantado_en = now() WHERE cliente_id = $1`, [clienteId]);
       expect(await codigoDe(incompleto)).toBe(CHECK);
+
+      const sinMotivo = bd.query(
+        `UPDATE bloqueos_cliente SET levantado_en = now(), levantado_por = 'operador-2', motivo_levantamiento = ''
+         WHERE cliente_id = $1`,
+        [clienteId],
+      );
+      expect(await codigoDe(sinMotivo)).toBe(CHECK);
 
       const completo = await bd.query(
         `UPDATE bloqueos_cliente SET levantado_en = now(), levantado_por = 'operador-2', motivo_levantamiento = 'Pagó'
@@ -519,9 +530,16 @@ describe('transaccion() sobre la base de la migración (RNF-08.1, RNF-14.2)', ()
       expect(duracion).toBeLessThan(TIEMPO_BD_MS + MARGEN_MS);
     });
 
-    // Si la conexión volviera al pool, la consulta cortada la seguiría ocupando: la siguiente esperaría detrás, y su
-    // transacción, abierta, seguiría con los bloqueos de sus filas.
-    it('descarta la conexión de la sentencia cortada, sin esperar a la base, y lo hecho queda deshecho', async () => {
+    // Si la conexión volviera al pool, la consulta cortada la seguiría ocupando: la siguiente esperaría detrás.
+    it('descarta la conexión de la sentencia cortada, sin esperar a la base', async () => {
+      await fallaCon(transaccion(pool, (consultar) => consultar('SELECT pg_sleep(10)')));
+
+      expect(pool.totalCount).toBe(0);
+    });
+
+    // La base no lee el cierre de la conexión hasta terminar la sentencia: sin su propio corte (statement_timeout), la
+    // sesión seguiría viva hasta el final de pg_sleep, con la transacción abierta y los bloqueos de sus filas.
+    it('la base termina la sentencia cortada poco después, deshace la transacción y suelta sus bloqueos', async () => {
       const clienteId = nuevoId();
 
       await fallaCon(
@@ -531,8 +549,17 @@ describe('transaccion() sobre la base de la migración (RNF-08.1, RNF-14.2)', ()
         }),
       );
 
-      expect(pool.totalCount).toBe(0);
+      await vi.waitFor(
+        async () =>
+          expect(
+            await filas(base.urlBd, `SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND query LIKE '%pg_sleep(10)%' AND pid <> pg_backend_pid()`),
+          ).toEqual([]),
+        { timeout: MARGEN_MS, interval: 50 },
+      );
       expect(await existe(clienteId)).toBe(false);
+      // Con la fila del perfil todavía bloqueada, este alta esperaría hasta agotar el tiempo de base.
+      await transaccion(pool, (consultar) => alta(consultar, clienteId));
+      expect(await existe(clienteId)).toBe(true);
     });
 
     it('el tope es por sentencia, no por transacción: dos sentencias que juntas lo pasan salen bien', async () => {

@@ -156,6 +156,12 @@ describe('crearPool (RNF-14.2)', () => {
     });
   });
 
+  // El corte de la base llega después del de M2: el que responde es el de M2, y el de la base termina la sentencia que
+  // quedó corriendo.
+  it('le pide a la base que corte cada sentencia medio segundo después del tiempo de base', () => {
+    expect(crear(CONFIG_BD).options).toMatchObject({ statement_timeout: 2000 });
+  });
+
   it('no se conecta al crearlo', () => {
     const pool = crear(CONFIG_BD);
 

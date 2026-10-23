@@ -26,7 +26,7 @@ CREATE TABLE bloqueos_cliente (
   creado_por text NOT NULL,
   levantado_en timestamptz,
   levantado_por text,
-  motivo_levantamiento varchar(500),
+  motivo_levantamiento varchar(500) CONSTRAINT bloqueos_cliente_motivo_levantamiento_no_vacio CHECK (motivo_levantamiento <> ''),
   CONSTRAINT bloqueos_cliente_levantamiento_completo CHECK (
     (levantado_en IS NULL AND levantado_por IS NULL AND motivo_levantamiento IS NULL)
     OR (levantado_en IS NOT NULL AND levantado_por IS NOT NULL AND motivo_levantamiento IS NOT NULL)

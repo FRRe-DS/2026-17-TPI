@@ -10,7 +10,7 @@ export type SolicitudIdempotente = {
   sujeto: string;
   clienteId: string | null;
   clave: string;
-  huella: unknown;
+  huella: Record<string, unknown>;
 };
 
 // La respuesta de un alta, tal como se guarda y se repite: el código, el `Location` si lo hay y el cuerpo. El cuerpo vuelve
@@ -32,27 +32,37 @@ export async function conIdempotencia(
 ): Promise<RespuestaIdempotente> {
   const { operacion, sujeto, clienteId, clave } = solicitud;
   const hash = huella(solicitud.huella);
-  const identidad = [operacion, sujeto, clienteId, clave];
 
   return transaccion(pool, async (consultar) => {
     const reserva = await consultar(
       `INSERT INTO idempotencias (operacion, sujeto, cliente_id, clave, hash_solicitud) VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT ON CONSTRAINT idempotencias_unica DO NOTHING`,
-      [...identidad, hash],
+      [operacion, sujeto, clienteId, clave, hash],
     );
-    if (reserva.rowCount === 0) return repetida(consultar, identidad, hash);
+    if (reserva.rowCount === 0) return repetida(consultar, solicitud, hash);
 
     const respuesta = await alta(consultar);
     // Se devuelve lo guardado y no `respuesta`: jsonb reordena las claves, y así la primera respuesta y las repetidas son
     // idénticas. jsonb explícito: pg convertiría una lista de JS en un arreglo de PostgreSQL.
+    const { condicion, valores } = laFila(solicitud, 4);
     const { rows } = await consultar<Guardada>(
-      `UPDATE idempotencias SET estado = $5, ubicacion = $6, respuesta = $7::jsonb
-       WHERE operacion = $1 AND sujeto = $2 AND cliente_id IS NOT DISTINCT FROM $3 AND clave = $4
+      `UPDATE idempotencias SET estado = $1, ubicacion = $2, respuesta = $3::jsonb WHERE ${condicion}
        RETURNING hash_solicitud, estado, ubicacion, respuesta`,
-      [...identidad, respuesta.estado, respuesta.ubicacion, JSON.stringify(respuesta.cuerpo)],
+      [respuesta.estado, respuesta.ubicacion, JSON.stringify(respuesta.cuerpo), ...valores],
     );
     return aRespuesta(rows[0]);
   });
+}
+
+// La condición que encuentra la fila de `solicitud` en `idempotencias`, con sus parámetros numerados desde `$desde`. El
+// cliente se compara según el caso, con `IS NULL` o con `=`: con `IS NOT DISTINCT FROM`, PostgreSQL no usa el índice de la
+// restricción única y recorre la tabla entera, que crece con cada alta.
+function laFila({ operacion, sujeto, clienteId, clave }: SolicitudIdempotente, desde: number) {
+  const [op, suj, cla, cli] = [desde, desde + 1, desde + 2, desde + 3];
+  const comun = `operacion = $${op} AND sujeto = $${suj} AND clave = $${cla}`;
+  return clienteId === null
+    ? { condicion: `${comun} AND cliente_id IS NULL`, valores: [operacion, sujeto, clave] }
+    : { condicion: `${comun} AND cliente_id = $${cli}`, valores: [operacion, sujeto, clave, clienteId] };
 }
 
 // La respuesta de una fila de `idempotencias` ya completa.
@@ -65,11 +75,15 @@ function aRespuesta(guardada: Guardada | undefined): RespuestaIdempotente {
 
 // La respuesta guardada de una clave ya usada. La fila la confirmó otra transacción (la reserva esperó a que terminara), así
 // que ya tiene la respuesta. Se bloquea, como pide el plan, para leerla sin que cambie.
-async function repetida(consultar: Consultar, identidad: unknown[], hash: string): Promise<RespuestaIdempotente> {
+async function repetida(
+  consultar: Consultar,
+  solicitud: SolicitudIdempotente,
+  hash: string,
+): Promise<RespuestaIdempotente> {
+  const { condicion, valores } = laFila(solicitud, 1);
   const { rows } = await consultar<Guardada>(
-    `SELECT hash_solicitud, estado, ubicacion, respuesta FROM idempotencias
-     WHERE operacion = $1 AND sujeto = $2 AND cliente_id IS NOT DISTINCT FROM $3 AND clave = $4 FOR UPDATE`,
-    identidad,
+    `SELECT hash_solicitud, estado, ubicacion, respuesta FROM idempotencias WHERE ${condicion} FOR UPDATE`,
+    valores,
   );
   if (rows[0] !== undefined && rows[0].hash_solicitud !== hash) throw new IdempotenciaReutilizada();
   return aRespuesta(rows[0]);
@@ -77,7 +91,7 @@ async function repetida(consultar: Consultar, identidad: unknown[], hash: string
 
 // SHA-256 del JSON de `valor` con las claves de cada objeto ordenadas: el mismo cuerpo con los campos en otro orden da la
 // misma huella.
-function huella(valor: unknown): string {
+function huella(valor: Record<string, unknown>): string {
   const canonico = JSON.stringify(valor, (_clave, dato: unknown) =>
     dato !== null && typeof dato === 'object' && !Array.isArray(dato)
       ? Object.fromEntries(Object.entries(dato).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))

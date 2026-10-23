@@ -31,7 +31,7 @@ Se escribe al validar la spec.
   - Cada sentencia, también `BEGIN`, `COMMIT`, `ROLLBACK` y el pedido de la conexión, pasa por `conTiempoMaximo` y `clasificarError` de [src/bd/pool.ts](../../src/bd/pool.ts): `23505` da `Conflicto` (409), sin base o sin respuesta da `BaseNoDisponible` (503) con la causa en `cause`, y el resto sale tal cual, para el 500. Un error propio de `fn` también sale tal cual.
   - `deshacer()`: después de un `BaseNoDisponible`, la conexión se descarta (`release(true)`) sin `ROLLBACK`; si el `ROLLBACK` falla, también se descarta.
   - [src/bd/pool.ts](../../src/bd/pool.ts): `PoolBd.tiempoBdMs` pasó de privado a público y de solo lectura, para que `transaccion()` use el mismo tope.
-- Por qué así: el plan («Transacciones») pide el mismo tope de 2 s y la misma clasificación que `consultar()`. Es la base de la idempotencia de T3 y de las altas de la 005 (RNF-08). Una conexión que tuvo un corte por tiempo sigue ocupada en la base: si volviera al pool, la sentencia siguiente esperaría detrás de ella. Por eso se descarta, y la base deshace la transacción al perder la sesión.
+- Por qué así: el plan («Transacciones») pide el mismo tope de 2 s y la misma clasificación que `consultar()`. Es la base de la idempotencia de T3 y de las altas de la 005 (RNF-08). Una conexión que tuvo un corte por tiempo sigue ocupada en la base: si volviera al pool, la sentencia siguiente esperaría detrás de ella. Por eso se descarta. La base deshace la transacción al perder la sesión, pero recién cuando termina la sentencia en curso: desde la revisión (`004/V`), su propio corte (`statement_timeout`) la termina medio segundo después.
 - Cómo se conecta: reusa las piezas de [src/bd/pool.ts](../../src/bd/pool.ts) sin cambiar `consultar()`. Recibe un `PoolTransaccional` (`connect` y `tiempoBdMs` del `PoolBd`). Hoy no la usa ningún manejador: la usan T3 (idempotencia) y T4 (repositorio).
 - Tests: [pruebas/integracion/clientes.test.ts](../../pruebas/integracion/clientes.test.ts), bloque «transaccion()», con la base migrada y un pool nuevo por prueba:
   - COMMIT: guarda, devuelve el resultado de `fn` y suelta la conexión; otra conexión no ve los cambios hasta el `COMMIT`; `fn` recibe las filas de sus consultas.
@@ -45,7 +45,7 @@ Se escribe al validar la spec.
 - Para mirar con atención:
   - Mientras la conexión está prestada, pg-pool no escucha su evento `'error'`. Si la base la corta entre dos sentencias, pg lo emite sin oyente y se cae el proceso. `transaccion()` pone un oyente, guarda el primer error y lo usa como causa del 503 de la sentencia siguiente (si no, esa sentencia fallaría con un mensaje que `clasificarError` no reconoce, y sería un 500). Una conexión descartada conserva el oyente, porque pg todavía puede emitir el corte.
   - Con un corte por tiempo, `conTiempoMaximo` y el `query_timeout` de pg disparan en el mismo milisegundo: la causa del 503 es `TiempoAgotado` o `Query read timeout`, según cuál llegue primero. La prueba acepta las dos.
-  - Una sentencia cortada por tiempo sigue corriendo en la base hasta que termina (no hay `statement_timeout` en la base). Una sentencia que espera un bloqueo de fila podría retener los suyos un tiempo más. Queda anotado para T3, que reserva filas de `idempotencias`.
+  - Una sentencia cortada por tiempo seguía corriendo en la base hasta terminar, con sus bloqueos. Lo resolvió la revisión (`004/V`, más abajo).
   - `fn` no debe dejar consultas sin esperar: la conexión vuelve al pool al terminar.
 
 ### T3 — Idempotencia transaccional reutilizable para las altas · commit `004/T3`
@@ -70,3 +70,23 @@ Se escribe al validar la spec.
   - La concurrencia la resuelve la restricción única: la segunda reserva espera a que termine la transacción de la primera. Si la primera confirma, la segunda lee su respuesta; si falla, la segunda hace el alta. Si la primera tarda más de 2 s, la segunda da 503.
   - Los errores no se guardan: un alta que falla (409, 404, 422 de negocio) deshace la reserva y la misma clave puede volver a intentarla.
   - La huella no incluye el sujeto ni la operación, que ya están en la identidad. Si un cuerpo trae un campo `undefined`, `JSON.stringify` lo omite: da lo mismo que no mandarlo.
+
+### V — Correcciones de la revisión independiente de T1 a T3 · commit `004/V`
+- Qué cambió:
+  - [src/bd/pool.ts](../../src/bd/pool.ts), `PoolBd`: le pasa a la base `statement_timeout = tiempoBdMs + 500 ms` (`MARGEN_CORTE_BASE_MS`). La revisión comprobó que una sentencia cortada por M2 seguía viva en la base: la base no lee el cierre de la conexión hasta terminar la sentencia, y mientras tanto conservaba sus bloqueos. Un reintento con la misma clave daba 503 otra vez, y con la base lenta las sesiones se acumulaban. Ahora la base la corta sola medio segundo después. El que responde sigue siendo el corte de M2, así que el `57014` de la base no llega a ninguna respuesta y su clasificación (500, spec 003) no cambia. Vale también para `consultar()`.
+  - [migraciones/1792723535129_perfil-bloqueos.sql](../../migraciones/1792723535129_perfil-bloqueos.sql): `bloqueos_cliente_motivo_levantamiento_no_vacio`, el mismo resguardo que ya tenía `motivo` (el contrato pide `minLength: 1`). Se editó la migración de T1 porque todavía no estaba publicada. Una base local que ya la tenía aplicada hay que rehacerla con `docker compose down -v`.
+  - [src/bd/idempotencia.ts](../../src/bd/idempotencia.ts), `laFila()`: compara `cliente_id` con `IS NULL` o con `=` según el caso. Con `IS NOT DISTINCT FROM`, PostgreSQL no usaba el índice único (lo vio la revisión con `EXPLAIN`). `huella` pasó a ser un objeto (`Record<string, unknown>`): con `undefined`, `JSON.stringify` no da texto y el hash fallaba.
+  - [src/bd/transaccion.ts](../../src/bd/transaccion.ts): el comentario de `deshacer()` decía que la base deshace al perder la sesión, sin aclarar que es recién al terminar la sentencia.
+- Tests:
+  - [pruebas/unitarias/bd.test.ts](../../pruebas/unitarias/bd.test.ts): el pool pide `statement_timeout` de 2000 con 1500 de tiempo de base.
+  - [pruebas/integracion/clientes.test.ts](../../pruebas/integracion/clientes.test.ts):
+    - después del corte, la sesión desaparece de `pg_stat_activity` en menos de un segundo y un alta del mismo perfil sale sin esperar;
+    - la prueba de descarte quedó solo con eso (antes decía «deshecho» y solo miraba que la fila no estuviera confirmada);
+    - las restricciones de `bloqueos_cliente` incluyen la nueva, y un levantamiento con motivo vacío da 23514.
+  - En rojo primero, fallaron las 4. El cambio del índice no tiene prueba propia: con pocas filas, PostgreSQL elige recorrer la tabla igual. Lo cubren las pruebas de idempotencia, que siguen en verde.
+  - `npm test` (2142), lint y build en verde, y tres corridas seguidas de las pruebas de la base sin fallas.
+- Para T5 y T7 (avisos de la revisión, sin verificar):
+  - `clienteId` de la ruta en minúsculas antes de ponerlo en la huella: la columna `uuid` normaliza el valor y la huella no, así que un UUID en mayúsculas daría 422 en lugar de repetir.
+  - `alta` no debe atrapar un error de la base y seguir: sin savepoints, la transacción queda abortada y la sentencia siguiente da `25P02` (500).
+  - Un `COMMIT` cortado por tiempo da 503 aunque la base pueda haber confirmado. Con idempotencia, el reintento devuelve lo guardado. Sin ella (el PATCH de T5), el resultado queda ambiguo.
+  - `idempotencias` guarda el cuerpo de la respuesta, con datos personales, sin vencimiento ni purga. No lo pide TP1: anotarlo para una etapa siguiente.

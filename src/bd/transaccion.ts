@@ -74,7 +74,9 @@ async function conectar(pool: PoolTransaccional): Promise<PoolClient> {
 
 // Deshace la transacción después de `error` y dice si la conexión sigue sirviendo. Con `BaseNoDisponible` no sirve: la base
 // la cortó, o una sentencia cortada por tiempo la sigue ocupando y un ROLLBACK esperaría detrás de ella. Se descarta sin
-// ROLLBACK, y la base deshace la transacción al perder la sesión. Si el ROLLBACK falla, también se descarta.
+// ROLLBACK. La base deshace la transacción al perder la sesión, pero recién cuando termina la sentencia en curso: para eso
+// está su propio corte (statement_timeout, en `PoolBd`), medio segundo después del de M2. Si el ROLLBACK falla, también se
+// descarta.
 async function deshacer(consultar: Consultar, error: unknown): Promise<boolean> {
   if (error instanceof BaseNoDisponible) return false;
   try {
