@@ -37,6 +37,11 @@ const MIGRACION = readdirSync(DIR_MIGRACIONES)
   .filter((archivo) => /^\d+_perfil-bloqueos\.sql$/.test(archivo))
   .map((archivo) => archivo.slice(0, -'.sql'.length));
 
+// Las migraciones que crean tablas con clave foránea a `clientes`: hay que revertirlas antes que esta.
+const DEPENDIENTES = readdirSync(DIR_MIGRACIONES)
+  .filter((archivo) => /^\d+_direcciones\.sql$/.test(archivo))
+  .map((archivo) => archivo.slice(0, -'.sql'.length));
+
 // El valor por defecto de M2_TIEMPO_BD_MS: de sobra para la base del contenedor.
 const TIEMPO_BD_MS = 2000;
 
@@ -287,21 +292,24 @@ describe('la migración perfil-bloqueos se revierte (RNF-05.1)', () => {
     const cliente = new Client({ connectionString: base.urlBd });
     await cliente.connect();
     try {
-      await runner({
-        dbClient: cliente,
-        dir: DIR_MIGRACIONES,
-        migrationsTable: 'migraciones_aplicadas',
-        direction: 'down',
-        file: MIGRACION[0],
-        checkOrder: false,
-        log: () => {},
-      });
+      // Primero las que cuelgan de `clientes` (la 005), como pide el orden inverso; después esta.
+      for (const file of [...DEPENDIENTES, MIGRACION[0]]) {
+        await runner({
+          dbClient: cliente,
+          dir: DIR_MIGRACIONES,
+          migrationsTable: 'migraciones_aplicadas',
+          direction: 'down',
+          file,
+          checkOrder: false,
+          log: () => {},
+        });
+      }
     } finally {
       await cliente.end();
     }
 
     expect((await tablas(base.urlBd)).filter((tabla) => TABLAS.includes(String(tabla)))).toEqual([]);
-    expect(await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS })).toEqual(MIGRACION);
+    expect(await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS })).toEqual([...MIGRACION, ...DEPENDIENTES]);
     expect(await tablas(base.urlBd)).toEqual(expect.arrayContaining(TABLAS));
   });
 });

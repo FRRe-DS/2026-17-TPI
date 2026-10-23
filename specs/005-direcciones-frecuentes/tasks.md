@@ -2,7 +2,7 @@
 
 Depende de: la migración de perfiles (T1 de la spec #4) debe estar mergeada en `main` antes de T1. T5 depende además de la idempotencia y las transacciones de la spec #4 y es delicada: se implementa con Opus.
 
-- [ ] **T1. Crear la migración de direcciones con relación, checks e índices.** RF-2.2, RNF-05
+- [x] **T1. Crear la migración de direcciones con relación, checks e índices.** RF-2.2, RNF-05
   - Hecho cuando: después de mergear la migración de perfiles de la spec #4, una prueba de integración aplica y revierte la migración, verifica la FK y los índices, y la base rechaza texto vacío, tipo inválido o coordenadas incompletas/fuera de rango.
 - [ ] **T2. Implementar el repositorio de alta y consulta por cliente.** RF-2.2, RF-2.2.2, RF-2.2.2.1
   - Hecho cuando: pruebas con PostgreSQL real crean direcciones con y sin datos opcionales, las convierten al esquema del contrato y nunca encuentran una dirección bajo otro cliente.
