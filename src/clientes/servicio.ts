@@ -73,6 +73,16 @@ export function instanteUtc(texto: string): number {
   return instante.getTime() - (signo === '-' ? -desplazamiento : signo === '+' ? desplazamiento : 0);
 }
 
+// Que la fecha de nacimiento enviada, si la hay, se pueda guardar (RF-2.1.4). El formato `date` del contrato admite el año
+// 0000 y PostgreSQL no (sería un 500 con la fecha en el log). Basta mirar el año: el formato ya garantiza AAAA-MM-DD, y del
+// 0001 al 9999 PostgreSQL los acepta todos. Va antes que todo lo demás, como una validación más del contrato. El mensaje
+// no lleva la fecha (RNF-19).
+function exigirFechaGuardable(fechaNacimiento: string | undefined): void {
+  if (fechaNacimiento?.startsWith('0000')) {
+    throw new SolicitudInvalida('La fecha de nacimiento tiene que ser del año 0001 o posterior');
+  }
+}
+
 // `consultar` del pool, para el repositorio: es un método y necesita su `this`.
 const delPool =
   (pool: BaseDeDatos): Consultar =>
@@ -80,7 +90,8 @@ const delPool =
     pool.consultar(sql, parametros);
 
 // Crea el perfil de quien llama (RF-2.1) con la Idempotency-Key `clave` (RNF-08): la respuesta, 201 con Location, o la
-// guardada si la solicitud se repite. 409 si ya tiene perfil (RF-2.1.3) y 422 si la clave se usó con otro cuerpo.
+// guardada si la solicitud se repite. 409 si ya tiene perfil (RF-2.1.3) y 422 si la clave se usó con otro cuerpo. Una
+// fecha de nacimiento que no se puede guardar es un 400 antes de la idempotencia: nunca pudo crearse (RF-2.1.4).
 export async function crearCliente(
   pool: BaseDeDatos,
   identidad: Identidad,
@@ -88,6 +99,7 @@ export async function crearCliente(
   datos: ClienteNuevo,
 ): Promise<RespuestaIdempotente> {
   const clienteId = clienteDelToken(identidad);
+  exigirFechaGuardable(datos.fechaNacimiento);
   const solicitud = { operacion: 'crearCliente', sujeto: clienteId, clienteId: null, clave, huella: { cuerpo: datos } };
   return conIdempotencia(pool, solicitud, async (consultar) => {
     const perfil = await crearPerfil(consultar, clienteId, datos);
@@ -106,7 +118,9 @@ export async function obtenerCliente(
   return obtenerPerfil(delPool(pool), normalizarUuid(clienteId));
 }
 
-// Cambia los campos enviados del perfil de `clienteId` (RF-2.1.2), si quien llama es su dueño. 404 si no existe.
+// Cambia los campos enviados del perfil de `clienteId` (RF-2.1.2), si quien llama es su dueño. 404 si no existe. Una
+// fecha de nacimiento que no se puede guardar es un 400 antes de mirar la propiedad, como las validaciones del contrato
+// (RF-2.1.4).
 export async function actualizarCliente(
   pool: BaseDeDatos,
   identidad: Identidad,
@@ -114,6 +128,7 @@ export async function actualizarCliente(
   clienteId: string,
   cambios: ClienteCambios,
 ): Promise<Cliente> {
+  exigirFechaGuardable(cambios.fechaNacimiento);
   exigirPropietario(identidad, clienteId, rolesOperacion);
   return actualizarPerfil(delPool(pool), normalizarUuid(clienteId), cambios);
 }
