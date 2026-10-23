@@ -1,8 +1,10 @@
+import { getEventListeners } from 'node:events';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import net, { type AddressInfo, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PG_MIGRATE_LOCK_ID } from 'node-pg-migrate';
 import { Client } from 'pg';
 import { afterEach, beforeEach, describe, expect, inject, it, onTestFinished, vi } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
@@ -58,6 +60,17 @@ const sesionesAjenas = async (urlBd: string) =>
       `SELECT count(*)::int AS abiertas FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`,
     )
   )[0]?.abiertas;
+
+// Corta, desde una sesión aparte, las sesiones de la base que cumplen `donde`, como si la base se reiniciara. Devuelve
+// cuántas cortó.
+const cortarSesiones = async (urlBd: string, donde: string) =>
+  (
+    await filas(
+      urlBd,
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+       WHERE datname = current_database() AND pid <> pg_backend_pid() AND ${donde}`,
+    )
+  ).length;
 
 // Escribe una migración con el formato de las de migraciones/. El nombre va sin .sql y empieza con su marca de tiempo.
 function sumarMigracion(carpeta: string, nombre: string, sql: string): void {
@@ -252,6 +265,139 @@ describe('migrar con otra corrida a la vez, errores y plazos (RNF-05.2, RNF-05.3
     await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
 
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// Si la base corta la conexión, pg emite 'error' en el cliente de migrar: sin un oyente, eso tira el proceso, y Vitest lo
+// cuenta como error de la corrida.
+describe('migrar con la base que corta la conexión (RNF-05.3, RNF-14.5)', () => {
+  let base: BaseDePrueba;
+
+  beforeEach(async () => {
+    base = await crearBaseDePrueba();
+  });
+
+  afterEach(async () => {
+    await base.borrar();
+  });
+
+  it('en medio de una migración: falla con el corte y la migración no queda aplicada', async () => {
+    const dir = carpetaDeMigraciones({ '1700000000000_lenta': 'CREATE TABLE a_medias (id int); SELECT pg_sleep(5);' });
+    const corrida = migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS, dir });
+    corrida.catch(() => {});
+
+    // Hasta que migrar no manda la migración, no hay qué cortar.
+    await vi.waitFor(async () => expect(await cortarSesiones(base.urlBd, `query LIKE '%pg_sleep%'`)).toBe(1), {
+      timeout: 3000,
+      interval: 20,
+    });
+
+    // 57P01 (admin_shutdown): la base terminó la sesión.
+    await expect(corrida).rejects.toMatchObject({ code: '57P01' });
+    expect(await tablas(base.urlBd)).toEqual(['migraciones_aplicadas']);
+    expect(await anotadas(base.urlBd)).toEqual([]);
+  });
+
+  it('mientras espera el bloqueo que tiene otra sesión: falla con el corte y no aplica nada', async () => {
+    const otraSesion = new Client({ connectionString: base.urlBd });
+    // Si la prueba falla antes de cerrarla, la base la corta al borrarse: ese error no importa.
+    otraSesion.on('error', () => {});
+    await otraSesion.connect();
+    try {
+      await otraSesion.query(`SELECT pg_advisory_lock(${PG_MIGRATE_LOCK_ID})`);
+      const corrida = migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+      corrida.catch(() => {});
+
+      const esperaUnBloqueo = `pid IN (SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND NOT granted)`;
+      await vi.waitFor(async () => expect(await cortarSesiones(base.urlBd, esperaUnBloqueo)).toBe(1), {
+        timeout: 3000,
+        interval: 20,
+      });
+
+      await expect(corrida).rejects.toMatchObject({ code: '57P01' });
+      expect(await tablas(base.urlBd)).toEqual([]);
+    } finally {
+      await otraSesion.end();
+    }
+  });
+});
+
+// Las consultas con pg_sleep que la base está ejecutando, sin contar la de esta consulta, que también lo nombra.
+const durmiendo = async (urlBd: string) =>
+  (
+    await filas(
+      urlBd,
+      `SELECT count(*)::int AS n FROM pg_stat_activity
+       WHERE datname = current_database() AND pid <> pg_backend_pid() AND state = 'active' AND query LIKE '%pg_sleep%'`,
+    )
+  )[0]?.n;
+
+// La parada que llega durante el arranque (plan, Lógica 12): migrar cierra su cliente sin esperar, como con el plazo.
+describe('migrar con la parada (RNF-04.5)', () => {
+  let base: BaseDePrueba;
+
+  beforeEach(async () => {
+    base = await crearBaseDePrueba();
+  });
+
+  afterEach(async () => {
+    await base.borrar();
+  });
+
+  it('abortada en medio de una migración: falla enseguida y la migración no queda aplicada ni a medias', async () => {
+    // Crea una tabla y después tarda más que lo que se acepta para fallar.
+    const dir = carpetaDeMigraciones({ '1700000000000_lenta': 'CREATE TABLE a_medias (id int); SELECT pg_sleep(2);' });
+    const parada = new AbortController();
+    const corrida = migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS, dir, parada: parada.signal });
+    corrida.catch(() => {});
+    await vi.waitFor(async () => expect(await durmiendo(base.urlBd)).toBe(1), { timeout: 3000, interval: 20 });
+
+    const inicio = performance.now();
+    parada.abort();
+    await expect(corrida).rejects.toThrow('Las migraciones se interrumpieron por la parada');
+
+    expect(performance.now() - inicio).toBeLessThan(MARGEN_MS);
+    // Como con el plazo, la base deshace la migración cuando termina la sentencia y ve que la conexión ya no está.
+    await vi.waitFor(async () => expect(await sesionesAjenas(base.urlBd)).toBe(0), 5000);
+    expect(await tablas(base.urlBd)).toEqual(['migraciones_aplicadas']);
+    expect(await anotadas(base.urlBd)).toEqual([]);
+  }, 10_000);
+
+  it('ya abortada: falla sin conectarse', async () => {
+    const colgada = await baseQueNoResponde();
+    const parada = new AbortController();
+    parada.abort();
+
+    await expect(migrar({ urlBd: colgada.urlBd, tiempoBdMs: TIEMPO_BD_MS, parada: parada.signal })).rejects.toThrow(
+      'Las migraciones se interrumpieron por la parada',
+    );
+
+    expect(colgada.conexiones()).toBe(0);
+  });
+
+  it('abortada mientras se conecta a una base que no contesta: falla enseguida, sin esperar el tiempo de base', async () => {
+    const colgada = await baseQueNoResponde();
+    const parada = new AbortController();
+    const corrida = migrar({ urlBd: colgada.urlBd, tiempoBdMs: 5000, parada: parada.signal });
+    corrida.catch(() => {});
+    await vi.waitFor(() => expect(colgada.conexiones()).toBe(1));
+
+    const inicio = performance.now();
+    parada.abort();
+    await expect(corrida).rejects.toThrow('Las migraciones se interrumpieron por la parada');
+
+    expect(performance.now() - inicio).toBeLessThan(MARGEN_MS);
+  });
+
+  // El oyente de la parada se saca al terminar: la señal es una sola para todo el arranque.
+  it('al terminar, deja la señal sin oyentes, y abortarla después no cambia nada', async () => {
+    const parada = new AbortController();
+
+    expect(await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS, parada: parada.signal })).toEqual(delRepositorio);
+
+    expect(getEventListeners(parada.signal, 'abort')).toEqual([]);
+    parada.abort();
+    expect(await anotadas(base.urlBd)).toEqual(delRepositorio);
   });
 });
 

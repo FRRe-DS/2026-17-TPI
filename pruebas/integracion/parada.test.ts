@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { arrancar, type Salir, type Servicio } from '../../src/arranque.js';
 import type { Entorno } from '../../src/config.js';
 import type { Manejador } from '../../src/contrato/operaciones.js';
+import { manejadores as manejadoresDelServicio } from '../../src/operaciones/index.js';
 import { entorno, escucha, puertoLibre } from '../ayudas/arranque.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs, type LineaDeLog } from '../ayudas/logs.js';
 import { leerRespuesta } from '../ayudas/socket.js';
 
-// El contrato de prueba: probarTarda y probarPublica son públicas, y probarProtegida exige un token.
+// El contrato de prueba: verificarSalud, probarTarda y probarPublica son públicas, y probarProtegida exige un token.
 const CONTRATO_PRUEBA = fileURLToPath(new URL('../ayudas/contrato-prueba.yml', import.meta.url));
 
 // Los textos de las líneas de la parada y el de la línea de cada solicitud que termina.
@@ -160,7 +161,7 @@ async function arrancarParaParar(cambios: Entorno = {}) {
   const servicio = await arrancar(entorno(base.urlBd, puerto, cambios), salir, {
     flujoLog: logs.flujo,
     rutaContrato: CONTRATO_PRUEBA,
-    manejadores: { probarTarda: tarda.manejador, probarPublica: consultaLarga, probarProtegida: bien },
+    manejadores: { ...manejadoresDelServicio, probarTarda: tarda.manejador, probarPublica: consultaLarga, probarProtegida: bien },
   });
   if (servicio === undefined) throw new Error(`el servicio no arrancó:\n${logs.texto()}`);
   andando.push(servicio);
@@ -419,39 +420,67 @@ describe('src/servidor.ts, el punto de entrada: SIGTERM y SIGINT detienen el ser
     vi.resetModules();
   });
 
-  // Ejecuta servidor.ts con un `arrancar` falso que devuelve `servicio`, y devuelve los oyentes que sumó a cada señal. Se
-  // sacan al terminar la prueba.
-  async function ejecutarServidor(servicio: Pick<Servicio, 'detener'> | undefined) {
+  // Ejecuta servidor.ts con un `arrancar` falso que no termina hasta que la prueba llama a `terminarArranque`. Devuelve los
+  // oyentes que sumó a cada señal mientras arranca y la `parada` que le pasó a `arrancar`. Al terminar la prueba, el
+  // arranque termina sin servicio, si no terminó, y los oyentes se sacan.
+  async function ejecutarServidor() {
     vi.resetModules();
-    vi.doMock('../../src/arranque.js', () => ({ arrancar: async () => servicio }));
+    const arranque = Promise.withResolvers<Pick<Servicio, 'detener'> | undefined>();
+    const arrancarFalso = vi.fn<(...argumentos: Parameters<typeof arrancar>) => typeof arranque.promise>(
+      () => arranque.promise,
+    );
+    vi.doMock('../../src/arranque.js', () => ({ arrancar: arrancarFalso }));
     const antes = new Map(SENALES.map((senal) => [senal, process.listeners(senal)]));
-    await import('../../src/servidor.js');
+    // servidor.ts espera a `arrancar` en su nivel superior: el import termina recién cuando termina el arranque.
+    const importado = import('../../src/servidor.js');
+    await vi.waitFor(() => expect(arrancarFalso).toHaveBeenCalledOnce());
     const sumados = new Map(
       SENALES.map((senal) => [senal, process.listeners(senal).filter((oyente) => !antes.get(senal)?.includes(oyente))]),
     );
-    onTestFinished(() => {
+    onTestFinished(async () => {
+      arranque.resolve(undefined);
+      await importado;
       for (const [senal, oyentes] of sumados) for (const oyente of oyentes) process.off(senal, oyente);
     });
-    return sumados;
+    const terminarArranque = async (servicio: Pick<Servicio, 'detener'> | undefined) => {
+      arranque.resolve(servicio);
+      await importado;
+    };
+    return { sumados, parada: arrancarFalso.mock.calls[0]?.[2]?.parada, terminarArranque };
   }
 
-  it.each(SENALES)('%s llama a detener(), y el oyente queda para la señal siguiente', async (senal) => {
-    const detener = vi.fn(async () => {});
-    const sumados = await ejecutarServidor({ detener });
+  it.each(SENALES)(
+    '%s mientras arranca aborta la parada; ya arrancado, llama a detener(), y el oyente queda para la señal siguiente',
+    async (senal) => {
+      const detener = vi.fn(async () => {});
+      const { sumados, parada, terminarArranque } = await ejecutarServidor();
 
-    const [oyente, ...otros] = sumados.get(senal) ?? [];
-    expect(otros).toEqual([]);
-    oyente?.(senal);
+      // Atiende la señal desde antes de que termine el arranque, con un solo oyente.
+      const [oyente, ...otros] = sumados.get(senal) ?? [];
+      expect(oyente).toBeDefined();
+      expect(otros).toEqual([]);
+      expect(parada?.aborted).toBe(false);
+      oyente?.(senal);
+      expect(parada?.aborted).toBe(true);
+
+      await terminarArranque({ detener });
+      expect(detener).not.toHaveBeenCalled();
+      oyente?.(senal);
+      expect(detener).toHaveBeenCalledOnce();
+      // Con `once`, rawListeners tendría el envoltorio y no el oyente: una segunda señal haría lo de siempre en Node, terminar
+      // el proceso sin esperar a la parada.
+      expect(process.rawListeners(senal)).toContain(oyente);
+    },
+  );
+
+  it.each(SENALES)('%s con el servicio ya andando llama a detener() sin abortar la parada', async (senal) => {
+    const detener = vi.fn(async () => {});
+    const { sumados, parada, terminarArranque } = await ejecutarServidor();
+
+    await terminarArranque({ detener });
+    sumados.get(senal)?.[0]?.(senal);
 
     expect(detener).toHaveBeenCalledOnce();
-    // Con `once`, rawListeners tendría el envoltorio y no el oyente: una segunda señal haría lo de siempre en Node, terminar
-    // el proceso sin esperar a la parada.
-    expect(process.rawListeners(senal)).toContain(oyente);
-  });
-
-  it('si no arrancó, no atiende las señales: no hay nada que detener', async () => {
-    const sumados = await ejecutarServidor(undefined);
-
-    expect([...sumados.values()]).toEqual([[], []]);
+    expect(parada?.aborted).toBe(false);
   });
 });

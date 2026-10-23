@@ -13,15 +13,17 @@ import { manejadores as manejadoresDelServicio } from './operaciones/index.js';
 // En todas las interfaces: dentro del contenedor, las solicitudes llegan por la red de docker y no por localhost.
 const HOST = '0.0.0.0';
 
-// El texto de cada línea de un arranque que falla.
+// El texto de cada línea de un arranque que falla, y el de la línea de uno que corta la parada.
 const NO_ARRANCA = 'El servicio no pudo arrancar';
+const INTERRUMPIDO = 'Arranque interrumpido por la parada';
 
 // Los textos de las líneas de la parada.
 const DETENIENDO = 'Deteniendo el servicio';
 const DETENIDO = 'Servicio detenido';
 const NO_SE_DETUVO = 'El servicio no se detuvo en orden';
 
-// El nivel de error de pino, el logger de Fastify.
+// Los niveles de info y de error de pino, el logger de Fastify.
+const NIVEL_INFO = 30;
 const NIVEL_ERROR = 50;
 
 // Lo que la parada espera a las solicitudes en curso antes de cortarlas: deja tiempo para salir antes de los 10 s
@@ -39,6 +41,8 @@ export type OpcionesArranque = {
   // Los manejadores de las operaciones; sin ellos, los del servicio. Solo para las pruebas, que con el contrato de prueba
   // necesitan operaciones que tarden lo que ellas quieran.
   manejadores?: Manejadores;
+  // La señal con la que servidor.ts avisa una señal de parada que llega antes de que el servicio escuche (Lógica 12).
+  parada?: AbortSignal;
 };
 
 export type OpcionesParada = {
@@ -54,22 +58,28 @@ export type Servicio = {
   detener: (opciones?: OpcionesParada) => Promise<void>;
 };
 
-// Una línea de error con el formato de las del logger de la app (pino): nivel, hora en milisegundos, proceso, máquina, los
-// campos y el texto. Es para lo que se registra antes de que exista la app, que es la que tiene el logger.
-function registrarSinApp(campos: object, flujo: Writable = process.stdout): void {
-  const linea = { level: NIVEL_ERROR, time: Date.now(), pid: process.pid, hostname: hostname(), ...campos, msg: NO_ARRANCA };
+// Una línea con el formato de las del logger de la app (pino): nivel, hora en milisegundos, proceso, máquina, los campos y
+// el texto; sin nivel ni texto, es una de «El servicio no pudo arrancar». Es para lo que se registra antes de que exista la
+// app, que es la que tiene el logger.
+function registrarSinApp(
+  campos: object,
+  flujo: Writable = process.stdout,
+  { nivel = NIVEL_ERROR, msg = NO_ARRANCA }: { nivel?: number; msg?: string } = {},
+): void {
+  const linea = { level: nivel, time: Date.now(), pid: process.pid, hostname: hostname(), ...campos, msg };
   flujo.write(`${JSON.stringify(linea)}\n`);
 }
 
 // Arranca el servicio en orden (plan, Lógica 12): lee la configuración y el contrato, arma la app y compila sus esquemas,
 // aplica las migraciones y recién entonces escucha, así que no atiende nada con migraciones pendientes (RNF-05.2). Si algo
 // falla, registra el motivo sin la clave de los tokens ni la contraseña de la base y llama a `salir(1)` (RNF-05.3, RNF-06.2,
-// RNF-19.1): un contrato roto o una base caída no dejan un servicio a medias. Devuelve el servicio andando, o nada si no
-// arrancó.
+// RNF-19.1): un contrato roto o una base caída no dejan un servicio a medias. Si llega la parada antes de escuchar, deja de
+// arrancar y llama a `salir(0)` sin esperar a la base: es una parada pedida, y no hay solicitudes que esperar (RNF-04.5).
+// Devuelve el servicio andando, o nada si no arrancó.
 export async function arrancar(
   env: Entorno,
   salir: Salir,
-  { flujoLog, rutaContrato, manejadores = manejadoresDelServicio }: OpcionesArranque = {},
+  { flujoLog, rutaContrato, manejadores = manejadoresDelServicio, parada }: OpcionesArranque = {},
 ): Promise<Servicio | undefined> {
   const { config, errores } = cargarConfig(env);
   if (errores) {
@@ -90,18 +100,30 @@ export async function arrancar(
     // Compila los esquemas del contrato: uno que no compila falla acá, antes de tocar la base.
     await app.ready();
     log.info(listarOperaciones(contrato, manejadores), 'Operaciones del contrato');
-    await migrar({ urlBd: config.urlBd, tiempoBdMs: config.tiempoBdMs, log: (mensaje) => app.log.info(mensaje) });
+    // Con la parada, migrar deja de esperar a la base y falla: el catch ve la parada y sale con 0.
+    await migrar({ urlBd: config.urlBd, tiempoBdMs: config.tiempoBdMs, log: (mensaje) => app.log.info(mensaje), parada });
+    // La que llega justo cuando terminan las migraciones tampoco llega a escuchar.
+    parada?.throwIfAborted();
     // Fastify escribe una línea por dirección: con 0.0.0.0, una por interfaz de red.
     await app.listen({
       host: HOST,
       port: config.puerto,
       listenTextResolver: (direccion) => `Servicio escuchando en ${direccion}`,
     });
-    let parada: Promise<void> | undefined;
+    let detencion: Promise<void> | undefined;
     const detener = ({ corteMs = CORTE_MS }: OpcionesParada = {}) =>
-      (parada ??= detenerEnOrden(app, pool, salir, corteMs));
+      (detencion ??= detenerEnOrden(app, pool, salir, corteMs));
+    // Si la parada llegó con listen en curso, el servicio ya escucha: la atiende detener(), como si hubiera llegado un
+    // instante después.
+    if (parada?.aborted) void detener();
     return { app, pool, detener };
   } catch (error) {
+    if (parada?.aborted) {
+      if (log) log.info(INTERRUMPIDO);
+      else registrarSinApp({}, flujoLog, { nivel: NIVEL_INFO, msg: INTERRUMPIDO });
+      salir(0);
+      return undefined;
+    }
     if (log) log.error({ err: error }, NO_ARRANCA);
     else registrarSinApp({ err: serializarError(error, secretosDeConfig(config)) }, flujoLog);
     salir(1);

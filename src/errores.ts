@@ -29,6 +29,7 @@ const TITULO_NO_DISPONIBLE = 'Servicio no disponible';
 
 // Un error que ya sabe qué respuesta le corresponde. Sin `type` propio es genérico (`about:blank`); con uno, es un
 // error de negocio que define el contrato. `message` es el `detail`, que se escribe sin datos internos: puede ir al log.
+// `cause`, si la hay, es lo que lo provocó: va al log y nunca a la respuesta.
 export class Problema extends Error {
   readonly codigo: number;
   readonly type: string;
@@ -36,8 +37,8 @@ export class Problema extends Error {
   readonly detail: string;
   readonly encabezados: Readonly<Record<string, string>>;
 
-  constructor({ codigo, type = TIPO_GENERICO, title, detail, encabezados = {} }: DatosProblema) {
-    super(detail);
+  constructor({ codigo, type = TIPO_GENERICO, title, detail, encabezados = {} }: DatosProblema, opciones?: ErrorOptions) {
+    super(detail, opciones);
     this.name = new.target.name;
     this.codigo = codigo;
     this.type = type;
@@ -87,17 +88,19 @@ export class Conflicto extends Problema {
   }
 }
 
-// Del cliente de módulos, una vez agotados los intentos (RNF-13.3). `modulo` es cómo se lo nombra, por ejemplo «M6».
+// Del cliente de módulos, una vez agotados los intentos (RNF-13.3). `modulo` es cómo se lo nombra, por ejemplo «M6», y la
+// `cause`, lo que falló en el último intento: la registra el manejador de errores (RNF-14.8).
 export class ModuloNoDisponible extends Problema {
-  constructor(modulo: string) {
-    super({ codigo: 503, title: TITULO_NO_DISPONIBLE, detail: `${modulo} no está disponible` });
+  constructor(modulo: string, opciones?: ErrorOptions) {
+    super({ codigo: 503, title: TITULO_NO_DISPONIBLE, detail: `${modulo} no está disponible` }, opciones);
   }
 }
 
-// De `consultar()`, cuando la base no responde a tiempo o no se puede conectar.
+// De `consultar()`, cuando la base no responde a tiempo o no se puede conectar. La `cause` es el error de pg o el corte de
+// `conTiempoMaximo`: la registra el manejador de errores (RNF-14.8).
 export class BaseNoDisponible extends Problema {
-  constructor() {
-    super({ codigo: 503, title: TITULO_NO_DISPONIBLE, detail: 'La base de datos no está disponible' });
+  constructor(opciones?: ErrorOptions) {
+    super({ codigo: 503, title: TITULO_NO_DISPONIBLE, detail: 'La base de datos no está disponible' }, opciones);
   }
 }
 

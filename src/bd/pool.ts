@@ -24,8 +24,8 @@ const CODIGOS_SIN_BASE: ReadonlySet<string> = new Set([
 // busca el comienzo y no cualquier parte del texto, para que un mensaje ajeno que los mencione no pase por una falta de base.
 const MENSAJES_SIN_BASE = ['timeout exceeded when trying to connect', 'Query read timeout', 'Connection terminated'];
 
-// Quien registra los errores del pool y de `consultar()` que no se devuelven como respuesta: recibe el error y un texto que
-// dice dónde ocurrió. La app lo conecta a su logger; sin él, no se escribe nada (la salida estándar solo lleva logs en
+// Quien registra los errores del pool que no llegan a ninguna solicitud, los de una conexión inactiva: recibe el error y un
+// texto que dice dónde ocurrió. La app lo conecta a su logger; sin él, no se escribe nada (la salida estándar solo lleva logs en
 // JSON, RNF-14.5). Un error tiene que registrarse con el serializador del logger, que le saca los secretos (RNF-19.1).
 export type RegistrarError = (error: unknown, mensaje: string) => void;
 
@@ -54,16 +54,19 @@ export async function conTiempoMaximo<T>(promesa: Promise<T>, ms: number): Promi
 }
 
 // Qué le corresponde a un error de la base: el `Conflicto` del 409 (RNF-08.1) o `BaseNoDisponible`, el del 503
-// (RNF-14.2). Cualquier otro devuelve `undefined`: queda como está para que el manejador de errores lo responda con un 500 y
-// lo registre entero (RNF-03.3). Los errores nuevos no llevan ni la restricción ni la consulta, que sí tiene el original.
+// (RNF-14.2), con el error original en `cause` para que el manejador de errores lo registre (RNF-14.8). Cualquier otro
+// devuelve `undefined`: queda como está para que el manejador de errores lo responda con un 500 y lo registre entero
+// (RNF-03.3). La respuesta no lleva ni la restricción ni la consulta, que sí tiene el original.
 export function clasificarError(error: unknown): Conflicto | BaseNoDisponible | undefined {
   if (!(error instanceof Error)) return undefined;
-  if (error instanceof TiempoAgotado) return new BaseNoDisponible();
+  if (error instanceof TiempoAgotado) return new BaseNoDisponible({ cause: error });
   // En un error de pg, `code` es el SQLSTATE si lo contestó la base, y el código de Node si falló el socket.
   const { code } = error as { code?: unknown };
   if (code === UNIQUE_VIOLATION) return new Conflicto();
-  if (typeof code === 'string' && (CODIGOS_SIN_BASE.has(code) || code.startsWith('08'))) return new BaseNoDisponible();
-  if (MENSAJES_SIN_BASE.some((texto) => error.message.startsWith(texto))) return new BaseNoDisponible();
+  if (typeof code === 'string' && (CODIGOS_SIN_BASE.has(code) || code.startsWith('08'))) {
+    return new BaseNoDisponible({ cause: error });
+  }
+  if (MENSAJES_SIN_BASE.some((texto) => error.message.startsWith(texto))) return new BaseNoDisponible({ cause: error });
   return undefined;
 }
 
@@ -71,22 +74,20 @@ export function clasificarError(error: unknown): Conflicto | BaseNoDisponible | 
 // `consultar()`, no por `query()`, que no corta a tiempo ni traduce los errores.
 export class PoolBd extends Pool {
   readonly #tiempoBdMs: number;
-  readonly #registrar: RegistrarError;
 
   constructor({ urlBd, tiempoBdMs }: Pick<Config, 'urlBd' | 'tiempoBdMs'>, registrar: RegistrarError = () => {}) {
     // Sin connectionTimeoutMillis, pg espera para siempre una conexión a una base colgada; sin query_timeout, una consulta
     // cortada por `consultar()` seguiría ocupando su conexión hasta que la base termine, y el pool se quedaría sin ellas.
     super({ connectionString: urlBd, max: CONEXIONES_MAXIMAS, connectionTimeoutMillis: tiempoBdMs, query_timeout: tiempoBdMs });
     this.#tiempoBdMs = tiempoBdMs;
-    this.#registrar = registrar;
     // Una conexión inactiva que la base corta (un reinicio, un apagado) emite 'error' en el pool, y sin oyente tira el
     // proceso. El pool descarta esa conexión y abre otra cuando haga falta.
     this.on('error', (error) => registrar(error, 'Falló una conexión inactiva del pool de la base de datos'));
   }
 
   // Ejecuta una consulta con parámetros ($1, $2, …) sin esperar más del tiempo de base (RNF-14.2). Si choca con una restricción
-  // única lanza `Conflicto`, y si la base no está o no contesta, `BaseNoDisponible` después de registrar la causa: el
-  // manejador de errores no registra los 503. Cualquier otro error sale como llegó.
+  // única lanza `Conflicto`, y si la base no está o no contesta, `BaseNoDisponible` con la causa: no la registra acá, porque
+  // no conoce la solicitud; la registra el manejador de errores, con su id (RNF-14.8). Cualquier otro error sale como llegó.
   async consultar<Fila extends QueryResultRow = QueryResultRow>(
     sql: string,
     parametros?: unknown[],
@@ -94,10 +95,7 @@ export class PoolBd extends Pool {
     try {
       return await conTiempoMaximo(this.query<Fila>(sql, parametros), this.#tiempoBdMs);
     } catch (error) {
-      const problema = clasificarError(error);
-      if (problema === undefined) throw error;
-      if (problema instanceof BaseNoDisponible) this.#registrar(error, 'La base de datos no está disponible');
-      throw problema;
+      throw clasificarError(error) ?? error;
     }
   }
 }

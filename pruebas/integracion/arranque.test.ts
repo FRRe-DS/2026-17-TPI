@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import net, { type AddressInfo } from 'node:net';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { PG_MIGRATE_LOCK_ID } from 'node-pg-migrate';
 import { Client } from 'pg';
@@ -22,6 +23,15 @@ import { CONFIG_TOKENS } from '../ayudas/tokens.js';
 const NO_ARRANCA = 'El servicio no pudo arrancar';
 const OPERACIONES = 'Operaciones del contrato';
 const ESCUCHANDO = 'Servicio escuchando en ';
+const INTERRUMPIDO = 'Arranque interrumpido por la parada';
+const DETENIENDO = 'Deteniendo el servicio';
+const DETENIDO = 'Servicio detenido';
+
+// Las señales de parada que atiende servidor.ts.
+const SENALES = ['SIGTERM', 'SIGINT'] as const;
+
+// Lo que se acepta por encima de un tiempo esperado: la máquina de CI puede ir lenta.
+const MARGEN_MS = 1000;
 
 // Los niveles de pino.
 const INFO = 30;
@@ -99,6 +109,28 @@ const esperanUnBloqueo = async (urlBd: string) =>
     )
   )[0]?.n;
 
+// Corta, desde una sesión aparte, las sesiones de la base que esperan un bloqueo consultivo, como si la base se
+// reiniciara. Devuelve cuántas cortó.
+const cortarLasQueEsperan = async (urlBd: string) =>
+  (
+    await filas(
+      urlBd,
+      `SELECT pg_terminate_backend(pid) FROM pg_locks
+       WHERE locktype = 'advisory' AND NOT granted
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+    )
+  ).length;
+
+// Las sesiones abiertas en la base, sin contar la de esta consulta ni la de `pid`.
+const otrasSesiones = async (urlBd: string, pid: number) =>
+  (
+    await filas(
+      urlBd,
+      `SELECT count(*)::int AS n FROM pg_stat_activity
+       WHERE datname = current_database() AND pid <> pg_backend_pid() AND pid <> ${pid}`,
+    )
+  )[0]?.n;
+
 const errores = (lineas: LineaDeLog[]) => lineas.filter((linea) => linea.level === ERROR);
 
 let base: BaseDePrueba;
@@ -120,10 +152,10 @@ afterEach(async () => {
 });
 
 // Arranca con un `salir` de prueba y el log capturado. El servicio que arranca se cierra al terminar la prueba.
-function arrancarParaProbar(env: Entorno, rutaContrato?: string) {
+function arrancarParaProbar(env: Entorno, rutaContrato?: string, parada?: AbortSignal) {
   const salir = vi.fn();
   const logs = capturarLogs();
-  const arranque = arrancar(env, salir, { flujoLog: logs.flujo, rutaContrato }).then((servicio) => {
+  const arranque = arrancar(env, salir, { flujoLog: logs.flujo, rutaContrato, parada }).then((servicio) => {
     if (servicio) andando.push(servicio);
     return servicio;
   });
@@ -285,6 +317,36 @@ describe('arrancar con la base o el puerto que no sirven (RNF-05.3, RNF-19.1)', 
     expect(logs.texto()).not.toContain(CONFIG_TOKENS.claveTokens);
     expect(await anotadas(base.urlBd)).toEqual(delRepositorio);
   });
+
+  // Si la base corta la conexión de las migraciones, pg emite 'error' en su cliente: sin un oyente, el proceso se cae con
+  // una traza en la salida de errores y sin esta línea, y Vitest lo cuenta como error de la corrida.
+  it('la base corta la conexión mientras espera el bloqueo: salir(1) con 57P01 en JSON y sin la contraseña', async () => {
+    const otroProceso = new Client({ connectionString: base.urlBd });
+    // Si la prueba falla antes de cerrarla, la base la corta al borrarse: ese error no importa.
+    otroProceso.on('error', () => {});
+    await otroProceso.connect();
+    try {
+      await otroProceso.query(`SELECT pg_advisory_lock(${PG_MIGRATE_LOCK_ID})`);
+      const puerto = await puertoLibre();
+      const { salir, logs, arranque } = arrancarParaProbar(entorno(base.urlBd, puerto));
+
+      await vi.waitFor(async () => expect(await cortarLasQueEsperan(base.urlBd)).toBe(1), {
+        timeout: 3000,
+        interval: 20,
+      });
+
+      expect(await arranque).toBeUndefined();
+      expect(salir.mock.calls).toEqual([[1]]);
+      expect(errores(logs.lineas())).toEqual([
+        expect.objectContaining({ msg: NO_ARRANCA, err: expect.objectContaining({ codigo: '57P01' }) }),
+      ]);
+      // La URL lleva la contraseña buena, la del contenedor (RNF-19.1).
+      expect(logs.texto()).not.toContain(new URL(base.urlBd).password);
+      expect(await escucha(puerto)).toBe(false);
+    } finally {
+      await otroProceso.end();
+    }
+  }, 10_000);
 });
 
 describe('arranque normal (RNF-05.2)', () => {
@@ -379,7 +441,7 @@ describe('arranque normal (RNF-05.2)', () => {
     });
   });
 
-  it('con el servicio andando, la causa de una falta de base queda en el log de la app (RNF-14.2)', async () => {
+  it('con el servicio andando, la causa de una falta de base queda en el log, con el id de la solicitud (RNF-14.8)', async () => {
     const proxy = await crearProxy(base.urlBd);
     onTestFinished(() => proxy.terminar());
     const puerto = await puertoLibre();
@@ -393,14 +455,123 @@ describe('arranque normal (RNF-05.2)', () => {
     expect(errores(logs.lineas())).toEqual([
       expect.objectContaining({
         msg: 'La base de datos no está disponible',
-        err: expect.objectContaining({ codigo: 'ECONNREFUSED' }),
+        idCorrelacion: respuesta.headers.get('x-request-id'),
+        err: expect.objectContaining({ causa: expect.objectContaining({ codigo: 'ECONNREFUSED' }) }),
       }),
     ]);
   });
 });
 
+// La señal de parada llega antes de que el servicio escuche: servidor.ts aborta la `parada` (plan, Lógica 12).
+describe('arrancar con la parada durante el arranque (RNF-04.5)', () => {
+  it(
+    'abortada mientras espera el bloqueo de las migraciones: salir(0) enseguida con su línea, sin escuchar y sin migrar',
+    async () => {
+      const otroProceso = new Client({ connectionString: base.urlBd });
+      // Si la prueba falla antes de cerrarla, la base la corta al borrarse: ese error no importa.
+      otroProceso.on('error', () => {});
+      await otroProceso.connect();
+      try {
+        await otroProceso.query(`SELECT pg_advisory_lock(${PG_MIGRATE_LOCK_ID})`);
+        const [{ pid: suPid }] = (await otroProceso.query('SELECT pg_backend_pid() AS pid')).rows;
+        const puerto = await puertoLibre();
+        const parada = new AbortController();
+        const { salir, logs, arranque } = arrancarParaProbar(entorno(base.urlBd, puerto), undefined, parada.signal);
+        await vi.waitFor(async () => expect(await esperanUnBloqueo(base.urlBd)).toBe(1), { timeout: 3000, interval: 20 });
+
+        const inicio = performance.now();
+        parada.abort();
+        expect(await arranque).toBeUndefined();
+
+        expect(performance.now() - inicio).toBeLessThan(MARGEN_MS);
+        expect(salir.mock.calls).toEqual([[0]]);
+        const lineas = logs.lineas();
+        expect(lineas.filter(({ msg }) => msg === INTERRUMPIDO)).toEqual([expect.objectContaining({ level: INFO })]);
+        expect(errores(lineas)).toEqual([]);
+        expect(logs.texto()).not.toContain(ESCUCHANDO);
+        expect(await escucha(puerto)).toBe(false);
+
+        // La sesión de migrar sigue esperando en la base hasta que obtiene el bloqueo: recién ahí ve que el cliente se fue.
+        await otroProceso.query(`SELECT pg_advisory_unlock(${PG_MIGRATE_LOCK_ID})`);
+        await vi.waitFor(async () => expect(await otrasSesiones(base.urlBd, suPid)).toBe(0), 5000);
+        expect(await tablas(base.urlBd)).toEqual([]);
+        expect(await escucha(puerto)).toBe(false);
+      } finally {
+        await otroProceso.end();
+      }
+    },
+    10_000,
+  );
+
+  // Fastify escribe «Servicio escuchando en …» dentro de listen, antes de terminar: ahí llega la parada.
+  it('abortada mientras termina listen: la atiende detener(), que deja de escuchar y sale con 0', async () => {
+    const puerto = await puertoLibre();
+    const parada = new AbortController();
+    const salir = vi.fn();
+    const logs = capturarLogs();
+    const flujoLog = new Writable({
+      decodeStrings: false,
+      write(parte: string, _codificacion, listo) {
+        if (parte.includes(ESCUCHANDO)) parada.abort();
+        logs.flujo.write(parte, listo);
+      },
+    });
+
+    const servicio = await arrancar(entorno(base.urlBd, puerto), salir, { flujoLog, parada: parada.signal });
+    // No va a `andando`, cuyo afterEach cerraría el pool otra vez. Si la prueba falla antes de que la parada cierre todo,
+    // esto lo cierra: detener() devuelve la parada en curso o, si no hubo, la hace.
+    onTestFinished(() => servicio?.detener({ corteMs: 100 }));
+
+    // Sin que la prueba llame a detener(): la parada ya estaba en curso.
+    expect(servicio).toBeDefined();
+    await vi.waitFor(() => expect(salir.mock.calls).toEqual([[0]]));
+    expect(servicio?.pool.ended).toBe(true);
+    expect(await escucha(puerto)).toBe(false);
+    const mensajes = logs.lineas().map(({ msg }) => msg);
+    expect(mensajes.filter((msg) => msg === DETENIENDO || msg === DETENIDO)).toEqual([DETENIENDO, DETENIDO]);
+    expect(mensajes).not.toContain(INTERRUMPIDO);
+    expect(errores(logs.lineas())).toEqual([]);
+    expect(await anotadas(base.urlBd)).toEqual(delRepositorio);
+  });
+
+  it('abortada antes de llamar a arrancar: salir(0) sin migrar y sin escuchar', async () => {
+    const puerto = await puertoLibre();
+    const parada = new AbortController();
+    parada.abort();
+    const { salir, logs, arranque } = arrancarParaProbar(entorno(base.urlBd, puerto), undefined, parada.signal);
+
+    expect(await arranque).toBeUndefined();
+    expect(salir.mock.calls).toEqual([[0]]);
+    expect(logs.lineas().filter(({ msg }) => msg === INTERRUMPIDO)).toHaveLength(1);
+    expect(await tablas(base.urlBd)).toEqual([]);
+    expect(await escucha(puerto)).toBe(false);
+  });
+
+  // Una configuración inválida es una falla, haya o no una parada: no hay nada que interrumpir.
+  it('sin una configuración válida, sale con 1 aunque la parada esté abortada', async () => {
+    const parada = new AbortController();
+    parada.abort();
+    const { salir, arranque } = arrancarParaProbar(
+      entorno(URL_SIN_BASE, await puertoLibre(), { M2_URL_BD: undefined }),
+      undefined,
+      parada.signal,
+    );
+
+    await arranque;
+    expect(salir.mock.calls).toEqual([[1]]);
+  });
+});
+
 describe('src/servidor.ts, el punto de entrada (RNF-14.5)', () => {
   it('lee process.env y, si no puede arrancar, sale con process.exit(1) y escribe en la salida estándar', async () => {
+    // servidor.ts suma sus oyentes de SIGTERM y SIGINT antes de arrancar: se sacan al terminar, para que no queden en el
+    // proceso de las pruebas.
+    const antes = new Map(SENALES.map((senal) => [senal, process.listeners(senal)]));
+    onTestFinished(() => {
+      for (const senal of SENALES) {
+        for (const oyente of process.listeners(senal)) if (!antes.get(senal)?.includes(oyente)) process.off(senal, oyente);
+      }
+    });
     // Todas vacías, que cuenta como no definidas, salvo el emisor: el proceso puede traer otras de la máquina.
     for (const variable of Object.keys(entorno('', 0)).concat(VARIABLES_OPCIONALES)) vi.stubEnv(variable, '');
     vi.stubEnv('M2_EMISOR_TOKENS', CONFIG_TOKENS.emisorTokens);

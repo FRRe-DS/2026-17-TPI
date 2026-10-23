@@ -5,12 +5,13 @@ import { cargarContrato } from '../../src/contrato/cargar.js';
 import type { Manejador } from '../../src/contrato/operaciones.js';
 import { BaseNoDisponible } from '../../src/errores.js';
 import { manejadores } from '../../src/operaciones/index.js';
-import { contratoCon, crearApp } from '../ayudas/app.js';
+import { contratoCon, contratoDePrueba, crearApp } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs } from '../ayudas/logs.js';
 import { crearProxy, type ProxyDeBase } from '../ayudas/proxy.js';
 import { AUTORIZADO, bearer } from '../ayudas/tokens.js';
 
+const contratoDelRepositorio = cargarContrato();
 const contratoSalud = cargarContrato(fileURLToPath(new URL('../ayudas/contrato-salud.yml', import.meta.url)));
 
 const PROBLEMA_JSON = /^application\/problem\+json/;
@@ -29,11 +30,11 @@ const AUTORIZACIONES: [string, Record<string, string>][] = [
   ['un Authorization vacío', { authorization: '' }],
 ];
 
-// Las dos maneras en que el servicio registra GET /health (ADR de la base): a mano, mientras el contrato no la tenga, y desde
-// el contrato, cuando la tiene. Los manejadores son los del servicio en las dos.
-const REGISTROS = [
-  ['a mano (el contrato no la tiene)', undefined],
-  ['desde el contrato (contrato-salud.yml)', contratoSalud],
+// Los contratos que declaran GET /health como verificarSalud: el del repositorio, que es el que lee el servicio, y el de
+// prueba, con el que se arma la misma app. Los manejadores son los del servicio en los dos.
+const CONTRATOS_CON_SALUD = [
+  ['el contrato del repositorio', contratoDelRepositorio],
+  ['el contrato de prueba', contratoDePrueba],
 ] as const;
 
 describe('GET /health con la base arriba (RNF-14.1, RNF-03.4)', () => {
@@ -51,7 +52,7 @@ describe('GET /health con la base arriba (RNF-14.1, RNF-03.4)', () => {
     await base.borrar();
   });
 
-  describe.each(REGISTROS)('registrada %s', (_registro, contrato) => {
+  describe.each(CONTRATOS_CON_SALUD)('con %s', (_contrato, contrato) => {
     const crear = () => crearApp(manejadores, { contrato, pool });
     const salud = (headers: Record<string, string> = {}) => crear().inject({ method: 'GET', url: '/health', headers });
 
@@ -134,12 +135,40 @@ describe('GET /health con la base arriba (RNF-14.1, RNF-03.4)', () => {
   });
 });
 
-// Qué manejador atiende GET /health se ve en lo que contesta: el de verificarSalud que le pasen, si el contrato la trae y
-// tiene manejador (RNF-03.4), o el propio del servicio, si no.
-describe('GET /health: desde el contrato o a mano (RNF-03.4, ADR de la base)', () => {
+// GET /health sale solo del contrato (RNF-03.4, ADR de la base): la atiende el manejador de verificarSalud que le pasen, si el
+// contrato la declara, y si no, no existe. Qué manejador la atiende se ve en lo que contesta.
+describe('GET /health: sale solo del contrato (RNF-03.4, ADR de la base)', () => {
   const sano = { consultar: async () => ({}) as never };
   const propio: Manejador = async () => ({ estado: 'ok', atendidoPor: 'el manejador del contrato' });
-  const pedir = (app: ReturnType<typeof crearApp>) => app.inject({ method: 'GET', url: '/health' });
+  const pedir = (app: ReturnType<typeof crearApp>, method: 'GET' | 'POST' = 'GET') =>
+    app.inject({ method, url: '/health' });
+
+  it('con el contrato del repositorio, responde 200 sin token', async () => {
+    const respuesta = await pedir(crearApp(manejadores, { contrato: contratoDelRepositorio, pool: sano }));
+
+    expect(respuesta.statusCode).toBe(200);
+    expect(respuesta.json()).toEqual({ estado: 'ok' });
+  });
+
+  it('con un contrato sin /health, da 404 en problem+json, aunque haya un manejador de verificarSalud', async () => {
+    const contrato = contratoCon({
+      '/otra': { get: { operationId: 'otra', security: [], responses: { '200': { description: 'Bien' } } } },
+    });
+
+    const respuesta = await pedir(crearApp({ ...manejadores, otra: propio }, { contrato, pool: sano }));
+
+    expect(respuesta.statusCode).toBe(404);
+    expect(respuesta.headers['content-type']).toMatch(PROBLEMA_JSON);
+    expect(respuesta.json()).toMatchObject({ status: 404, title: 'No encontrado', instance: '/health' });
+  });
+
+  it('con un contrato que no tiene paths, como uno con solo info, también da 404', async () => {
+    const soloInfo = { openapi: '3.1.0', info: { title: 'Solo info', version: '0.0.0' } };
+
+    const respuesta = await pedir(crearApp(manejadores, { contrato: soloInfo, pool: sano }));
+
+    expect(respuesta.statusCode).toBe(404);
+  });
 
   it('con /health en el contrato y un manejador de verificarSalud, la atiende ese manejador', async () => {
     const respuesta = await pedir(crearApp({ verificarSalud: propio }, { contrato: contratoSalud, pool: sano }));
@@ -157,44 +186,38 @@ describe('GET /health: desde el contrato o a mano (RNF-03.4, ADR de la base)', (
     expect(respuesta.json()).toEqual({ estado: 'ok', atendidoPor: 'el manejador del contrato' });
   });
 
-  it('con /health en el contrato y sin manejador, la registra a mano: la operación del contrato queda pendiente', async () => {
+  it('con /health en el contrato y sin manejador, la operación queda pendiente: da 404', async () => {
     const respuesta = await pedir(crearApp({}, { contrato: contratoSalud, pool: sano }));
 
-    expect(respuesta.statusCode).toBe(200);
-    expect(respuesta.json()).toEqual({ estado: 'ok' });
+    expect(respuesta.statusCode).toBe(404);
   });
 
-  it('sin /health en el contrato, la registra a mano y la atiende el servicio, aunque haya otro verificarSalud', async () => {
-    const respuesta = await pedir(crearApp({ verificarSalud: propio }, { pool: sano }));
-
-    expect(respuesta.json()).toEqual({ estado: 'ok' });
-  });
-
-  // Lo que cuenta es el método y la ruta de la operación implementada: otro método en /health no alcanza.
-  it('con otro método en /health en el contrato y sin GET, GET /health se registra a mano', async () => {
+  // Lo que cuenta es el método y la ruta de la operación: otro método en /health no la crea.
+  it('con otro método en /health en el contrato y sin GET, GET /health da 405 con Allow: POST', async () => {
     const contrato = contratoCon({
       '/health': { post: { operationId: 'otraCosa', security: [], responses: { '200': { description: 'Bien' } } } },
     });
-    const app = crearApp({ otraCosa: propio }, { contrato, pool: sano });
+    const app = crearApp({ ...manejadores, otraCosa: propio }, { contrato, pool: sano });
 
-    expect((await pedir(app)).json()).toEqual({ estado: 'ok' });
-    expect((await app.inject({ method: 'POST', url: '/health' })).json()).toEqual({
-      estado: 'ok',
-      atendidoPor: 'el manejador del contrato',
-    });
+    const get = await pedir(app);
+    const post = await pedir(app, 'POST');
+
+    expect(get.statusCode).toBe(405);
+    expect(get.headers.allow).toBe('POST');
+    expect(post.json()).toEqual({ estado: 'ok', atendidoPor: 'el manejador del contrato' });
   });
 
-  it('el servicio trae el manejador de verificarSalud, la operación del borrador del contrato v1', () => {
+  it('el servicio trae el manejador de verificarSalud, la operación del contrato v1', () => {
     expect(Object.keys(manejadores)).toEqual(['verificarSalud']);
   });
 
-  it('un contrato con otra operación en otra ruta no cambia nada: /health sigue a mano', async () => {
+  it('verificarSalud en otra ruta del contrato no crea /health: la otra ruta la atiende y /health da 404', async () => {
     const contrato = contratoCon({
       '/otra': { get: { operationId: 'verificarSalud', security: [], responses: { '200': { description: 'Bien' } } } },
     });
     const app = crearApp({ verificarSalud: propio }, { contrato, pool: sano });
 
-    expect((await pedir(app)).json()).toEqual({ estado: 'ok' });
+    expect((await pedir(app)).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/otra' })).json()).toEqual({
       estado: 'ok',
       atendidoPor: 'el manejador del contrato',
@@ -253,7 +276,7 @@ describe('GET /health y una operación con la base caída y el servicio andando 
   // un servicio que ya estaba andando: el pool queda con una conexión abierta a la base, que se cuelga o se cae con ella.
   async function andando() {
     const logs = capturarLogs();
-    const app = crearApp({ probarPublica: consultaLaBase }, { pool, flujoLog: logs.flujo });
+    const app = crearApp({ ...manejadores, probarPublica: consultaLaBase }, { pool, flujoLog: logs.flujo });
     const pedir = async (url: string) => {
       const desde = performance.now();
       const respuesta = await app.inject({ method: 'GET', url });
@@ -265,6 +288,23 @@ describe('GET /health y una operación con la base caída y el servicio andando 
   }
 
   type Pedido = Awaited<ReturnType<Awaited<ReturnType<typeof andando>>['pedir']>>;
+
+  // Las líneas de error del log: desde T41, una por cada 503 por la base, con el id de su solicitud y la causa (RNF-14.8).
+  const lineasDeError = (logs: ReturnType<typeof capturarLogs>) => logs.lineas().filter((linea) => linea.level >= 50);
+
+  // Que cada pedido dejó exactamente una línea «La base de datos no está disponible» con su id y una causa, y nada más.
+  function unaLineaPorPedido(logs: ReturnType<typeof capturarLogs>, pedidos: Pedido[], causa: object = {}) {
+    const lineas = lineasDeError(logs);
+    expect(lineas).toHaveLength(pedidos.length);
+    for (const { respuesta } of pedidos) {
+      expect(lineas.filter((linea) => linea.idCorrelacion === respuesta.headers['x-request-id'])).toEqual([
+        expect.objectContaining({
+          msg: 'La base de datos no está disponible',
+          err: expect.objectContaining({ tipo: 'BaseNoDisponible', causa: expect.objectContaining(causa) }),
+        }),
+      ]);
+    }
+  }
 
   function esBaseNoDisponible({ respuesta }: Pedido, url: string) {
     expect(respuesta.statusCode).toBe(503);
@@ -295,9 +335,12 @@ describe('GET /health y una operación con la base caída y el servicio andando 
           expect(pedido.duracion).toBeGreaterThanOrEqual(TIEMPO_BD_MS - TOLERANCIA_MS);
           expect(pedido.duracion).toBeLessThan(TIEMPO_BD_MS + MARGEN_MS);
         }
-        // Una causa registrada por cada solicitud, y ninguna como error interno: un 503 es una respuesta prevista.
-        expect(registros).toHaveLength(2);
-        expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([]);
+        // Una línea por solicitud, con su id y la causa (RNF-14.8), y ninguna como error interno. El pool ya no registra
+        // nada: la causa va en el error.
+        unaLineaPorPedido(logs, pedidos, { mensaje: expect.any(String) });
+        expect(logs.texto()).not.toContain('Error interno');
+        expect(logs.texto()).not.toContain(new URL(base.urlBd).password);
+        expect(registros).toEqual([]);
       },
       LIMITE_PRUEBA_MS,
     );
@@ -372,12 +415,16 @@ describe('GET /health y una operación con la base caída y el servicio andando 
       const { logs, pedir } = await andando();
       await proxy.cerrar();
 
+      const pedidos: Pedido[] = [];
       for (const url of RUTAS) {
         const pedido = await pedir(url);
         esBaseNoDisponible(pedido, url);
         expect(pedido.duracion).toBeLessThan(TIEMPO_BD_MS);
+        pedidos.push(pedido);
       }
-      expect(logs.lineas().filter((linea) => linea.level >= 50)).toEqual([]);
+      // La causa depende de la conexión: «Connection terminated» si la solicitud tomó la que el pool tenía y se cortó, o
+      // ECONNREFUSED si abrió una nueva.
+      unaLineaPorPedido(logs, pedidos, { mensaje: expect.any(String) });
     });
 
     it('cuando la base vuelve, las dos responden 200 sin reiniciar la app', async () => {

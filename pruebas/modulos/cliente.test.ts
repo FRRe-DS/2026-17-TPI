@@ -140,6 +140,63 @@ describe('crearClienteModulo', () => {
     });
   });
 
+  // La causa la registra el manejador de errores con el id de la solicitud (RNF-14.8; plan, Integraciones).
+  describe('ModuloNoDisponible lleva en cause lo que falló en el último intento', () => {
+    const causaDe = async (promesa: Promise<unknown>) => {
+      const error = await promesa.catch((motivo: unknown) => motivo);
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      return (error as Error).cause;
+    };
+
+    it.each([
+      [
+        'un 5xx: el código, sin el cuerpo',
+        { tipo: '5xx', estado: 502, cuerpo: { secreto: 'del-cuerpo' } },
+        { message: 'M6 respondió 502' },
+      ],
+      ['un corte de la conexión: el error de fetch', { tipo: 'corta' }, { name: 'TypeError', message: 'fetch failed' }],
+      // El SyntaxError de JSON.parse copia un pedazo del texto en su mensaje: la causa no puede ser ese error.
+      [
+        'un cuerpo que no es JSON: el código, sin el cuerpo',
+        { tipo: 'no-json', contenido: '<html><body>del-cuerpo, Av. Siempre Viva 742</body></html>' },
+        { message: 'M6 respondió 200 con un cuerpo que no es JSON' },
+      ],
+      ['un corte por tiempo: el del plazo', { tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4 }, { name: 'TimeoutError' }],
+    ] as const)('%s', async (_caso, falla, causa) => {
+      serv.responderCon(falla);
+
+      const error = await causaDe(clienteDe(serv.url, 0, TIEMPO_MS).obtener('/', 'id'));
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error).toMatchObject(causa);
+      // La causa va al log (RNF-14.8), y el log no lleva cuerpos (RNF-19.2): ni en el mensaje ni en la traza.
+      expect(String((error as Error).message)).not.toContain('del-cuerpo');
+      expect(String((error as Error).stack)).not.toContain('del-cuerpo');
+    });
+
+    it('con un reintento, es la del segundo intento y no la del primero', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 500 }, { tipo: '5xx', estado: 503 }]);
+
+      expect(await causaDe(clienteDe(serv.url, 1, TIEMPO_MS).obtener('/', 'id'))).toMatchObject({
+        message: 'M6 respondió 503',
+      });
+    });
+
+    it('ante una conexión rechazada, el error de fetch con el ECONNREFUSED en su causa', async () => {
+      const error = await causaDe(clienteDe(await urlSinServidor(), 0).obtener('/', 'id'));
+
+      expect(error).toMatchObject({ message: 'fetch failed', cause: { code: 'ECONNREFUSED' } });
+    });
+
+    it('en un POST, que no se reintenta, la del único intento', async () => {
+      serv.responderCon({ tipo: '5xx', estado: 500 });
+
+      expect(await causaDe(clienteDe(serv.url, 1).enviar('POST', '/', { dato: 1 }, 'id'))).toMatchObject({
+        message: 'M6 respondió 500',
+      });
+    });
+  });
+
   it('reintenta un GET ante una conexión rechazada y da ModuloNoDisponible', async () => {
     const url = await urlSinServidor();
     const inicio = Date.now();

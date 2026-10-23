@@ -124,6 +124,16 @@ export function registrarErrorInterno(log: FastifyBaseLogger, error: unknown, se
   log.error({ err: new ErrorConSecretos(error, secretosDeLaSolicitud) }, 'Error interno');
 }
 
+// Registra la causa de un 503 por la base o por otro módulo (RNF-14.8): una línea de error con el id de correlación de `log`,
+// el `detail` como texto y el error con su `cause`, sin los secretos fijos ni los de la solicitud (RNF-19.1).
+export function registrarNoDisponible(
+  log: FastifyBaseLogger,
+  error: Error,
+  secretosDeLaSolicitud: readonly string[],
+): void {
+  log.error({ err: new ErrorConSecretos(error, secretosDeLaSolicitud) }, error.message);
+}
+
 // El campo con el id de correlación en cada línea del log. En las de una solicitud lo pone `request.log`
 // (requestIdLogLabel de Fastify).
 export const CAMPO_ID_CORRELACION = 'idCorrelacion';

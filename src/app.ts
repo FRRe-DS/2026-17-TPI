@@ -11,7 +11,6 @@ import { idCorrelacion } from './correlacion.js';
 import { crearClientErrorHandler, crearFrameworkErrors, responderProblema } from './errores-fastify.js';
 import { Deteniendose, NoEncontrado } from './errores.js';
 import { CAMPO_ID_CORRELACION, opcionesLogger, registrarSolicitud, secretosDeConfig } from './logs.js';
-import { registrarSaludAMano } from './salud.js';
 
 // `pool` es la base de datos que usan los manejadores (`request.server.pool`): la app no la crea ni la cierra, eso lo hace el
 // arranque. `flujoLog` es adonde van los logs; sin él, a la salida estándar.
@@ -63,7 +62,7 @@ function prepararParada(app: FastifyInstance): void {
 // La app de Fastify armada desde el contrato: valida con sus esquemas, responde los errores con aProblema (también los que
 // Fastify y Node contestan antes de entrar a una ruta) y expone solo las operaciones que tienen manejador; a una ruta que no
 // existe responde 404, y a un método que la ruta no tiene, 405. Exige el token y el rol que pide la security de cada
-// operación: 401 y 403. Tiene también GET /health, que comprueba la base.
+// operación: 401 y 403. GET /health es una operación más del contrato (verificarSalud), sin ruta aparte.
 // Cada solicitud lleva un identificador de correlación y cada respuesta lo devuelve; cada solicitud que termina deja una
 // línea en el log, y un error no previsto, su detalle. Lleva la cuenta de las solicitudes en curso (`enCurso`) y, desde que
 // el servicio se detiene (`deteniendose`), responde 503.
@@ -124,8 +123,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   // registrar cualquier ruta: desde acá, una que no declara sus permisos no se registra (Lógica 4).
   registrarPermisos(app, config);
   const registrarRutas405 = prepararRutas405(app);
-  const { implementadas } = registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);
-  registrarSaludAMano(app, implementadas);
+  registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);
   // Al final, con todas las rutas ya registradas.
   registrarRutas405();
   return app;

@@ -41,8 +41,12 @@ describe('clasificarError (RNF-08.1, RNF-14.2)', () => {
     // Lo que da localhost cuando falla en IPv4 y en IPv6: sin mensaje, con el código en el error.
     ['un AggregateError con ECONNREFUSED', Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' })],
     ['el corte de conTiempoMaximo', new TiempoAgotado(2000)],
-  ])('%s es BaseNoDisponible', (_caso, error) => {
-    expect(clasificarError(error)).toBeInstanceOf(BaseNoDisponible);
+  ])('%s es BaseNoDisponible, con el error de la base en cause', (_caso, error) => {
+    const problema = clasificarError(error);
+
+    expect(problema).toBeInstanceOf(BaseNoDisponible);
+    // La causa la registra el manejador de errores, con el id de la solicitud (RNF-14.8).
+    expect(problema?.cause).toBe(error);
   });
 
   // Todo lo demás lo deja pasar tal cual: el manejador de errores lo responde con 500 y lo registra (RNF-03.3).
@@ -171,7 +175,7 @@ describe('crearPool (RNF-14.2)', () => {
 
   // Los límites de pg (conexión y consulta) valen por separado; este corte vale para el total. Con pg simulado como una
   // consulta que no termina, solo `consultar()` puede cortarla.
-  it('consultar() corta la espera en el tiempo de base aunque pg no lo haga', async () => {
+  it('consultar() corta la espera en el tiempo de base aunque pg no lo haga, con el corte en cause', async () => {
     vi.useFakeTimers();
     const registrar = vi.fn();
     const pool = crear(CONFIG_BD, registrar);
@@ -184,8 +188,11 @@ describe('crearPool (RNF-14.2)', () => {
     await vi.advanceTimersByTimeAsync(1);
     await consulta;
 
-    expect(resultado.mock.calls[0]?.[0]).toBeInstanceOf(BaseNoDisponible);
-    expect(registrar).toHaveBeenCalledExactlyOnceWith(expect.any(TiempoAgotado), expect.any(String));
+    const error = resultado.mock.calls[0]?.[0];
+    expect(error).toBeInstanceOf(BaseNoDisponible);
+    expect(error.cause).toBeInstanceOf(TiempoAgotado);
+    // La causa ya no la registra consultar(): va en el error, y la registra el manejador con el id de la solicitud.
+    expect(registrar).not.toHaveBeenCalled();
   });
 
   it('sin quien lo registre, un error del pool tampoco tira el proceso ni escribe en la consola', () => {
@@ -214,13 +221,17 @@ describe('consultar con una base a la que no se llega (RNF-14.2)', () => {
   }
 
   // 127.0.0.1 da un ECONNREFUSED común; localhost prueba IPv4 e IPv6 y falla con un AggregateError que trae el mismo código.
-  it.each(['127.0.0.1', 'localhost'])('rechazada la conexión en %s, da BaseNoDisponible y registra la causa', async (host) => {
+  it.each(['127.0.0.1', 'localhost'])('rechazada la conexión en %s, da BaseNoDisponible con la causa, sin registrarla', async (
+    host,
+  ) => {
     const registrar = vi.fn();
     const pool = crearPool({ urlBd: `postgres://m2:clave@${host}:${await puertoCerrado()}/m2`, tiempoBdMs: 2000 }, registrar);
     abiertos.push(pool);
 
-    await expect(pool.consultar('SELECT 1')).rejects.toBeInstanceOf(BaseNoDisponible);
+    const error = await pool.consultar('SELECT 1').catch((motivo: unknown) => motivo);
 
-    expect(registrar).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'ECONNREFUSED' }), expect.any(String));
+    expect(error).toBeInstanceOf(BaseNoDisponible);
+    expect((error as Error).cause).toMatchObject({ code: 'ECONNREFUSED' });
+    expect(registrar).not.toHaveBeenCalled();
   });
 });
