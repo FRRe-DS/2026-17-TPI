@@ -1192,3 +1192,17 @@ Se escribe al validar la spec, en el PR del bloque E (ver el encabezado de [task
   - Con el volumen ya creado, cambiar `POSTGRES_PASSWORD` no tiene efecto hasta `docker compose down -v`, que pierde los datos locales; lo documenta T31 en el README.
   - `ejemplo.env` va afuera de la imagen (`.dockerignore`): la configuración llega por `env_file` en compose y por entorno en cualquier otro lado.
   - `bd` no publica el puerto 5432 en la máquina (RNF-02.1, plan Datos): para mirar la base hay que usar `docker compose exec bd psql`.
+
+### T28 — Fallas al levantar y parada con docker compose · commit `003/T28`
+- Qué cambió: ningún archivo de código ni de pruebas. La tarea es una comprobación de lo que ya hacen `arrancar` (T38), `servidor.ts` y `detener()` (T40) dentro del compose de T27; el «Hecho cuando» pide mediciones con Docker, y el plan las deja como comprobaciones a mano (Pruebas: «Comprobaciones de compose de tasks.md») que repite el job `contract-test` en T30. Lo que se agrega es este registro y la marca en `tasks.md`.
+- Por qué así: las tres fallas ya estaban cubiertas por pruebas de integración con Testcontainers (`arranque.test.ts`, `parada.test.ts`), pero T28 pide ver lo mismo a través de compose y de la imagen: que `--wait` corte en vez de colgarse, que el motivo llegue a `docker compose logs`, y que la señal de `docker compose stop` llegue a Node con `init: true` y la forma exec del `CMD`.
+- Cómo se conecta: T30 pone en `ci.yml` la misma parada (menos de 10 s y código 0 con `docker inspect`); T31 documenta los comandos en el README.
+- Tests (mediciones a mano, con Docker 29.1.3 y compose 2.40.3, el 2026-10-22):
+  - `M2_CLAVE_TOKENS=corta docker compose up -d --wait`: termina con error («container … m2-1 exited (1)») en 4 s; `docker compose logs m2` trae una línea con `"variable":"M2_CLAVE_TOKENS"` y «tiene menos de 32 caracteres». El valor `corta` no aparece.
+  - `M2_URL_BD` con un servidor que no existe (`no-existe.invalido`): termina con error en 4 s, con `getaddrinfo ENOTFOUND no-existe.invalido` en el log. Con una IP sin ruta (`10.255.255.1`): termina con error en 5 s, con «timeout expired» (el tiempo de la base, 2 s). En los dos casos la contraseña de la URL, puesta a propósito reconocible, no aparece en los logs.
+  - Con el servicio sano, `docker compose stop m2`: 0,2 s, `docker inspect` muestra `ExitCode` 0, y el log termina en «Deteniendo el servicio» y «Servicio detenido» con `cortadas: 0`. Dos veces seguidas.
+  - Con Node v24.15.0: sin cambios en el código, `npm test` (2101) sigue como en T27.
+- Para mirar con atención:
+  - Las tres fallas cortan en segundos y no en el tope de 2 minutos: `m2` sale con 1 antes de tener healthcheck, y `--wait` lo toma como falla en cuanto el contenedor sale. El tope de 2 minutos recién importaría si el servicio quedara vivo pero sin ponerse sano (`start_period` de 30 s más 6 reintentos de 5 s, unos 60 s como mucho): no es un caso que esta tarea provoque.
+  - La causa de la falla de la base sale como el mensaje del error de `pg` o de red, no como un motivo con nombre: sirve para diagnosticar, y la contraseña se quita porque `registrarErrorInterno` y el serializador pasan por `limpiarSecretos`.
+  - Se midió con la imagen ya construida: en frío, el `docker compose up --build` suma lo que tarda `npm ci` (T26, 47 s).
