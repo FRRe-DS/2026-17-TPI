@@ -12,5 +12,5 @@ Depende de: la migración de perfiles de la spec #4 debe estar mergeada en `main
   - Hecho cuando: CLIENTE consulta/guarda solo lo propio, CLIENTE+OPERADOR consulta otro cliente pero no lo guarda, OPERADOR solo consulta, SERVICIO no accede y un perfil inexistente responde 404 sin crear preferencias.
 - [x] **T5. Exponer y registrar GET/PUT con validación y privacidad.** RF-2.3, RF-2.3.1, RF-2.3.2, RF-2.3.3, RNF-03, RNF-19
   - Hecho cuando: pruebas HTTP cubren 200, 400, 403, 404, listas vacías, reemplazo total, campos extra, duplicados, observaciones y problem+json, y ningún valor del cuerpo aparece en logs.
-- [ ] **T6. Validar contrato, regresión y documentación de la spec.** RNF-07, RNF-20
+- [x] **T6. Validar contrato, regresión y documentación de la spec.** RNF-07, RNF-20
   - Hecho cuando: las dos operaciones pasan `npm run contrato:test`; build, lint, `npm test` y `spec-check` quedan en verde; y `guia.md` explica valores, predeterminados, permisos y ejemplos comprobados.
