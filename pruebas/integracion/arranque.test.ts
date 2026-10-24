@@ -416,7 +416,7 @@ describe('arranque normal (RNF-05.2)', () => {
     }
   });
 
-  it('con el contrato del repositorio, reconoce como implementadas las de las specs 004 y 005', async () => {
+  it('con el contrato del repositorio, reconoce como implementadas las de las specs 004, 005 y 006', async () => {
     const { logs, arranque } = arrancarParaProbar(entorno(base.urlBd, await puertoLibre()));
     await arranque;
 
@@ -430,6 +430,7 @@ describe('arranque normal (RNF-05.2)', () => {
         'crearCliente',
         'crearDireccion',
         'eliminarDireccion',
+        'guardarPreferencias',
         'levantarBloqueo',
         'listarBloqueos',
         'listarDirecciones',
@@ -437,6 +438,7 @@ describe('arranque normal (RNF-05.2)', () => {
         'obtenerCliente',
         'obtenerDireccion',
         'obtenerEstadoCuenta',
+        'obtenerPreferencias',
         'verificarSalud',
       ].sort(),
     );

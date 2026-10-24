@@ -1,6 +1,6 @@
 # Spec 006 — Preferencias
 
-Estado: aprobada
+Estado: implementada
 Issue: #6
 Etapa: TP1
 Responsable: @DrazenPavicich

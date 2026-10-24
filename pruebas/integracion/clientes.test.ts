@@ -39,7 +39,7 @@ const MIGRACION = readdirSync(DIR_MIGRACIONES)
 
 // Las migraciones que crean tablas con clave foránea a `clientes`: hay que revertirlas antes que esta.
 const DEPENDIENTES = readdirSync(DIR_MIGRACIONES)
-  .filter((archivo) => /^\d+_direcciones\.sql$/.test(archivo))
+  .filter((archivo) => /^\d+_(direcciones|preferencias)\.sql$/.test(archivo))
   .map((archivo) => archivo.slice(0, -'.sql'.length));
 
 // El valor por defecto de M2_TIEMPO_BD_MS: de sobra para la base del contenedor.
