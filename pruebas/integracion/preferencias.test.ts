@@ -5,6 +5,9 @@ import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
+import { crearPool, type PoolBd } from '../../src/bd/pool.js';
+import { NoEncontrado } from '../../src/errores.js';
+import { obtenerPreferencias } from '../../src/preferencias/repositorio.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
 const DIR = fileURLToPath(new URL('../../migraciones', import.meta.url));
@@ -76,5 +79,41 @@ describe('migración de preferencias (006/T1)', () => {
     await runner({ dbClient: bd, dir: DIR, migrationsTable: 'migraciones_aplicadas', direction: 'down', file: nombre?.slice(0, -4), log: () => {} });
     expect((await bd.query(`SELECT to_regclass('preferencias_cliente') AS tabla, to_regprocedure('arreglo_sin_repetidos(text[])') AS funcion, to_regclass('clientes') AS clientes`)).rows[0]).toEqual({ tabla: null, funcion: null, clientes: 'clientes' });
     expect(await migrar({ urlBd: base.urlBd, tiempoBdMs: 2000 })).toEqual([nombre?.slice(0, -4)]);
+  });
+});
+
+describe('consulta de preferencias (006/T2)', () => {
+  let base: BaseDePrueba;
+  let bd: Client;
+  let pool: PoolBd;
+  const consultar: PoolBd['consultar'] = (sql, valores) => pool.consultar(sql, valores);
+  const perfil = async () => {
+    const id = randomUUID();
+    await bd.query(`INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Ejemplo', '+5493624000000')`, [id]);
+    return id;
+  };
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: 2000 });
+    bd = new Client({ connectionString: base.urlBd }); await bd.connect();
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: 2000 });
+  });
+  afterAll(async () => { await pool?.end(); await bd?.end(); await base?.borrar(); });
+
+  it('devuelve listas vacías sin insertar y no comparte objetos entre consultas', async () => {
+    const id = await perfil();
+    const datos = await obtenerPreferencias(consultar, id);
+    expect(datos).toEqual({ tiposVehiculo: [], canales: [], accesibilidad: [] });
+    datos.tiposVehiculo.push('MOTO');
+    expect(await obtenerPreferencias(consultar, id)).toEqual({ tiposVehiculo: [], canales: [], accesibilidad: [] });
+    expect((await bd.query('SELECT 1 FROM preferencias_cliente WHERE cliente_id = $1', [id])).rowCount).toBe(0);
+  });
+  it('sin perfil da NoEncontrado', async () => {
+    await expect(obtenerPreferencias(consultar, randomUUID())).rejects.toBeInstanceOf(NoEncontrado);
+  });
+  it.each([null, '', 'Observación ficticia'])('lee exactamente las preferencias guardadas, con observaciones %j', async (observaciones) => {
+    const id = await perfil();
+    await bd.query(`INSERT INTO preferencias_cliente (cliente_id, tipos_vehiculo, canales, accesibilidad, observaciones_accesibilidad) VALUES ($1, ARRAY['MOTO','AUTO'], ARRAY['EMAIL'], ARRAY['ANIMAL_DE_ASISTENCIA'], $2)`, [id, observaciones]);
+    expect(await obtenerPreferencias(consultar, id)).toEqual({ tiposVehiculo: ['MOTO', 'AUTO'], canales: ['EMAIL'], accesibilidad: ['ANIMAL_DE_ASISTENCIA'], ...(observaciones === null ? {} : { observacionesAccesibilidad: observaciones }) });
   });
 });
