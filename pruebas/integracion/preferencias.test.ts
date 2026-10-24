@@ -4,11 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Identidad } from '../../src/auth/tokens.js';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
 import { NoEncontrado } from '../../src/errores.js';
 import { guardarPreferencias, obtenerPreferencias } from '../../src/preferencias/repositorio.js';
 import type { Preferencias } from '../../src/preferencias/modelo.js';
+import * as servicio from '../../src/preferencias/servicio.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
 const DIR = fileURLToPath(new URL('../../migraciones', import.meta.url));
@@ -150,5 +152,22 @@ describe('consulta de preferencias (006/T2)', () => {
       expect(pedidos).toContainEqual(await obtenerPreferencias(consultar, id));
       expect((await bd.query('SELECT count(*)::integer AS total FROM preferencias_cliente WHERE cliente_id = $1', [id])).rows).toEqual([{ total: 1 }]);
     }
+  });
+
+  it('el servicio lee y guarda lo propio, permite lectura de OPERADOR y normaliza ids (006/T4)', async () => {
+    const id = await perfil();
+    const cliente: Identidad = { sub: id.toUpperCase(), roles: ['CLIENTE'] };
+    const ruta = `urn:uuid:${id.toUpperCase()}`;
+    expect(await servicio.guardarPreferencias(pool, cliente, ['CLIENTE'], ruta, uno)).toEqual(uno);
+    expect(await servicio.obtenerPreferencias(pool, cliente, ['CLIENTE', 'OPERADOR'], ruta)).toEqual(uno);
+    expect(await servicio.obtenerPreferencias(pool, { sub: 'operador', roles: ['OPERADOR'] }, ['CLIENTE', 'OPERADOR'], id)).toEqual(uno);
+    expect(await servicio.obtenerPreferencias(pool, { sub: randomUUID(), roles: ['CLIENTE', 'OPERADOR'] }, ['CLIENTE', 'OPERADOR'], id)).toEqual(uno);
+  });
+  it('el servicio responde 404 sin perfil y no deja preferencias (006/T4)', async () => {
+    const id = randomUUID();
+    const identidad: Identidad = { sub: id, roles: ['CLIENTE'] };
+    await expect(servicio.obtenerPreferencias(pool, identidad, ['CLIENTE', 'OPERADOR'], id)).rejects.toBeInstanceOf(NoEncontrado);
+    await expect(servicio.guardarPreferencias(pool, identidad, ['CLIENTE'], id, uno)).rejects.toBeInstanceOf(NoEncontrado);
+    expect((await bd.query('SELECT 1 FROM preferencias_cliente WHERE cliente_id = $1', [id])).rowCount).toBe(0);
   });
 });
