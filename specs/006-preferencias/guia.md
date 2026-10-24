@@ -15,3 +15,10 @@
 - Cómo se conecta: recibe `Consultar`, igual que los repositorios de la 004/005; T4 lo conecta con el pool y la identidad.
 - Tests: `pruebas/unitarias/preferencias.test.ts` verifica copias, mapeo y enumerados contra OpenAPI; las nuevas pruebas de integración verifican predeterminados sin escritura, 404 y filas con/sin observaciones. Rojo: módulo inexistente. Verde: `npm test`, 2682 pruebas en 34 archivos; lint y build correctos (2026-10-24).
 - Para mirar con atención: no se reutiliza un objeto predeterminado global mutable. El id del lado derecho del JOIN indica si existe la fila, sin confundir listas vacías guardadas con ausencia de preferencias.
+
+### T3 — UPSERT atómico y concurrencia · commit `006/T3`
+- Qué cambió: `src/preferencias/repositorio.ts:guardarPreferencias()` usa INSERT … SELECT desde el perfil, ON CONFLICT sobre la PK y RETURNING de las cuatro columnas.
+- Por qué así: PUT reemplaza todo; no lee para fusionar ni actualiza por separado las listas (RF-2.3, RNF-08). PostgreSQL serializa los conflictos sobre la misma clave. Observaciones omitidas pasan a NULL y desaparecen de la respuesta; listas vacías borran las selecciones anteriores.
+- Cómo se conecta: usa `Consultar` como la lectura y conserva el límite/clasificación de errores del pool. La comprobación de perfil se hace en la propia sentencia en vez de una lectura separada: sin perfil no hay INSERT y se devuelve `NoEncontrado`, evitando un 500 por FK.
+- Tests: cuatro pruebas de integración nuevas, primero rojas por función inexistente. Cubren repetición, reemplazo total, ausencia de perfil y dos variantes concurrentes, cada una con ocho corridas de cinco escrituras simultáneas: cada respuesta coincide con su solicitud, el estado final es uno de los objetos completos y hay una fila. `npm test`: 2686 pruebas en 34 archivos, en verde (2026-10-24).
+- Para mirar con atención: no requiere Idempotency-Key; la semántica idempotente sale de reemplazar el recurso completo. El orden efectivo lo determina la base, no el orden de llegada de las promesas.

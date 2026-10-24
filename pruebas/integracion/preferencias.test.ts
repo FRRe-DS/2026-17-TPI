@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd } from '../../src/bd/pool.js';
 import { NoEncontrado } from '../../src/errores.js';
-import { obtenerPreferencias } from '../../src/preferencias/repositorio.js';
+import { guardarPreferencias, obtenerPreferencias } from '../../src/preferencias/repositorio.js';
+import type { Preferencias } from '../../src/preferencias/modelo.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
 const DIR = fileURLToPath(new URL('../../migraciones', import.meta.url));
@@ -115,5 +116,39 @@ describe('consulta de preferencias (006/T2)', () => {
     const id = await perfil();
     await bd.query(`INSERT INTO preferencias_cliente (cliente_id, tipos_vehiculo, canales, accesibilidad, observaciones_accesibilidad) VALUES ($1, ARRAY['MOTO','AUTO'], ARRAY['EMAIL'], ARRAY['ANIMAL_DE_ASISTENCIA'], $2)`, [id, observaciones]);
     expect(await obtenerPreferencias(consultar, id)).toEqual({ tiposVehiculo: ['MOTO', 'AUTO'], canales: ['EMAIL'], accesibilidad: ['ANIMAL_DE_ASISTENCIA'], ...(observaciones === null ? {} : { observacionesAccesibilidad: observaciones }) });
+  });
+
+  const uno: Preferencias = { tiposVehiculo: ['AUTO'], canales: ['SMS'], accesibilidad: ['SILLA_DE_RUEDAS'], observacionesAccesibilidad: 'Primer conjunto ficticio' };
+  const otro: Preferencias = { tiposVehiculo: ['MOTO'], canales: ['PUSH', 'EMAIL'], accesibilidad: ['ANIMAL_DE_ASISTENCIA'], observacionesAccesibilidad: 'Segundo conjunto ficticio' };
+  const vacio: Preferencias = { tiposVehiculo: [], canales: [], accesibilidad: [] };
+
+  it('inserta, repite y reemplaza todo, incluidas listas vacías y observaciones omitidas (006/T3)', async () => {
+    const id = await perfil();
+    expect(await guardarPreferencias(consultar, id, uno)).toEqual(uno);
+    expect(await guardarPreferencias(consultar, id, uno)).toEqual(uno);
+    expect(await guardarPreferencias(consultar, id, otro)).toEqual(otro);
+    expect(await obtenerPreferencias(consultar, id)).toEqual(otro);
+    expect(await guardarPreferencias(consultar, id, vacio)).toEqual(vacio);
+    expect(await obtenerPreferencias(consultar, id)).toEqual(vacio);
+    expect((await bd.query('SELECT count(*)::integer AS total FROM preferencias_cliente WHERE cliente_id = $1', [id])).rows).toEqual([{ total: 1 }]);
+  });
+
+  it('no crea fila ni da un error de FK al guardar sin perfil (006/T3)', async () => {
+    const id = randomUUID();
+    await expect(guardarPreferencias(consultar, id, uno)).rejects.toBeInstanceOf(NoEncontrado);
+    expect((await bd.query('SELECT 1 FROM preferencias_cliente WHERE cliente_id = $1', [id])).rowCount).toBe(0);
+  });
+
+  it.each([false, true])('concurrentes, con fila inicial=%j: cada respuesta es completa y queda una fila (006/T3)', async (conFila) => {
+    // Ejercita tanto el conflicto entre INSERT como entre UPDATE. Cada respuesta debe
+    // ser la propia solicitud; el estado final, una de ellas, nunca una mezcla.
+    for (let corrida = 0; corrida < 8; corrida++) {
+      const id = await perfil();
+      if (conFila) await guardarPreferencias(consultar, id, vacio);
+      const pedidos = [uno, otro, vacio, uno, otro];
+      expect(await Promise.all(pedidos.map((datos) => guardarPreferencias(consultar, id, datos)))).toEqual(pedidos);
+      expect(pedidos).toContainEqual(await obtenerPreferencias(consultar, id));
+      expect((await bd.query('SELECT count(*)::integer AS total FROM preferencias_cliente WHERE cliente_id = $1', [id])).rows).toEqual([{ total: 1 }]);
+    }
   });
 });

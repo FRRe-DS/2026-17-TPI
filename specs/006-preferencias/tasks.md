@@ -6,7 +6,7 @@ Depende de: la migración de perfiles de la spec #4 debe estar mergeada en `main
   - Hecho cuando: después de mergear la migración de perfiles de la spec #4, una prueba de integración aplica y revierte la migración, verifica PK/FK, función `IMMUTABLE` y checks, y demuestra que la base rechaza valores desconocidos, repetidos o una segunda fila del mismo cliente.
 - [x] **T2. Implementar el modelo y la consulta con valores predeterminados.** RF-2.3.1, RF-2.3.2, RF-2.3.3, RF-2.3.5
   - Hecho cuando: pruebas unitarias e integración devuelven el objeto predeterminado sin insertar una fila, devuelven 404 sin perfil y mapean exactamente valores guardados con y sin observaciones.
-- [ ] **T3. Implementar el UPSERT completo y su comportamiento concurrente.** RF-2.3, RNF-08
+- [x] **T3. Implementar el UPSERT completo y su comportamiento concurrente.** RF-2.3, RNF-08
   - Hecho cuando: PUT repetidos dejan una fila y dos UPSERT concurrentes producen uno de los dos objetos completos, sin mezclar listas ni fallar por unicidad.
 - [ ] **T4. Aplicar rol efectivo, propiedad y permisos.** RF-2.3.4, RF-2.3.4.1, RF-2.3.5
   - Hecho cuando: CLIENTE consulta/guarda solo lo propio, CLIENTE+OPERADOR consulta otro cliente pero no lo guarda, OPERADOR solo consulta, SERVICIO no accede y un perfil inexistente responde 404 sin crear preferencias.
