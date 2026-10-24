@@ -2,7 +2,7 @@
 
 Depende de: la migración de perfiles de la spec #4 debe estar mergeada en `main` antes de T1. T3 es delicada y se implementa con Opus.
 
-- [ ] **T1. Crear la migración uno-a-uno de preferencias con función inmutable y checks de enumerados.** RF-2.3, RF-2.3.3, RNF-05, RNF-08
+- [x] **T1. Crear la migración uno-a-uno de preferencias con función inmutable y checks de enumerados.** RF-2.3, RF-2.3.3, RNF-05, RNF-08
   - Hecho cuando: después de mergear la migración de perfiles de la spec #4, una prueba de integración aplica y revierte la migración, verifica PK/FK, función `IMMUTABLE` y checks, y demuestra que la base rechaza valores desconocidos, repetidos o una segunda fila del mismo cliente.
 - [ ] **T2. Implementar el modelo y la consulta con valores predeterminados.** RF-2.3.1, RF-2.3.2, RF-2.3.3, RF-2.3.5
   - Hecho cuando: pruebas unitarias e integración devuelven el objeto predeterminado sin insertar una fila, devuelven 404 sin perfil y mapean exactamente valores guardados con y sin observaciones.
