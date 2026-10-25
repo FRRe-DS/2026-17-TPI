@@ -160,7 +160,7 @@ M2_PUERTO=9090 docker compose up -d --build --wait
 | `M2_REINTENTOS_MODULOS` | no | `1` | Reintentos de una lectura a otro módulo, de 0 a 5 |
 | `M2_ENCABEZADO_CORRELACION` | no | `X-Request-Id` | Nombre del encabezado de correlación |
 | `M2_URL_M6` | sí | — | URL base de M6 (Viajes), `http://` o `https://`, con su ruta `/api/v1`; el servicio no arranca sin ella |
-| `M2_CREDENCIAL_M6` | no | sin credencial | Credencial con la que M2 se presenta ante M6 (`Authorization: Bearer`): sin espacios ni caracteres especiales |
+| `M2_AUDIENCIA_M6` | no | `m6-viajes` | Audiencia (`aud`) del token de servicio con el que M2 se presenta ante M6; no puede tener solo espacios |
 | `M2_REINTENTAR_DESPUES_S` | no | `5` | Segundos que sugiere `Retry-After` cuando M6 no está disponible, de 1 a 3600 |
 | `POSTGRES_USER` | solo para la base | el de `ejemplo.env` | Usuario que crea la imagen de PostgreSQL |
 | `POSTGRES_PASSWORD` | solo para la base | el de `ejemplo.env` | Contraseña de ese usuario |

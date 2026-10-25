@@ -21,7 +21,7 @@ export const CONFIG: Config = {
   reintentosModulos: 1,
   encabezadoCorrelacion: 'X-Request-Id',
   urlM6: 'http://m6:3006/api/v1',
-  credencialM6: undefined,
+  audienciaM6: 'm6-viajes',
   reintentarDespuesS: 5,
 };
 

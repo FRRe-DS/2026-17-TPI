@@ -11,10 +11,7 @@ export type M6 = {
   listarViajes(clienteId: string, page: number, size: number, idCorrelacion: string): Promise<PaginaM6>;
 };
 
-type ConfigM6 = Pick<
-  Config,
-  'urlM6' | 'tiempoModulosMs' | 'reintentosModulos' | 'encabezadoCorrelacion' | 'credencialM6' | 'reintentarDespuesS'
->;
+type ConfigM6 = Pick<Config, 'urlM6' | 'tiempoModulosMs' | 'reintentosModulos' | 'encabezadoCorrelacion' | 'reintentarDespuesS'>;
 
 const NOMBRE = 'M6';
 
@@ -50,7 +47,6 @@ export function crearM6(config: ConfigM6): M6 {
     tiempoMs: config.tiempoModulosMs,
     reintentos: config.reintentosModulos,
     encabezadoCorrelacion: config.encabezadoCorrelacion,
-    credencial: config.credencialM6,
     reintentarDespuesS: config.reintentarDespuesS,
   });
 

@@ -57,16 +57,6 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
 
       expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe('/api/v1/trips');
     });
-
-    it('con credencial, va en Authorization: Bearer; sin ella, no hay Authorization', async () => {
-      serv.responderCon(ok(pagina([], 0)));
-
-      await listar(0, 20, { credencialM6: 'credencial-de-m2' });
-      expect(serv.encabezadosRecibidos.get('authorization')).toBe('Bearer credencial-de-m2');
-
-      await listar(0, 20, { credencialM6: undefined });
-      expect(serv.encabezadosRecibidos.has('authorization')).toBe(false);
-    });
   });
 
   describe('un 200 con la forma esperada (RF-2.4, RF-2.4.3)', () => {

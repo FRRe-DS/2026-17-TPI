@@ -616,8 +616,8 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
     for (const dato of ['Ana Perez', 'Siempre Viva', '<html>']) expect(logs.texto()).not.toContain(dato);
   });
 
-  // Spec 007, T2: la credencial de M2 ante M6 es un secreto fijo, como la clave de los tokens (RNF-19.1).
-  it('con credencial ante M6: va a M6, y el 503 y el log no la traen aunque un error la repita', async () => {
+  // Spec 007, T2: la credencial va a M6 en Authorization y nada de lo que M6 devuelva la repite en el 503 ni en el log (RNF-19.1).
+  it('con credencial ante M6: va a M6, y el 503 y el log no la traen aunque M6 la repita', async () => {
     const CREDENCIAL_M6 = 'credencial-de-m2-ante-m6';
     modulo.responderCon({ tipo: '5xx', estado: 500, cuerpo: { error: `Bearer ${CREDENCIAL_M6}` } });
     const logs = capturarLogs();
@@ -635,11 +635,8 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
           });
           return (await cliente.obtener('/', request.id)).cuerpo;
         },
-        probarFalla: async () => {
-          throw new Error(`no se pudo hablar con M6 usando ${CREDENCIAL_M6}`);
-        },
       },
-      { flujoLog: logs.flujo, config: { urlBd: URL_BD, credencialM6: CREDENCIAL_M6 } },
+      { flujoLog: logs.flujo, config: { urlBd: URL_BD } },
     );
 
     const sinM6 = await app.inject({ method: 'GET', url: '/pruebas/publica', headers: { [ENCABEZADO]: 'sin-m6-3' } });
@@ -647,12 +644,8 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
     expect(sinM6.headers['retry-after']).toBe('5');
     expect(modulo.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL_M6}`);
 
-    const interno = await app.inject({ method: 'GET', url: '/pruebas/falla', headers: { ...CON_TOKEN } });
-    expect(interno.statusCode).toBe(500);
-    expect(errores(logs)).toHaveLength(2);
-    expect(logs.texto()).toContain('no se pudo hablar con M6 usando [oculto]');
-
-    for (const texto of [sinM6.body, interno.body, logs.texto()]) expect(texto).not.toContain(CREDENCIAL_M6);
+    expect(errores(logs)).toHaveLength(1);
+    for (const texto of [sinM6.body, logs.texto()]) expect(texto).not.toContain(CREDENCIAL_M6);
   });
 
   it('sin un id en la solicitud, la línea trae el UUID que devuelve la respuesta', async () => {
