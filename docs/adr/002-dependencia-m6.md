@@ -1,6 +1,6 @@
 # ADR 002 — Propuesta de dependencia M6 para M2
 
-Fecha: 2026-10-22 · Estado: propuesta
+Fecha: 2026-10-22 · Estado: reemplazada por ADR 057
 Issue: #2 (solo M6)
 
 ## Contexto
