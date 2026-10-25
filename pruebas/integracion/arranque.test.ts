@@ -438,6 +438,7 @@ describe('arranque normal (RNF-05.2)', () => {
         'levantarBloqueo',
         'listarBloqueos',
         'listarDirecciones',
+        'listarHistorialViajes',
         'obtenerBloqueo',
         'obtenerCliente',
         'obtenerDireccion',

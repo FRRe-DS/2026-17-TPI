@@ -10,6 +10,7 @@ import { crearCompilador } from './contrato/validacion.js';
 import { idCorrelacion } from './correlacion.js';
 import { crearClientErrorHandler, crearFrameworkErrors, responderProblema } from './errores-fastify.js';
 import { Deteniendose, NoEncontrado } from './errores.js';
+import { crearM6, type M6 } from './historial/m6.js';
 import { CAMPO_ID_CORRELACION, opcionesLogger, registrarSolicitud, secretosDeConfig } from './logs.js';
 
 // `pool` es la base de datos que usan los manejadores (`request.server.pool`): la app no la crea ni la cierra, eso lo hace el
@@ -28,6 +29,8 @@ declare module 'fastify' {
     deteniendose: boolean;
     // Las respuestas que todavía no terminaron: las que la parada corta si no terminan a tiempo.
     enCurso: ReadonlySet<FastifyReply>;
+    // El cliente de M6 (Viajes) que usa el historial: `request.server.m6.listarViajes(…)`. La app lo crea con la configuración.
+    m6: M6;
   }
 }
 
@@ -98,6 +101,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   // Fastify lee también text/plain; sin ese lector, ese cuerpo da 415 como cualquier otro que no es JSON (RNF-03.2).
   app.removeContentTypeParser('text/plain');
   app.decorate('pool', pool);
+  app.decorate('m6', crearM6(config));
   app.setValidatorCompiler(crearCompilador(contrato));
   app.setErrorHandler(responderProblema);
   // Todas las respuestas pasan por onSend, también las de error y las que un hook onRequest responde, sin depender del orden

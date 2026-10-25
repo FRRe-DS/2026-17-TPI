@@ -207,7 +207,7 @@ describe('GET /health: sale solo del contrato (RNF-03.4, ADR de la base)', () =>
     expect(post.json()).toEqual({ estado: 'ok', atendidoPor: 'el manejador del contrato' });
   });
 
-  it('el servicio trae el manejador de verificarSalud, la operación del contrato v1, y los de las specs 004, 005 y 006', () => {
+  it('el servicio trae el manejador de verificarSalud, la operación del contrato v1, y los de las specs 004, 005, 006 y 007', () => {
     expect(Object.keys(manejadores).sort()).toEqual(
       [
         'actualizarCliente',
@@ -220,6 +220,7 @@ describe('GET /health: sale solo del contrato (RNF-03.4, ADR de la base)', () =>
         'levantarBloqueo',
         'listarBloqueos',
         'listarDirecciones',
+        'listarHistorialViajes',
         'obtenerBloqueo',
         'obtenerCliente',
         'obtenerDireccion',
