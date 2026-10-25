@@ -1,4 +1,0 @@
-#!/bin/sh
-# Protección local de main mientras GitHub no tenga la regla configurada.
-# Se activa una vez por clon: git config core.hooksPath .githooks
-exec node "$(git rev-parse --show-toplevel)/.githooks/pre-push.mjs" "$@"
