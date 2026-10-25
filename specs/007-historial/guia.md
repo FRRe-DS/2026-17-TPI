@@ -1,7 +1,71 @@
 # Guía — Spec 007 Historial resumido de viajes
 
-## Visión general (se escribe al validar, 30-60 líneas)
-Pendiente: se completa en T7.
+## Visión general
+
+El cliente (o un operador) consulta el historial resumido de viajes de un cliente. M2 no guarda viajes: en cada consulta le pide
+la página a M6 (`GET /trips`), la convierte y devuelve `viajeId`, `estado` y, si M6 lo informa, `conductorId`. Si M6 no contesta
+responde `503` con `Retry-After`, sin historial parcial.
+
+**Recorrido** (`GET /api/v1/clientes/{clienteId}/viajes?page=0&size=20`).
+1. `src/operaciones/index.ts` asocia `listarHistorialViajes`; `src/app.ts` crea `app.m6`. Ruta, parámetros y roles salen del OpenAPI.
+2. `src/auth/permisos.ts:registrarPermisos` da `401`/`403` por rol y el validador del contrato, `400`. Nada de esto llama a M6.
+3. `src/historial/operaciones.ts` pasa identidad, roles, parámetros y `request.id` a `servicio.ts:listarHistorialViajes`: propiedad (`403`), perfil (`404`) y M6.
+4. `src/historial/m6.ts:listarViajes` pide `/trips?clientId&page+1&pageSize` con `src/modulos/cliente.ts` (timeout, un reintento) y firma en cada intento `src/auth/tokens.ts:tokenDeServicio`; comprueba la forma de la respuesta.
+5. `src/historial/modelo.ts:aPaginaViajes` descarta viajes de otro cliente, traduce la paginación y arma la página.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos |
+|---|---|---|
+| `src/config.ts`, `ejemplo.env`, README | `M2_URL_M6` (obligatoria), `M2_AUDIENCIA_M6`, `M2_REINTENTAR_DESPUES_S` | RNF-06 |
+| `src/modulos/cliente.ts`, `src/auth/tokens.ts` | Credencial por intento, `Retry-After`; token de servicio de 60 s con rol `SERVICIO` | RF-2.4.6, RF-2.4.11, RNF-13, RNF-19 |
+| `src/historial/{modelo,m6,servicio,operaciones}.ts` | Conversión, pedido a M6, orden de comprobaciones y manejador | RF-2.4 a RF-2.4.10, RNF-03, RNF-05 |
+| `schemathesis.toml` | Acepta el `503` de M6 solo en esta operación (la prueba de contrato no tiene M6) | RNF-07 |
+| `pruebas/**/historial*.test.ts`, `m6.test.ts`, `cliente.test.ts` | Unitarias, M6 simulado, HTTP e integración | RNF-07, RNF-14, RNF-19 |
+
+**Decisiones.** El token se firma en cada intento (ADR 009); se descartó la credencial fija por variable (T1 y T2; la quitó T8). Un `4xx`
+de M6 es un problema de integración nuestro (`500`, sin reintento); un `200` con otra forma es falta de disponibilidad (`503`). Detalle en `plan.md`.
+**Supuestos con M6 y el Grupo 1** (si cambian, se ajusta la configuración): audiencia `m6-viajes` por defecto y emisor `M2_EMISOR_TOKENS`; `GET /trips`
+paginado con `page` desde 1 y `pageSize` hasta 100 (Grupo 12, 2026-10-22), mientras `contrato/dependencias/m6.yml` queda viejo hasta una rama
+`contrato/` aparte; el resumen solo trae `viajeId`, `estado` y `conductorId`, y el orden es el de M6; el `type` del `503` es `about:blank`.
+
+**Cómo probarlo uno mismo.** Ejemplos comprobados el 2026-10-25 contra el compose, con un M6 simulado en el host y datos ficticios:
+```bash
+docker compose up -d --build --wait
+SIMULADO=$(mktemp -d)/m6-simulado.mjs
+cat > "$SIMULADO" <<'EOF'
+import { createServer } from 'node:http';
+const v = (n, c, x = {}) => ({ id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`, state: 'COMPLETED', clientId: c, driverId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', ...x });
+createServer((req, res) => {
+  const u = new URL(req.url, 'http://x'); const c = u.searchParams.get('clientId');
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ items: [v(1, c), v(2, c, { driverId: null, state: 'CANCELLED_BY_CLIENT' })], page: +u.searchParams.get('page'), pageSize: +u.searchParams.get('pageSize'), total: 42 }));
+}).listen(3006, '0.0.0.0');
+EOF
+node "$SIMULADO" & SIM=$!
+GW=$(docker network inspect "$(basename "$PWD" | tr 'A-Z' 'a-z')_default" -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+M2_URL_M6="http://$GW:3006" docker compose up -d --wait m2     # M2 apunta al simulado
+CLI=$(node -p "require('node:crypto').randomUUID()"); B=http://localhost:8082/api/v1/clientes
+token() { docker compose exec -T m2 node dist/herramientas/token.js --sub "$1" --roles "$2"; }
+TC=$(token "$CLI" CLIENTE); TM=$(token operador-ficticio CLIENTE,OPERADOR); TO=$(token otro-ficticio CLIENTE)
+curl -i -X POST "$B" -H "Authorization: Bearer $TC" -H "Idempotency-Key: guia-007-$CLI" -H 'Content-Type: application/json' \
+  -d '{"nombre":"Ana","apellido":"Ejemplo","telefono":"+5493624000000"}' # 201
+curl -i "$B/$CLI/viajes?page=1&size=2" -H "Authorization: Bearer $TC" # 200: totalElementos 42, totalPaginas 21; M6 recibe page=2
+curl -i "$B/$CLI/viajes" -H "Authorization: Bearer $TM" # 200: OPERADOR ve el de otro cliente
+curl -i "$B/$CLI/viajes" -H "Authorization: Bearer $TO" # 403: CLIENTE ajeno, sin llamar a M6
+curl -i "$B/$CLI/viajes?size=0" -H "Authorization: Bearer $TC" # 400
+curl -i "$B/$(node -p "require('node:crypto').randomUUID()")/viajes" -H "Authorization: Bearer $TM" # 404: sin perfil
+kill $SIM; sleep 1
+curl -i "$B/$CLI/viajes" -H "Authorization: Bearer $TC" # 503 problem+json con Retry-After: 5
+docker compose up -d --wait m2     # M2 vuelve a su configuración de ejemplo
+npm test && npm run contrato:test
+```
+
+**Preguntas de comprobación.**
+1. ¿Por qué la propiedad se comprueba antes que el perfil, y el perfil antes de llamar a M6?
+2. ¿Qué responde M2 si M6 contesta `401`, y qué si contesta un `200` con otra forma? ¿Por qué no es lo mismo?
+3. ¿Por qué el token de servicio se firma en cada intento y no una vez al arrancar?
+4. ¿Qué `page` recibe M6 si el cliente pide `page=0`, y qué `totalPaginas` da M2 con 42 viajes y `size=20`?
+5. ¿Por qué `schemathesis.toml` acepta el `503` solo para esta operación?
 
 ## Tareas
 
@@ -67,3 +131,10 @@ Pendiente: se completa en T7.
 - Cómo se conecta: encadena T5 (servicio), T4 (pedido a M6) y T10 (token de servicio en cada intento). El `503` por M6 lleva `Retry-After` (de `M2_REINTENTAR_DESPUES_S`) porque `ModuloNoDisponible` lo trae; el `503` por la base no, porque `BaseNoDisponible` no. Los dos salen por `registrarNoDisponible`.
 - Tests: `pruebas/integracion/historial-http.test.ts` (PostgreSQL real y M6 simulado, por HTTP): `200` propio con valores por defecto y con `page` y `size` (a M6 va `page + 1`), cliente sin viajes, OPERADOR y CLIENTE+OPERADOR sobre otro cliente; `400` (page o size fuera de rango, clienteId que no es UUID), `401` (sin token y con firma mala), `403` (cliente ajeno, CONDUCTOR, SERVICIO), todos sin llamar a M6; `404` sin perfil sin llamar a M6; `503` con `Retry-After` por `5xx`, no JSON, corte, demora y `200` con mala forma; `500` por `400`, `401`, `403` y `404` de M6 sin reintento y sin datos de M6; `503` de la base sin `Retry-After`. Los logs no traen el token del usuario, el token de servicio que recibe M6, identificadores de viajes ni de conductores ni de clientes, y el aviso de descarte trae solo la cantidad. `salud.test.ts` y `arranque.test.ts` listan la operación; `contrato-test.test.ts` ya comprueba que los manejadores siguen el orden del contrato.
 - Para mirar con atención: escribí el manejador antes que las pruebas, al revés del orden del flujo; para ver las pruebas en rojo aparté `src` con un stash (quedó fuera solo el archivo nuevo, sin seguimiento, y igual fallaron por falta de `app.m6`). Dónde se suma el `503` de M6 al `schemathesis.toml` y a su prueba guardiana es de T7.
+
+### T7 — Validar contrato, regresión y documentación · commit `007/T7`
+- Qué cambió: `schemathesis.toml` suma un bloque para `listarHistorialViajes` con `checks.not_a_server_error.expected-statuses = ["2xx", "3xx", "4xx", 503]`. `pruebas/unitarias/contrato-test.test.ts` amplía la prueba guardiana del archivo. Esta guía suma la visión general, con el recorrido, el mapa, los supuestos con M6 y ejemplos con un M6 simulado.
+- Por qué así: la prueba de contrato levanta solo el servicio y su base, sin M6, así que `listarHistorialViajes` responde el `503` que el contrato declara para esa dependencia. Schemathesis lo contaba como «Server error» en el chequeo `not_a_server_error`, cuyo valor por defecto es `2xx`, `3xx` y `4xx`. Se acepta el `503` solo en esa operación, como los `422` de las otras (plan, Decisiones); se descartó agregar un M6 simulado al `docker-compose.yml` porque sería una imagen nueva.
+- Cómo se conecta: es la misma configuración que lee `scripts/contrato-test.mjs` (`CONFIGURACION`), sin cambiar el script.
+- Tests: antes del ajuste, `npm run contrato:test` fallaba con un solo «Server error» (`GET /viajes`, 503) y la prueba guardiana nueva fallaba. Después, 3174 casos pasan y la guardiana comprueba que el `503` se acepta solo en `listarHistorialViajes`, con los demás estados por defecto, que el contrato lo declara, y que no hay otros bloques de ajuste. Resultado final (2026-10-25): `npm test` 2890 verdes en 40 archivos, lint, build y `spec-check` correctos. Los ejemplos de la guía se ejecutaron tal cual contra el compose, con un M6 simulado: 201, 200, 200, 403, 400, 404 y 503 con `Retry-After: 5`.
+- Para mirar con atención: la prueba de contrato no ejercita el `200` con datos de M6: ese camino lo cubren las pruebas HTTP con el M6 simulado. Schemathesis avisa que `GET /viajes` repite `404` por falta de datos de prueba, como las otras operaciones de `/clientes/{clienteId}`; es una advertencia que ya había y no falla la corrida.

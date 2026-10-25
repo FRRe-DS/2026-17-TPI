@@ -14,7 +14,7 @@ Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4
   - Hecho cuando: pruebas de integración con PostgreSQL real y M6 simulado comprueban el orden propiedad, perfil y M6 (`403` y `404` no llaman a M6), CLIENTE propio y ajeno, CLIENTE+OPERADOR y cliente sin viajes.
 - [x] **T6. Exponer y registrar `listarHistorialViajes`.** RF-2.4, RF-2.4.5, RF-2.4.6, RF-2.4.7, RF-2.4.8, RNF-03, RNF-14, RNF-19
   - Hecho cuando: pruebas HTTP cubren `200`, `400`, `401`, `403`, `404`, `500` y `503` con `Retry-After` en problem+json, el `503` de la base sin `Retry-After`, y comprueban que los logs no contienen el token, la credencial, identificadores de viajes ni de conductores; las listas de operaciones de `arranque.test.ts`, `salud.test.ts` y `contrato-test.test.ts` incluyen la operación y el manejador sigue el orden del contrato.
-- [ ] **T7. Validar contrato, regresión y documentación.** RNF-03, RNF-07, RNF-20
+- [x] **T7. Validar contrato, regresión y documentación.** RNF-03, RNF-07, RNF-20
   - Hecho cuando: `listarHistorialViajes` pasa `npm run contrato:test` (el `503` de M6 aceptado en `schemathesis.toml` y en su prueba guardiana), `npm test`, lint, build y `spec-check` quedan en verde, y `guia.md` documenta el mapa, los supuestos con M6, ejemplos con un M6 simulado comprobados y la visión general.
 - [x] **T8. Cambiar la credencial fija por la audiencia de M6 en la configuración.** RNF-06, RF-2.4.11, RNF-19
   - Hecho cuando: `M2_CREDENCIAL_M6` ya no existe en la configuración, `ejemplo.env`, `docker-compose.yml` ni el README, ni en `secretosDeConfig`; `M2_AUDIENCIA_M6` es opcional, vale `m6-viajes` por defecto y rechaza un valor vacío; las pruebas de configuración, del ejemplo, de secretos y de arranque lo comprueban.

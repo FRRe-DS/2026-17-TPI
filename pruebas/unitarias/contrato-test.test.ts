@@ -221,13 +221,25 @@ describe('listarOperaciones: qué cuenta como operación', () => {
 
 // schemathesis.toml, la configuración con la que `npm run contrato:test` corre Schemathesis (spec 004, T10). El ajuste es
 // acotado a propósito: no genera el carácter nulo, que PostgreSQL no guarda, y `positive_data_acceptance` acepta además el 422
-// solo en las operaciones que lo declaran en el contrato. Se lee sin una biblioteca de TOML: el archivo es chico y de forma fija.
+// solo en las operaciones que lo declaran en el contrato, y `not_a_server_error` acepta además el 503 solo en el historial, que
+// depende de M6 y en la prueba de contrato no lo hay (spec 007, T7). Se lee sin una biblioteca de TOML: el archivo es chico y de
+// forma fija.
 describe('schemathesis.toml: el ajuste de Schemathesis queda acotado (RNF-07.2)', () => {
   const texto = readFileSync(fileURLToPath(new URL('../../schemathesis.toml', import.meta.url)), 'utf8');
   const sinComentarios = texto.replace(/#.*$/gm, '');
   // Lo que Schemathesis acepta por defecto en positive_data_acceptance, tal como lo informa al fallar.
   const POR_DEFECTO = ['"2xx"', '"3xx"', '401', '403', '404', '409', '429', '"5xx"'];
+  // Lo que Schemathesis no cuenta como error del servidor por defecto en not_a_server_error.
+  const SIN_ERROR_DE_SERVIDOR = ['"2xx"', '"3xx"', '"4xx"'];
   const bloques = sinComentarios.split('[[operations]]').slice(1);
+  // Los estados que un bloque acepta para un chequeo, con el operationId al que se aplican.
+  const aceptados = (chequeo: string) =>
+    bloques.flatMap((bloque) => {
+      const operationId = /include-operation-id\s*=\s*"([^"]+)"/.exec(bloque)?.[1] as string;
+      const lista = new RegExp(`checks\\.${chequeo}\\.expected-statuses\\s*=\\s*\\[([^\\]]*)\\]`).exec(bloque)?.[1];
+      if (lista === undefined) return [];
+      return [{ operationId, estados: lista.split(',').map((estado) => estado.trim()).filter(Boolean) }];
+    });
   const contrato = cargarContrato();
   const respuestasDe = (operationId: string) => {
     for (const ruta of Object.values(contrato.paths ?? {}) as Record<string, { operationId?: string; responses?: object }>[]) {
@@ -246,16 +258,28 @@ describe('schemathesis.toml: el ajuste de Schemathesis queda acotado (RNF-07.2)'
   });
 
   it('acepta 422 solo en crearCliente, crearBloqueo y crearDireccion, que lo declaran en el contrato, y ningún otro código de más', () => {
-    const operaciones = bloques.map((bloque) => {
-      const operationId = /include-operation-id\s*=\s*"([^"]+)"/.exec(bloque)?.[1];
-      const lista = /checks\.positive_data_acceptance\.expected-statuses\s*=\s*\[([^\]]*)\]/.exec(bloque)?.[1];
-      return { operationId, estados: (lista ?? '').split(',').map((estado) => estado.trim()).filter(Boolean) };
-    });
+    const operaciones = aceptados('positive_data_acceptance');
 
     expect(operaciones.map(({ operationId }) => operationId)).toEqual(['crearCliente', 'crearBloqueo', 'crearDireccion']);
     for (const { operationId, estados } of operaciones) {
       expect(estados.sort()).toEqual([...POR_DEFECTO, '422'].sort());
-      expect(respuestasDe(operationId as string)).toContain('422');
+      expect(respuestasDe(operationId)).toContain('422');
     }
+  });
+
+  // No hay un M6 en la prueba de contrato (plan 007, Decisiones): el historial responde el 503 que el contrato declara para la
+  // dependencia, y Schemathesis lo contaría como un error del servidor.
+  it('acepta 503 como respuesta del servidor solo en listarHistorialViajes, que lo declara en el contrato, y ningún otro código de más', () => {
+    const operaciones = aceptados('not_a_server_error');
+
+    expect(operaciones.map(({ operationId }) => operationId)).toEqual(['listarHistorialViajes']);
+    for (const { operationId, estados } of operaciones) {
+      expect(estados.sort()).toEqual([...SIN_ERROR_DE_SERVIDOR, '503'].sort());
+      expect(respuestasDe(operationId)).toContain('503');
+    }
+  });
+
+  it('cada bloque ajusta un solo chequeo de una sola operación, y no hay otros bloques', () => {
+    expect(bloques).toHaveLength(aceptados('positive_data_acceptance').length + aceptados('not_a_server_error').length);
   });
 });
