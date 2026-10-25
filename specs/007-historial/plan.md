@@ -1,0 +1,108 @@
+# Plan 007 — Historial resumido de viajes
+
+Spec: [spec.md](spec.md) · Issue: #7 · Contrato: `contrato/openapi.yml` · Depende de: specs #3 y #4 · Contrato de M6: `contrato/dependencias/m6.yml` (borrador)
+
+## Resumen
+No hay tabla nueva: el historial se arma en cada consulta con la respuesta de M6. Se agrega un módulo `src/historial/` con el servicio y la conversión de la respuesta de M6, se completa el cliente de módulos de la spec #3 con una credencial opcional y con el encabezado `Retry-After` del `503`, y se suma la configuración de M6. La autorización por rol y la propiedad son las de las specs #4 y #5.
+
+## Estructura
+
+| Archivo | Responsabilidad | Requisitos |
+|---|---|---|
+| `src/config.ts` | `M2_URL_M6` (obligatoria), `M2_CREDENCIAL_M6` (opcional) y `M2_REINTENTAR_DESPUES_S` (5 por defecto) | RNF-06, RF-2.4.6 |
+| `src/modulos/cliente.ts` | Credencial opcional (`Authorization: Bearer`) y `Retry-After` en `ModuloNoDisponible` | RNF-06, RNF-13, RF-2.4.6 |
+| `src/errores.ts` | `ModuloNoDisponible` acepta `Retry-After`; nuevo `ErrorDeIntegracion` (500) | RF-2.4.6, RF-2.4.7 |
+| `src/historial/modelo.ts` | Tipos, traducción de página y conversión de `TripSummary` a `ViajeResumen`, funciones puras | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
+| `src/historial/m6.ts` | Pedido `GET /trips` a M6 con el cliente de módulos y lectura de su respuesta | RF-2.4, RF-2.4.6, RF-2.4.7, RF-2.4.10, RNF-13 |
+| `src/historial/servicio.ts` | Propiedad, perfil y llamada a M6, en ese orden | RF-2.4.3 a RF-2.4.5 |
+| `src/historial/operaciones.ts` | Manejador de `listarHistorialViajes` | RNF-03 |
+| `src/app.ts`, `src/arranque.ts` | El cliente de M6 se crea desde la configuración y se decora como `app.m6`; las pruebas pueden darle otro | RNF-06 |
+| `src/operaciones/index.ts` | Registro por `operationId`, en el orden del contrato | RNF-03 |
+| `ejemplo.env`, `docker-compose.yml`, `README.md` | Variables nuevas, con valores de desarrollo | RNF-06, RNF-20 |
+| `pruebas/unitarias/historial.test.ts` | Conversión, traducción de páginas y descarte | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
+| `pruebas/modulos/m6.test.ts` | Lectura de M6 y fallas con un servidor HTTP simulado | RF-2.4.6, RF-2.4.7, RF-2.4.10 |
+| `pruebas/http/historial.test.ts` | Contrato, permisos y errores con M6 simulado | RF-2.4 a RF-2.4.8, RNF-03 |
+| `pruebas/integracion/historial.test.ts` | Perfil real en PostgreSQL, M6 simulado y logs | RF-2.4.3, RF-2.4.4, RNF-05, RNF-14, RNF-19 |
+| `specs/007-historial/guia.md` | Mapa y uso | RNF-20 |
+
+## Contrato
+- Se implementa `listarHistorialViajes`: `GET /api/v1/clientes/{clienteId}/viajes`, roles `CLIENTE` y `OPERADOR`. La validación de `clienteId`, `page` y `size` sale del OpenAPI (`400` antes de entrar al manejador).
+- Rol efectivo y propiedad como en la spec #5: `rolesEfectivos = rolesDelToken ∩ rolesDeLaOperacion`; solo si es exactamente `[CLIENTE]` se exige `sub = clienteId` (`exigirPropietario`, `403`).
+- El `404` es el del perfil (`exigirPerfil`). El `503` por M6 lleva `Retry-After`; el `503` por la base de M2 no (el contrato lo declara solo para la dependencia).
+- La respuesta es `PaginaViajes`. No se cambia el contrato de M2.
+
+## Datos
+Ninguno: M2 no guarda viajes (RNF-05). No hay migración ni cambio de esquema.
+
+## Lógica
+
+### Consulta
+1. `exigirPropietario(identidad, clienteId, rolesDeLaOperacion)`; si falla, `403` sin tocar la base ni M6.
+2. `exigirPerfil(pool, clienteId)`; si no existe, `404` sin llamar a M6.
+3. Pedir a M6 `GET /trips?clientId={clienteId}&page={page+1}&pageSize={size}` con el identificador de correlación de la solicitud.
+4. Convertir la respuesta de M6 con las funciones puras de `modelo.ts` y devolver la página.
+
+### Lectura de la respuesta de M6 (`m6.ts`)
+```
+respuesta = clienteM6.obtener(ruta, idCorrelacion)      # reintenta una vez y puede lanzar ModuloNoDisponible
+si respuesta.estado >= 400: lanzar ErrorDeIntegracion   # 500; la causa lleva solo el código, nunca el cuerpo
+cuerpo = respuesta.cuerpo
+si no es objeto con items (arreglo) y total (entero >= 0), o items.length > size:
+    lanzar ModuloNoDisponible('M6')                     # 503 con Retry-After, RF-2.4.10
+devolver cuerpo
+```
+
+### Conversión (`modelo.ts`, puras)
+```
+aViajeResumen(viaje) = { viajeId: viaje.id, estado: viaje.state,
+                         ...(viaje.driverId ? { conductorId: viaje.driverId } : {}) }
+aPaginaViajes(cuerpoM6, clienteId, page, size):
+    propios  = cuerpoM6.items filtrados por viaje.clientId == clienteId
+    return { page, size, totalElementos: cuerpoM6.total,
+             totalPaginas: ceil(cuerpoM6.total / size), items: propios.map(aViajeResumen) }
+```
+- Si algún viaje no es de `clienteId` (RF-2.4.9), se descarta y se registra un aviso sin identificadores (solo la cantidad y el identificador de correlación).
+- Un elemento de `items` sin `id` o `state` en texto, o que no es un objeto, hace que toda la respuesta cuente como inválida (RF-2.4.10).
+- `totalElementos` es el total de M6 aunque se hayan descartado viajes de otro cliente: el filtro de M6 es el que cuenta.
+
+## Integraciones
+- **M6**, `GET /trips` (lectura): un intento tarda como máximo `M2_TIEMPO_MODULOS_MS` (2 s), se reintenta una vez tras 200 ms y, si falla, `503` con `detail` «M6 no está disponible» y `Retry-After` (RNF-13.1 a RNF-13.3, ya implementados en `crearClienteModulo`).
+- Un `4xx` de M6, incluido el `404`, no se reintenta y responde `500` (RF-2.4.7).
+- La credencial va en `Authorization: Bearer` solo si `M2_CREDENCIAL_M6` está definida. No se registra y no aparece en `detail`, en la causa ni en los logs.
+- La URL base sale de `M2_URL_M6`; el servicio no arranca sin ella (RNF-06).
+
+## Pruebas
+- Unitarias: conversión con y sin `driverId`, estado sin traducir, traducción de páginas (`page + 1`), `totalPaginas`, descarte de viajes ajenos, respuesta inválida.
+- Módulos (servidor HTTP simulado de M6): `200`, página vacía, `5xx`, cuerpo que no es JSON, `4xx` (`400`, `401`, `403`, `404`), demora mayor al tiempo, total inválido e `items` de más; el `Authorization` llega solo con credencial configurada.
+- HTTP: `200`, `400` de `page`, `size` y `clienteId`, `401`, `403` (propietario, ajeno, CLIENTE+OPERADOR), `404` sin llamar a M6, `500`, `503` con `Retry-After`, problem+json.
+- Integración: perfil real en PostgreSQL con M6 simulado; el `503` de la base no lleva `Retry-After`; ningún token, identificador de viaje ni de conductor aparece en los logs.
+- Contrato: `listarHistorialViajes` deja de figurar pendiente. En la prueba de contrato no hay M6, así que el `503` de M6 se acepta para esta operación en `schemathesis.toml`, como los `422` de las otras.
+
+## Trazabilidad
+
+| Requisito | Cobertura |
+|---|---|
+| RF-2.4, RF-2.4.1, RF-2.4.2 | `servicio.ts`, `m6.ts`, `modelo.ts`, pruebas unitarias, de módulos y HTTP |
+| RF-2.4.3, RF-2.4.4, RF-2.4.5 | `servicio.ts` (propiedad, perfil, M6 vacío), pruebas HTTP e integración |
+| RF-2.4.6, RF-2.4.7 | `cliente.ts`, `errores.ts`, `m6.ts`, pruebas de módulos y HTTP |
+| RF-2.4.8 | Validación del contrato y pruebas HTTP |
+| RF-2.4.9, RF-2.4.10 | `modelo.ts`, `m6.ts`, pruebas unitarias y de módulos |
+| RNF-03 | Registro por OpenAPI, pruebas HTTP y de contrato |
+| RNF-05 | Sin tabla ni migración; M6 solo por su API |
+| RNF-06 | `config.ts`, `ejemplo.env`, `docker-compose.yml`, README |
+| RNF-07 | Unitarias, módulos, HTTP, integración y contrato |
+| RNF-13 | Cliente de módulos de la spec #3 y pruebas de módulos |
+| RNF-14 | Correlación hacia M6 y causa en el log del `503` y del `500` |
+| RNF-19 | Credencial y cuerpos fuera del log; prueba de logs en integración |
+| RNF-20 | Guía por tarea y visión general al validar |
+
+## Decisiones
+- El cliente de M6 es el `ClienteModulo` de la spec #3, con una credencial opcional; no se agrega librería ni cliente nuevo.
+- La conversión de la respuesta de M6 se escribe a mano, con comprobaciones simples, sin validador nuevo: son tres campos. Alternativa descartada: una librería de esquemas, que es una dependencia nueva.
+- `Retry-After` va por parámetro de `ModuloNoDisponible`, para que el `503` de otros módulos pueda omitirlo; el valor sale de `M2_REINTENTAR_DESPUES_S`.
+- `ErrorDeIntegracion` es un `500` genérico (`about:blank`, título «Error interno»): el contrato no define un `type` propio para este caso. La causa lleva el código de M6 y nunca su cuerpo.
+- En la prueba de contrato no se agrega un M6 simulado (Prism) al `docker-compose.yml`: sería una imagen nueva. Se acepta el `503` en `schemathesis.toml`. Se puede agregar más adelante si el grupo lo pide.
+- No se agrega ADR ni dependencia.
+
+## Dudas abiertas
+Ninguna. Los supuestos con M6 y el Grupo 1 están en `## Decisiones` de la spec.
