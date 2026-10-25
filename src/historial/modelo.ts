@@ -3,12 +3,13 @@ import type { components } from '../generado/contrato.js';
 export type ViajeResumen = components['schemas']['ViajeResumen'];
 export type PaginaViajes = components['schemas']['PaginaViajes'];
 
-// Lo que M2 usa de un viaje de M6 (`Trip`): el resto de sus campos no se lee ni se devuelve (spec 007, Decisiones).
+// Lo que M2 usa de un viaje de M6 (`TripSummary`): el resto de sus campos no se lee ni se devuelve (spec 007, Decisiones).
+// M6 no declara campos obligatorios: `clientId` y `driverId` pueden faltar o venir nulos.
 export type ViajeM6 = {
   id: string;
   state: string;
-  clientId: string;
-  driverId?: string;
+  clientId?: string | null;
+  driverId?: string | null;
 };
 
 // La página que devuelve M6: sus viajes y el total del cliente. Su forma la comprueba `m6.ts` antes de llegar acá.

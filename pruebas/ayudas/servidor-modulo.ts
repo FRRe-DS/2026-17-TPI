@@ -16,11 +16,14 @@ export function crearServidorModulo() {
   // La hora de cada llamada, para medir la pausa entre intentos.
   const momentos: number[] = [];
   const encabezadosRecibidos = new Map<string, string>();
+  // La ruta con query string de la última llamada, para ver qué se pidió.
+  let rutaRecibida = '';
   const timers: ReturnType<typeof setTimeout>[] = [];
 
   const servidor = createServer((req: IncomingMessage, res: ServerResponse) => {
     llamadas++;
     momentos.push(Date.now());
+    rutaRecibida = req.url ?? '';
     encabezadosRecibidos.clear();
     for (const [clave, valor] of Object.entries(req.headers)) {
       if (typeof valor === 'string') encabezadosRecibidos.set(clave.toLowerCase(), valor);
@@ -76,6 +79,9 @@ export function crearServidorModulo() {
     },
     get encabezadosRecibidos(): Map<string, string> {
       return encabezadosRecibidos;
+    },
+    get rutaRecibida(): string {
+      return rutaRecibida;
     },
     // Un comportamiento para todas las llamadas, o una lista: uno por llamada y el último para las que siguen.
     responderCon(c: Comportamiento | Comportamiento[]): void {

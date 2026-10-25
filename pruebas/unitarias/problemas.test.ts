@@ -9,6 +9,7 @@ import {
   Deteniendose,
   MetodoNoPermitido,
   ModuloNoDisponible,
+  ErrorDeIntegracion,
   NoAutenticado,
   NoEncontrado,
   Problema,
@@ -93,6 +94,13 @@ const NOMBRADOS: Fila[] = [
     codigo: 503,
     title: 'Servicio no disponible',
     detail: 'La base de datos no está disponible',
+  },
+  {
+    origen: 'ErrorDeIntegracion',
+    error: () => new ErrorDeIntegracion({ cause: new Error('M6 respondió 401') }),
+    codigo: 500,
+    title: 'Error interno',
+    detail: 'Ocurrió un error interno',
   },
   {
     origen: 'Deteniendose',

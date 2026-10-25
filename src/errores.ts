@@ -26,6 +26,7 @@ type DatosProblema = {
 const TIPO_GENERICO = 'about:blank';
 const TITULO_SOLICITUD_INVALIDA = 'Solicitud inválida';
 const TITULO_NO_DISPONIBLE = 'Servicio no disponible';
+const ERROR_INTERNO: DatosProblema = { codigo: 500, title: 'Error interno', detail: 'Ocurrió un error interno' };
 
 // Un error que ya sabe qué respuesta le corresponde. Sin `type` propio es genérico (`about:blank`); con uno, es un
 // error de negocio que define el contrato. `message` es el `detail`, que se escribe sin datos internos: puede ir al log.
@@ -184,6 +185,15 @@ export class ModuloNoDisponible extends Problema {
   }
 }
 
+// De la lectura de otro módulo, cuando rechaza el pedido de M2 con un 4xx (spec 007, RF-2.4.7): es un problema de
+// configuración o de acuerdo entre módulos, no del cliente. La respuesta es la de un error interno, sin datos del módulo;
+// la `cause` lleva su código, nunca su cuerpo, y la registra el manejador de errores como todo 500.
+export class ErrorDeIntegracion extends Problema {
+  constructor(opciones?: ErrorOptions) {
+    super(ERROR_INTERNO, opciones);
+  }
+}
+
 // De `consultar()`, cuando la base no responde a tiempo o no se puede conectar. La `cause` es el error de pg o el corte de
 // `conTiempoMaximo`: la registra el manejador de errores (RNF-14.8).
 export class BaseNoDisponible extends Problema {
@@ -232,8 +242,6 @@ const URL_INVALIDA: DatosProblema = {
   title: TITULO_SOLICITUD_INVALIDA,
   detail: 'La URL no es válida, o un parámetro de la ruta supera los 100 caracteres',
 };
-
-const ERROR_INTERNO: DatosProblema = { codigo: 500, title: 'Error interno', detail: 'Ocurrió un error interno' };
 
 // Los errores de Fastify y de Node que tienen una fila propia en la tabla, por su `code`. Es un `Map` y no un objeto
 // para que un código como `constructor` no encuentre nada.

@@ -8,7 +8,7 @@ Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4
   - Hecho cuando: pruebas de módulos comprueban que `Authorization: Bearer` se envía solo si hay credencial, que `ModuloNoDisponible` puede llevar `Retry-After` y que sin él las respuestas `503` existentes no cambian, y que la credencial no aparece en `detail`, en la causa ni en el log.
 - [x] **T3. Convertir la respuesta de M6 al esquema del contrato.** RF-2.4.1, RF-2.4.2, RF-2.4.9
   - Hecho cuando: pruebas unitarias cubren viaje con y sin `driverId`, estado sin traducir, `page + 1` hacia M6, `totalPaginas` por redondeo hacia arriba, página vacía y descarte de viajes de otro cliente.
-- [ ] **T4. Leer la respuesta de M6 y sus fallas.** RF-2.4, RF-2.4.6, RF-2.4.7, RF-2.4.10, RNF-13, RNF-14
+- [x] **T4. Leer la respuesta de M6 y sus fallas.** RF-2.4, RF-2.4.6, RF-2.4.7, RF-2.4.10, RNF-13, RNF-14
   - Hecho cuando: pruebas con un servidor HTTP simulado cubren `200`, página vacía, `5xx`, cuerpo que no es JSON, demora mayor al tiempo (un reintento y `503`), `4xx` incluido `404` (sin reintento, error de integración), total inválido e `items` de más; el pedido lleva `clientId`, `page`, `pageSize` y el identificador de correlación.
 - [ ] **T5. Armar el servicio del historial.** RF-2.4.3, RF-2.4.4, RF-2.4.5, RNF-05
   - Hecho cuando: pruebas de integración con PostgreSQL real y M6 simulado comprueban el orden propiedad, perfil y M6 (`403` y `404` no llaman a M6), CLIENTE propio y ajeno, CLIENTE+OPERADOR y cliente sin viajes.
