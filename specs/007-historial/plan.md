@@ -1,26 +1,28 @@
 # Plan 007 — Historial resumido de viajes
 
-Spec: [spec.md](spec.md) · Issue: #7 · Contrato: `contrato/openapi.yml` · Depende de: specs #3 y #4 · Contrato de M6: `contrato/dependencias/m6.yml` (borrador)
+Spec: [spec.md](spec.md) · Issue: #7 · Contrato: `contrato/openapi.yml` · Depende de: specs #3 y #4 · Contrato de M6: `contrato/dependencias/m6.yml` (ADR 057) · Token de servicio: ADR 009
 
 ## Resumen
-No hay tabla nueva: el historial se arma en cada consulta con la respuesta de M6. Se agrega un módulo `src/historial/` con el servicio y la conversión de la respuesta de M6, se completa el cliente de módulos de la spec #3 con una credencial opcional y con el encabezado `Retry-After` del `503`, y se suma la configuración de M6. La autorización por rol y la propiedad son las de las specs #4 y #5.
+No hay tabla nueva: el historial se arma en cada consulta con la respuesta de M6. Se agrega un módulo `src/historial/` con el servicio y la conversión de la respuesta de M6, se completa el cliente de módulos de la spec #3 con una credencial por intento y con el encabezado `Retry-After` del `503`, y se suma la configuración de M6. La credencial es un token de servicio que M2 firma en cada intento según el ADR 009 (cambio del #58). La autorización por rol y la propiedad son las de las specs #4 y #5.
 
 ## Estructura
 
 | Archivo | Responsabilidad | Requisitos |
 |---|---|---|
-| `src/config.ts` | `M2_URL_M6` (obligatoria), `M2_CREDENCIAL_M6` (opcional) y `M2_REINTENTAR_DESPUES_S` (5 por defecto) | RNF-06, RF-2.4.6 |
-| `src/modulos/cliente.ts` | Credencial opcional (`Authorization: Bearer`) y `Retry-After` en `ModuloNoDisponible` | RNF-06, RNF-13, RF-2.4.6 |
+| `src/config.ts` | `M2_URL_M6` (obligatoria), `M2_AUDIENCIA_M6` (`m6-viajes` por defecto) y `M2_REINTENTAR_DESPUES_S` (5 por defecto). `M2_CREDENCIAL_M6`, de T1, se quita | RNF-06, RF-2.4.6, RF-2.4.11 |
+| `src/auth/tokens.ts` | `tokenDeServicio`: firma el token de M2 ante otro módulo con la firma de `generarToken` | RF-2.4.11, RNF-19 |
+| `src/modulos/cliente.ts` | Credencial opcional por intento (`Authorization: Bearer`, una función que da el token) y `Retry-After` en `ModuloNoDisponible` | RNF-06, RNF-13, RF-2.4.6, RF-2.4.11 |
 | `src/errores.ts` | `ModuloNoDisponible` acepta `Retry-After`; nuevo `ErrorDeIntegracion` (500) | RF-2.4.6, RF-2.4.7 |
 | `src/historial/modelo.ts` | Tipos, traducción de página y conversión de `TripSummary` a `ViajeResumen`, funciones puras | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
-| `src/historial/m6.ts` | Pedido `GET /trips` a M6 con el cliente de módulos y lectura de su respuesta | RF-2.4, RF-2.4.6, RF-2.4.7, RF-2.4.10, RNF-13 |
+| `src/historial/m6.ts` | Pedido `GET /trips` a M6 con el cliente de módulos y el token de servicio, y lectura de su respuesta | RF-2.4, RF-2.4.6, RF-2.4.7, RF-2.4.10, RF-2.4.11, RNF-13 |
 | `src/historial/servicio.ts` | Propiedad, perfil y llamada a M6, en ese orden | RF-2.4.3 a RF-2.4.5 |
 | `src/historial/operaciones.ts` | Manejador de `listarHistorialViajes` | RNF-03 |
 | `src/app.ts`, `src/arranque.ts` | El cliente de M6 se crea desde la configuración y se decora como `app.m6`; las pruebas pueden darle otro | RNF-06 |
 | `src/operaciones/index.ts` | Registro por `operationId`, en el orden del contrato | RNF-03 |
 | `ejemplo.env`, `docker-compose.yml`, `README.md` | Variables nuevas, con valores de desarrollo | RNF-06, RNF-20 |
 | `pruebas/unitarias/historial.test.ts` | Conversión, traducción de páginas y descarte | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
-| `pruebas/modulos/m6.test.ts` | Lectura de M6 y fallas con un servidor HTTP simulado | RF-2.4.6, RF-2.4.7, RF-2.4.10 |
+| `pruebas/unitarias/tokens.test.ts` | Claims y firma del token de servicio | RF-2.4.11 |
+| `pruebas/modulos/m6.test.ts` | Lectura de M6, fallas y token de servicio con un servidor HTTP simulado | RF-2.4.6, RF-2.4.7, RF-2.4.10, RF-2.4.11 |
 | `pruebas/http/historial.test.ts` | Contrato, permisos y errores con M6 simulado | RF-2.4 a RF-2.4.8, RNF-03 |
 | `pruebas/integracion/historial.test.ts` | Perfil real en PostgreSQL, M6 simulado y logs | RF-2.4.3, RF-2.4.4, RNF-05, RNF-14, RNF-19 |
 | `specs/007-historial/guia.md` | Mapa y uso | RNF-20 |
@@ -39,7 +41,7 @@ Ninguno: M2 no guarda viajes (RNF-05). No hay migración ni cambio de esquema.
 ### Consulta
 1. `exigirPropietario(identidad, clienteId, rolesDeLaOperacion)`; si falla, `403` sin tocar la base ni M6.
 2. `exigirPerfil(pool, clienteId)`; si no existe, `404` sin llamar a M6.
-3. Pedir a M6 `GET /trips?clientId={clienteId}&page={page+1}&pageSize={size}` con el identificador de correlación de la solicitud.
+3. Pedir a M6 `GET /trips?clientId={clienteId}&page={page+1}&pageSize={size}` con el identificador de correlación de la solicitud y el token de servicio.
 4. Convertir la respuesta de M6 con las funciones puras de `modelo.ts` y devolver la página.
 
 ### Lectura de la respuesta de M6 (`m6.ts`)
@@ -68,12 +70,18 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 ## Integraciones
 - **M6**, `GET /trips` (lectura): un intento tarda como máximo `M2_TIEMPO_MODULOS_MS` (2 s), se reintenta una vez tras 200 ms y, si falla, `503` con `detail` «M6 no está disponible» y `Retry-After` (RNF-13.1 a RNF-13.3, ya implementados en `crearClienteModulo`).
 - Un `4xx` de M6, incluido el `404`, no se reintenta y responde `500` (RF-2.4.7).
-- La credencial va en `Authorization: Bearer` solo si `M2_CREDENCIAL_M6` está definida. No se registra y no aparece en `detail`, en la causa ni en los logs.
+- La credencial va en `Authorization: Bearer` y es un token de servicio nuevo en cada intento (RF-2.4.11, ADR 009), firmado con `M2_CLAVE_TOKENS`:
+  ```
+  tokenDeServicio(config) = JWT HS256 { iss: emisorTokens, sub: 'm2-clientes', roles: ['SERVICIO'],
+                                        aud: audienciaM6, iat: ahora, exp: ahora + 60 }
+  ```
+  El claim de roles se llama `roles`, el del acuerdo, aunque `M2_CAMPO_ROLES` cambie el que M2 lee. El cliente de módulos recibe una función que da el token y la llama en cada intento: un reintento lleva su propio token. El token no se registra y no aparece en `detail`, en la causa ni en los logs; la clave que lo firma ya está en `secretosDeConfig`. Si M6 rechaza el token, responde un `4xx`: `500` (RF-2.4.7).
 - La URL base sale de `M2_URL_M6`; el servicio no arranca sin ella (RNF-06).
 
 ## Pruebas
 - Unitarias: conversión con y sin `driverId`, estado sin traducir, traducción de páginas (`page + 1`), `totalPaginas`, descarte de viajes ajenos, respuesta inválida.
-- Módulos (servidor HTTP simulado de M6): `200`, página vacía, `5xx`, cuerpo que no es JSON, `4xx` (`400`, `401`, `403`, `404`), demora mayor al tiempo, total inválido e `items` de más; el `Authorization` llega solo con credencial configurada.
+- Unitarias de tokens: el token de servicio verifica con la clave y trae `iss`, `sub` `m2-clientes`, `roles` `["SERVICIO"]`, `aud` de M6 y `exp` 60 s después de `iat`, aunque `M2_CAMPO_ROLES` sea otro.
+- Módulos (servidor HTTP simulado de M6): `200`, página vacía, `5xx`, cuerpo que no es JSON, `4xx` (`400`, `401`, `403`, `404`), demora mayor al tiempo, total inválido e `items` de más; el `Authorization` llega solo con credencial configurada, cada intento con un token nuevo, y el token de servicio que recibe el M6 simulado verifica con la clave y la audiencia de M6.
 - HTTP: `200`, `400` de `page`, `size` y `clienteId`, `401`, `403` (propietario, ajeno, CLIENTE+OPERADOR), `404` sin llamar a M6, `500`, `503` con `Retry-After`, problem+json.
 - Integración: perfil real en PostgreSQL con M6 simulado; el `503` de la base no lleva `Retry-After`; ningún token, identificador de viaje ni de conductor aparece en los logs.
 - Contrato: `listarHistorialViajes` deja de figurar pendiente. En la prueba de contrato no hay M6, así que el `503` de M6 se acepta para esta operación en `schemathesis.toml`, como los `422` de las otras.
@@ -89,15 +97,18 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 | RF-2.4.9, RF-2.4.10 | `modelo.ts`, `m6.ts`, pruebas unitarias y de módulos |
 | RNF-03 | Registro por OpenAPI, pruebas HTTP y de contrato |
 | RNF-05 | Sin tabla ni migración; M6 solo por su API |
+| RF-2.4.11 | `tokens.ts` (`tokenDeServicio`), `cliente.ts`, `m6.ts`, pruebas unitarias de tokens y de módulos |
 | RNF-06 | `config.ts`, `ejemplo.env`, `docker-compose.yml`, README |
 | RNF-07 | Unitarias, módulos, HTTP, integración y contrato |
 | RNF-13 | Cliente de módulos de la spec #3 y pruebas de módulos |
 | RNF-14 | Correlación hacia M6 y causa en el log del `503` y del `500` |
-| RNF-19 | Credencial y cuerpos fuera del log; prueba de logs en integración |
+| RNF-19 | Token de servicio y cuerpos fuera del log; pruebas de módulos y de logs en integración |
 | RNF-20 | Guía por tarea y visión general al validar |
 
 ## Decisiones
-- El cliente de M6 es el `ClienteModulo` de la spec #3, con una credencial opcional; no se agrega librería ni cliente nuevo.
+- El cliente de M6 es el `ClienteModulo` de la spec #3, con una credencial opcional por intento; no se agrega librería ni cliente nuevo.
+- El token de servicio se firma con `generarToken`, la misma firma HS256 que usa M2 para hacer de M1 en desarrollo, con el `sub`, la audiencia y el vencimiento del token de servicio. Alternativas descartadas: `M2_CREDENCIAL_M6` con un token fijo, implementada en T1 y T2 (vence, o no vence y viola el ADR 009), y guardar un token y renovarlo antes de que venza (más estado para ahorrar una firma HMAC por intento).
+- `M2_AUDIENCIA_M6` vale `m6-viajes` por defecto, el supuesto de la spec, hasta que el Grupo 12 confirme qué audiencia valida.
 - La conversión de la respuesta de M6 se escribe a mano, con comprobaciones simples, sin validador nuevo: son tres campos. Alternativa descartada: una librería de esquemas, que es una dependencia nueva.
 - `Retry-After` va por parámetro de `ModuloNoDisponible`, para que el `503` de otros módulos pueda omitirlo; el valor sale de `M2_REINTENTAR_DESPUES_S`.
 - `ErrorDeIntegracion` es un `500` genérico (`about:blank`, título «Error interno»): el contrato no define un `type` propio para este caso. La causa lleva el código de M6 y nunca su cuerpo.
