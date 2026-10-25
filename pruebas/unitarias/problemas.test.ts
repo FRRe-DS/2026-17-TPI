@@ -9,6 +9,7 @@ import {
   Deteniendose,
   MetodoNoPermitido,
   ModuloNoDisponible,
+  ErrorDeIntegracion,
   NoAutenticado,
   NoEncontrado,
   Problema,
@@ -93,6 +94,13 @@ const NOMBRADOS: Fila[] = [
     codigo: 503,
     title: 'Servicio no disponible',
     detail: 'La base de datos no está disponible',
+  },
+  {
+    origen: 'ErrorDeIntegracion',
+    error: () => new ErrorDeIntegracion({ cause: new Error('M6 respondió 401') }),
+    codigo: 500,
+    title: 'Error interno',
+    detail: 'Ocurrió un error interno',
   },
   {
     origen: 'Deteniendose',
@@ -319,6 +327,23 @@ describe('errores con nombre', () => {
   it('ModuloNoDisponible nombra el módulo que falló (RNF-13.3)', () => {
     expect(aProblema(new ModuloNoDisponible('M1')).cuerpo.detail).toBe('M1 no está disponible');
     expect(aProblema(new ModuloNoDisponible('M9')).cuerpo.detail).toBe('M9 no está disponible');
+  });
+
+  it('ModuloNoDisponible lleva Retry-After en segundos si se lo pasan (RF-2.4.6), y la causa sigue yendo aparte', () => {
+    const causa = new Error('M6 respondió 500');
+    const error = new ModuloNoDisponible('M6', { cause: causa, reintentarDespuesS: 5 });
+    const respuesta = aProblema(error);
+
+    expect(respuesta.codigo).toBe(503);
+    expect(respuesta.encabezados).toEqual({ 'Retry-After': '5', 'Content-Type': 'application/problem+json' });
+    expect(respuesta.cuerpo.detail).toBe('M6 no está disponible');
+    expect(error.cause).toBe(causa);
+  });
+
+  it('sin Retry-After, el 503 de un módulo y el de la base quedan como antes: solo el Content-Type', () => {
+    for (const error of [new ModuloNoDisponible('M6'), new ModuloNoDisponible('M6', { cause: new Error('x') }), new BaseNoDisponible()]) {
+      expect(aProblema(error).encabezados).toEqual({ 'Content-Type': 'application/problem+json' });
+    }
   });
 
   it('NoAutenticado dice el motivo que recibe y siempre pide Bearer (RNF-12.2)', () => {

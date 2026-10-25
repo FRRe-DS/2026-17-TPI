@@ -30,5 +30,6 @@ export const entorno = (urlBd: string, puerto: number, cambios: Entorno = {}): E
   M2_CLAVE_TOKENS: CONFIG_TOKENS.claveTokens,
   M2_EMISOR_TOKENS: CONFIG_TOKENS.emisorTokens,
   M2_AUDIENCIA_TOKENS: CONFIG_TOKENS.audienciaTokens,
+  M2_URL_M6: 'http://127.0.0.1:1/api/v1',
   ...cambios,
 });

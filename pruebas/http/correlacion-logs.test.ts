@@ -547,6 +547,8 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
 
     expect(respuesta.statusCode).toBe(503);
     expect(respuesta.json().detail).toBe(SIN_BASE);
+    // El contrato declara Retry-After solo para el 503 de una dependencia (spec 007, RF-2.4.6).
+    expect(respuesta.headers['retry-after']).toBeUndefined();
     expect(errores(logs)).toEqual([
       expect.objectContaining({
         level: 50,
@@ -612,6 +614,39 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
       }),
     ]);
     for (const dato of ['Ana Perez', 'Siempre Viva', '<html>']) expect(logs.texto()).not.toContain(dato);
+  });
+
+  // Spec 007, T2 y T10: la credencial va a M6 en Authorization y ni el 503 ni el log la traen, aunque M6 la repita y aunque no
+  // sea un secreto de la configuración que se pueda ocultar: el token de servicio cambia en cada intento (RNF-19.1).
+  it('con credencial ante M6: va a M6, y el 503 y el log no la traen aunque M6 la repita', async () => {
+    const CREDENCIAL_M6 = 'credencial-de-m2-ante-m6';
+    modulo.responderCon({ tipo: '5xx', estado: 500, cuerpo: { error: `Bearer ${CREDENCIAL_M6}` } });
+    const logs = capturarLogs();
+    const app = crearApp(
+      {
+        probarPublica: async (request) => {
+          const cliente = crearClienteModulo({
+            nombre: 'M6',
+            urlBase: modulo.url,
+            tiempoMs: 500,
+            reintentos: 0,
+            encabezadoCorrelacion: CONFIG.encabezadoCorrelacion,
+            credencial: async () => CREDENCIAL_M6,
+            reintentarDespuesS: 5,
+          });
+          return (await cliente.obtener('/', request.id)).cuerpo;
+        },
+      },
+      { flujoLog: logs.flujo, config: { urlBd: URL_BD } },
+    );
+
+    const sinM6 = await app.inject({ method: 'GET', url: '/pruebas/publica', headers: { [ENCABEZADO]: 'sin-m6-3' } });
+    expect(sinM6.statusCode).toBe(503);
+    expect(sinM6.headers['retry-after']).toBe('5');
+    expect(modulo.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL_M6}`);
+
+    expect(errores(logs)).toHaveLength(1);
+    for (const texto of [sinM6.body, logs.texto()]) expect(texto).not.toContain(CREDENCIAL_M6);
   });
 
   it('sin un id en la solicitud, la línea trae el UUID que devuelve la respuesta', async () => {

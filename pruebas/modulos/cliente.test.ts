@@ -1,6 +1,8 @@
 import { createServer } from 'node:net';
+import { inspect } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ModuloNoDisponible } from '../../src/errores.js';
+import { aProblema, ModuloNoDisponible } from '../../src/errores.js';
+import { serializarError } from '../../src/logs.js';
 import { crearClienteModulo } from '../../src/modulos/cliente.js';
 import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 
@@ -234,4 +236,127 @@ describe('crearClienteModulo', () => {
     expect(tardo).toBeGreaterThanOrEqual(4200 - 50);
     expect(tardo).toBeLessThan(4200 + 300);
   }, 10_000);
+
+  // ## Spec 007, T2 y T10
+
+  const CREDENCIAL = 'credencial-de-m2-ante-m6';
+  const conCredencial = (urlBase: string, reintentos = 0, credencial = async () => CREDENCIAL) =>
+    crearClienteModulo({
+      nombre: 'M6',
+      urlBase,
+      tiempoMs: TIEMPO_MS,
+      reintentos,
+      encabezadoCorrelacion: 'X-Request-Id',
+      credencial,
+      reintentarDespuesS: 5,
+    });
+
+  // Una credencial distinta en cada llamada, como el token de servicio que se firma por intento (RF-2.4.11).
+  const credencialPorLlamada = () => {
+    let n = 0;
+    const credencial = async () => `token-${++n}`;
+    return { credencial, llamadas: () => n };
+  };
+
+  describe('la credencial ante el módulo (RNF-06, RF-2.4.6, RF-2.4.11)', () => {
+    it('va en Authorization: Bearer en un GET y en un POST', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+
+      await conCredencial(serv.url).obtener('/', 'id');
+      expect(serv.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL}`);
+
+      await conCredencial(serv.url).enviar('POST', '/', { dato: 1 }, 'id');
+      expect(serv.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL}`);
+    });
+
+    it('se pide en cada intento: el reintento lleva su propia credencial', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 500 }, { tipo: 'ok', cuerpo: { ok: true } }]);
+      const { credencial, llamadas } = credencialPorLlamada();
+
+      await conCredencial(serv.url, 1, credencial).obtener('/', 'id');
+
+      expect(serv.llamadas).toBe(2);
+      expect(llamadas()).toBe(2);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+    });
+
+    it('cada pedido pide la suya: no se guarda de un pedido al siguiente', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+      const { credencial } = credencialPorLlamada();
+      const cliente = conCredencial(serv.url, 0, credencial);
+
+      await cliente.obtener('/', 'id');
+      await cliente.enviar('POST', '/', { dato: 1 }, 'id');
+
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+    });
+
+    // Si M2 no puede dar su credencial, la falla es de M2 y no del módulo: no se llama, no se reintenta y no es un 503.
+    it('si la credencial falla, el error sale tal cual, sin llamar al módulo ni reintentar', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+      const falla = new Error('no se pudo firmar');
+      let pedidas = 0;
+      const credencial = async () => {
+        pedidas++;
+        throw falla;
+      };
+
+      await expect(conCredencial(serv.url, 1, credencial).obtener('/', 'id')).rejects.toBe(falla);
+      expect(pedidas).toBe(1);
+      expect(serv.llamadas).toBe(0);
+    });
+
+    it('sin credencial no se envía Authorization', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+
+      await clienteDe(serv.url, 0).obtener('/', 'id');
+      expect(serv.encabezadosRecibidos.has('authorization')).toBe(false);
+    });
+
+    // El 503 va al log con su causa (RNF-14.8): ni el detail, ni la causa, ni lo que el log guarda del error la traen (RNF-19).
+    it.each([
+      ['un 5xx que repite la credencial en su cuerpo', { tipo: '5xx', estado: 500, cuerpo: { error: `Bearer ${CREDENCIAL}` } }],
+      ['un cuerpo que no es JSON y la repite', { tipo: 'no-json', contenido: `Bearer ${CREDENCIAL}` }],
+      ['un corte de la conexión', { tipo: 'corta' }],
+      ['un corte por tiempo', { tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4 }],
+    ] as const)('no aparece en el error ante %s', async (_caso, falla) => {
+      serv.responderCon(falla);
+
+      const error = await conCredencial(serv.url).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(JSON.stringify(aProblema(error).cuerpo)).not.toContain(CREDENCIAL);
+      expect(inspect(error, { depth: 10 })).not.toContain(CREDENCIAL);
+      // Sin ningún secreto que ocultar: lo que el log guarda no la trae ni siquiera antes de limpiarlo.
+      expect(JSON.stringify(serializarError(error, []))).not.toContain(CREDENCIAL);
+    });
+
+    it('no aparece en el error ante una conexión rechazada', async () => {
+      const error = await conCredencial(await urlSinServidor()).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(inspect(error, { depth: 10 })).not.toContain(CREDENCIAL);
+      expect(JSON.stringify(serializarError(error, []))).not.toContain(CREDENCIAL);
+    });
+  });
+
+  describe('Retry-After en el 503 (RF-2.4.6)', () => {
+    it('con reintentarDespuesS, ModuloNoDisponible lo lleva en segundos', async () => {
+      serv.responderCon({ tipo: '5xx', estado: 500 });
+
+      const error = await conCredencial(serv.url).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('5');
+    });
+
+    it('sin reintentarDespuesS, el 503 queda como antes: sin Retry-After', async () => {
+      serv.responderCon({ tipo: '5xx', estado: 500 });
+
+      const error = await clienteDe(serv.url, 0).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados).toEqual({ 'Content-Type': 'application/problem+json' });
+    });
+  });
 });

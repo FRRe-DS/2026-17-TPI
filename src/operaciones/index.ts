@@ -16,6 +16,7 @@ import {
   listarDirecciones,
   obtenerDireccion,
 } from '../direcciones/operaciones.js';
+import { listarHistorialViajes } from '../historial/operaciones.js';
 import { verificarSalud } from '../salud.js';
 import { obtenerPreferencias, guardarPreferencias } from '../preferencias/operaciones.js';
 
@@ -23,7 +24,8 @@ import { obtenerPreferencias, guardarPreferencias } from '../preferencias/operac
 // Las rutas, la validación y los roles de cada una salen del contrato; acá solo se las asocia con su manejador, en el orden del
 // contrato. Hoy: verificarSalud
 // (GET /health, que el contrato v1 trae con ese nombre), las ocho de perfil y estado de cuenta (spec 004) y las cinco de
-// direcciones (spec 005) y las dos de preferencias (spec 006). Historial y calificaciones llegan con las specs #7 y #8.
+// direcciones (spec 005), las dos de preferencias (spec 006) y la del historial (spec 007). Las calificaciones llegan con la
+// spec #8.
 export const manejadores: Manejadores = {
   verificarSalud,
   crearCliente,
@@ -36,6 +38,7 @@ export const manejadores: Manejadores = {
   eliminarDireccion,
   obtenerPreferencias,
   guardarPreferencias,
+  listarHistorialViajes,
   obtenerEstadoCuenta,
   listarBloqueos,
   crearBloqueo,

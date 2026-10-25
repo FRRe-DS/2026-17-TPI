@@ -16,6 +16,7 @@ const OBLIGATORIAS = {
   M2_CLAVE_TOKENS: CLAVE,
   M2_EMISOR_TOKENS: 'm1-identidad',
   M2_AUDIENCIA_TOKENS: 'm2-clientes',
+  M2_URL_M6: 'http://m6:3006/api/v1',
 };
 const NOMBRES_OBLIGATORIAS = Object.keys(OBLIGATORIAS);
 
@@ -48,6 +49,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       tiempoModulosMs: 2000,
       reintentosModulos: 1,
       encabezadoCorrelacion: 'X-Request-Id',
+      urlM6: 'http://m6:3006/api/v1',
+      audienciaM6: 'm6-viajes',
+      reintentarDespuesS: 5,
     });
   });
 
@@ -60,6 +64,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       M2_TIEMPO_MODULOS_MS: '750',
       M2_REINTENTOS_MODULOS: '3',
       M2_ENCABEZADO_CORRELACION: 'X-Correlation-Id',
+      M2_URL_M6: 'https://m6.interno:8443/api/v1',
+      M2_AUDIENCIA_M6: 'm6-prueba',
+      M2_REINTENTAR_DESPUES_S: '30',
     };
     expect(cargada(env)).toEqual({
       urlBd: OBLIGATORIAS.M2_URL_BD,
@@ -72,6 +79,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       tiempoModulosMs: 750,
       reintentosModulos: 3,
       encabezadoCorrelacion: 'X-Correlation-Id',
+      urlM6: 'https://m6.interno:8443/api/v1',
+      audienciaM6: 'm6-prueba',
+      reintentarDespuesS: 30,
     });
   });
 
@@ -89,6 +99,13 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
     ['M2_URL_BD', 'postgresql://m2:clave@bd:5432/m2', 'urlBd', 'postgresql://m2:clave@bd:5432/m2'],
     ['M2_URL_BD', 'POSTGRES://m2@localhost/m2', 'urlBd', 'POSTGRES://m2@localhost/m2'],
     ['M2_ENCABEZADO_CORRELACION', 'x-request_id.v2', 'encabezadoCorrelacion', 'x-request_id.v2'],
+    ['M2_URL_M6', 'http://localhost:3006/api/v1', 'urlM6', 'http://localhost:3006/api/v1'],
+    ['M2_URL_M6', 'HTTPS://m6.interno', 'urlM6', 'HTTPS://m6.interno'],
+    ['M2_URL_M6', 'http://m6:3006/api/v1/', 'urlM6', 'http://m6:3006/api/v1'],
+    ['M2_AUDIENCIA_M6', 'a', 'audienciaM6', 'a'],
+    ['M2_AUDIENCIA_M6', 'https://m6.interno/viajes', 'audienciaM6', 'https://m6.interno/viajes'],
+    ['M2_REINTENTAR_DESPUES_S', '1', 'reintentarDespuesS', 1],
+    ['M2_REINTENTAR_DESPUES_S', '3600', 'reintentarDespuesS', 3600],
   ])('%s = %j es válida', (variable, valor, campo, esperado) => {
     expect(cargada({ ...OBLIGATORIAS, [variable]: valor })).toMatchObject({ [campo]: esperado });
   });
@@ -129,6 +146,21 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
     ['M2_ENCABEZADO_CORRELACION', 'X-Request-Id:'],
     ['M2_ENCABEZADO_CORRELACION', 'X-Correlación'],
     ['M2_ENCABEZADO_CORRELACION', 'X-Id\r\nOtro: 1'],
+    ['M2_URL_M6', 'ftp://m6:3006/api/v1'],
+    ['M2_URL_M6', 'm6:3006/api/v1'],
+    ['M2_URL_M6', 'http:/m6/api'],
+    ['M2_URL_M6', 'http://m6:99999/api/v1'],
+    ['M2_URL_M6', 'esto no es una url'],
+    ['M2_URL_M6', 'http://usuario:clave@m6:3006/api/v1'],
+    ['M2_URL_M6', 'http://usuario@m6:3006/api/v1'],
+    ['M2_AUDIENCIA_M6', ' '],
+    ['M2_AUDIENCIA_M6', '\t\n'],
+    ['M2_AUDIENCIA_M6', ' m6-viajes'],
+    ['M2_AUDIENCIA_M6', 'm6-viajes\n'],
+    ['M2_REINTENTAR_DESPUES_S', '0'],
+    ['M2_REINTENTAR_DESPUES_S', '3601'],
+    ['M2_REINTENTAR_DESPUES_S', '1.5'],
+    ['M2_REINTENTAR_DESPUES_S', 'pronto'],
   ])('%s = %j es inválida y se informa sola', (variable, valor) => {
     const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }));
     expect(nombres(errores)).toEqual([variable]);
@@ -172,6 +204,9 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
     ['M2_TIEMPO_MODULOS_MS', CENTINELA],
     ['M2_REINTENTOS_MODULOS', CENTINELA],
     ['M2_ENCABEZADO_CORRELACION', `${CENTINELA} con espacios`],
+    ['M2_URL_M6', `ftp://usuario:${CENTINELA}@m6/api`],
+    ['M2_URL_M6', `http://usuario:${CENTINELA}@m6/api`],
+    ['M2_REINTENTAR_DESPUES_S', CENTINELA],
   ])('%s inválida: el error no repite el valor recibido', (variable, valor) => {
     const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }));
     expect(nombres(errores)).toEqual([variable]);
@@ -194,7 +229,7 @@ describe('cargarConfig: variables que faltan o están vacías (RNF-06.1, RNF-06.
     expect(vacia).toEqual(ausente);
   });
 
-  it('sin ninguna variable, informa las cuatro obligatorias y nada más', () => {
+  it('sin ninguna variable, informa las cinco obligatorias y nada más', () => {
     expect(nombres(erroresDe(cargarConfig({})))).toEqual([...NOMBRES_OBLIGATORIAS].sort());
   });
 
@@ -207,6 +242,8 @@ describe('cargarConfig: variables que faltan o están vacías (RNF-06.1, RNF-06.
       M2_TIEMPO_MODULOS_MS: '',
       M2_REINTENTOS_MODULOS: '',
       M2_ENCABEZADO_CORRELACION: '',
+      M2_AUDIENCIA_M6: '',
+      M2_REINTENTAR_DESPUES_S: '',
     };
     expect(cargada(vacias)).toEqual(cargada(OBLIGATORIAS));
   });

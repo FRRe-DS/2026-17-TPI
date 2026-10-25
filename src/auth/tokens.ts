@@ -1,5 +1,5 @@
 import { errors, jwtVerify, SignJWT, type JWTPayload } from 'jose';
-import type { ConfigTokens } from '../config.js';
+import type { Config, ConfigTokens } from '../config.js';
 import { NoAutenticado } from '../errores.js';
 
 // Los roles que reconoce el servicio, escritos exactamente así: los demás se ignoran (RNF-12.3).
@@ -100,19 +100,49 @@ export async function verificarToken(encabezado: string | undefined, config: Con
   return { sub, roles: rolesConocidos(payload, config.campoRoles) };
 }
 
-// Firma un token HS256 con la clave, el emisor y la audiencia configurados (RNF-12.5). Hace de M1 en desarrollo y en las
-// pruebas, así que no valida el `sub` ni los roles: firma lo que se le pide, también lo que `verificarToken` rechazaría.
-export async function generarToken(
-  { sub, roles, venceEnSegundos = 3600 }: DatosToken,
+type ClaimsFirmados = { campoRoles: string; roles: readonly string[]; sub: string; audiencia: string; venceEnSegundos: number };
+
+// La firma que comparten los tokens que genera M2: HS256 con la clave y el emisor configurados.
+async function firmar(
+  { campoRoles, roles, sub, audiencia, venceEnSegundos }: ClaimsFirmados,
   config: ConfigTokens,
 ): Promise<string> {
   const emitidoEn = Math.floor(Date.now() / 1000);
-  return new SignJWT({ [config.campoRoles]: roles })
+  return new SignJWT({ [campoRoles]: roles })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setIssuer(config.emisorTokens)
-    .setAudience(config.audienciaTokens)
+    .setAudience(audiencia)
     .setSubject(sub)
     .setIssuedAt(emitidoEn)
     .setExpirationTime(emitidoEn + venceEnSegundos)
     .sign(claveDe(config));
+}
+
+// Firma un token HS256 con la clave, el emisor y la audiencia configurados (RNF-12.5). Hace de M1 en desarrollo y en las
+// pruebas, así que no valida el `sub` ni los roles: firma lo que se le pide, también lo que `verificarToken` rechazaría.
+export function generarToken(
+  { sub, roles, venceEnSegundos = 3600 }: DatosToken,
+  config: ConfigTokens,
+): Promise<string> {
+  return firmar({ campoRoles: config.campoRoles, roles, sub, audiencia: config.audienciaTokens, venceEnSegundos }, config);
+}
+
+// Quién es M2 ante los demás módulos y cuánto dura cada token que firma (RF-2.4.11, ADR 009).
+const SUB_DE_SERVICIO = 'm2-clientes';
+const VIDA_TOKEN_DE_SERVICIO_SEGUNDOS = 60;
+
+// El token con el que M2 se presenta ante otro módulo: con el emisor y la clave del consorcio, `SERVICIO` como rol y la
+// audiencia de ese módulo. Es de vida corta y se pide uno en cada intento, así que no se guarda (RNF-19). Los otros módulos
+// leen los roles del campo `roles` del acuerdo, aunque `M2_CAMPO_ROLES` cambie el que lee M2.
+export function tokenDeServicio(config: ConfigTokens & Pick<Config, 'audienciaM6'>): Promise<string> {
+  return firmar(
+    {
+      campoRoles: 'roles',
+      roles: ['SERVICIO'],
+      sub: SUB_DE_SERVICIO,
+      audiencia: config.audienciaM6,
+      venceEnSegundos: VIDA_TOKEN_DE_SERVICIO_SEGUNDOS,
+    },
+    config,
+  );
 }

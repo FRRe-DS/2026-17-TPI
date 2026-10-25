@@ -22,6 +22,11 @@ export type Config = ConfigTokens & {
   tiempoModulosMs: number;
   reintentosModulos: number;
   encabezadoCorrelacion: string;
+  // M6 (spec 007): su URL base sin barra final, la audiencia (`aud`) del token de servicio con el que M2 se presenta
+  // (RF-2.4.11) y los segundos que sugiere el `Retry-After` del 503 cuando M6 no está disponible (RF-2.4.6).
+  urlM6: string;
+  audienciaM6: string;
+  reintentarDespuesS: number;
 };
 
 // Una regla convierte el texto de una variable en su valor, o devuelve undefined si no la cumple.
@@ -58,6 +63,25 @@ const urlPostgres: Regla<string> = {
 const claveDeTokens: Regla<string> = {
   motivo: `tiene menos de ${LARGO_MINIMO_CLAVE} caracteres`,
   convertir: (texto) => (texto.length >= LARGO_MINIMO_CLAVE ? texto : undefined),
+};
+
+// La URL de otro módulo: http o https, con una dirección válida y sin usuario ni contraseña, que `fetch` rechaza copiando la
+// URL entera en su error, y ese error llegaría al log como causa del 503 (RNF-19). Se guarda sin la barra final, porque el
+// cliente le suma rutas que empiezan con una.
+const urlHttp: Regla<string> = {
+  motivo: 'no es una URL http:// o https:// sin usuario ni contraseña',
+  convertir: (texto) => {
+    if (!/^https?:\/\//i.test(texto) || !URL.canParse(texto)) return undefined;
+    const url = new URL(texto);
+    return url.username === '' && url.password === '' ? texto.replace(/\/+$/, '') : undefined;
+  },
+};
+
+// Una variable vacía cuenta como no definida y toma su valor por defecto. Una con solo espacios, o con espacios al principio o
+// al final, se rechaza: una audiencia así haría que el otro módulo rechazara todos los tokens.
+const textoSinEspaciosAlBorde: Regla<string> = {
+  motivo: 'está en blanco o tiene espacios al principio o al final',
+  convertir: (texto) => (texto.trim() === texto && texto !== '' ? texto : undefined),
 };
 
 // Es la misma regla que aplica Node al escribir el encabezado en una respuesta.
@@ -133,5 +157,8 @@ export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
     tiempoModulosMs: lector.opcional('M2_TIEMPO_MODULOS_MS', 2000, tiempoEnMs),
     reintentosModulos: lector.opcional('M2_REINTENTOS_MODULOS', 1, enteroEntre(0, 5)),
     encabezadoCorrelacion: lector.opcional('M2_ENCABEZADO_CORRELACION', 'X-Request-Id', nombreDeEncabezado),
+    urlM6: lector.obligatoria('M2_URL_M6', urlHttp),
+    audienciaM6: lector.opcional('M2_AUDIENCIA_M6', 'm6-viajes', textoSinEspaciosAlBorde),
+    reintentarDespuesS: lector.opcional('M2_REINTENTAR_DESPUES_S', 5, enteroEntre(1, 3600)),
   });
 }

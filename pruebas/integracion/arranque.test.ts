@@ -55,6 +55,8 @@ const VARIABLES_OPCIONALES = [
   'M2_TIEMPO_MODULOS_MS',
   'M2_REINTENTOS_MODULOS',
   'M2_ENCABEZADO_CORRELACION',
+  'M2_AUDIENCIA_M6',
+  'M2_REINTENTAR_DESPUES_S',
 ];
 
 // Escribe un contrato, un objeto como YAML o un texto tal cual, en una carpeta que se borra cuando termina la prueba.
@@ -166,6 +168,8 @@ describe('arrancar sin una configuración válida (RNF-06.2, RNF-19.1)', () => {
   // [caso, cambios al entorno que anda, variables que se nombran, en orden, y valores que no pueden aparecer en el log]
   const CASOS: [string, Entorno, string[], string[]][] = [
     ['falta la URL de la base', { M2_URL_BD: undefined }, ['M2_URL_BD'], []],
+    ['falta la URL de M6 (RNF-06)', { M2_URL_M6: undefined }, ['M2_URL_M6'], []],
+    ['la URL de M6 es inválida y no se repite', { M2_URL_M6: 'ftp://usuario:clave-de-m6@m6/api' }, ['M2_URL_M6'], ['clave-de-m6']],
     [
       'faltan las cuatro obligatorias (una, vacía)',
       { M2_URL_BD: undefined, M2_CLAVE_TOKENS: undefined, M2_EMISOR_TOKENS: '', M2_AUDIENCIA_TOKENS: undefined },
@@ -434,6 +438,7 @@ describe('arranque normal (RNF-05.2)', () => {
         'levantarBloqueo',
         'listarBloqueos',
         'listarDirecciones',
+        'listarHistorialViajes',
         'obtenerBloqueo',
         'obtenerCliente',
         'obtenerDireccion',
@@ -618,7 +623,7 @@ describe('src/servidor.ts, el punto de entrada (RNF-14.5)', () => {
       .split('\n')
       .filter((linea) => linea.startsWith('{'))
       .map((linea) => JSON.parse(linea) as LineaDeLog);
-    expect(lineas.map(({ variable }) => variable)).toEqual(['M2_URL_BD', 'M2_CLAVE_TOKENS', 'M2_AUDIENCIA_TOKENS']);
+    expect(lineas.map(({ variable }) => variable)).toEqual(['M2_URL_BD', 'M2_CLAVE_TOKENS', 'M2_AUDIENCIA_TOKENS', 'M2_URL_M6']);
     expect(lineas.every(({ msg }) => msg === NO_ARRANCA)).toBe(true);
   });
 });
