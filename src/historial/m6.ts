@@ -1,6 +1,7 @@
 // El pedido de viajes a M6 y la lectura de su respuesta (plan 007, Lectura de la respuesta de M6). Sigue el contrato que
 // publicó el Grupo 12: `GET /trips` con `clientId`, `page` desde 1 y `pageSize`, que responde `TripSummaryPage`.
-import type { Config } from '../config.js';
+import { tokenDeServicio } from '../auth/tokens.js';
+import type { Config, ConfigTokens } from '../config.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../errores.js';
 import { crearClienteModulo } from '../modulos/cliente.js';
 import { aPaginaDeM6, type PaginaM6, type ViajeM6 } from './modelo.js';
@@ -11,7 +12,9 @@ export type M6 = {
   listarViajes(clienteId: string, page: number, size: number, idCorrelacion: string): Promise<PaginaM6>;
 };
 
-type ConfigM6 = Pick<Config, 'urlM6' | 'tiempoModulosMs' | 'reintentosModulos' | 'encabezadoCorrelacion' | 'reintentarDespuesS'>;
+// Con la configuración de los tokens firma el token de servicio de cada intento (RF-2.4.11).
+type ConfigM6 = ConfigTokens &
+  Pick<Config, 'urlM6' | 'tiempoModulosMs' | 'reintentosModulos' | 'encabezadoCorrelacion' | 'audienciaM6' | 'reintentarDespuesS'>;
 
 const NOMBRE = 'M6';
 
@@ -47,6 +50,7 @@ export function crearM6(config: ConfigM6): M6 {
     tiempoMs: config.tiempoModulosMs,
     reintentos: config.reintentosModulos,
     encabezadoCorrelacion: config.encabezadoCorrelacion,
+    credencial: () => tokenDeServicio(config),
     reintentarDespuesS: config.reintentarDespuesS,
   });
 

@@ -20,5 +20,5 @@ Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4
   - Hecho cuando: `M2_CREDENCIAL_M6` ya no existe en la configuración, `ejemplo.env`, `docker-compose.yml` ni el README, ni en `secretosDeConfig`; `M2_AUDIENCIA_M6` es opcional, vale `m6-viajes` por defecto y rechaza un valor vacío; las pruebas de configuración, del ejemplo, de secretos y de arranque lo comprueban.
 - [x] **T9. Firmar el token de servicio.** RF-2.4.11
   - Hecho cuando: pruebas unitarias comprueban que `tokenDeServicio` da un JWT HS256 que verifica con la clave del consorcio, con `iss` del emisor configurado, `sub` `m2-clientes`, `roles` `["SERVICIO"]` (también con otro `M2_CAMPO_ROLES`), `aud` igual a `M2_AUDIENCIA_M6` y `exp` 60 segundos después de `iat`.
-- [ ] **T10. Enviar el token de servicio en cada intento a M6.** RF-2.4.11, RNF-13, RNF-19
+- [x] **T10. Enviar el token de servicio en cada intento a M6.** RF-2.4.11, RNF-13, RNF-19
   - Hecho cuando: la opción `credencial` del cliente de módulos es una función que se llama en cada intento; pruebas de módulos comprueban que sin ella no hay `Authorization`, que cada intento (también el reintento) lleva un token propio, que el M6 simulado recibe un token de servicio que verifica con la clave y la audiencia de M6, y que el token no aparece en `detail`, en la causa ni en el log.

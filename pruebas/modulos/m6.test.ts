@@ -1,3 +1,4 @@
+import { jwtVerify } from 'jose';
 import { inspect } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { aProblema, ErrorDeIntegracion, ModuloNoDisponible } from '../../src/errores.js';
@@ -56,6 +57,55 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
       await m6({ urlM6: `${serv.url}/api/v1` }).listarViajes(CLIENTE, 0, 20, 'id');
 
       expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe('/api/v1/trips');
+    });
+  });
+
+  // RF-2.4.11, ADR 009: M2 se presenta con un token de servicio de vida corta, firmado en cada intento.
+  describe('el token de servicio (RF-2.4.11, RNF-19)', () => {
+    const tokenDe = (autorizacion: string | undefined) => /^Bearer (\S+)$/.exec(autorizacion ?? '')?.[1] ?? '';
+
+    // Lo verifica como lo haría M6: con la clave del consorcio, el emisor de M1 y su propia audiencia.
+    const verificarComoM6 = (token: string, audiencia = CONFIG.audienciaM6) =>
+      jwtVerify(token, new TextEncoder().encode(CONFIG.claveTokens), {
+        algorithms: ['HS256'],
+        issuer: CONFIG.emisorTokens,
+        audience: audiencia,
+        requiredClaims: ['exp'],
+      });
+
+    it('M6 recibe un token de servicio que verifica con la clave y la audiencia de M6', async () => {
+      serv.responderCon(ok(pagina([], 0)));
+
+      await listar(0, 20, { audienciaM6: 'm6-de-prueba' });
+
+      const { payload } = await verificarComoM6(tokenDe(serv.autorizaciones[0]), 'm6-de-prueba');
+      expect(payload).toMatchObject({ sub: 'm2-clientes', roles: ['SERVICIO'], aud: 'm6-de-prueba' });
+      expect(payload.exp! - payload.iat!).toBe(60);
+    });
+
+    it('el reintento lleva un token de servicio propio, que también verifica', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 500 }, ok(pagina([], 0))]);
+
+      await listar();
+
+      expect(serv.llamadas).toBe(2);
+      for (const autorizacion of serv.autorizaciones) await verificarComoM6(tokenDe(autorizacion));
+    });
+
+    it.each([
+      ['un 503 tras el reintento', { tipo: '5xx', estado: 500 }],
+      ['un 503 por una demora', { tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4 }],
+      ['un 500 por un 401 de M6', { tipo: '4xx', estado: 401 }],
+    ] as const)('no aparece en detail, en la causa ni en el error ante %s', async (_caso, falla) => {
+      serv.responderCon(falla);
+
+      const error = await fallaDe(listar());
+      const token = tokenDe(serv.autorizaciones[0]);
+
+      expect(token).not.toBe('');
+      expect(JSON.stringify(aProblema(error).cuerpo)).not.toContain(token);
+      expect(inspect(error, { depth: 10 })).not.toContain(token);
+      expect(inspect((error as Error).cause, { depth: 10 })).not.toContain(token);
     });
   });
 

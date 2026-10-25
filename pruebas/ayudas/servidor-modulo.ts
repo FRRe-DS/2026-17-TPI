@@ -18,12 +18,15 @@ export function crearServidorModulo() {
   const encabezadosRecibidos = new Map<string, string>();
   // La ruta con query string de la última llamada, para ver qué se pidió.
   let rutaRecibida = '';
+  // El Authorization de cada llamada, en orden (undefined si no vino), para ver qué llevó cada intento.
+  const autorizaciones: (string | undefined)[] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
 
   const servidor = createServer((req: IncomingMessage, res: ServerResponse) => {
     llamadas++;
     momentos.push(Date.now());
     rutaRecibida = req.url ?? '';
+    autorizaciones.push(req.headers.authorization);
     encabezadosRecibidos.clear();
     for (const [clave, valor] of Object.entries(req.headers)) {
       if (typeof valor === 'string') encabezadosRecibidos.set(clave.toLowerCase(), valor);
@@ -83,11 +86,15 @@ export function crearServidorModulo() {
     get rutaRecibida(): string {
       return rutaRecibida;
     },
+    get autorizaciones(): (string | undefined)[] {
+      return autorizaciones;
+    },
     // Un comportamiento para todas las llamadas, o una lista: uno por llamada y el último para las que siguen.
     responderCon(c: Comportamiento | Comportamiento[]): void {
       comportamientos = Array.isArray(c) ? c : [c];
       llamadas = 0;
       momentos.length = 0;
+      autorizaciones.length = 0;
     },
     async cerrar(): Promise<void> {
       for (const t of timers) clearTimeout(t);

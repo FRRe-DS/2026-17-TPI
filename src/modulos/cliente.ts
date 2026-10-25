@@ -17,9 +17,10 @@ type OpcionesCliente = {
   // Cuántas veces se vuelve a intentar un GET que falló. Los demás métodos no se reintentan.
   reintentos: number;
   encabezadoCorrelacion: string;
-  // Con qué se presenta M2 ante el módulo, en `Authorization: Bearer`. Sin ella no se envía el encabezado. Es un secreto: no
-  // va en ningún error, y `secretosDeConfig` la oculta en el log (RNF-19.1).
-  credencial?: string;
+  // Da con qué se presenta M2 ante el módulo, en `Authorization: Bearer`, y se llama en cada intento: un token de servicio
+  // de vida corta, nuevo en cada uno (RF-2.4.11). Sin ella no se envía el encabezado. Es un secreto que cambia en cada
+  // intento y `secretosDeConfig` no conoce: no va en ningún error ni en el log (RNF-19.1).
+  credencial?: () => Promise<string>;
   // Los segundos del `Retry-After` del 503, si el contrato lo declara para este módulo (spec 007, RF-2.4.6).
   reintentarDespuesS?: number;
 };
@@ -41,7 +42,13 @@ export function crearClienteModulo({
   // Un intento: devuelve la respuesta del módulo, que puede ser un 4xx. Si no la obtiene, lanza lo que falló: el corte por
   // tiempo, el error de red, el 5xx o el cuerpo que no es JSON, estos dos con su código y sin su cuerpo, que puede traer
   // datos del otro módulo y va al log como causa (RNF-14.8, RNF-19.2). Es lo que se reintenta.
-  async function intentar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
+  async function intentar(
+    metodo: string,
+    ruta: string,
+    cuerpo: unknown,
+    idCorrelacion: string,
+    autorizacion: string | undefined,
+  ): Promise<RespuestaModulo> {
     // La señal corre desde antes del `fetch`: el plazo incluye la conexión, los encabezados y el cuerpo (RNF-13.1).
     const senal = AbortSignal.timeout(tiempoMs);
     const encabezados: Record<string, string> = {
@@ -49,7 +56,7 @@ export function crearClienteModulo({
       [encabezadoCorrelacion]: idCorrelacion,
     };
     if (cuerpo !== undefined) encabezados['Content-Type'] = 'application/json';
-    if (credencial !== undefined) encabezados.Authorization = `Bearer ${credencial}`;
+    if (autorizacion !== undefined) encabezados.Authorization = autorizacion;
 
     const respuesta = await fetch(`${urlBase}${ruta}`, {
       method: metodo,
@@ -85,8 +92,11 @@ export function crearClienteModulo({
     const intentos = metodo === 'GET' ? 1 + reintentos : 1;
     let ultimaFalla: unknown;
     for (let intento = 1; intento <= intentos; intento++) {
+      // Fuera del try: si M2 no puede dar su credencial, la falla es de M2 y no del módulo. No se reintenta ni es un 503: sale
+      // tal cual y da 500.
+      const autorizacion = credencial !== undefined ? `Bearer ${await credencial()}` : undefined;
       try {
-        return await intentar(metodo, ruta, cuerpo, idCorrelacion);
+        return await intentar(metodo, ruta, cuerpo, idCorrelacion, autorizacion);
       } catch (error) {
         ultimaFalla = error;
         if (intento < intentos) await pausar(PAUSA_REINTENTO_MS);

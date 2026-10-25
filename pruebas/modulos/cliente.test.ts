@@ -237,21 +237,28 @@ describe('crearClienteModulo', () => {
     expect(tardo).toBeLessThan(4200 + 300);
   }, 10_000);
 
-  // ## Spec 007, T2
+  // ## Spec 007, T2 y T10
 
   const CREDENCIAL = 'credencial-de-m2-ante-m6';
-  const conCredencial = (urlBase: string, reintentos = 0) =>
+  const conCredencial = (urlBase: string, reintentos = 0, credencial = async () => CREDENCIAL) =>
     crearClienteModulo({
       nombre: 'M6',
       urlBase,
       tiempoMs: TIEMPO_MS,
       reintentos,
       encabezadoCorrelacion: 'X-Request-Id',
-      credencial: CREDENCIAL,
+      credencial,
       reintentarDespuesS: 5,
     });
 
-  describe('la credencial ante el módulo (RNF-06, RF-2.4.6)', () => {
+  // Una credencial distinta en cada llamada, como el token de servicio que se firma por intento (RF-2.4.11).
+  const credencialPorLlamada = () => {
+    let n = 0;
+    const credencial = async () => `token-${++n}`;
+    return { credencial, llamadas: () => n };
+  };
+
+  describe('la credencial ante el módulo (RNF-06, RF-2.4.6, RF-2.4.11)', () => {
     it('va en Authorization: Bearer en un GET y en un POST', async () => {
       serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
 
@@ -262,12 +269,41 @@ describe('crearClienteModulo', () => {
       expect(serv.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL}`);
     });
 
-    it('va también en el reintento', async () => {
+    it('se pide en cada intento: el reintento lleva su propia credencial', async () => {
       serv.responderCon([{ tipo: '5xx', estado: 500 }, { tipo: 'ok', cuerpo: { ok: true } }]);
+      const { credencial, llamadas } = credencialPorLlamada();
 
-      await conCredencial(serv.url, 1).obtener('/', 'id');
+      await conCredencial(serv.url, 1, credencial).obtener('/', 'id');
+
       expect(serv.llamadas).toBe(2);
-      expect(serv.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL}`);
+      expect(llamadas()).toBe(2);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+    });
+
+    it('cada pedido pide la suya: no se guarda de un pedido al siguiente', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+      const { credencial } = credencialPorLlamada();
+      const cliente = conCredencial(serv.url, 0, credencial);
+
+      await cliente.obtener('/', 'id');
+      await cliente.enviar('POST', '/', { dato: 1 }, 'id');
+
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+    });
+
+    // Si M2 no puede dar su credencial, la falla es de M2 y no del módulo: no se llama, no se reintenta y no es un 503.
+    it('si la credencial falla, el error sale tal cual, sin llamar al módulo ni reintentar', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+      const falla = new Error('no se pudo firmar');
+      let pedidas = 0;
+      const credencial = async () => {
+        pedidas++;
+        throw falla;
+      };
+
+      await expect(conCredencial(serv.url, 1, credencial).obtener('/', 'id')).rejects.toBe(falla);
+      expect(pedidas).toBe(1);
+      expect(serv.llamadas).toBe(0);
     });
 
     it('sin credencial no se envía Authorization', async () => {

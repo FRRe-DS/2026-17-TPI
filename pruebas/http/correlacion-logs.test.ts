@@ -616,7 +616,8 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
     for (const dato of ['Ana Perez', 'Siempre Viva', '<html>']) expect(logs.texto()).not.toContain(dato);
   });
 
-  // Spec 007, T2: la credencial va a M6 en Authorization y nada de lo que M6 devuelva la repite en el 503 ni en el log (RNF-19.1).
+  // Spec 007, T2 y T10: la credencial va a M6 en Authorization y ni el 503 ni el log la traen, aunque M6 la repita y aunque no
+  // sea un secreto de la configuración que se pueda ocultar: el token de servicio cambia en cada intento (RNF-19.1).
   it('con credencial ante M6: va a M6, y el 503 y el log no la traen aunque M6 la repita', async () => {
     const CREDENCIAL_M6 = 'credencial-de-m2-ante-m6';
     modulo.responderCon({ tipo: '5xx', estado: 500, cuerpo: { error: `Bearer ${CREDENCIAL_M6}` } });
@@ -630,7 +631,7 @@ describe('construirApp: la causa de un 503 por la base o por otro módulo queda 
             tiempoMs: 500,
             reintentos: 0,
             encabezadoCorrelacion: CONFIG.encabezadoCorrelacion,
-            credencial: CREDENCIAL_M6,
+            credencial: async () => CREDENCIAL_M6,
             reintentarDespuesS: 5,
           });
           return (await cliente.obtener('/', request.id)).cuerpo;
