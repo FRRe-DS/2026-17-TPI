@@ -31,14 +31,16 @@ export function aViajeResumen(viaje: ViajeM6): ViajeResumen {
   };
 }
 
-// Un viaje de otro cliente no sale en la respuesta (RF-2.4.9). El total es el de M6 aunque se descarte alguno: el filtro de
-// M6 es el que cuenta. Quien llama registra el descarte con la diferencia entre `cuerpoM6.items` y `items`, sin identificadores.
+// Un viaje de otro cliente, o sin `clientId`, no sale en la respuesta (RF-2.4.9). Un UUID no distingue mayúsculas, así que se
+// comparan en minúsculas. El total es el de M6 aunque se descarte alguno: el filtro de M6 es el que cuenta. Quien llama
+// registra el descarte con la diferencia entre `cuerpoM6.items` y `items`, sin identificadores.
 export function aPaginaViajes(cuerpoM6: PaginaM6, clienteId: string, page: number, size: number): PaginaViajes {
+  const propio = clienteId.toLowerCase();
   return {
     page,
     size,
     totalElementos: cuerpoM6.total,
     totalPaginas: Math.ceil(cuerpoM6.total / size),
-    items: cuerpoM6.items.filter((viaje) => viaje.clientId === clienteId).map(aViajeResumen),
+    items: cuerpoM6.items.filter((viaje) => viaje.clientId?.toLowerCase() === propio).map(aViajeResumen),
   };
 }

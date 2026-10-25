@@ -107,6 +107,17 @@ describe('aPaginaViajes (007/T3, RF-2.4.1, RF-2.4.2, RF-2.4.3, RF-2.4.9)', () =>
     expect(pagina.totalPaginas).toBe(1);
   });
 
+  it('un clientId en mayúsculas o sin clientId: el UUID no distingue mayúsculas; sin clientId no es propio (007/T5)', () => {
+    const pagina = aPaginaViajes(
+      { items: [viaje(1, { clientId: CLIENTE.toUpperCase() }), viaje(2, { clientId: undefined }), viaje(3, { clientId: null })], total: 3 },
+      CLIENTE,
+      0,
+      20,
+    );
+
+    expect(pagina.items.map((item) => item.viajeId)).toEqual([viaje(1).id]);
+  });
+
   it('si todos son de otro cliente, items queda vacío', () => {
     const pagina = aPaginaViajes({ items: [viaje(1, { clientId: OTRO_CLIENTE })], total: 1 }, CLIENTE, 0, 20);
 
