@@ -1,99 +1,117 @@
-# Propuesta desde el consumidor M2; NO es un acuerdo de los grupos 12 y 5.
-# Extracción de las dos consultas y sus componentes referenciados.
-# Propuesta de M2: clientId obligatorio y UUID en GET /trips, pendiente de acuerdo.
-openapi: 3.0.3
+openapi: 3.1.0
 info:
-  title: Dependencia M6 consumida por M2 — propuesta issue 2
-  version: 0.1.0-borrador
+  title: Dependencia M6 consumida por M2 — extracción del contrato de la cátedra
+  version: 1.0.0
   description: |
-    Alcance: RF-2.4, RF-2.5 y RNF-05. Consultas extraídas del Grupo 12.
-    Fuente: https://github.com/FRRe-DS/2026-12-TPI/blob/4cc05b07725c6b6551f319578bbf73a5de926689/openapi.yaml
-    Blob: ba8180b5491214b3116aa127907b5071a8edf3be. Consulta: 2026-10-22.
-    La fuente declara versión 1.0.0; este borrador local no publica una versión de M6.
-    [NECESITA ACLARACIÓN] Grupos 12 y 5: aceptación conjunta de estas consultas,
-    URL base, autenticación, paginación, campos garantizados y errores.
-    Detalle y mensaje de coordinación: m6-propuesta.md; ADR 002.
-    No está listo para validar integración real ni para generar fixtures fiables:
-    Trip no declara required y faltan acuerdos descritos en la propuesta.
+    Alcance: RF-2.4, RF-2.5 y RNF-05. Solo las dos consultas que M2 consume y los componentes que referencian, sin cambios.
+    Fuente: contrato de M6 del Grupo 12 subido a la cátedra en FRRe-DS/2026-TPI#9, archivo contratos/m6_viajes/openapi.yml,
+    commit 9e720a0d074ef8e9cc20ba189baf340b071779f3 (2026-10-25). Es el contrato que va a usar el consorcio, aunque el PR
+    todavía no está mergeado. Decisión y diferencias con el borrador anterior: ADR 057 e issue #57.
+    [NECESITA ACLARACIÓN] Grupo 12: qué `aud` e `iss` valida M6 en el token de servicio (ADR 009).
 servers:
   - url: http://localhost:3006/api/v1
     description: Servidor de desarrollo local (Contenedor OCI)
-
 security:
   - bearerAuth: []
-
 tags:
   - name: Trips
     description: Operaciones del ciclo de vida y consultas de viajes
-
 paths:
   /trips:
     get:
-      tags: [Trips]
+      tags:
+        - Trips
       summary: Listar viajes filtrados (Para historial de M2 o consultas de Operador)
-      description: Permite a M2 obtener el historial resumido de un cliente (RF-2.4) o filtrar por conductor/estado.
+      description: |
+        Permite a M2 obtener el historial resumido de un cliente (RF-2.4) o filtrar por conductor/estado.
+        Devuelve `TripSummary` (sin coordenadas, RF-4.7 / RNF-19), paginado y ordenado por `createdAt` descendente.
+        Roles permitidos:
+        - `CLIENT` / `CLIENTE`: devuelve únicamente viajes de su propio `clientId`.
+        - `DRIVER` / `CONDUCTOR`: devuelve únicamente viajes de su propio `driverId`.
+        - `SYSTEM` / `SERVICIO` (ej. M2): **requiere obligatoriamente al menos un filtro** (`clientId`, `driverId` o `state`);
+          una llamada sin filtros devuelve `400 Bad Request` (`code: "FILTER_REQUIRED"`) para evitar exponer viajes de todos los usuarios.
+        - `OPERATOR` / `OPERADOR`: acceso administrativo de consulta.
       parameters:
         - in: query
           name: clientId
-          required: true
           schema:
             type: string
             format: uuid
-          description: Filtrar por ID del cliente
+          description: Filtrar por ID del cliente (obligatorio para consultas de historial desde M2 con rol SYSTEM/SERVICIO)
         - in: query
           name: driverId
           schema:
             type: string
+            format: uuid
           description: Filtrar por ID del conductor
         - in: query
           name: state
           schema:
-            $ref: '#/components/schemas/TripState'
+            $ref: "#/components/schemas/TripState"
           description: Filtrar por estado actual del viaje
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Número de página (base 1)
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Cantidad de elementos por página
       responses:
-        '200':
-          description: Lista de viajes resumida
+        "200":
+          description: Página de viajes resumidos
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Trip'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-
+                $ref: "#/components/schemas/TripSummaryPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /trips/{id}:
     get:
-      tags: [Trips]
+      tags:
+        - Trips
       summary: Consultar estado actual y resumen de un viaje (RF-6.2)
-      description: Accesible por el cliente del viaje, el conductor asignado o un operador autorizado.
+      description: |
+        Accesible por el cliente del viaje (`CLIENT`), el conductor asignado (`DRIVER`), un operador (`OPERATOR`)
+        o un módulo de servicio (`SYSTEM` / `roles: ["SERVICIO"]`, por ejemplo M2 al verificar que el viaje esté
+        `COMPLETED`, pertenezca al `clientId` y obtener el `driverId` para calificar al conductor).
       parameters:
-        - $ref: '#/components/parameters/TripIdParam'
+        - $ref: "#/components/parameters/TripIdParam"
       responses:
-        '200':
+        "200":
           description: Detalle y estado actual del viaje
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Trip'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
+                $ref: "#/components/schemas/Trip"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Token JWT emitido por M1 (Identidad y Acceso) con claims `sub` (userId) y `role` (CLIENT, DRIVER, OPERATOR).
-
+      description: |
+        Token JWT emitido por M1 (Identidad y Acceso) con claim `sub` (o `identidad_id`) e información de rol.
+        Soporta tanto `role` string (`CLIENT`, `DRIVER`, `OPERATOR`, `SYSTEM`) como `roles` array
+        (`["CLIENTE"]`, `["CONDUCTOR"]`, `["OPERADOR"]`, `["SERVICIO"]`). El rol `SYSTEM` / `SERVICIO`
+        corresponde a tokens de servicio usados en la comunicación entre módulos (ej. M2 → M6 o M5 → M6, RF-1.4).
   parameters:
     TripIdParam:
       name: id
@@ -103,21 +121,26 @@ components:
       schema:
         type: string
         format: uuid
-
   schemas:
-    TripState:
-      type: string
-      enum:
-        - PENDING_ARRIVAL
-        - DRIVER_ARRIVED
-        - IN_PROGRESS
-        - COMPLETED
-        - CANCELLED_BY_CLIENT
-        - CANCELLED_BY_DRIVER
-
-
-
-
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+        - timestamp
+      properties:
+        code:
+          type: string
+          example: INVALID_STATE_TRANSITION
+        message:
+          type: string
+          example: No se puede pasar a IN_PROGRESS desde el estado PENDING_ARRIVAL
+        correlationId:
+          type: string
+          description: ID de correlación para trazabilidad en logs (RNF-14)
+        timestamp:
+          type: string
+          format: date-time
     Trip:
       type: object
       properties:
@@ -149,58 +172,102 @@ components:
           type: number
           format: double
         state:
-          $ref: '#/components/schemas/TripState'
+          $ref: "#/components/schemas/TripState"
         distanceKm:
-          type: number
+          type:
+            - number
+            - "null"
           format: float
-          nullable: true
         durationMinutes:
-          type: integer
-          nullable: true
+          type:
+            - integer
+            - "null"
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-
-
-    ErrorResponse:
+    TripState:
+      type: string
+      enum:
+        - PENDING_ARRIVAL
+        - DRIVER_ARRIVED
+        - IN_PROGRESS
+        - COMPLETED
+        - CANCELLED_BY_CLIENT
+        - CANCELLED_BY_DRIVER
+    TripSummary:
       type: object
-      required:
-        - code
-        - message
-        - timestamp
+      description: Vista resumida de un viaje para historiales (sin coordenadas, RF-2.4 / RF-4.7)
       properties:
-        code:
+        id:
           type: string
-          example: "INVALID_STATE_TRANSITION"
-        message:
+          format: uuid
+        state:
+          $ref: "#/components/schemas/TripState"
+        clientId:
           type: string
-          example: "No se puede pasar a IN_PROGRESS desde el estado PENDING_ARRIVAL"
-        correlationId:
+          format: uuid
+        driverId:
           type: string
-          description: ID de correlación para trazabilidad en logs (RNF-14)
-        timestamp:
+          format: uuid
+        distanceKm:
+          type:
+            - number
+            - "null"
+          format: float
+        durationMinutes:
+          type:
+            - integer
+            - "null"
+        createdAt:
           type: string
           format: date-time
-
+    TripSummaryPage:
+      type: object
+      required:
+        - items
+        - page
+        - pageSize
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TripSummary"
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Cantidad total de viajes que cumplen el filtro
+          example: 42
   responses:
-    Unauthorized:
-      description: Token JWT ausente, inválido o expirado (M1)
+    BadRequest:
+      description: Datos de entrada inválidos o faltantes
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
     Forbidden:
       description: El rol o usuario autenticado no tiene permisos para realizar esta acción sobre el viaje
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
     NotFound:
       description: Viaje no encontrado
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Token JWT ausente, inválido o expirado (M1)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

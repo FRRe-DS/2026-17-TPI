@@ -1,56 +1,30 @@
-# Propuesta M6 — consumo de M2, issue #2
+# M6 — consumo de M2 y preguntas pendientes
 
-Estado: propuesta pendiente de los grupos 12 y 5.
-Alcance exclusivo: RF-2.4, RF-2.5 y RNF-05. ADR: [002](../../docs/adr/002-dependencia-m6.md).
+Estado: contrato del Grupo 12 subido a la cátedra ([FRRe-DS/2026-TPI#9](https://github.com/FRRe-DS/2026-TPI/pull/9), commit `9e720a0`), adoptado por el grupo aunque el PR no está mergeado. ADR: [057](../../docs/adr/057-m6-catedra.md), que reemplaza al [002](../../docs/adr/002-dependencia-m6.md). Issue: #57.
+Alcance: RF-2.4, RF-2.5 y RNF-05.
 
-## Fuentes de la propuesta
+## Qué consume M2
 
-- [Issue #2 y comentario de alcance](https://github.com/FRRe-DS/2026-17-TPI/issues/2): dependencia desde el consumidor; M1 se coordina aparte.
-- [Contrato de la cátedra](https://github.com/FRRe-DS/2026-TPI/blob/main/contratos/m6_viajes/openapi.yml): solo `openapi`, `info`, versión 1.0.0; blob consultado `dec1a7cb8191b284260efde7d7339dedfb4cd13d`.
-- [OpenAPI público del Grupo 12](https://github.com/FRRe-DS/2026-12-TPI/blob/4cc05b07725c6b6551f319578bbf73a5de926689/openapi.yaml): OpenAPI 3.0.3, versión 1.0.0, blob `ba8180b5491214b3116aa127907b5071a8edf3be`.
-- [README del Grupo 12](https://github.com/FRRe-DS/2026-12-TPI/blob/4cc05b07725c6b6551f319578bbf73a5de926689/README.md): describe consultas y estados, pero su modelo usa `vehicleType`, `origin` y `destination`; el OpenAPI usa `vehicleId` y coordenadas. No se resuelve la diferencia tomando columnas de su base.
-- [Repositorio público del Grupo 5](https://github.com/FRRe-DS/2026-05-TPI): la búsqueda devuelve tamaño 0; no se obtuvo allí un contrato ni un acuerdo. Esto no demuestra que no exista documentación por otros medios.
-- Fuentes locales: `contrato/openapi.yml`, `contrato/dependencias/README.md`, `docs/constitution.md` y ADR 001. La publicación de M2 deja abierto el resumen y los estados de M6.
-
-## Confirmado para M2
-
-- RF-2.4: consultar historial por cliente mediante la API de M6; M2 agrega `calificado` con sus datos.
-- RF-2.5: verificar viaje completado y cliente pasajero; obtener el conductor de M6, sin confiar en un conductor enviado por el cliente.
-- RNF-05: no consultar la base de M6 ni replicar sus viajes en M2.
-- La paginación pública de M2 usa `page` desde 0, `size` por defecto 20 y máximo 100, con totales. Esto no confirma paginación en M6.
-- Los campos de `ViajeResumen` de M2 no son evidencia de campos HTTP provistos por M6. `FINALIZADO` es un ejemplo de M2, no un estado confirmado de M6.
-
-## Documentado por Grupo 12, pendiente de acuerdo conjunto
-
-El borrador `m6.yml` conserva estas definiciones de la fuente, salvo la propuesta de M2 de exigir `clientId` con formato UUID en `GET /trips`, pendiente de acuerdo conjunto:
-
-| Consumo | Evidencia pública |
+| Consumo | Contrato (`m6.yml`) |
 |---|---|
-| Historial | `GET /trips` con filtro `clientId` de tipo string; 200 devuelve array de `Trip`; declara 401 y 403. No declara paginación ni orden. |
-| Verificar viaje | `GET /trips/{id}`, identificador UUID; 200 devuelve `Trip`; declara 401, 403 y 404. |
-| Pasajero y conductor | `Trip.clientId` y `Trip.driverId`, UUID en el esquema. `Trip` no declara `required`, ni siquiera para `id` y `state`. |
-| Estado | `state`: PENDING_ARRIVAL, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED_BY_CLIENT, CANCELLED_BY_DRIVER. README asocia COMPLETED con finalización. |
-| Seguridad y errores | Bearer JWT, claim `role` con CLIENT/DRIVER/OPERATOR; errores `application/json` con ErrorResponse. No acredita acceso con rol SERVICIO ni equivalencia con CLIENTE/OPERADOR de M2. |
+| Historial (RF-2.4, spec 007) | `GET /trips?clientId=…&page=…&pageSize=…`. `page` desde 1, `pageSize` de 1 a 100. Responde `TripSummaryPage { items, page, pageSize, total }`, ordenado por `createdAt` descendente. M2 traduce su `page` (desde 0) sumando 1. |
+| Verificar viaje (RF-2.5, spec 008) | `GET /trips/{id}`: `Trip` con `state`, `clientId` y `driverId`. `COMPLETED` es el estado que habilita calificar. |
+| Autorización | Bearer JWT. M6 acepta `roles` como lista, incluido `SERVICIO` (ADR 009). Un token de servicio tiene que mandar al menos un filtro (`400 FILTER_REQUIRED` sin filtro); M2 siempre manda `clientId`. |
+| Errores | `application/json` con `ErrorResponse { code, message, timestamp, correlationId }`. M2 no lee el cuerpo de un error de M6. |
 
-## Preguntas a grupos 12 y 5
+## Estado de las preguntas del ADR 002
 
-1. [NECESITA ACLARACIÓN] ¿Ambos grupos aceptan estas dos consultas como contrato compartido? Confirmar versión, URL base y publicación canónica. El borrador usa `http://localhost:3006/api/v1`; M2 propone `8080 + número de módulo`, según el [ADR 003](../../docs/adr/003-stack.md), todavía sin confirmación del consorcio. Con esa propuesta, para M6 correspondería el puerto `8086`. Grupos 12 y 5: ¿cuál es el puerto y la URL base acordados? Se conserva `localhost:3006` hasta recibir confirmación; el servidor local del archivo es evidencia de desarrollo, no una URL de integración acordada.
-2. [NECESITA ACLARACIÓN] ¿El filtro `clientId` garantiza historial exclusivamente del pasajero solicitado? Confirmar identificadores, relación con `clienteId` de M2 y campos garantizados de identidad, conductor y estado para RF-2.5.
-3. [NECESITA ACLARACIÓN] ¿COMPLETED es el estado definitivo que habilita calificar en ambas implementaciones? Confirmar conjunto y significado de estados; no traducirlo automáticamente a FINALIZADO.
-4. [NECESITA ACLARACIÓN] M2 publica el historial con `page`, `size` y totales. Si M6 devuelve toda la colección, M2 tendría que traer todos los viajes del cliente y paginar en memoria; por eso es necesaria la paginación en M6. ¿Cómo se pagina y ordena el historial, con qué límites y totales? ¿Qué responde para historial vacío, cliente desconocido o página fuera de rango? El mecanismo concreto de paginación de M6 queda pendiente de acuerdo; no se agregan parámetros ni respuestas al borrador.
-5. [NECESITA ACLARACIÓN] ¿Qué campos de Trip son obligatorios, opcionales o nulos? Aclarar diferencias README/OpenAPI sobre vehículo y origen/destino; si hay fechas reales de inicio/finalización. `createdAt` y `updatedAt` no se asumen equivalentes a esas fechas.
-6. [NECESITA ACLARACIÓN] ¿Cómo autoriza M6 a M2 para ambas consultas, incluidas solicitudes de operador? Hay un choque de autenticación y roles: M6 consume el claim `role` singular con valores `CLIENT`, `DRIVER` y `OPERATOR`; M2 y el [ADR 009](../../docs/adr/009-acuerdo-m1.md) usan `roles` como lista, con `CLIENTE`, `CONDUCTOR`, `OPERADOR` y `SERVICIO`, entre otros roles que cada módulo pueda reconocer. M6 no define hoy un rol de servicio para llamadas módulo-a-módulo. Esto también depende del acuerdo de identidad del issue #9. Confirmar token, claims, roles y autorización entre módulos con los grupos correspondientes, sin decidir equivalencias, cambiar el acuerdo M1 ni asumir propagación del token del cliente.
-7. [NECESITA ACLARACIÓN] Confirmar errores para identificadores/filtros inválidos, viaje inexistente, acceso ajeno e indisponibilidad; formato y correlación. Los errores publicados por M2 no se imponen como respuestas de M6. La adaptación se decidirá después del acuerdo.
-8. [NECESITA ACLARACIÓN] Entregar ejemplos acordados de historial con/sin viajes, viaje completado/no completado y errores para fixtures fiables de Prism. La fuente no garantiza la presencia de los campos que M2 necesita.
+1. Contrato compartido, versión y URL: respondida. Es el de la cátedra, versión 1.0.0. La URL de desarrollo es `http://localhost:3006/api/v1`; M2 la configura con `M2_URL_M6`.
+2. El filtro `clientId` devuelve solo viajes de ese cliente: respondida para el rol de servicio. M2 igual descarta un viaje de otro cliente (spec 007, RF-2.4.9).
+3. `COMPLETED` habilita calificar: respondida (descripción de `GET /trips/{id}`).
+4. Paginación y orden: respondida. Sigue sin decir qué responde ante una página fuera del total; M2 lo trata como página vacía.
+5. Campos obligatorios: **abierta**. Ni `Trip` ni `TripSummary` declaran `required`. M2 exige `id` y `state` en texto; si faltan, responde `503` (spec 007, RF-2.4.10).
+6. Autorización entre módulos: respondida en parte (`roles: ["SERVICIO"]`). **Abierta**: qué `iss` y `aud` valida M6.
+7. Errores y correlación: respondida en parte (`ErrorResponse`, `400`, `401`, `403` y `404` en `GET /trips/{id}`). **Abierta**: qué encabezado de correlación lee M6; M2 manda `X-Request-Id`.
+8. Ejemplos acordados para pruebas: **abierta**.
 
 ## Mensaje preparado — no enviado
 
-Para grupos 12 y 5; copia al Grupo 1 para coordinar impactos sobre el contrato compartido de M2:
+Para el Grupo 12 (copia al Grupo 5):
 
-> Desde Grupo 17, issue #2, necesitamos acordar el consumo de M6 para historial por cliente (RF-2.4) y verificar viaje completado, pasajero y conductor antes de calificar (RF-2.5), siempre por API (RNF-05). Encontramos las consultas GET /trips y GET /trips/{id} en el OpenAPI público del Grupo 12, commit 4cc05b07725c6b6551f319578bbf73a5de926689. Preparamos una extracción como borrador de dependencia, proponiendo exigir clientId con formato UUID en GET /trips; las rutas, demás campos y respuestas se conservan. La cátedra aún publica solo metadatos de M6. Necesitamos respuesta conjunta a las ocho preguntas de esta propuesta, especialmente garantías de campos, paginación, permisos y errores. La versión 0.1.0-borrador es local; versión y fecha de vigencia de M6: [NECESITA ACLARACIÓN]. No hay acuerdo ni publicación nuevos. ¿Pueden confirmar o corregir estas definiciones y facilitar ejemplos? Coordinaremos con Grupo 1 cualquier impacto sobre el resumen de viajes de M2 antes de modificarlo.
-
-## Validación y próximo paso
-
-Validar el YAML con Redocly y ejecutar los checks del repositorio. Un lint correcto no sustituye aceptación ni garantiza datos útiles para Prism. Tras recibir respuestas, actualizar el borrador y el ADR y revisar compatibilidad. La publicación en la cátedra corresponde al responsable de contrato después de aceptación; ORIGEN se actualiza cuando esté publicado el cambio que corresponda.
-
-[NECESITA ACLARACIÓN] Grupos 12 y 5: confirmar metadatos y operationId del contrato compartido. No se inventan licencia ni identificadores de operación.
+> Desde el Grupo 17 (M2), gracias por subir el contrato de M6 a la cátedra (PR #9): ya lo adoptamos para el historial de viajes y la calificación. Nos quedan tres dudas. (1) Para el token de servicio de M2, ¿qué `iss` y qué `aud` valida M6? Según el acuerdo de M1 (ADR 009) proponemos `iss: m1-identidad`, `aud: m6-viajes`, `sub: m2-clientes` y `roles: ["SERVICIO"]`, firmado con HS256 y la clave compartida de desarrollo. (2) ¿Qué encabezado de correlación leen? Nosotros mandamos `X-Request-Id`. (3) ¿`id` y `state` vienen siempre en `TripSummary` y en `Trip`? Si nos pueden pasar un ejemplo real de `GET /trips?clientId=…` con y sin viajes, lo usamos en nuestras pruebas.
