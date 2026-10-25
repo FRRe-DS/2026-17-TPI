@@ -109,6 +109,29 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
     });
   });
 
+  // 007/V: una página tan lejana que su desplazamiento no es un entero seguro no tiene viajes, y M6 no puede recibir su número
+  // (`1e+21`). Se le pide la primera, solo para el total.
+  describe('una página inalcanzable (RF-2.4.3)', () => {
+    it.each([1e21, Number.MAX_SAFE_INTEGER])('la página %d pide a M6 la primera y devuelve sin viajes, con su total', async (page) => {
+      serv.responderCon(ok(pagina([viaje(1), viaje(2)], 42)));
+
+      const resultado = await listar(page, 20);
+
+      expect(Object.fromEntries(new URL(serv.rutaRecibida, serv.url).searchParams)).toEqual({
+        clientId: CLIENTE,
+        page: '1',
+        pageSize: '20',
+      });
+      expect(resultado).toEqual({ items: [], total: 42 });
+    });
+
+    it('si esa primera página no tiene la forma esperada, igual es un 503', async () => {
+      serv.responderCon(ok(pagina([], -1)));
+
+      expect(await fallaDe(listar(1e21, 20))).toBeInstanceOf(ModuloNoDisponible);
+    });
+  });
+
   describe('un 200 con la forma esperada (RF-2.4, RF-2.4.3)', () => {
     it('devuelve los viajes y el total, en el orden de M6', async () => {
       const items = [viaje(1), viaje(2, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' })];
@@ -193,6 +216,8 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
       ['un viaje con state numérico', pagina([viaje(1, { state: 3 })], 1)],
       ['un viaje con driverId numérico', pagina([viaje(1, { driverId: 5 })], 1)],
       ['un viaje con clientId numérico', pagina([viaje(1, { clientId: 5 })], 1)],
+      ['un viaje con un id que no es un UUID', pagina([viaje(1, { id: 'viaje-1' })], 1)],
+      ['un viaje con un driverId que no es un UUID', pagina([viaje(1, { driverId: 'conductor-7' })], 1)],
     ])('%s', async (_caso, cuerpo) => {
       serv.responderCon(ok(cuerpo));
 

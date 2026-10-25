@@ -4,7 +4,7 @@ import { tokenDeServicio } from '../auth/tokens.js';
 import type { Config, ConfigTokens } from '../config.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../errores.js';
 import { crearClienteModulo } from '../modulos/cliente.js';
-import { aPaginaDeM6, type PaginaM6, type ViajeM6 } from './modelo.js';
+import { aPaginaDeM6, paginaInalcanzable, type PaginaM6, type ViajeM6 } from './modelo.js';
 
 export type M6 = {
   // `page` es el de M2, desde 0. Devuelve la página de M6 ya comprobada; lanza `ModuloNoDisponible` (503) o
@@ -24,14 +24,20 @@ const esObjeto = (valor: unknown): valor is Record<string, unknown> =>
 // Un texto, o nada: M6 no declara campos obligatorios en `TripSummary`, y un viaje sin conductor puede traerlo nulo.
 const textoOpcional = (valor: unknown) => valor === undefined || valor === null || typeof valor === 'string';
 
-// Un viaje tiene que traer `id` y `state` en texto; `clientId` y `driverId`, si vienen, también. Un viaje sin `clientId` no se
-// puede dar por propio: `aPaginaViajes` lo descarta (RF-2.4.9).
+// `viajeId` y `conductorId` son `format: uuid` en el contrato de M2: un id que no lo es haría que M2 respondiera fuera de su
+// propio contrato (RNF-03).
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const esUuid = (valor: unknown) => typeof valor === 'string' && UUID.test(valor);
+
+// Un viaje tiene que traer `id` (un UUID) y `state` en texto; `clientId`, si viene, en texto, y `driverId`, si viene, un UUID
+// (vacío cuenta como sin conductor, como en `aViajeResumen`). Un viaje sin `clientId` no se puede dar por propio:
+// `aPaginaViajes` lo descarta (RF-2.4.9).
 const esViaje = (valor: unknown): valor is ViajeM6 =>
   esObjeto(valor) &&
-  typeof valor.id === 'string' &&
+  esUuid(valor.id) &&
   typeof valor.state === 'string' &&
   textoOpcional(valor.clientId) &&
-  textoOpcional(valor.driverId);
+  (valor.driverId === undefined || valor.driverId === null || valor.driverId === '' || esUuid(valor.driverId));
 
 // La forma que M2 necesita de la respuesta (RF-2.4.10): `items`, una lista de viajes que no supera `size`, y `total`, un entero
 // mayor o igual que cero. `page` y `pageSize` de M6 no se leen: la página que se devuelve es la que se pidió.
@@ -56,7 +62,10 @@ export function crearM6(config: ConfigM6): M6 {
 
   return {
     async listarViajes(clienteId, page, size, idCorrelacion) {
-      const query = new URLSearchParams({ clientId: clienteId, page: String(aPaginaDeM6(page)), pageSize: String(size) });
+      // Una página inalcanzable no tiene viajes: se le pide a M6 la primera, solo por el total (RF-2.4.3).
+      const inalcanzable = paginaInalcanzable(page, size);
+      const pageM6 = inalcanzable ? 1 : aPaginaDeM6(page);
+      const query = new URLSearchParams({ clientId: clienteId, page: String(pageM6), pageSize: String(size) });
       // Puede lanzar ModuloNoDisponible, tras el reintento (RF-2.4.6, RNF-13).
       const { estado, cuerpo } = await cliente.obtener(`/trips?${query}`, idCorrelacion);
 
@@ -68,7 +77,7 @@ export function crearM6(config: ConfigM6): M6 {
           reintentarDespuesS: config.reintentarDespuesS,
         });
       }
-      return cuerpo;
+      return inalcanzable ? { items: [], total: cuerpo.total } : cuerpo;
     },
   };
 }

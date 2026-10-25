@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aPaginaDeM6, aPaginaViajes, aViajeResumen, type ViajeM6 } from '../../src/historial/modelo.js';
+import { aPaginaDeM6, aPaginaViajes, aViajeResumen, type ViajeM6, paginaInalcanzable } from '../../src/historial/modelo.js';
 
 const CLIENTE = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
 const OTRO_CLIENTE = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
@@ -44,6 +44,27 @@ describe('aPaginaDeM6 (007/T3, casos límite)', () => {
     [9, 10],
   ])('la página %i de M2 es la %i de M6', (page, deM6) => {
     expect(aPaginaDeM6(page)).toBe(deM6);
+  });
+});
+
+// Una página cuyo desplazamiento (page * size) no es un entero seguro no puede tener viajes, y su número no se puede mandar a
+// M6 como un entero (007/V, RF-2.4.3).
+describe('paginaInalcanzable (007/V, RF-2.4.3)', () => {
+  it.each([
+    [0, 20],
+    [9, 100],
+    [Math.floor(Number.MAX_SAFE_INTEGER / 100), 100],
+    [Number.MAX_SAFE_INTEGER, 1],
+  ])('la página %d con size %d se le pide a M6', (page, size) => {
+    expect(paginaInalcanzable(page, size)).toBe(false);
+  });
+
+  it.each([
+    [Number.MAX_SAFE_INTEGER, 2],
+    [Math.floor(Number.MAX_SAFE_INTEGER / 100) + 1, 100],
+    [1e21, 1],
+  ])('la página %d con size %d queda fuera de todo total', (page, size) => {
+    expect(paginaInalcanzable(page, size)).toBe(true);
   });
 });
 

@@ -579,15 +579,17 @@ describe('tokenDeServicio: el token con el que M2 se presenta ante otro módulo 
     expect(claims).not.toHaveProperty('permisos');
   });
 
-  it('vence a los 60 segundos: pasado ese tiempo y la tolerancia de reloj, M2 mismo lo rechaza', async () => {
-    const token = await tokenDeServicio({ ...config, audienciaTokens: config.audienciaM6 });
-    await expect(verificar(token, { ...config, audienciaTokens: config.audienciaM6 })).resolves.toStrictEqual({
-      sub: 'm2-clientes',
-      roles: ['SERVICIO'],
-    });
+  it('vence a los 60 segundos: M6 lo rechaza enseguida, y M2, pasada su tolerancia de reloj de 30 segundos', async () => {
+    const comoM2 = { ...config, audienciaTokens: config.audienciaM6 };
+    const token = await tokenDeServicio(comoM2);
+    await expect(verificar(token, comoM2)).resolves.toStrictEqual({ sub: 'm2-clientes', roles: ['SERVICIO'] });
+
+    vi.setSystemTime((AHORA + 61) * 1000);
+    await expect(comoM6(token)).rejects.toThrow();
+    await expect(verificar(token, comoM2)).resolves.toStrictEqual({ sub: 'm2-clientes', roles: ['SERVICIO'] });
 
     vi.setSystemTime((AHORA + 60 + 31) * 1000);
-    await expect(comoM6(token)).rejects.toThrow();
+    await rechazo(verificar(token, comoM2), VENCIDO, token);
   });
 
   it('cada llamada firma un token con el reloj de ese momento', async () => {

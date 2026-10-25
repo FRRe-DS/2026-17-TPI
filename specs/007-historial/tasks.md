@@ -17,7 +17,7 @@ Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4
 - [x] **T7. Validar contrato, regresión y documentación.** RNF-03, RNF-07, RNF-20
   - Hecho cuando: `listarHistorialViajes` pasa `npm run contrato:test` (el `503` de M6 aceptado en `schemathesis.toml` y en su prueba guardiana), `npm test`, lint, build y `spec-check` quedan en verde, y `guia.md` documenta el mapa, los supuestos con M6, ejemplos con un M6 simulado comprobados y la visión general.
 - [x] **T8. Cambiar la credencial fija por la audiencia de M6 en la configuración.** RNF-06, RF-2.4.11, RNF-19
-  - Hecho cuando: `M2_CREDENCIAL_M6` ya no existe en la configuración, `ejemplo.env`, `docker-compose.yml` ni el README, ni en `secretosDeConfig`; `M2_AUDIENCIA_M6` es opcional, vale `m6-viajes` por defecto y rechaza un valor vacío; las pruebas de configuración, del ejemplo, de secretos y de arranque lo comprueban.
+  - Hecho cuando: `M2_CREDENCIAL_M6` ya no existe en la configuración, `ejemplo.env`, `docker-compose.yml` ni el README, ni en `secretosDeConfig`; `M2_AUDIENCIA_M6` es opcional, vale `m6-viajes` por defecto (también si está vacía) y rechaza un valor en blanco; las pruebas de configuración, del ejemplo, de secretos y de arranque lo comprueban.
 - [x] **T9. Firmar el token de servicio.** RF-2.4.11
   - Hecho cuando: pruebas unitarias comprueban que `tokenDeServicio` da un JWT HS256 que verifica con la clave del consorcio, con `iss` del emisor configurado, `sub` `m2-clientes`, `roles` `["SERVICIO"]` (también con otro `M2_CAMPO_ROLES`), `aud` igual a `M2_AUDIENCIA_M6` y `exp` 60 segundos después de `iat`.
 - [x] **T10. Enviar el token de servicio en cada intento a M6.** RF-2.4.11, RNF-13, RNF-19

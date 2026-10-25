@@ -65,17 +65,23 @@ const claveDeTokens: Regla<string> = {
   convertir: (texto) => (texto.length >= LARGO_MINIMO_CLAVE ? texto : undefined),
 };
 
-// La URL de otro módulo: http o https, con una dirección válida. Se guarda sin la barra final, porque el cliente le suma rutas
-// que empiezan con una.
+// La URL de otro módulo: http o https, con una dirección válida y sin usuario ni contraseña, que `fetch` rechaza copiando la
+// URL entera en su error, y ese error llegaría al log como causa del 503 (RNF-19). Se guarda sin la barra final, porque el
+// cliente le suma rutas que empiezan con una.
 const urlHttp: Regla<string> = {
-  motivo: 'no es una URL http:// o https://',
-  convertir: (texto) => (/^https?:\/\//i.test(texto) && URL.canParse(texto) ? texto.replace(/\/+$/, '') : undefined),
+  motivo: 'no es una URL http:// o https:// sin usuario ni contraseña',
+  convertir: (texto) => {
+    if (!/^https?:\/\//i.test(texto) || !URL.canParse(texto)) return undefined;
+    const url = new URL(texto);
+    return url.username === '' && url.password === '' ? texto.replace(/\/+$/, '') : undefined;
+  },
 };
 
-// Una variable vacía cuenta como no definida y toma su valor por defecto; una con solo espacios no dice nada y se rechaza.
-const textoNoEnBlanco: Regla<string> = {
-  motivo: 'tiene solo espacios',
-  convertir: (texto) => (texto.trim() === '' ? undefined : texto),
+// Una variable vacía cuenta como no definida y toma su valor por defecto. Una con solo espacios, o con espacios al principio o
+// al final, se rechaza: una audiencia así haría que el otro módulo rechazara todos los tokens.
+const textoSinEspaciosAlBorde: Regla<string> = {
+  motivo: 'está en blanco o tiene espacios al principio o al final',
+  convertir: (texto) => (texto.trim() === texto && texto !== '' ? texto : undefined),
 };
 
 // Es la misma regla que aplica Node al escribir el encabezado en una respuesta.
@@ -152,7 +158,7 @@ export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
     reintentosModulos: lector.opcional('M2_REINTENTOS_MODULOS', 1, enteroEntre(0, 5)),
     encabezadoCorrelacion: lector.opcional('M2_ENCABEZADO_CORRELACION', 'X-Request-Id', nombreDeEncabezado),
     urlM6: lector.obligatoria('M2_URL_M6', urlHttp),
-    audienciaM6: lector.opcional('M2_AUDIENCIA_M6', 'm6-viajes', textoNoEnBlanco),
+    audienciaM6: lector.opcional('M2_AUDIENCIA_M6', 'm6-viajes', textoSinEspaciosAlBorde),
     reintentarDespuesS: lector.opcional('M2_REINTENTAR_DESPUES_S', 5, enteroEntre(1, 3600)),
   });
 }

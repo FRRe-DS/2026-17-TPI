@@ -21,6 +21,10 @@ export type PaginaM6 = {
 // El `page` de M2 empieza en 0 y el de M6 en 1; el tamaño es el mismo (spec 007, Casos límite).
 export const aPaginaDeM6 = (page: number): number => page + 1;
 
+// El contrato no le pone máximo a `page`. Una página cuyo desplazamiento (`page * size`) no es un entero seguro no puede tener
+// viajes, y su número no se puede mandar a M6 como un entero: `1e21` saldría como `1e+21` (RF-2.4.3; plan 007, Decisiones).
+export const paginaInalcanzable = (page: number, size: number): boolean => page * size > Number.MAX_SAFE_INTEGER;
+
 // El estado va tal como lo informa M6 (RF-2.4.1). Sin `driverId` (por ejemplo, un viaje cancelado antes de asignar conductor),
 // el viaje va sin `conductorId`.
 export function aViajeResumen(viaje: ViajeM6): ViajeResumen {

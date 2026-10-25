@@ -151,8 +151,12 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
     ['M2_URL_M6', 'http:/m6/api'],
     ['M2_URL_M6', 'http://m6:99999/api/v1'],
     ['M2_URL_M6', 'esto no es una url'],
+    ['M2_URL_M6', 'http://usuario:clave@m6:3006/api/v1'],
+    ['M2_URL_M6', 'http://usuario@m6:3006/api/v1'],
     ['M2_AUDIENCIA_M6', ' '],
     ['M2_AUDIENCIA_M6', '\t\n'],
+    ['M2_AUDIENCIA_M6', ' m6-viajes'],
+    ['M2_AUDIENCIA_M6', 'm6-viajes\n'],
     ['M2_REINTENTAR_DESPUES_S', '0'],
     ['M2_REINTENTAR_DESPUES_S', '3601'],
     ['M2_REINTENTAR_DESPUES_S', '1.5'],
@@ -201,6 +205,7 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
     ['M2_REINTENTOS_MODULOS', CENTINELA],
     ['M2_ENCABEZADO_CORRELACION', `${CENTINELA} con espacios`],
     ['M2_URL_M6', `ftp://usuario:${CENTINELA}@m6/api`],
+    ['M2_URL_M6', `http://usuario:${CENTINELA}@m6/api`],
     ['M2_REINTENTAR_DESPUES_S', CENTINELA],
   ])('%s inválida: el error no repite el valor recibido', (variable, valor) => {
     const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }));

@@ -112,6 +112,18 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(consultaDeM6()).toEqual({ clientId: id, page: '3', pageSize: '15' });
     });
 
+    // 007/V: el contrato no le pone máximo a page, y una página que no se puede pedir a M6 como entero no tiene viajes.
+    it('una página inalcanzable (page=1e21): 200 con items vacío y los totales de M6, que recibe page=1', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id)], 45) });
+
+      const respuesta = await crear().pedir(id, '?page=1e21&size=15');
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(respuesta.json()).toEqual({ page: 1e21, size: 15, totalElementos: 45, totalPaginas: 3, items: [] });
+      expect(consultaDeM6()).toEqual({ clientId: id, page: '1', pageSize: '15' });
+    });
+
     it('un cliente sin viajes: 200 con items vacío, nunca 404', async () => {
       const id = await perfil();
       serv.responderCon({ tipo: 'ok', cuerpo: pagina([], 0) });
@@ -233,6 +245,30 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(respuesta.headers['retry-after']).toBeUndefined();
       expect(respuesta.body).not.toContain('dato-de-m6');
       expect(serv.llamadas).toBe(1);
+    });
+
+    // RF-2.4.7 y RNF-14: el 500 deja en el log la causa (el código de M6) con el id de correlación de la solicitud, que también
+    // llegó a M6.
+    it('el 500 por un 4xx de M6 se registra con su causa y el id de correlación, que también llegó a M6', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 401 });
+      const { app, logs } = crear();
+
+      const respuesta = await app.inject({
+        method: 'GET',
+        url: url(id),
+        headers: { authorization: `Bearer ${armarToken({ claims: { sub: id, roles: ['CLIENTE'] } })}`, 'x-request-id': 'historial-500' },
+      });
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(respuesta.headers['x-request-id']).toBe('historial-500');
+      expect(serv.encabezadosRecibidos.get('x-request-id')).toBe('historial-500');
+      expect(logs.lineas().filter(({ level }) => level === 50)).toEqual([
+        expect.objectContaining({
+          idCorrelacion: 'historial-500',
+          err: expect.objectContaining({ causa: expect.objectContaining({ mensaje: 'M6 respondió 401' }) }),
+        }),
+      ]);
     });
 
     it('el 503 de la base no lleva Retry-After y no llama a M6', async () => {
