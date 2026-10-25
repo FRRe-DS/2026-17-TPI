@@ -1,6 +1,6 @@
 # Tareas 007 — Historial resumido de viajes
 
-Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4 y T5 son delicadas (error compartido, llamada a otro módulo y orden de las comprobaciones): se implementan con Opus. Las pruebas usan un M6 simulado que cumple `contrato/dependencias/m6.yml`; el M6 real solo se necesita al final (ver Dudas de la spec).
+Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4 y T5 son delicadas (error compartido, llamada a otro módulo y orden de las comprobaciones): se implementan con Opus. Las pruebas usan un M6 simulado que cumple `contrato/dependencias/m6.yml`; el M6 real solo se necesita al final (ver Dudas de la spec). T8 a T10 vienen del cambio del #58 (token de servicio, ADR 009): se hacen antes de T7, que valida todo; T10 es delicada (credencial en el cliente compartido) y va con Opus.
 
 - [ ] **T1. Agregar la configuración de M6.** RNF-06
   - Hecho cuando: `M2_URL_M6` es obligatoria (sin ella el servicio no arranca y nombra la variable, sin su valor), `M2_CREDENCIAL_M6` es opcional y `M2_REINTENTAR_DESPUES_S` vale 5 por defecto y acepta enteros desde 1; pruebas de configuración y arranque lo comprueban, y `ejemplo.env`, `docker-compose.yml` y la tabla de variables del README las incluyen con valores de desarrollo.
@@ -16,3 +16,9 @@ Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4
   - Hecho cuando: pruebas HTTP cubren `200`, `400`, `401`, `403`, `404`, `500` y `503` con `Retry-After` en problem+json, el `503` de la base sin `Retry-After`, y comprueban que los logs no contienen el token, la credencial, identificadores de viajes ni de conductores; las listas de operaciones de `arranque.test.ts`, `salud.test.ts` y `contrato-test.test.ts` incluyen la operación y el manejador sigue el orden del contrato.
 - [ ] **T7. Validar contrato, regresión y documentación.** RNF-03, RNF-07, RNF-20
   - Hecho cuando: `listarHistorialViajes` pasa `npm run contrato:test` (el `503` de M6 aceptado en `schemathesis.toml` y en su prueba guardiana), `npm test`, lint, build y `spec-check` quedan en verde, y `guia.md` documenta el mapa, los supuestos con M6, ejemplos con un M6 simulado comprobados y la visión general.
+- [ ] **T8. Cambiar la credencial fija por la audiencia de M6 en la configuración.** RNF-06, RF-2.4.11, RNF-19
+  - Hecho cuando: `M2_CREDENCIAL_M6` ya no existe en la configuración, `ejemplo.env`, `docker-compose.yml` ni el README, ni en `secretosDeConfig`; `M2_AUDIENCIA_M6` es opcional, vale `m6-viajes` por defecto y rechaza un valor vacío; las pruebas de configuración, del ejemplo, de secretos y de arranque lo comprueban.
+- [ ] **T9. Firmar el token de servicio.** RF-2.4.11
+  - Hecho cuando: pruebas unitarias comprueban que `tokenDeServicio` da un JWT HS256 que verifica con la clave del consorcio, con `iss` del emisor configurado, `sub` `m2-clientes`, `roles` `["SERVICIO"]` (también con otro `M2_CAMPO_ROLES`), `aud` igual a `M2_AUDIENCIA_M6` y `exp` 60 segundos después de `iat`.
+- [ ] **T10. Enviar el token de servicio en cada intento a M6.** RF-2.4.11, RNF-13, RNF-19
+  - Hecho cuando: la opción `credencial` del cliente de módulos es una función que se llama en cada intento; pruebas de módulos comprueban que sin ella no hay `Authorization`, que cada intento (también el reintento) lleva un token propio, que el M6 simulado recibe un token de servicio que verifica con la clave y la audiencia de M6, y que el token no aparece en `detail`, en la causa ni en el log.
