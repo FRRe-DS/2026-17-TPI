@@ -1,6 +1,6 @@
-import { decodeJwt, decodeProtectedHeader, generateKeyPair, SignJWT } from 'jose';
+import { decodeJwt, decodeProtectedHeader, generateKeyPair, jwtVerify, SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generarToken, ROLES_CONOCIDOS, verificarToken } from '../../src/auth/tokens.js';
+import { generarToken, ROLES_CONOCIDOS, tokenDeServicio, verificarToken } from '../../src/auth/tokens.js';
 import type { ConfigTokens, Entorno } from '../../src/config.js';
 import { NoAutenticado } from '../../src/errores.js';
 import { main } from '../../src/herramientas/token.js';
@@ -534,6 +534,77 @@ async function comando(argv: string[], env: Entorno = ENTORNO) {
     errores.mockRestore();
   }
 }
+
+describe('tokenDeServicio: el token con el que M2 se presenta ante otro módulo (RF-2.4.11)', () => {
+  const config = { ...CONFIG_TOKENS, audienciaM6: 'm6-viajes' };
+
+  // Lo verifica como lo haría M6: con la clave del consorcio, el emisor de M1 y su propia audiencia, sin pasar por M2.
+  const comoM6 = (token: string, audience = config.audienciaM6) =>
+    jwtVerify(token, new TextEncoder().encode(config.claveTokens), {
+      algorithms: ['HS256'],
+      issuer: config.emisorTokens,
+      audience,
+    });
+
+  it('es un JWT HS256 que verifica con la clave del consorcio, el emisor configurado y la audiencia de M6', async () => {
+    const token = await tokenDeServicio(config);
+
+    expect(decodeProtectedHeader(token)).toStrictEqual({ alg: 'HS256', typ: 'JWT' });
+    await expect(comoM6(token)).resolves.toBeDefined();
+  });
+
+  it('lleva iss, sub m2-clientes, roles SERVICIO, aud de M6, iat y exp 60 segundos después, y nada más', async () => {
+    expect(decodeJwt(await tokenDeServicio(config))).toStrictEqual({
+      iss: config.emisorTokens,
+      sub: 'm2-clientes',
+      roles: ['SERVICIO'],
+      aud: 'm6-viajes',
+      iat: AHORA,
+      exp: AHORA + 60,
+    });
+  });
+
+  it('la audiencia es la de M6 y no la de M2', async () => {
+    const token = await tokenDeServicio({ ...config, audienciaM6: 'otra-audiencia' });
+
+    expect(decodeJwt(token).aud).toBe('otra-audiencia');
+    await expect(comoM6(token, config.audienciaTokens)).rejects.toThrow();
+    await expect(comoM6(token, 'otra-audiencia')).resolves.toBeDefined();
+  });
+
+  it('el claim de roles se llama roles aunque M2_CAMPO_ROLES cambie el que M2 lee', async () => {
+    const claims = decodeJwt(await tokenDeServicio({ ...config, campoRoles: 'permisos' }));
+
+    expect(claims['roles']).toStrictEqual(['SERVICIO']);
+    expect(claims).not.toHaveProperty('permisos');
+  });
+
+  it('vence a los 60 segundos: pasado ese tiempo y la tolerancia de reloj, M2 mismo lo rechaza', async () => {
+    const token = await tokenDeServicio({ ...config, audienciaTokens: config.audienciaM6 });
+    await expect(verificar(token, { ...config, audienciaTokens: config.audienciaM6 })).resolves.toStrictEqual({
+      sub: 'm2-clientes',
+      roles: ['SERVICIO'],
+    });
+
+    vi.setSystemTime((AHORA + 60 + 31) * 1000);
+    await expect(comoM6(token)).rejects.toThrow();
+  });
+
+  it('cada llamada firma un token con el reloj de ese momento', async () => {
+    const primero = await tokenDeServicio(config);
+    vi.setSystemTime((AHORA + 10) * 1000);
+    const segundo = await tokenDeServicio(config);
+
+    expect(decodeJwt(segundo).iat).toBe(AHORA + 10);
+    expect(segundo).not.toBe(primero);
+  });
+
+  it('con otra clave no verifica', async () => {
+    const token = await tokenDeServicio({ ...config, claveTokens: 'otra-clave-de-treinta-y-dos-caracteres!' });
+
+    await expect(comoM6(token)).rejects.toThrow();
+  });
+});
 
 describe('main, el comando de tokens: imprime un token que verificarToken acepta (RNF-12.5)', () => {
   it('con --sub, --roles y --vence: imprime solo el token, con ese sub, esos roles y ese vencimiento', async () => {
