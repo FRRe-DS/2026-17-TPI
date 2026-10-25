@@ -29,6 +29,9 @@ const DEL_SERVICIO = [
   'M2_TIEMPO_MODULOS_MS',
   'M2_REINTENTOS_MODULOS',
   'M2_ENCABEZADO_CORRELACION',
+  'M2_URL_M6',
+  'M2_CREDENCIAL_M6',
+  'M2_REINTENTAR_DESPUES_S',
 ];
 const DE_LA_BASE = ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB'];
 
@@ -66,6 +69,7 @@ describe('ejemplo.env (RNF-06.3)', () => {
       tiempoModulosMs: 2000,
       reintentosModulos: 1,
       encabezadoCorrelacion: 'X-Request-Id',
+      reintentarDespuesS: 5,
     });
   });
 

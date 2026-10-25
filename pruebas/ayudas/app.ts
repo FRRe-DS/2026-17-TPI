@@ -20,6 +20,9 @@ export const CONFIG: Config = {
   tiempoModulosMs: 2000,
   reintentosModulos: 1,
   encabezadoCorrelacion: 'X-Request-Id',
+  urlM6: 'http://m6:3006/api/v1',
+  credencialM6: undefined,
+  reintentarDespuesS: 5,
 };
 
 // Un contrato armado en la prueba, para los casos que el contrato de prueba no tiene.

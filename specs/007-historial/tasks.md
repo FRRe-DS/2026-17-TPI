@@ -2,7 +2,7 @@
 
 Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4 y T5 son delicadas (error compartido, llamada a otro módulo y orden de las comprobaciones): se implementan con Opus. Las pruebas usan un M6 simulado que cumple `contrato/dependencias/m6.yml`; el M6 real solo se necesita al final (ver Dudas de la spec). T8 a T10 vienen del cambio del #58 (token de servicio, ADR 009): se hacen antes de T7, que valida todo; T10 es delicada (credencial en el cliente compartido) y va con Opus.
 
-- [ ] **T1. Agregar la configuración de M6.** RNF-06
+- [x] **T1. Agregar la configuración de M6.** RNF-06
   - Hecho cuando: `M2_URL_M6` es obligatoria (sin ella el servicio no arranca y nombra la variable, sin su valor), `M2_CREDENCIAL_M6` es opcional y `M2_REINTENTAR_DESPUES_S` vale 5 por defecto y acepta enteros desde 1; pruebas de configuración y arranque lo comprueban, y `ejemplo.env`, `docker-compose.yml` y la tabla de variables del README las incluyen con valores de desarrollo.
 - [ ] **T2. Completar el cliente de módulos: credencial y `Retry-After`.** RF-2.4.6, RNF-06, RNF-13, RNF-19
   - Hecho cuando: pruebas de módulos comprueban que `Authorization: Bearer` se envía solo si hay credencial, que `ModuloNoDisponible` puede llevar `Retry-After` y que sin él las respuestas `503` existentes no cambian, y que la credencial no aparece en `detail`, en la causa ni en el log.

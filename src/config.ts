@@ -22,6 +22,11 @@ export type Config = ConfigTokens & {
   tiempoModulosMs: number;
   reintentosModulos: number;
   encabezadoCorrelacion: string;
+  // M6 (spec 007): su URL base sin barra final, la credencial con la que M2 se presenta (si hay) y los segundos que
+  // sugiere el `Retry-After` del 503 cuando M6 no está disponible (RF-2.4.6).
+  urlM6: string;
+  credencialM6: string | undefined;
+  reintentarDespuesS: number;
 };
 
 // Una regla convierte el texto de una variable en su valor, o devuelve undefined si no la cumple.
@@ -58,6 +63,19 @@ const urlPostgres: Regla<string> = {
 const claveDeTokens: Regla<string> = {
   motivo: `tiene menos de ${LARGO_MINIMO_CLAVE} caracteres`,
   convertir: (texto) => (texto.length >= LARGO_MINIMO_CLAVE ? texto : undefined),
+};
+
+// La URL de otro módulo: http o https, con una dirección válida. Se guarda sin la barra final, porque el cliente le suma rutas
+// que empiezan con una.
+const urlHttp: Regla<string> = {
+  motivo: 'no es una URL http:// o https://',
+  convertir: (texto) => (/^https?:\/\//i.test(texto) && URL.canParse(texto) ? texto.replace(/\/+$/, '') : undefined),
+};
+
+// Va en `Authorization: Bearer <valor>`: solo caracteres visibles de ASCII, sin espacios ni saltos de línea.
+const credencialDeModulo: Regla<string> = {
+  motivo: 'tiene espacios o caracteres que no van en un encabezado',
+  convertir: (texto) => (/^[\x21-\x7e]+$/.test(texto) ? texto : undefined),
 };
 
 // Es la misma regla que aplica Node al escribir el encabezado en una respuesta.
@@ -133,5 +151,8 @@ export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
     tiempoModulosMs: lector.opcional('M2_TIEMPO_MODULOS_MS', 2000, tiempoEnMs),
     reintentosModulos: lector.opcional('M2_REINTENTOS_MODULOS', 1, enteroEntre(0, 5)),
     encabezadoCorrelacion: lector.opcional('M2_ENCABEZADO_CORRELACION', 'X-Request-Id', nombreDeEncabezado),
+    urlM6: lector.obligatoria('M2_URL_M6', urlHttp),
+    credencialM6: lector.opcional<string | undefined>('M2_CREDENCIAL_M6', undefined, credencialDeModulo),
+    reintentarDespuesS: lector.opcional('M2_REINTENTAR_DESPUES_S', 5, enteroEntre(1, 3600)),
   });
 }
