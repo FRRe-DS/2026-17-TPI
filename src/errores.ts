@@ -167,10 +167,20 @@ export class BloqueoNoVigente extends Problema {
 }
 
 // Del cliente de módulos, una vez agotados los intentos (RNF-13.3). `modulo` es cómo se lo nombra, por ejemplo «M6», y la
-// `cause`, lo que falló en el último intento: la registra el manejador de errores (RNF-14.8).
+// `cause`, lo que falló en el último intento: la registra el manejador de errores (RNF-14.8). Con `reintentarDespuesS`, la
+// respuesta lleva `Retry-After` en segundos, para el módulo cuyo 503 lo declara el contrato (spec 007, RF-2.4.6); sin él,
+// no lo lleva.
 export class ModuloNoDisponible extends Problema {
-  constructor(modulo: string, opciones?: ErrorOptions) {
-    super({ codigo: 503, title: TITULO_NO_DISPONIBLE, detail: `${modulo} no está disponible` }, opciones);
+  constructor(modulo: string, { reintentarDespuesS, ...opciones }: ErrorOptions & { reintentarDespuesS?: number } = {}) {
+    super(
+      {
+        codigo: 503,
+        title: TITULO_NO_DISPONIBLE,
+        detail: `${modulo} no está disponible`,
+        encabezados: reintentarDespuesS === undefined ? {} : { 'Retry-After': String(reintentarDespuesS) },
+      },
+      opciones,
+    );
   }
 }
 

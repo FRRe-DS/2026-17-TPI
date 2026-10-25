@@ -82,8 +82,23 @@ describe('limpiarSecretos: reemplaza cada secreto conocido por [oculto] (RNF-19.
   });
 });
 
-describe('secretosDeConfig: la clave de los tokens y la contraseña de la base (RNF-19.1)', () => {
-  const de = (urlBd: string) => secretosDeConfig({ claveTokens: CLAVE, urlBd });
+describe('secretosDeConfig: la clave de los tokens, la contraseña de la base y la credencial ante M6 (RNF-19.1)', () => {
+  const de = (urlBd: string) => secretosDeConfig({ claveTokens: CLAVE, urlBd, credencialM6: undefined });
+  const CREDENCIAL_M6 = 'credencial-de-m2-ante-m6';
+
+  it('la credencial ante M6, si está configurada, después de la clave y la contraseña', () => {
+    expect(secretosDeConfig({ claveTokens: CLAVE, urlBd: URL_BD, credencialM6: CREDENCIAL_M6 })).toEqual([
+      CLAVE,
+      CONTRASENA,
+      CREDENCIAL_M6,
+    ]);
+  });
+
+  it('la oculta en un texto, como a los otros secretos', () => {
+    const secretos = secretosDeConfig({ claveTokens: CLAVE, urlBd: URL_BD, credencialM6: CREDENCIAL_M6 });
+
+    expect(limpiarSecretos(`Authorization: Bearer ${CREDENCIAL_M6}`, secretos)).toBe('Authorization: Bearer [oculto]');
+  });
 
   it('la clave y la contraseña que va en la URL', () => {
     expect(de(URL_BD)).toEqual([CLAVE, CONTRASENA]);

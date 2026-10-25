@@ -17,6 +17,11 @@ type OpcionesCliente = {
   // Cuántas veces se vuelve a intentar un GET que falló. Los demás métodos no se reintentan.
   reintentos: number;
   encabezadoCorrelacion: string;
+  // Con qué se presenta M2 ante el módulo, en `Authorization: Bearer`. Sin ella no se envía el encabezado. Es un secreto: no
+  // va en ningún error, y `secretosDeConfig` la oculta en el log (RNF-19.1).
+  credencial?: string;
+  // Los segundos del `Retry-After` del 503, si el contrato lo declara para este módulo (spec 007, RF-2.4.6).
+  reintentarDespuesS?: number;
 };
 
 // La pausa entre un intento y el siguiente (plan, Integraciones).
@@ -30,6 +35,8 @@ export function crearClienteModulo({
   tiempoMs,
   reintentos,
   encabezadoCorrelacion,
+  credencial,
+  reintentarDespuesS,
 }: OpcionesCliente): ClienteModulo {
   // Un intento: devuelve la respuesta del módulo, que puede ser un 4xx. Si no la obtiene, lanza lo que falló: el corte por
   // tiempo, el error de red, el 5xx o el cuerpo que no es JSON, estos dos con su código y sin su cuerpo, que puede traer
@@ -42,6 +49,7 @@ export function crearClienteModulo({
       [encabezadoCorrelacion]: idCorrelacion,
     };
     if (cuerpo !== undefined) encabezados['Content-Type'] = 'application/json';
+    if (credencial !== undefined) encabezados.Authorization = `Bearer ${credencial}`;
 
     const respuesta = await fetch(`${urlBase}${ruta}`, {
       method: metodo,
@@ -84,7 +92,7 @@ export function crearClienteModulo({
         if (intento < intentos) await pausar(PAUSA_REINTENTO_MS);
       }
     }
-    throw new ModuloNoDisponible(nombre, { cause: ultimaFalla });
+    throw new ModuloNoDisponible(nombre, { cause: ultimaFalla, reintentarDespuesS });
   }
 
   return {

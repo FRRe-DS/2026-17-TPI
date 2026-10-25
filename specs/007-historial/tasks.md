@@ -4,7 +4,7 @@ Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4
 
 - [x] **T1. Agregar la configuración de M6.** RNF-06
   - Hecho cuando: `M2_URL_M6` es obligatoria (sin ella el servicio no arranca y nombra la variable, sin su valor), `M2_CREDENCIAL_M6` es opcional y `M2_REINTENTAR_DESPUES_S` vale 5 por defecto y acepta enteros desde 1; pruebas de configuración y arranque lo comprueban, y `ejemplo.env`, `docker-compose.yml` y la tabla de variables del README las incluyen con valores de desarrollo.
-- [ ] **T2. Completar el cliente de módulos: credencial y `Retry-After`.** RF-2.4.6, RNF-06, RNF-13, RNF-19
+- [x] **T2. Completar el cliente de módulos: credencial y `Retry-After`.** RF-2.4.6, RNF-06, RNF-13, RNF-19
   - Hecho cuando: pruebas de módulos comprueban que `Authorization: Bearer` se envía solo si hay credencial, que `ModuloNoDisponible` puede llevar `Retry-After` y que sin él las respuestas `503` existentes no cambian, y que la credencial no aparece en `detail`, en la causa ni en el log.
 - [ ] **T3. Convertir la respuesta de M6 al esquema del contrato.** RF-2.4.1, RF-2.4.2, RF-2.4.9
   - Hecho cuando: pruebas unitarias cubren viaje con y sin `driverId`, estado sin traducir, `page + 1` hacia M6, `totalPaginas` por redondeo hacia arriba, página vacía y descarte de viajes de otro cliente.

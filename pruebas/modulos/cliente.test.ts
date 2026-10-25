@@ -1,6 +1,8 @@
 import { createServer } from 'node:net';
+import { inspect } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ModuloNoDisponible } from '../../src/errores.js';
+import { aProblema, ModuloNoDisponible } from '../../src/errores.js';
+import { serializarError } from '../../src/logs.js';
 import { crearClienteModulo } from '../../src/modulos/cliente.js';
 import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 
@@ -234,4 +236,91 @@ describe('crearClienteModulo', () => {
     expect(tardo).toBeGreaterThanOrEqual(4200 - 50);
     expect(tardo).toBeLessThan(4200 + 300);
   }, 10_000);
+
+  // ## Spec 007, T2
+
+  const CREDENCIAL = 'credencial-de-m2-ante-m6';
+  const conCredencial = (urlBase: string, reintentos = 0) =>
+    crearClienteModulo({
+      nombre: 'M6',
+      urlBase,
+      tiempoMs: TIEMPO_MS,
+      reintentos,
+      encabezadoCorrelacion: 'X-Request-Id',
+      credencial: CREDENCIAL,
+      reintentarDespuesS: 5,
+    });
+
+  describe('la credencial ante el módulo (RNF-06, RF-2.4.6)', () => {
+    it('va en Authorization: Bearer en un GET y en un POST', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+
+      await conCredencial(serv.url).obtener('/', 'id');
+      expect(serv.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL}`);
+
+      await conCredencial(serv.url).enviar('POST', '/', { dato: 1 }, 'id');
+      expect(serv.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL}`);
+    });
+
+    it('va también en el reintento', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 500 }, { tipo: 'ok', cuerpo: { ok: true } }]);
+
+      await conCredencial(serv.url, 1).obtener('/', 'id');
+      expect(serv.llamadas).toBe(2);
+      expect(serv.encabezadosRecibidos.get('authorization')).toBe(`Bearer ${CREDENCIAL}`);
+    });
+
+    it('sin credencial no se envía Authorization', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+
+      await clienteDe(serv.url, 0).obtener('/', 'id');
+      expect(serv.encabezadosRecibidos.has('authorization')).toBe(false);
+    });
+
+    // El 503 va al log con su causa (RNF-14.8): ni el detail, ni la causa, ni lo que el log guarda del error la traen (RNF-19).
+    it.each([
+      ['un 5xx que repite la credencial en su cuerpo', { tipo: '5xx', estado: 500, cuerpo: { error: `Bearer ${CREDENCIAL}` } }],
+      ['un cuerpo que no es JSON y la repite', { tipo: 'no-json', contenido: `Bearer ${CREDENCIAL}` }],
+      ['un corte de la conexión', { tipo: 'corta' }],
+      ['un corte por tiempo', { tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4 }],
+    ] as const)('no aparece en el error ante %s', async (_caso, falla) => {
+      serv.responderCon(falla);
+
+      const error = await conCredencial(serv.url).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(JSON.stringify(aProblema(error).cuerpo)).not.toContain(CREDENCIAL);
+      expect(inspect(error, { depth: 10 })).not.toContain(CREDENCIAL);
+      // Sin ningún secreto que ocultar: lo que el log guarda no la trae ni siquiera antes de limpiarlo.
+      expect(JSON.stringify(serializarError(error, []))).not.toContain(CREDENCIAL);
+    });
+
+    it('no aparece en el error ante una conexión rechazada', async () => {
+      const error = await conCredencial(await urlSinServidor()).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(inspect(error, { depth: 10 })).not.toContain(CREDENCIAL);
+      expect(JSON.stringify(serializarError(error, []))).not.toContain(CREDENCIAL);
+    });
+  });
+
+  describe('Retry-After en el 503 (RF-2.4.6)', () => {
+    it('con reintentarDespuesS, ModuloNoDisponible lo lleva en segundos', async () => {
+      serv.responderCon({ tipo: '5xx', estado: 500 });
+
+      const error = await conCredencial(serv.url).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('5');
+    });
+
+    it('sin reintentarDespuesS, el 503 queda como antes: sin Retry-After', async () => {
+      serv.responderCon({ tipo: '5xx', estado: 500 });
+
+      const error = await clienteDe(serv.url, 0).obtener('/', 'id').catch((motivo: unknown) => motivo);
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados).toEqual({ 'Content-Type': 'application/problem+json' });
+    });
+  });
 });

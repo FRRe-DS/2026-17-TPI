@@ -321,6 +321,23 @@ describe('errores con nombre', () => {
     expect(aProblema(new ModuloNoDisponible('M9')).cuerpo.detail).toBe('M9 no está disponible');
   });
 
+  it('ModuloNoDisponible lleva Retry-After en segundos si se lo pasan (RF-2.4.6), y la causa sigue yendo aparte', () => {
+    const causa = new Error('M6 respondió 500');
+    const error = new ModuloNoDisponible('M6', { cause: causa, reintentarDespuesS: 5 });
+    const respuesta = aProblema(error);
+
+    expect(respuesta.codigo).toBe(503);
+    expect(respuesta.encabezados).toEqual({ 'Retry-After': '5', 'Content-Type': 'application/problem+json' });
+    expect(respuesta.cuerpo.detail).toBe('M6 no está disponible');
+    expect(error.cause).toBe(causa);
+  });
+
+  it('sin Retry-After, el 503 de un módulo y el de la base quedan como antes: solo el Content-Type', () => {
+    for (const error of [new ModuloNoDisponible('M6'), new ModuloNoDisponible('M6', { cause: new Error('x') }), new BaseNoDisponible()]) {
+      expect(aProblema(error).encabezados).toEqual({ 'Content-Type': 'application/problem+json' });
+    }
+  });
+
   it('NoAutenticado dice el motivo que recibe y siempre pide Bearer (RNF-12.2)', () => {
     const respuesta = aProblema(new NoAutenticado('Falta el token'));
 
