@@ -58,4 +58,5 @@ Si dos fuentes se contradicen, para y pregunta.
 ## Trampas conocidas
 - Node 20 está fuera de soporte: usar Node 24 (`nvm use 24`).
 - `docker` sin sudo, y por lo tanto Testcontainers, exige estar en el grupo `docker`.
-- En Windows, tras la incorporación de `.gitattributes` (`#26`), si los scripts locales (`spec-check`) arrojan fallas persistentes de residuos de caché de finales de línea, se debe forzar la regeneración del índice local ejecutando de forma manual: `git rm --cached -r -q .` y posteriormente `git reset --hard` (`#52`).
+- En Windows, tras la incorporación de `.gitattributes` (`#26`), si los scripts locales (`spec-check`) arrojan fallas persistentes de residuos de caché de finales de línea, se debe forzar la regeneración del índice local ejecutando de forma manual: `git rm --cached -r -q .` y posteriormente `git reset --hard` (`#52`). 
+*Advertencia importante: el comando git reset --hard pisará de forma irreversible cualquier cambio local que no haya sido commiteado previamente. No se debe ejecutar un commit entre ambos comandos, ya que se indexaría el limbo temporal de eliminación, rompiendo el árbol de trabajo.*
