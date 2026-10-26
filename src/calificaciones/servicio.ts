@@ -7,12 +7,14 @@ import { exigirPerfil } from '../clientes/repositorio.js';
 import { exigirPropietario, normalizarUuid } from '../clientes/servicio.js';
 import { CalificacionDuplicada, NoEncontrado, ViajeNoCompletado } from '../errores.js';
 import type { M6 } from '../historial/m6.js';
-import type { CalificacionNueva } from './modelo.js';
+import type { Calificacion, CalificacionNueva, PaginaCalificaciones } from './modelo.js';
 import * as repositorio from './repositorio.js';
+import type { PedidoListado } from './repositorio.js';
 
 // Las reglas de las calificaciones que el contrato no expresa (plan, Estructura): la propiedad, la idempotencia, el perfil, el
 // duplicado y lo que informa M6. No sabe de HTTP: lo llamará `operaciones.ts`. La propiedad es la de la spec 004
-// (`exigirPropietario`): calificar solo admite CLIENTE, así que el sub tiene que ser el clienteId (RF-2.5.12). Los ids se
+// (`exigirPropietario`): calificar solo admite CLIENTE, así que el sub tiene que ser el clienteId (RF-2.5.12). Las lecturas
+// admiten CLIENTE y OPERADOR, así que CLIENTE+OPERADOR lee las de otro cliente. Los ids se
 // normalizan como los devuelve PostgreSQL. Nada de esto escribe logs (RNF-19).
 
 const VIAJE_NO_EXISTE = 'No existe el viaje pedido';
@@ -86,4 +88,30 @@ export async function calificarConductor(
       cuerpo: calificacion,
     };
   });
+}
+
+// Una página de las calificaciones de `clienteId` (RF-2.5.8), si quien llama puede verlas. 404 si no existe el perfil
+// (RF-2.5.11). No consulta a M6: las calificaciones son datos propios (RNF-05).
+export async function listarCalificaciones(
+  pool: BaseDeDatos,
+  identidad: Identidad,
+  rolesOperacion: readonly string[],
+  clienteId: string,
+  pedido: PedidoListado,
+): Promise<PaginaCalificaciones> {
+  exigirPropietario(identidad, clienteId, rolesOperacion);
+  return repositorio.listarCalificaciones(delPool(pool), normalizarUuid(clienteId), pedido);
+}
+
+// La calificación `calificacionId` de `clienteId` (RF-2.5.10), si quien llama puede verla. 404 si no es de ese cliente, no existe
+// o no existe el perfil, que no puede tener calificaciones (RF-2.5.11).
+export async function obtenerCalificacion(
+  pool: BaseDeDatos,
+  identidad: Identidad,
+  rolesOperacion: readonly string[],
+  clienteId: string,
+  calificacionId: string,
+): Promise<Calificacion> {
+  exigirPropietario(identidad, clienteId, rolesOperacion);
+  return repositorio.obtenerCalificacion(delPool(pool), normalizarUuid(clienteId), normalizarUuid(calificacionId));
 }

@@ -15,7 +15,7 @@ import {
   obtenerCalificacion,
   viajesCalificados,
 } from '../../src/calificaciones/repositorio.js';
-import { calificarConductor } from '../../src/calificaciones/servicio.js';
+import { calificarConductor, listarCalificaciones as listarCalificacionesDe, obtenerCalificacion as obtenerCalificacionDe } from '../../src/calificaciones/servicio.js';
 import type { CalificacionNueva } from '../../src/calificaciones/modelo.js';
 import {
   BaseNoDisponible,
@@ -49,6 +49,12 @@ const NO_NULO = '23502';
 const UNICA = '23505';
 
 const nuevoId = () => randomUUID();
+
+const fallaCon = (promesa: Promise<unknown>) =>
+  promesa.then(
+    () => expect.unreachable('la operación no falló'),
+    (error: unknown) => error,
+  );
 
 // El código de PostgreSQL con el que falla una sentencia, o 'sin error'.
 const codigoDe = (consulta: Promise<unknown>) =>
@@ -1024,6 +1030,121 @@ describe('calificarConductor con PostgreSQL real y M6 simulado (RF-2.5 a RF-2.5.
         'CalificacionDuplicada',
       ]);
       for (const prohibido of prohibidos) expect(texto).not.toContain(prohibido);
+    });
+  });
+});
+
+describe('las lecturas de calificaciones con PostgreSQL real (RF-2.5.8 a RF-2.5.12)', () => {
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+
+  const LECTURA = ['CLIENTE', 'OPERADOR'] as const;
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await base?.borrar();
+  });
+
+  const perfil = async () => {
+    const clienteId = nuevoId();
+    await pool.consultar(`INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Gómez', '+5493624000000')`, [
+      clienteId,
+    ]);
+    return clienteId;
+  };
+  const guardar = (clienteId: string, puntaje = 5) =>
+    crearCalificacion((sql, parametros) => pool.consultar(sql, parametros), clienteId, nuevoId(), {
+      viajeId: nuevoId(),
+      conductorId: nuevoId(),
+      puntaje,
+    });
+  const deCliente = (clienteId: string): Identidad => ({ sub: clienteId, roles: ['CLIENTE'] });
+  const listar = (identidad: Identidad, clienteId: string, bd: BaseDeDatos = pool, pedido = { page: 0, size: 20 }) =>
+    listarCalificacionesDe(bd, identidad, LECTURA, clienteId, pedido);
+  const obtener = (identidad: Identidad, clienteId: string, calificacionId: string, bd: BaseDeDatos = pool) =>
+    obtenerCalificacionDe(bd, identidad, LECTURA, clienteId, calificacionId);
+
+  describe('quién puede leer (RF-2.5.12)', () => {
+    it('un CLIENTE lee las suyas, con el clienteId en mayúsculas', async () => {
+      const clienteId = await perfil();
+      const creada = await guardar(clienteId);
+
+      const pagina = await listar(deCliente(clienteId), clienteId.toUpperCase());
+      expect(pagina.items).toEqual([creada]);
+      expect(await obtener(deCliente(clienteId), clienteId.toUpperCase(), creada.calificacionId.toUpperCase())).toEqual(creada);
+    });
+
+    it('un CLIENTE, las de otro: 403 sin tocar la base', async () => {
+      const [otro, calificacionId] = [nuevoId(), nuevoId()];
+
+      expect(await fallaCon(listar(deCliente(nuevoId()), otro, POOL_FALSO))).toBeInstanceOf(SinPermiso);
+      expect(await fallaCon(obtener(deCliente(nuevoId()), otro, calificacionId, POOL_FALSO))).toBeInstanceOf(SinPermiso);
+    });
+
+    it.each([
+      ['un OPERADOR', ['OPERADOR'] as const],
+      ['un CLIENTE+OPERADOR', ['CLIENTE', 'OPERADOR'] as const],
+    ])('%s lee las de otro cliente', async (_caso, roles) => {
+      const clienteId = await perfil();
+      const creada = await guardar(clienteId);
+      const identidad: Identidad = { sub: nuevoId(), roles: [...roles] };
+
+      expect((await listar(identidad, clienteId)).items).toEqual([creada]);
+      expect(await obtener(identidad, clienteId, creada.calificacionId)).toEqual(creada);
+    });
+  });
+
+  describe('listarCalificaciones (RF-2.5.8, RF-2.5.9, RF-2.5.11)', () => {
+    it('la página con su total, de la más nueva a la más antigua', async () => {
+      const clienteId = await perfil();
+      const [a, b, c] = [await guardar(clienteId, 1), await guardar(clienteId, 2), await guardar(clienteId, 3)];
+
+      const pagina = await listar(deCliente(clienteId), clienteId, pool, { page: 0, size: 2 });
+
+      expect(pagina).toMatchObject({ page: 0, size: 2, totalElementos: 3, totalPaginas: 2 });
+      expect(pagina.items).toEqual([c, b]);
+      expect((await listar(deCliente(clienteId), clienteId, pool, { page: 1, size: 2 })).items).toEqual([a]);
+    });
+
+    it('sin calificaciones, la página vacía; una página fuera del total, también', async () => {
+      const clienteId = await perfil();
+      expect(await listar(deCliente(clienteId), clienteId)).toEqual({ page: 0, size: 20, totalElementos: 0, totalPaginas: 0, items: [] });
+      await guardar(clienteId);
+      expect((await listar(deCliente(clienteId), clienteId, pool, { page: 9, size: 20 })).items).toEqual([]);
+    });
+
+    it('no incluye las de otro cliente', async () => {
+      const [uno, otro] = [await perfil(), await perfil()];
+      await guardar(otro);
+
+      expect((await listar(deCliente(uno), uno)).totalElementos).toBe(0);
+    });
+
+    it('sin perfil: 404', async () => {
+      const clienteId = nuevoId();
+      expect(await fallaCon(listar(deCliente(clienteId), clienteId))).toBeInstanceOf(NoEncontrado);
+    });
+  });
+
+  describe('obtenerCalificacion (RF-2.5.10, RF-2.5.11)', () => {
+    it('una calificación inexistente, una de otro cliente y un perfil inexistente dan el mismo 404', async () => {
+      const [uno, otro] = [await perfil(), await perfil()];
+      const deOtro = await guardar(otro);
+
+      const inexistente = await fallaCon(obtener(deCliente(uno), uno, nuevoId()));
+      const ajena = await fallaCon(obtener(deCliente(uno), uno, deOtro.calificacionId));
+      const sinPerfil = nuevoId();
+      const sinCliente = await fallaCon(obtener(deCliente(sinPerfil), sinPerfil, deOtro.calificacionId));
+
+      expect(inexistente).toBeInstanceOf(NoEncontrado);
+      expect(ajena).toEqual(inexistente);
+      expect(sinCliente).toEqual(inexistente);
     });
   });
 });
