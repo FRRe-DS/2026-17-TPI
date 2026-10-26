@@ -6,7 +6,7 @@ import { Client } from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type PoolBd, TiempoAgotado } from '../../src/bd/pool.js';
-import { conIdempotencia, type RespuestaIdempotente, type SolicitudIdempotente } from '../../src/bd/idempotencia.js';
+import { buscarRespuesta, conIdempotencia, type RespuestaIdempotente, type SolicitudIdempotente } from '../../src/bd/idempotencia.js';
 import { type Consultar, transaccion } from '../../src/bd/transaccion.js';
 import {
   actualizarPerfil,
@@ -838,6 +838,137 @@ describe('conIdempotencia() sobre la base de la migración (RF-2.1, RF-2.6.1, RN
       expect(await cuantos('clientes', clienteId)).toBe(1);
       const reservas = await pool.consultar('SELECT clave FROM idempotencias WHERE sujeto = $1', [clienteId]);
       expect(reservas.rowCount).toBe(1);
+    });
+  });
+
+  // La lectura previa de la spec 008 (plan, «La llamada a M6 va fuera de la transacción»; RF-2.5.4).
+  describe('buscarRespuesta(), la lectura sin bloqueo ni reserva (RF-2.5.4, RNF-08)', () => {
+    const consultar: Consultar = (sql, parametros) => pool.consultar(sql, parametros);
+
+    const reservas = async (sujeto: string) =>
+      (await pool.consultar<{ n: number }>('SELECT count(*)::int AS n FROM idempotencias WHERE sujeto = $1', [sujeto]))
+        .rows[0]?.n;
+
+    // Una promesa con su `resolve` a mano, para dejar una transacción abierta mientras corre la prueba.
+    function pendiente() {
+      let soltar = () => {};
+      const promesa = new Promise<void>((resolver) => {
+        soltar = resolver;
+      });
+      return { promesa, soltar };
+    }
+
+    it('con la misma clave y huella devuelve la respuesta guardada, igual a la de conIdempotencia', async () => {
+      const clienteId = nuevoId();
+      const primera = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+
+      expect(await buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1'))).toEqual(primera);
+    });
+
+    it('el mismo cuerpo con los campos en otro orden también la encuentra', async () => {
+      const clienteId = nuevoId();
+      const primera = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+      const desordenado = { telefono: ANA.telefono, apellido: ANA.apellido, nombre: ANA.nombre };
+
+      expect(await buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1', desordenado))).toEqual(primera);
+    });
+
+    it('con otra huella lanza IdempotenciaReutilizada, el 422, y la guardada no cambia', async () => {
+      const clienteId = nuevoId();
+      const primera = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+
+      const error = await fallaCon(buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1', { ...ANA, nombre: 'Beatriz' })));
+
+      expect(error).toBeInstanceOf(IdempotenciaReutilizada);
+      expect(await buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1'))).toEqual(primera);
+    });
+
+    it('con una clave que no existe devuelve null y no la reserva', async () => {
+      const clienteId = nuevoId();
+
+      expect(await buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1'))).toBeNull();
+      expect(await reservas(clienteId)).toBe(0);
+    });
+
+    it('la misma clave para otro clienteId o de otro sujeto no es la misma solicitud: null', async () => {
+      const [uno, otro] = [await clienteExistente(), await clienteExistente()];
+      await conIdempotencia(pool, solicitudDeBloqueo(uno, 'clave-1'), altaDeBloqueo(uno));
+
+      expect(await buscarRespuesta(consultar, solicitudDeBloqueo(otro, 'clave-1'))).toBeNull();
+      expect(await buscarRespuesta(consultar, { ...solicitudDeBloqueo(uno, 'clave-1'), sujeto: 'operador-2' })).toBeNull();
+    });
+
+    it('con la solicitud en curso devuelve null enseguida, sin esperar a que termine', async () => {
+      const clienteId = nuevoId();
+      const enCurso = pendiente();
+      const reservada = pendiente();
+      // El alta corre después de la reserva: cuando avisa, la clave está reservada y sin confirmar.
+      const primera = conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), async (consultarEnCurso) => {
+        const respuesta = await altaDePerfil(clienteId)(consultarEnCurso);
+        reservada.soltar();
+        await enCurso.promesa;
+        return respuesta;
+      });
+      await reservada.promesa;
+
+      try {
+        const desde = performance.now();
+        expect(await buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1'))).toBeNull();
+        expect(performance.now() - desde).toBeLessThan(TIEMPO_BD_MS / 2);
+      } finally {
+        enCurso.soltar();
+      }
+      const confirmada = await primera;
+      expect(await buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1'))).toEqual(confirmada);
+    });
+
+    it('una reserva confirmada sin respuesta todavía cuenta como en curso: null', async () => {
+      const clienteId = nuevoId();
+      const solicitud = solicitudDePerfil(clienteId, 'clave-1');
+      // La huella sale de una primera alta; después se borra la respuesta para dejar la fila como una reserva sin completar.
+      await conIdempotencia(pool, solicitud, altaDePerfil(clienteId));
+      await pool.consultar(`UPDATE idempotencias SET estado = NULL, ubicacion = NULL, respuesta = NULL WHERE sujeto = $1`, [
+        clienteId,
+      ]);
+
+      expect(await buscarRespuesta(consultar, solicitud)).toBeNull();
+    });
+
+    it('no bloquea: lee la respuesta aunque otra transacción tenga la fila bloqueada', async () => {
+      const clienteId = nuevoId();
+      const primera = await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+      const bloqueo = pendiente();
+      const bloqueada = pendiente();
+      const otra = transaccion(pool, async (consultarOtra) => {
+        await consultarOtra('SELECT 1 FROM idempotencias WHERE sujeto = $1 FOR UPDATE', [clienteId]);
+        bloqueada.soltar();
+        await bloqueo.promesa;
+      });
+      await bloqueada.promesa;
+
+      try {
+        const desde = performance.now();
+        expect(await buscarRespuesta(consultar, solicitudDePerfil(clienteId, 'clave-1'))).toEqual(primera);
+        expect(performance.now() - desde).toBeLessThan(TIEMPO_BD_MS / 2);
+      } finally {
+        bloqueo.soltar();
+        await otra;
+      }
+    });
+
+    it('dentro de una transacción no deja bloqueos sobre la fila', async () => {
+      const clienteId = nuevoId();
+      await conIdempotencia(pool, solicitudDePerfil(clienteId, 'clave-1'), altaDePerfil(clienteId));
+
+      const bloqueos = await transaccion(pool, async (consultarEnTransaccion) => {
+        await buscarRespuesta(consultarEnTransaccion, solicitudDePerfil(clienteId, 'clave-1'));
+        const { rows } = await consultarEnTransaccion<{ modo: string }>(
+          `SELECT mode AS modo FROM pg_locks WHERE relation = 'idempotencias'::regclass AND pid = pg_backend_pid()`,
+        );
+        return rows.map((fila) => fila.modo);
+      });
+
+      expect(bloqueos).toEqual(['AccessShareLock']);
     });
   });
 });

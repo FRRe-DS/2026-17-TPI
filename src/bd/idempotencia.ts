@@ -54,6 +54,26 @@ export async function conIdempotencia(
   });
 }
 
+// La respuesta guardada de `solicitud`, leída sin bloquear ni reservar la clave (spec 008, plan, «La llamada a M6 va fuera
+// de la transacción»; RF-2.5.4): sirve para no repetir lo que va antes del alta, como la consulta a M6. Con la clave ya usada
+// y la misma huella, devuelve la respuesta guardada; con otra huella, `IdempotenciaReutilizada` (422). `null` si la clave no
+// existe o su solicitud sigue en curso: una reserva sin confirmar no se ve, y una sin respuesta todavía no tiene qué
+// devolver. En los dos casos, quien llama sigue y `conIdempotencia` resuelve, esperando si hace falta.
+export async function buscarRespuesta(
+  consultar: Consultar,
+  solicitud: SolicitudIdempotente,
+): Promise<RespuestaIdempotente | null> {
+  const { condicion, valores } = laFila(solicitud, 1);
+  const { rows } = await consultar<Guardada>(
+    `SELECT hash_solicitud, estado, ubicacion, respuesta FROM idempotencias WHERE ${condicion}`,
+    valores,
+  );
+  const guardada = rows[0];
+  if (guardada === undefined) return null;
+  if (guardada.hash_solicitud !== huella(solicitud.huella)) throw new IdempotenciaReutilizada();
+  return guardada.estado === null ? null : aRespuesta(guardada);
+}
+
 // La condición que encuentra la fila de `solicitud` en `idempotencias`, con sus parámetros numerados desde `$desde`. El
 // cliente se compara según el caso, con `IS NULL` o con `=`: con `IS NOT DISTINCT FROM`, PostgreSQL no usa el índice de la
 // restricción única y recorre la tabla entera, que crece con cada alta.
