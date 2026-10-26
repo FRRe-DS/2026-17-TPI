@@ -245,7 +245,7 @@ al terminar (onResponse): una línea de log
 **11. Logs** (RNF-14.5, RNF-14.6, RNF-19.2):
 - Logger de Fastify (pino): JSON, una línea por evento, en la salida estándar. Quedan los campos que pino suma por su cuenta: `time` (en milisegundos), `pid` y `hostname`.
 - `logController: new LogController({ requestIdLogLabel: 'idCorrelacion', disableRequestLogging: true })`, con `LogController` importado de `fastify`: las dos opciones sueltas están deprecadas desde Fastify 5.12 (Trampas verificadas).
-- En `onResponse`, una línea en nivel `info` con el mensaje «Solicitud terminada», `idCorrelacion`, `metodo`, `ruta` (la pedida, con sus parámetros y sin query string; no la plantilla del contrato), `estado` y `duracionMs` (`reply.elapsedTime`).
+- En `onResponse`, una línea en nivel `info` con el mensaje «Solicitud terminada», `idCorrelacion`, `metodo`, `ruta` (la plantilla de la operación del contrato que atendió la solicitud, como `/api/v1/clientes/:clienteId/direcciones`, sin los valores de los identificadores ni la query string; si ninguna operación la atendió, la URL pedida sin query string), `estado` y `duracionMs` (`reply.elapsedTime`).
 - Las respuestas de Lógica 9 escriben su propia línea, con el mismo mensaje, porque no pasan por `onResponse`; la de `clientErrorHandler` va sin `metodo` ni `ruta`, con la duración desde que Node le pasa el error.
 - Una solicitud que el cliente corta antes de que termine la respuesta no deja línea: Fastify llama a `onResponse` solo si la respuesta terminó de enviarse.
 - Nunca se registran encabezados (salvo el id), cuerpos ni query strings.
