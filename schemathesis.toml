@@ -9,7 +9,8 @@ allow-x00 = false
 
 # positive_data_acceptance: los valores por defecto de Schemathesis más el 422, solo en las operaciones que lo declaran en el
 # contrato. Responden 422 ante una regla que el esquema no expresa: una Idempotency-Key reutilizada con otro cuerpo, y en
-# crearBloqueo, además, un `hasta` que ya pasó o que no se puede devolver con un año de cuatro cifras.
+# crearBloqueo, además, un `hasta` que ya pasó o que no se puede devolver con un año de cuatro cifras; en calificarConductor,
+# además, un viaje de M6 que no está completado (spec 008).
 [[operations]]
 include-operation-id = "crearCliente"
 checks.positive_data_acceptance.expected-statuses = ["2xx", "3xx", 401, 403, 404, 409, 422, 429, "5xx"]
@@ -22,8 +23,17 @@ checks.positive_data_acceptance.expected-statuses = ["2xx", "3xx", 401, 403, 404
 include-operation-id = "crearDireccion"
 checks.positive_data_acceptance.expected-statuses = ["2xx", "3xx", 401, 403, 404, 409, 422, 429, "5xx"]
 
-# not_a_server_error: los valores por defecto de Schemathesis más el 503, solo en listarHistorialViajes. El historial lo arma M6 y
-# en la prueba de contrato no hay un M6: responde el 503 con Retry-After que el contrato declara para esa dependencia (spec 007).
+[[operations]]
+include-operation-id = "calificarConductor"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "3xx", 401, 403, 404, 409, 422, 429, "5xx"]
+
+# not_a_server_error: los valores por defecto de Schemathesis más el 503, solo en listarHistorialViajes y calificarConductor. El
+# historial lo arma M6 y calificar le pregunta a M6 por el viaje; en la prueba de contrato no hay un M6: responden el 503 con
+# Retry-After que el contrato declara para esa dependencia (specs 007 y 008).
 [[operations]]
 include-operation-id = "listarHistorialViajes"
+checks.not_a_server_error.expected-statuses = ["2xx", "3xx", "4xx", 503]
+
+[[operations]]
+include-operation-id = "calificarConductor"
 checks.not_a_server_error.expected-statuses = ["2xx", "3xx", "4xx", 503]

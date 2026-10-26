@@ -224,8 +224,8 @@ describe('listarOperaciones: qué cuenta como operación', () => {
 
 // schemathesis.toml, la configuración con la que `npm run contrato:test` corre Schemathesis (spec 004, T10). El ajuste es
 // acotado a propósito: no genera el carácter nulo, que PostgreSQL no guarda, y `positive_data_acceptance` acepta además el 422
-// solo en las operaciones que lo declaran en el contrato, y `not_a_server_error` acepta además el 503 solo en el historial, que
-// depende de M6 y en la prueba de contrato no lo hay (spec 007, T7). Se lee sin una biblioteca de TOML: el archivo es chico y de
+// solo en las operaciones que lo declaran en el contrato, y `not_a_server_error` acepta además el 503 solo en el historial y en
+// calificarConductor, que dependen de M6 y en la prueba de contrato no lo hay (specs 007, T7, y 008, T10). Se lee sin una biblioteca de TOML: el archivo es chico y de
 // forma fija.
 describe('schemathesis.toml: el ajuste de Schemathesis queda acotado (RNF-07.2)', () => {
   const texto = readFileSync(fileURLToPath(new URL('../../schemathesis.toml', import.meta.url)), 'utf8');
@@ -260,22 +260,27 @@ describe('schemathesis.toml: el ajuste de Schemathesis queda acotado (RNF-07.2)'
     expect(sinComentarios.match(/=/g)?.length).toBe(1 + bloques.length * 2);
   });
 
-  it('acepta 422 solo en crearCliente, crearBloqueo y crearDireccion, que lo declaran en el contrato, y ningún otro código de más', () => {
+  it('acepta 422 solo en crearCliente, crearBloqueo, crearDireccion y calificarConductor, que lo declaran en el contrato, y ningún otro código de más', () => {
     const operaciones = aceptados('positive_data_acceptance');
 
-    expect(operaciones.map(({ operationId }) => operationId)).toEqual(['crearCliente', 'crearBloqueo', 'crearDireccion']);
+    expect(operaciones.map(({ operationId }) => operationId)).toEqual([
+      'crearCliente',
+      'crearBloqueo',
+      'crearDireccion',
+      'calificarConductor',
+    ]);
     for (const { operationId, estados } of operaciones) {
       expect(estados.sort()).toEqual([...POR_DEFECTO, '422'].sort());
       expect(respuestasDe(operationId)).toContain('422');
     }
   });
 
-  // No hay un M6 en la prueba de contrato (plan 007, Decisiones): el historial responde el 503 que el contrato declara para la
-  // dependencia, y Schemathesis lo contaría como un error del servidor.
-  it('acepta 503 como respuesta del servidor solo en listarHistorialViajes, que lo declara en el contrato, y ningún otro código de más', () => {
+  // No hay un M6 en la prueba de contrato (planes 007 y 008, Decisiones): el historial y calificarConductor responden el 503 que
+  // el contrato declara para la dependencia, y Schemathesis lo contaría como un error del servidor.
+  it('acepta 503 como respuesta del servidor solo en listarHistorialViajes y calificarConductor, que lo declaran en el contrato, y ningún otro código de más', () => {
     const operaciones = aceptados('not_a_server_error');
 
-    expect(operaciones.map(({ operationId }) => operationId)).toEqual(['listarHistorialViajes']);
+    expect(operaciones.map(({ operationId }) => operationId)).toEqual(['listarHistorialViajes', 'calificarConductor']);
     for (const { operationId, estados } of operaciones) {
       expect(estados.sort()).toEqual([...SIN_ERROR_DE_SERVIDOR, '503'].sort());
       expect(respuestasDe(operationId)).toContain('503');

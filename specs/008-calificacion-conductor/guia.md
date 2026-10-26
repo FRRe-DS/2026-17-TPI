@@ -1,7 +1,30 @@
 # Guía — Spec 008 Calificación del conductor
 
 ## Visión general
-Se escribe al validar (T10).
+La spec 008 deja que un cliente califique al conductor de un viaje completado (1 a 5, con comentario opcional), que él y los operadores vean esas calificaciones, y que el historial de viajes diga si cada viaje ya fue calificado. Cubre `listarCalificaciones`, `calificarConductor` y `obtenerCalificacion`, y amplía `listarHistorialViajes` con `calificado`. No cambia el contrato de M2 ni agrega variables de entorno.
+
+**Cómo se arma, de afuera hacia adentro:**
+- `src/calificaciones/operaciones.ts` (T8): los tres manejadores HTTP. Solo leen la solicitud y arman la respuesta; la validación sale del OpenAPI antes de llegar. Se registran en `src/operaciones/index.ts`.
+- `src/calificaciones/servicio.ts` (T6, T7): las reglas. Calificar sigue un orden fijo: propiedad, respuesta guardada de la clave, perfil, duplicado, M6 y alta. Los pasos que solo leen (propiedad a duplicado) no llaman a M6, y la llamada a M6 va fuera de toda transacción; la transacción corta del final reserva la clave y hace el INSERT.
+- `src/historial/m6.ts` (T4): `obtenerViaje`, el pedido de `GET /trips/{id}` con el cliente, el token de servicio, el tiempo máximo y el reintento de la spec 007. Decide qué es un viaje inexistente, ajeno, no completado o mal formado.
+- `src/bd/idempotencia.ts` (T5): `buscarRespuesta`, la lectura sin bloqueo que deja repetir una calificación sin volver a M6.
+- `src/calificaciones/repositorio.ts` y la migración `calificaciones` (T1, T3): las consultas y la restricción única (cliente, viaje), que es la que garantiza un solo registro por viaje aunque haya claves distintas o solicitudes a la vez (RNF-08).
+- `src/calificaciones/modelo.ts` y `src/errores.ts` (T2): la forma del contrato y los dos errores nuevos, `409 /errores/calificacion-duplicada` y `422 /errores/viaje-no-completado`.
+- `src/historial/modelo.ts` y `servicio.ts` (T9): `calificado`, con una consulta por página a la base de M2.
+- `src/logs.ts` (T8): el log guarda la plantilla de la ruta y no la URL, para que no queden ids (RNF-19).
+
+**Qué leer primero:** `servicio.ts` (el orden de `calificarConductor` y por qué) y la entrada T6 de esta guía, que explica la relectura de la respuesta guardada si aparece el duplicado. Después `m6.ts`, para ver cómo se interpreta la respuesta de M6.
+
+**Supuestos con M6 y el Grupo 12** (spec, `## Decisiones`; ninguno cambia el plan, y si cambian se ajusta solo `obtenerViaje`):
+- `GET /trips/{id}` acepta el token de servicio de M2 (`aud` `m6-viajes`, o el valor de `M2_AUDIENCIA_M6`). Hoy no hay un M6 real contra el cual comprobarlo: las pruebas usan un M6 simulado que cumple `contrato/dependencias/m6.yml`, y el mensaje al Grupo 12 sigue pendiente (`contrato/dependencias/m6-propuesta.md`, preguntas 5 y 6).
+- `COMPLETED` es el único estado que habilita calificar; cualquier otro texto da `422`, y `503` solo si `state` o `clientId` faltan o no son texto.
+- `driverId` viene informado, y es un UUID, en todo viaje `COMPLETED`; si no, `503`: M2 no inventa conductores.
+- `clientId` del viaje se compara sin distinguir mayúsculas con el cliente de la ruta. Un viaje de otro cliente se trata como inexistente (`404`) y no revela su estado.
+- Un `4xx` de M6 distinto de `404` (incluido `429`) da `500`; el `429` es un hueco conocido, ya anotado como cambio pendiente que toca también al historial.
+
+**Probar a mano con un M6 simulado:** ver «Probar las calificaciones con un M6 simulado» en el README. Es un contenedor con el alias de red `m6` en el puerto 3006, que no necesita configurar nada en M2.
+
+**Pendientes que salen de esta spec, y no la bloquean:** actualizar el texto de la spec 007 (`calificado`, por `sdd-change`), el cambio de RNF-14 (registrar cada llamada a M6, hoy solo las fallas) y que el `429` de M6 dé `503`. Están en `EN-CURSO.local.md`.
 
 ## Tareas
 
@@ -67,3 +90,10 @@ Se escribe al validar (T10).
 - Cómo se conecta: lo ve cualquiera que pueda ver el historial (CLIENTE propio, OPERADOR, CLIENTE+OPERADOR), con lo que calificó el cliente de la ruta. Un viaje calificado por otro cliente no cuenta. Quien llama a `calificarConductor` (T6) deja el dato que esta consulta lee.
 - Tests: `pruebas/unitarias/historial.test.ts` (`conCalificado`: con, sin, UUID en mayúsculas, que conserva página y totales sin cambiar la entrada, y página vacía). `pruebas/integracion/historial.test.ts`, bloque «calificado» (verdadero y falso con una sola sentencia sobre `calificaciones` y una sola llamada a M6; calificación de otro cliente; OPERADOR sobre otro cliente; mayúsculas; viaje ajeno descartado; página vacía sin consulta; base caída en la consulta). `pruebas/integracion/historial-http.test.ts`, bloque «calificado» (verdadero y falso por HTTP, vacío, y `503` sin `Retry-After`).
 - Para mirar con atención: la spec 007 no menciona `calificado` en su texto; el cambio de redacción va por `sdd-change` en una rama `spec/` y está pendiente del OK de Lautaro (ver `EN-CURSO.local.md`). Una calificación hecha después de pedir el historial no aparece hasta la siguiente consulta: el historial no se guarda.
+
+### T10 — Validar contrato, regresión y documentación · commit `008/T10`
+- Qué cambió: `schemathesis.toml` acepta en `calificarConductor` el `422` (`positive_data_acceptance`) y el `503` (`not_a_server_error`), en dos bloques como el resto (uno por chequeo). `pruebas/unitarias/contrato-test.test.ts` actualiza la prueba guardiana: ahora esperan ese ajuste cuatro operaciones para el `422` y dos para el `503`, y ninguna más. `README.md` lista las 20 operaciones por spec, dice cómo probar las calificaciones con un M6 simulado y corrige lo que ya no era cierto (que solo estuviera `GET /health`, que no hubiera operaciones protegidas y el diagrama). Esta guía suma la visión general de arriba.
+- Por qué así: en la prueba de contrato no hay un M6 (el compose no lo trae), así que `calificarConductor` responde el `503` que el contrato declara para la dependencia, como el historial en la spec 007. El `422` es el de la clave reutilizada con otro cuerpo y el del viaje no completado. Se acepta solo en esa operación y en esos chequeos, para que ninguna otra falla se esconda detrás. Las dos lecturas no necesitan ajuste: sin perfil dan `404`, que Schemathesis acepta por defecto.
+- Cómo se comprueba: `docker compose up -d --build --wait` y `npm run contrato:test` (1) probó las 20 operaciones: `Selected 20/20, Tested 20`, `3643 generated, 3643 passed, 28 skipped`, con las cuatro fases en verde (Examples, Coverage, Fuzzing, Stateful). Las tres advertencias que imprime (una operación solo con `401/403`, trece con `404` repetidos por falta de datos y dos con datos rechazados) vienen de la forma de la prueba, sin perfiles ni M6, y la primera es el `DELETE` de direcciones de la spec 005; ninguna es de la 008. Además `npm test` (3127 pruebas), `npm run lint`, `npm run build`, `node scripts/spec-check.mjs` y `npx --yes @redocly/cli@2.62.1 lint contrato/openapi.yml` quedan en verde.
+- Ejemplos con un M6 simulado, comprobados el 2026-10-26 contra el servicio en Docker: el bloque del README, copiado tal cual, dio el perfil (`201`), la calificación (`201` con `Location` y `conductorId` de M6), la misma solicitud repetida (`201` igual), el mismo viaje con otra clave (`409 /errores/calificacion-duplicada`), el listado (una calificación) y el historial con `"calificado": true`. Con el simulador devolviendo un viaje `IN_PROGRESS`, `422 /errores/viaje-no-completado`; con el simulador detenido, `503` con `Retry-After: 5` y `detail` «M6 no está disponible». El log del contenedor mostró `ruta` `/api/v1/clientes/:clienteId/viajes`, sin identificadores.
+- Para mirar con atención: (1) falta contrastar con el M6 real, que no existe todavía; es el supuesto principal y está en la visión general. (2) `contrato:test` crea perfiles en la base local del compose (el mismo `sub` de prueba cada vez); no hay que limpiarla, y `docker compose down -v` la borra.
