@@ -5,6 +5,16 @@ import { runner } from 'node-pg-migrate';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
+import { crearPool, type PoolBd } from '../../src/bd/pool.js';
+import type { Consultar } from '../../src/bd/transaccion.js';
+import {
+  crearCalificacion,
+  existeCalificacion,
+  listarCalificaciones,
+  obtenerCalificacion,
+  viajesCalificados,
+} from '../../src/calificaciones/repositorio.js';
+import { CalificacionDuplicada, NoEncontrado } from '../../src/errores.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 
 // La migración de la spec 008: se crea con `--migrations-dir migraciones`, que le pone la marca de tiempo (plan, Datos).
@@ -343,5 +353,287 @@ describe('la migración calificaciones se revierte (RNF-05.1)', () => {
     expect((await filas(base.urlBd, `SELECT 1 FROM pg_tables WHERE tablename = 'clientes'`)).length).toBe(1);
     expect(await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS })).toEqual(MIGRACION);
     expect(await hayTabla(base.urlBd)).toBe(true);
+  });
+});
+
+describe('el repositorio de calificaciones (RF-2.5, RF-2.5.3, RF-2.5.8 a RF-2.5.10, RF-2.5.14, RNF-08)', () => {
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+
+  const consultar: Consultar = (sql, parametros) => pool.consultar(sql, parametros);
+
+  const cliente = async () => {
+    const clienteId = nuevoId();
+    await consultar(`INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Gómez', '+5493624000000')`, [
+      clienteId,
+    ]);
+    return clienteId;
+  };
+
+  // Una calificación de prueba; cada prueba cambia solo lo que quiere probar.
+  const calificar = (
+    clienteId: string,
+    { viajeId = nuevoId(), conductorId = nuevoId(), puntaje = 5, comentario }: { viajeId?: string; conductorId?: string; puntaje?: number; comentario?: string } = {},
+    calificacionId = nuevoId(),
+  ) => crearCalificacion(consultar, clienteId, calificacionId, { viajeId, conductorId, puntaje, ...(comentario === undefined ? {} : { comentario }) });
+
+  // Cuántas sentencias lanza `fn` con el `consultar` que recibe.
+  async function contando<T>(fn: (consultarContado: Consultar) => Promise<T>): Promise<{ resultado: T; sentencias: number }> {
+    let sentencias = 0;
+    const resultado = await fn((sql, parametros) => {
+      sentencias += 1;
+      return consultar(sql, parametros);
+    });
+    return { resultado, sentencias };
+  }
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await base?.borrar();
+  });
+
+  describe('crearCalificacion()', () => {
+    it('con comentario, devuelve la calificación del contrato y la guarda con el id, el cliente, el viaje y el conductor dados', async () => {
+      const clienteId = await cliente();
+      const calificacionId = nuevoId();
+      const viajeId = nuevoId();
+      const conductorId = nuevoId();
+
+      const creada = await calificar(clienteId, { viajeId, conductorId, puntaje: 4, comentario: 'Muy amable' }, calificacionId);
+
+      expect(creada).toEqual({
+        calificacionId,
+        viajeId,
+        conductorId,
+        puntaje: 4,
+        comentario: 'Muy amable',
+        creadoEn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+      });
+      const guardada = await pool.consultar(`SELECT cliente_id, viaje_id, conductor_id, puntaje, comentario FROM calificaciones WHERE calificacion_id = $1`, [
+        calificacionId,
+      ]);
+      expect(guardada.rows).toEqual([{ cliente_id: clienteId, viaje_id: viajeId, conductor_id: conductorId, puntaje: 4, comentario: 'Muy amable' }]);
+    });
+
+    it('sin comentario, el campo no está en la respuesta y la base guarda nulo; uno vacío se guarda vacío', async () => {
+      const clienteId = await cliente();
+
+      const sin = await calificar(clienteId);
+      const vacio = await calificar(clienteId, { comentario: '' });
+
+      expect(sin).not.toHaveProperty('comentario');
+      expect(vacio).toHaveProperty('comentario', '');
+      const guardados = await pool.consultar<{ comentario: string | null }>(
+        `SELECT comentario FROM calificaciones WHERE calificacion_id = ANY($1::uuid[]) ORDER BY comentario NULLS FIRST`,
+        [[sin.calificacionId, vacio.calificacionId]],
+      );
+      expect(guardados.rows.map((fila) => fila.comentario)).toEqual([null, '']);
+    });
+
+    it('el mismo viaje del mismo cliente da CalificacionDuplicada y conserva la primera calificación (RF-2.5.3)', async () => {
+      const clienteId = await cliente();
+      const viajeId = nuevoId();
+      const primera = await calificar(clienteId, { viajeId, puntaje: 5, comentario: 'Primera' });
+
+      await expect(calificar(clienteId, { viajeId, puntaje: 1, comentario: 'Segunda', conductorId: nuevoId() })).rejects.toBeInstanceOf(
+        CalificacionDuplicada,
+      );
+
+      expect(await obtenerCalificacion(consultar, clienteId, primera.calificacionId)).toEqual(primera);
+      const cuantas = await pool.consultar(`SELECT 1 FROM calificaciones WHERE cliente_id = $1`, [clienteId]);
+      expect(cuantas.rowCount).toBe(1);
+    });
+
+    it('el mismo viaje de otro cliente, o otro viaje del mismo cliente, se guarda', async () => {
+      const [uno, otro] = [await cliente(), await cliente()];
+      const viajeId = nuevoId();
+
+      await calificar(uno, { viajeId });
+      await calificar(otro, { viajeId });
+      await calificar(uno);
+
+      const cuantas = await pool.consultar(`SELECT 1 FROM calificaciones WHERE cliente_id = $1`, [uno]);
+      expect(cuantas.rowCount).toBe(2);
+    });
+
+    it('con diez altas a la vez del mismo cliente y viaje, una se guarda y nueve dan CalificacionDuplicada (RNF-08)', async () => {
+      const clienteId = await cliente();
+      const viajeId = nuevoId();
+
+      const resultados = await Promise.allSettled(Array.from({ length: 10 }, () => calificar(clienteId, { viajeId })));
+
+      expect(resultados.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+      const rechazos = resultados.filter((resultado) => resultado.status === 'rejected');
+      expect(rechazos).toHaveLength(9);
+      for (const { reason } of rechazos) expect(reason).toBeInstanceOf(CalificacionDuplicada);
+      const cuantas = await pool.consultar(`SELECT 1 FROM calificaciones WHERE cliente_id = $1`, [clienteId]);
+      expect(cuantas.rowCount).toBe(1);
+    });
+
+    it('el CalificacionDuplicada no lleva el viaje, la calificación ni el comentario', async () => {
+      const clienteId = await cliente();
+      const viajeId = nuevoId();
+      await calificar(clienteId, { viajeId, comentario: 'secreto-del-comentario' });
+
+      const error = await calificar(clienteId, { viajeId, comentario: 'otro-secreto' }).catch((falla: unknown) => falla as Error);
+
+      expect(JSON.stringify({ mensaje: (error as Error).message, ...(error as object) })).not.toMatch(
+        new RegExp(`${viajeId}|secreto|calificaciones_cliente_viaje_unica`),
+      );
+    });
+  });
+
+  describe('existeCalificacion()', () => {
+    it('es verdadero solo para el cliente y el viaje calificados', async () => {
+      const [uno, otro] = [await cliente(), await cliente()];
+      const { viajeId } = await calificar(uno);
+
+      expect(await existeCalificacion(consultar, uno, viajeId)).toBe(true);
+      expect(await existeCalificacion(consultar, otro, viajeId)).toBe(false);
+      expect(await existeCalificacion(consultar, uno, nuevoId())).toBe(false);
+    });
+
+    it('no distingue mayúsculas en el id del viaje: es un UUID', async () => {
+      const clienteId = await cliente();
+      const { viajeId } = await calificar(clienteId);
+
+      expect(await existeCalificacion(consultar, clienteId, viajeId.toUpperCase())).toBe(true);
+    });
+  });
+
+  describe('obtenerCalificacion()', () => {
+    it('devuelve la calificación del cliente', async () => {
+      const clienteId = await cliente();
+      const creada = await calificar(clienteId, { comentario: 'Bien' });
+
+      expect(await obtenerCalificacion(consultar, clienteId, creada.calificacionId)).toEqual(creada);
+    });
+
+    it('la de otro cliente y la que no existe dan NoEncontrado, igual (RF-2.5.10)', async () => {
+      const [uno, otro] = [await cliente(), await cliente()];
+      const { calificacionId } = await calificar(uno);
+
+      const ajena = await obtenerCalificacion(consultar, otro, calificacionId).catch((falla: unknown) => falla);
+      const inexistente = await obtenerCalificacion(consultar, uno, nuevoId()).catch((falla: unknown) => falla);
+
+      expect(ajena).toBeInstanceOf(NoEncontrado);
+      expect(inexistente).toBeInstanceOf(NoEncontrado);
+      expect((ajena as NoEncontrado).detail).toBe((inexistente as NoEncontrado).detail);
+    });
+
+    it('un cliente que no existe da NoEncontrado', async () => {
+      await expect(obtenerCalificacion(consultar, nuevoId(), nuevoId())).rejects.toBeInstanceOf(NoEncontrado);
+    });
+  });
+
+  describe('listarCalificaciones()', () => {
+    it('devuelve las del cliente de la más nueva a la más antigua, con los totales, en una sola sentencia (RF-2.5.8)', async () => {
+      const clienteId = await cliente();
+      const otro = await cliente();
+      const [a, b, c] = [await calificar(clienteId), await calificar(clienteId), await calificar(clienteId)];
+      await calificar(otro);
+
+      const { resultado, sentencias } = await contando((contado) => listarCalificaciones(contado, clienteId, { page: 0, size: 20 }));
+
+      expect(resultado).toEqual({ page: 0, size: 20, totalElementos: 3, totalPaginas: 1, items: [c, b, a] });
+      expect(sentencias).toBe(1);
+    });
+
+    it('pagina sin repetir ni saltear: cada página trae las que le tocan y el total es el del cliente', async () => {
+      const clienteId = await cliente();
+      const creadas = [];
+      for (let i = 0; i < 5; i++) creadas.push(await calificar(clienteId, { puntaje: (i % 5) + 1 }));
+      const esperadas = creadas.reverse();
+
+      const paginas = await Promise.all([0, 1, 2].map((page) => listarCalificaciones(consultar, clienteId, { page, size: 2 })));
+
+      expect(paginas.map(({ items }) => items)).toEqual([esperadas.slice(0, 2), esperadas.slice(2, 4), esperadas.slice(4)]);
+      for (const pagina of paginas) expect(pagina).toMatchObject({ size: 2, totalElementos: 5, totalPaginas: 3 });
+    });
+
+    it('con la misma fecha de creación, desempata por id descendente y el orden es estable entre páginas', async () => {
+      const clienteId = await cliente();
+      const ids = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000002'];
+      for (const id of ids) {
+        await pool.consultar(
+          `INSERT INTO calificaciones (calificacion_id, cliente_id, viaje_id, conductor_id, puntaje, creado_en)
+           VALUES ($1, $2, $3, $4, 5, '2026-10-26T12:00:00Z')`,
+          [id, clienteId, nuevoId(), nuevoId()],
+        );
+      }
+
+      const paginas = [
+        await listarCalificaciones(consultar, clienteId, { page: 0, size: 2 }),
+        await listarCalificaciones(consultar, clienteId, { page: 1, size: 2 }),
+      ];
+
+      expect(paginas.flatMap(({ items }) => items.map(({ calificacionId }) => calificacionId))).toEqual([ids[1], ids[2], ids[0]]);
+    });
+
+    it('un cliente sin calificaciones da items vacío y totales en cero, no NoEncontrado (RF-2.5.9)', async () => {
+      const clienteId = await cliente();
+
+      expect(await listarCalificaciones(consultar, clienteId, { page: 0, size: 20 })).toEqual({
+        page: 0,
+        size: 20,
+        totalElementos: 0,
+        totalPaginas: 0,
+        items: [],
+      });
+    });
+
+    it('una página fuera del total da items vacío y conserva los totales, también con una página enorme (RF-2.5.9)', async () => {
+      const clienteId = await cliente();
+      await calificar(clienteId);
+      await calificar(clienteId);
+
+      const lejos = await listarCalificaciones(consultar, clienteId, { page: 9, size: 20 });
+      const enorme = await listarCalificaciones(consultar, clienteId, { page: Number.MAX_SAFE_INTEGER, size: 100 });
+
+      expect(lejos).toEqual({ page: 9, size: 20, totalElementos: 2, totalPaginas: 1, items: [] });
+      expect(enorme).toEqual({ page: Number.MAX_SAFE_INTEGER, size: 100, totalElementos: 2, totalPaginas: 1, items: [] });
+    });
+
+    it('un cliente que no existe da NoEncontrado (RF-2.5.11)', async () => {
+      await expect(listarCalificaciones(consultar, nuevoId(), { page: 0, size: 20 })).rejects.toBeInstanceOf(NoEncontrado);
+    });
+  });
+
+  describe('viajesCalificados()', () => {
+    it('devuelve solo los viajes de la lista que el cliente calificó, no los de otro cliente (RF-2.5.14)', async () => {
+      const [uno, otro] = [await cliente(), await cliente()];
+      const calificado = await calificar(uno);
+      const delOtro = await calificar(otro);
+      const sinCalificar = nuevoId();
+
+      const resultado = await viajesCalificados(consultar, uno, [calificado.viajeId, delOtro.viajeId, sinCalificar]);
+
+      expect([...resultado]).toEqual([calificado.viajeId]);
+    });
+
+    it('devuelve los ids en minúsculas aunque lleguen en mayúsculas, con una sola sentencia', async () => {
+      const clienteId = await cliente();
+      const { viajeId } = await calificar(clienteId);
+
+      const { resultado, sentencias } = await contando((contado) => viajesCalificados(contado, clienteId, [viajeId.toUpperCase()]));
+
+      expect(resultado.has(viajeId)).toBe(true);
+      expect(sentencias).toBe(1);
+    });
+
+    it('con una lista vacía devuelve un conjunto vacío sin consultar la base', async () => {
+      const clienteId = await cliente();
+
+      const { resultado, sentencias } = await contando((contado) => viajesCalificados(contado, clienteId, []));
+
+      expect(resultado.size).toBe(0);
+      expect(sentencias).toBe(0);
+    });
   });
 });
