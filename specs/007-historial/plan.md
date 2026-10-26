@@ -13,9 +13,9 @@ No hay tabla nueva: el historial se arma en cada consulta con la respuesta de M6
 | `src/auth/tokens.ts` | `tokenDeServicio`: firma el token de M2 ante otro módulo con la firma de `generarToken` | RF-2.4.11, RNF-19 |
 | `src/modulos/cliente.ts` | Credencial opcional por intento (`Authorization: Bearer`, una función que da el token) y `Retry-After` en `ModuloNoDisponible` | RNF-06, RNF-13, RF-2.4.6, RF-2.4.11 |
 | `src/errores.ts` | `ModuloNoDisponible` acepta `Retry-After`; nuevo `ErrorDeIntegracion` (500) | RF-2.4.6, RF-2.4.7 |
-| `src/historial/modelo.ts` | Tipos, traducción de página y conversión de `TripSummary` a `ViajeResumen`, funciones puras | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
+| `src/historial/modelo.ts` | Tipos, traducción de página y conversión de `TripSummary` a `ViajeResumen`, funciones puras; `conCalificado` agrega `calificado` a la página (spec #8) | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
 | `src/historial/m6.ts` | Pedido `GET /trips` a M6 con el cliente de módulos y el token de servicio, y lectura de su respuesta | RF-2.4, RF-2.4.6, RF-2.4.7, RF-2.4.10, RF-2.4.11, RNF-13 |
-| `src/historial/servicio.ts` | Propiedad, perfil y llamada a M6, en ese orden | RF-2.4.3 a RF-2.4.5 |
+| `src/historial/servicio.ts` | Propiedad, perfil y llamada a M6, en ese orden; después, una consulta a la base de M2 con los viajes calificados de la página (spec #8) | RF-2.4.1, RF-2.4.3 a RF-2.4.5 |
 | `src/historial/operaciones.ts` | Manejador de `listarHistorialViajes` | RNF-03 |
 | `src/app.ts` | `construirApp` crea el cliente de M6 desde la configuración y lo decora como `app.m6`; las pruebas lo apuntan a un M6 simulado con `urlM6` | RNF-06 |
 | `src/operaciones/index.ts` | Registro por `operationId`, en el orden del contrato | RNF-03 |
@@ -63,6 +63,7 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
     return { page, size, totalElementos: cuerpoM6.total,
              totalPaginas: ceil(cuerpoM6.total / size), items: propios.map(aViajeResumen) }
 ```
+- `calificado` no sale de M6: después de armar la página, `servicio.ts` pregunta a la base de M2 cuáles de esos viajes calificó el cliente (una consulta por página, sin llamar de nuevo a M6; no se consulta si la página queda vacía) y `conCalificado(pagina, calificados)` lo agrega a cada viaje, `true` o `false`. Si la base falla, `503` genérico y no un historial sin el campo. La spec #8 (RF-2.5.14) lo define y lo implementa.
 - Si algún viaje no es de `clienteId` (RF-2.4.9), se descarta y se registra un aviso sin identificadores (solo la cantidad y el identificador de correlación).
 - Un elemento de `items` sin `id` o `state` en texto, o que no es un objeto, hace que toda la respuesta cuente como inválida (RF-2.4.10).
 - `totalElementos` es el total de M6 aunque se hayan descartado viajes de otro cliente: el filtro de M6 es el que cuenta.

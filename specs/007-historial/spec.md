@@ -1,6 +1,6 @@
 # Spec 007 — Historial resumido de viajes
 
-Estado: implementada
+Estado: aprobada
 Issue: #7
 Etapa: TP1
 Responsable: @sandobaitt
@@ -20,7 +20,7 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 
 ## Requisitos funcionales
 - RF-2.4: CUANDO un CLIENTE consulta el historial de su propio perfil o un OPERADOR el de un cliente existente, EL SISTEMA obtiene los viajes del cliente de la API de M6 y responde `200` con la página pedida, ordenada del viaje más reciente al más antiguo.
-- RF-2.4.1: EL SISTEMA devuelve de cada viaje su `viajeId`, su `estado` tal como lo informa M6, sin traducirlo, y su `conductorId` si M6 lo informa, y omite los campos del contrato que M6 no informa; si M6 no informa el conductor de un viaje, el viaje se incluye sin `conductorId`.
+- RF-2.4.1: EL SISTEMA devuelve de cada viaje su `viajeId`, su `estado` tal como lo informa M6, sin traducirlo, y su `conductorId` si M6 lo informa, y omite los campos del contrato que M6 no informa; si M6 no informa el conductor de un viaje, el viaje se incluye sin `conductorId`. Además, EL SISTEMA agrega a cada viaje `calificado`, que no viene de M6 sino de las calificaciones de M2 (RF-2.5.14 de la spec #8).
 - RF-2.4.2: EL SISTEMA responde con `page` y `size` iguales a los pedidos (por defecto `0` y `20`, con `size` de `1` a `100`), `totalElementos` igual al total de viajes que informa M6 y `totalPaginas` igual a `totalElementos` dividido `size`, redondeado hacia arriba.
 - RF-2.4.3: CUANDO el cliente existe pero M6 no informa viajes para él, o la página pedida queda fuera del total, EL SISTEMA responde `200` con `items` vacío y los totales que informa M6.
 - RF-2.4.4: SI el perfil del `clienteId` no existe en M2, ENTONCES EL SISTEMA responde `404` sin llamar a M6.
@@ -60,12 +60,13 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - El historial no se guarda: dos consultas seguidas pueden devolver resultados distintos si M6 cambió entre ellas.
 - Un cliente que existe en M2 y no tiene viajes: `200` con `items` vacío, nunca `404`.
 - La base de M2 no responde al buscar el perfil: `503` genérico, sin llamar a M6.
+- La base de M2 no responde al buscar `calificado` (RF-2.5.14): `503` genérico, y no se devuelve un historial sin ese campo.
 - M6 rechaza el token de servicio de M2 (otra clave, otra audiencia o un rol que no admite): es un `4xx` de M6, `500` (RF-2.4.7).
 - El reintento lleva un token nuevo, firmado para ese intento: nunca vence entre un intento y el siguiente.
 
 ## Fuera de alcance
 - Guardar o cachear viajes de M6 (la caché queda para TP2).
-- Calcular o devolver `calificado`: depende de las calificaciones de la spec de RF-2.5, que todavía no existe. Hasta entonces el campo no se devuelve.
+- Obtener `calificado` de M6: no es un dato de M6. Lo completa M2 con sus propias calificaciones, en la spec #8 (RF-2.5.14).
 - Devolver `tipoVehiculo`, `origen`, `destino`, `iniciadoEn` y `finalizadoEn` mientras M6 no los informe en el resumen.
 - Filtrar por estado o fecha, cambiar el orden o consultar el detalle de un viaje.
 - Traducir los estados de M6 a los de M2.
@@ -80,7 +81,7 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - La guía explica el recorrido y cómo probarlo con un M6 simulado.
 
 ## Decisiones
-- Se devuelve solo lo que el resumen de M6 informa (`viajeId`, `estado`, `conductorId`) y se omite el resto, porque el contrato de M2 lo permite (solo `viajeId` y `estado` son obligatorios) y no se inventan datos. Alternativas descartadas: pedir el detalle de cada viaje a M6 (hasta 100 llamadas por consulta y datos de ubicación que M2 no necesita) y completar fechas con valores que no son las del viaje.
+- Se devuelve solo lo que el resumen de M6 informa (`viajeId`, `estado`, `conductorId`) y se omite el resto, más `calificado`, que completa M2 (spec #8), porque el contrato de M2 lo permite (solo `viajeId` y `estado` son obligatorios) y no se inventan datos. Alternativas descartadas: pedir el detalle de cada viaje a M6 (hasta 100 llamadas por consulta y datos de ubicación que M2 no necesita) y completar fechas con valores que no son las del viaje.
 - Los permisos siguen a las specs #4 y #5: el mismo criterio de propiedad por rol efectivo.
 - Un `4xx` de M6 responde `500` y no un error de cliente, porque indica un problema de configuración o de acuerdo entre módulos, no del pedido del cliente. [Pendiente de confirmar al acordar el contrato con M6.]
 - Se exige `Retry-After` solo en este `503`, con 5 segundos por defecto configurables, porque el contrato lo declara para esta respuesta y hoy ningún `503` de M2 lo envía. Alternativa descartada: dejarlo sin cumplir.
@@ -90,7 +91,7 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - `conductorId` se devuelve si M6 lo informa y nunca se registra en los logs.
 - Supuestos provisorios a confirmar con M6 y el Grupo 1. Ninguno cambia el plan; si alguno cambia, se ajusta la configuración:
   - Audiencia y emisor que valida M6: su contrato no los dice. Supuesto: `aud` `m6-viajes` (configurable) e `iss` el del consorcio (`m1-identidad`). Pregunta para el Grupo 12 en `contrato/dependencias/m6-propuesta.md` (#57).
-  - Campos del resumen: `TripSummary` no trae origen, destino, tipo de vehículo ni fechas de inicio y fin (`createdAt` no es el inicio del viaje). Se devuelven solo `viajeId`, `estado` y `conductorId`.
+  - Campos del resumen: `TripSummary` no trae origen, destino, tipo de vehículo ni fechas de inicio y fin (`createdAt` no es el inicio del viaje). Se devuelven solo `viajeId`, `estado` y `conductorId`, más `calificado`, que completa M2 con sus calificaciones (spec #8).
   - Contrato del Grupo 5: es el mismo que subió el Grupo 12 a la cátedra (ADR 057).
   - `type` del `503` por dependencia: el contrato dice «propio» sin fijar valor. Supuesto: `about:blank`, como la spec #3. Depende del Grupo 1.
 
