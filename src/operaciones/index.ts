@@ -8,6 +8,7 @@ import {
   obtenerCliente,
   obtenerEstadoCuenta,
 } from '../clientes/operaciones.js';
+import { calificarConductor, listarCalificaciones, obtenerCalificacion } from '../calificaciones/operaciones.js';
 import type { Manejadores } from '../contrato/operaciones.js';
 import {
   actualizarDireccion,
@@ -23,9 +24,9 @@ import { obtenerPreferencias, guardarPreferencias } from '../preferencias/operac
 // Los manejadores por operationId: el servicio expone solo las operaciones del contrato que tienen uno (RNF-03.4).
 // Las rutas, la validación y los roles de cada una salen del contrato; acá solo se las asocia con su manejador, en el orden del
 // contrato. Hoy: verificarSalud
-// (GET /health, que el contrato v1 trae con ese nombre), las ocho de perfil y estado de cuenta (spec 004) y las cinco de
-// direcciones (spec 005), las dos de preferencias (spec 006) y la del historial (spec 007). Las calificaciones llegan con la
-// spec #8.
+// (GET /health, que el contrato v1 trae con ese nombre), las ocho de perfil y estado de cuenta (spec 004), las cinco de
+// direcciones (spec 005), las dos de preferencias (spec 006), la del historial (spec 007) y las tres de calificaciones
+// (spec 008).
 export const manejadores: Manejadores = {
   verificarSalud,
   crearCliente,
@@ -39,6 +40,9 @@ export const manejadores: Manejadores = {
   obtenerPreferencias,
   guardarPreferencias,
   listarHistorialViajes,
+  listarCalificaciones,
+  calificarConductor,
+  obtenerCalificacion,
   obtenerEstadoCuenta,
   listarBloqueos,
   crearBloqueo,

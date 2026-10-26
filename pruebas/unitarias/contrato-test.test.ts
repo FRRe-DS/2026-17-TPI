@@ -51,14 +51,17 @@ describe('listarOperaciones: contrato sin operaciones (RNF-07.2)', () => {
     expect(listarOperaciones(contrato, manejadores)).toEqual({ implementadas: [], pendientes: [] });
   });
 
-  // El v1 trae todas las operaciones de M2; el servicio implementa las que tienen manejador, y verificarSalud es la de esta spec.
-  it('con el v1 y los manejadores del servicio, verificarSalud queda implementada y las demás, pendientes', () => {
+  // El v1 trae todas las operaciones de M2; con la spec 008 el servicio tiene un manejador para cada una, en el orden del
+  // contrato, y no queda ninguna pendiente.
+  it('con el v1 y los manejadores del servicio, todas las operaciones quedan implementadas, en el orden del contrato', () => {
     const { implementadas, pendientes } = listarOperaciones(cargarContrato(), manejadores);
 
     expect(implementadas).toContainEqual(SALUD);
     expect(implementadas.map(({ operationId }) => operationId)).toEqual(Object.keys(manejadores));
-    expect(pendientes).not.toContainEqual(SALUD);
-    expect(pendientes.length).toBeGreaterThan(0);
+    expect(implementadas.map(({ operationId }) => operationId)).toEqual(
+      expect.arrayContaining(['listarCalificaciones', 'calificarConductor', 'obtenerCalificacion']),
+    );
+    expect(pendientes).toEqual([]);
   });
 });
 

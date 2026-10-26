@@ -156,6 +156,14 @@ export const CAMPO_ID_CORRELACION = 'idCorrelacion';
 
 const SOLICITUD_TERMINADA = 'Solicitud terminada';
 
+// La ruta de una línea de solicitud: la plantilla de la operación que la atendió (`/api/v1/clientes/:clienteId/calificaciones/:calificacionId`)
+// y no la URL pedida, porque los valores de la URL son identificadores de clientes, calificaciones, direcciones y bloqueos que
+// no van al log (RNF-19). Si ninguna operación la atendió (ruta inexistente, URL ilegible), la URL sin query string, como siempre.
+function rutaDe(request: FastifyRequest): string {
+  const plantilla = request.is404 ? undefined : request.routeOptions?.url;
+  return plantilla ?? request.url.split('?', 1)[0] ?? '';
+}
+
 // Registra la línea de una solicitud que terminó (RNF-14.6): el método, la ruta sin query string, el código de la respuesta y
 // cuánto tardó, en milisegundos desde que Fastify la recibió. `duracionMs` se pasa para lo que Fastify responde antes de
 // entrar a una ruta, donde su reloj no arranca y `reply.elapsedTime` da 0 (Lógica 9). El id de correlación lo pone
@@ -163,7 +171,7 @@ const SOLICITUD_TERMINADA = 'Solicitud terminada';
 // traer datos personales (RNF-19.2).
 export function registrarSolicitud(request: FastifyRequest, reply: FastifyReply, duracionMs = reply.elapsedTime): void {
   request.log.info(
-    { metodo: request.method, ruta: request.url.split('?', 1)[0], estado: reply.statusCode, duracionMs },
+    { metodo: request.method, ruta: rutaDe(request), estado: reply.statusCode, duracionMs },
     SOLICITUD_TERMINADA,
   );
 }
@@ -174,7 +182,7 @@ const SOLICITUD_CORTADA = 'Solicitud cortada por la parada';
 // salvo el código, porque no salió ninguno. Va como advertencia: el cliente se quedó sin respuesta.
 export function registrarSolicitudCortada(request: FastifyRequest, reply: FastifyReply): void {
   request.log.warn(
-    { metodo: request.method, ruta: request.url.split('?', 1)[0], duracionMs: reply.elapsedTime },
+    { metodo: request.method, ruta: rutaDe(request), duracionMs: reply.elapsedTime },
     SOLICITUD_CORTADA,
   );
 }
