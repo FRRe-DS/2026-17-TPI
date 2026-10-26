@@ -8,6 +8,7 @@ import { BaseNoDisponible } from '../../src/errores.js';
 import { crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs } from '../ayudas/logs.js';
+import { errorDeM6, viajeDeM6 as viajeDe } from '../ayudas/m6-simulado.js';
 import { type Comportamiento, crearServidorModulo } from '../ayudas/servidor-modulo.js';
 import { armarToken } from '../ayudas/tokens.js';
 
@@ -52,7 +53,7 @@ describe('calificaciones por HTTP (008/T8)', () => {
   // El viaje como lo responde M6 (`Trip`): completado, del cliente y con conductor, salvo lo que cambie la prueba.
   const viajeDeM6 = (viajeId: string, clientId: string, extra: object = {}): Comportamiento => ({
     tipo: 'ok',
-    cuerpo: { id: viajeId, state: 'COMPLETED', clientId, driverId: CONDUCTOR, createdAt: '2026-10-01T10:00:00Z', ...extra },
+    cuerpo: viajeDe(viajeId, clientId, CONDUCTOR, extra),
   });
 
   // La app y los pedidos. Los tokens quedan a mano para buscarlos enteros en los logs (RNF-19). La URL de M6 se conoce recién
@@ -436,7 +437,7 @@ describe('calificaciones por HTTP (008/T8)', () => {
 
     it.each([400, 401, 403])('un %i de M6 no se reintenta y da 500 genérico, sin Retry-After ni datos de M6', async (estado) => {
       const clienteId = await cliente();
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: { type: 'about:blank', status: estado, detail: 'dato-de-m6' } });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', 'dato-de-m6') });
 
       const respuesta = await crear().alta(clienteId, { viajeId: randomUUID(), puntaje: 5 });
 

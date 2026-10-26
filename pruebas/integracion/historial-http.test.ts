@@ -9,6 +9,7 @@ import { listarHistorialViajes } from '../../src/historial/operaciones.js';
 import { crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs } from '../ayudas/logs.js';
+import { errorDeM6, paginaDeM6, resumenDeM6 } from '../ayudas/m6-simulado.js';
 import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 import { armarToken } from '../ayudas/tokens.js';
 
@@ -17,15 +18,8 @@ const CONDUCTOR = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
 const OTRO_CONDUCTOR = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 type Rol = 'CLIENTE' | 'OPERADOR' | 'SERVICIO' | 'CONDUCTOR';
 
-const viaje = (n: number, clientId: string, extra: object = {}) => ({
-  id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
-  state: 'COMPLETED',
-  clientId,
-  driverId: CONDUCTOR,
-  createdAt: '2026-10-01T10:00:00Z',
-  ...extra,
-});
-const pagina = (items: unknown[], total: number) => ({ items, page: 1, pageSize: 20, total });
+const viaje = (n: number, clientId: string, extra: object = {}) => resumenDeM6(n, clientId, CONDUCTOR, extra);
+const pagina = paginaDeM6;
 const url = (id: string, consulta = '') => `/api/v1/clientes/${id}/viajes${consulta}`;
 
 describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007/T6)', () => {
@@ -237,7 +231,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
 
     it.each([400, 401, 403, 404])('un %i de M6 no se reintenta y da 500 genérico', async (estado) => {
       const id = await perfil();
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: { type: 'about:blank', status: estado, detail: 'dato-de-m6' } });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', 'dato-de-m6') });
 
       const respuesta = await crear().pedir(id);
 

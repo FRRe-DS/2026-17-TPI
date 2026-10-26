@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { aProblema, ErrorDeIntegracion, ModuloNoDisponible } from '../../src/errores.js';
 import { crearM6 } from '../../src/historial/m6.js';
 import { CONFIG } from '../ayudas/app.js';
+import { errorDeM6, paginaDeM6, resumenDeM6, viajeDeM6 } from '../ayudas/m6-simulado.js';
 import { crearServidorModulo, type Comportamiento } from '../ayudas/servidor-modulo.js';
 
 const TIEMPO_MS = 200;
@@ -12,19 +13,8 @@ const CONDUCTOR = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
 // Un dato que M6 podría mandar en un cuerpo y que no puede llegar al log ni a la respuesta (RNF-19).
 const DEL_CUERPO = 'dato-del-cuerpo-de-m6';
 
-const viaje = (n: number, extra: object = {}) => ({
-  id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
-  state: 'COMPLETED',
-  clientId: CLIENTE,
-  driverId: CONDUCTOR,
-  distanceKm: 3.2,
-  durationMinutes: 12,
-  createdAt: '2026-10-01T10:00:00Z',
-  ...extra,
-});
-
-// La respuesta de M6 según su contrato publicado (`TripSummaryPage`, Grupo 12).
-const pagina = (items: unknown[], total: number, extra: object = {}) => ({ items, page: 1, pageSize: 20, total, ...extra });
+const viaje = (n: number, extra: object = {}) => resumenDeM6(n, CLIENTE, CONDUCTOR, extra);
+const pagina = paginaDeM6;
 
 const ok = (cuerpo: unknown): Comportamiento => ({ tipo: 'ok', cuerpo });
 
@@ -252,7 +242,7 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
   // RF-2.4.7: un 4xx es un problema de configuración o de acuerdo entre módulos, no del cliente de M2: 500, sin reintento.
   describe('M6 rechaza el pedido: error de integración (RF-2.4.7)', () => {
     it.each([400, 401, 403, 404, 409, 422])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: { type: 'about:blank', status: estado, detail: DEL_CUERPO } });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', DEL_CUERPO) });
 
       const error = await fallaDe(listar());
 
@@ -293,21 +283,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   const OTRO_CLIENTE = '9e8d7c6b-5a49-4382-a170-6f5e4d3c2b1a';
 
   // El viaje según el contrato publicado de M6 (`Trip`, Grupo 12), con los campos que M2 no lee.
-  const detalle = (extra: object = {}) => ({
-    id: VIAJE,
-    requestId: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
-    clientId: CLIENTE,
-    driverId: CONDUCTOR,
-    vehicleId: '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e',
-    originLatitude: -27.45,
-    originLongitude: -58.98,
-    destinationLatitude: -27.47,
-    destinationLongitude: -58.83,
-    state: 'COMPLETED',
-    distanceKm: 3.2,
-    durationMinutes: 12,
-    ...extra,
-  });
+  const detalle = (extra: object = {}) => viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, extra);
 
   const m6 = (extra: Partial<typeof CONFIG> = {}) =>
     crearM6({ ...CONFIG, urlM6: serv.url, tiempoModulosMs: TIEMPO_MS, reintentosModulos: 1, ...extra });
@@ -430,7 +406,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   // que el conductor: un viaje ajeno nunca revela su estado.
   describe('un viaje que no existe o es de otro cliente (RF-2.5.1)', () => {
     it('un 404 de M6 da null, sin reintento', async () => {
-      serv.responderCon({ tipo: '4xx', estado: 404, cuerpo: { code: 'NOT_FOUND', message: DEL_CUERPO } });
+      serv.responderCon({ tipo: '4xx', estado: 404, cuerpo: errorDeM6('NOT_FOUND', DEL_CUERPO) });
 
       expect(await obtener()).toBeNull();
       expect(serv.llamadas).toBe(1);
@@ -515,7 +491,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   // RF-2.5.6: un 4xx distinto de 404 es un problema de configuración o de acuerdo entre módulos: 500, sin reintento.
   describe('M6 rechaza el pedido: error de integración (RF-2.5.6)', () => {
     it.each([400, 401, 403, 409, 422, 429])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: { code: 'X', message: DEL_CUERPO } });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', DEL_CUERPO) });
 
       const error = await fallaDe(obtener());
 

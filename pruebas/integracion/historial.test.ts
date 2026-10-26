@@ -9,20 +9,14 @@ import { crearM6 } from '../../src/historial/m6.js';
 import { listarHistorialViajes, type LogHistorial } from '../../src/historial/servicio.js';
 import { CONFIG, POOL_FALSO } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
+import { paginaDeM6, resumenDeM6 } from '../ayudas/m6-simulado.js';
 import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 
 const ROLES = ['CLIENTE', 'OPERADOR'] as const;
 const CONDUCTOR = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
 
-const viaje = (n: number, clientId: string, extra: object = {}) => ({
-  id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
-  state: 'COMPLETED',
-  clientId,
-  driverId: CONDUCTOR,
-  createdAt: '2026-10-01T10:00:00Z',
-  ...extra,
-});
-const pagina = (items: unknown[], total: number) => ({ items, page: 1, pageSize: 20, total });
+const viaje = (n: number, clientId: string, extra: object = {}) => resumenDeM6(n, clientId, CONDUCTOR, extra);
+const pagina = paginaDeM6;
 
 describe('listarHistorialViajes con PostgreSQL real y M6 simulado (007/T5)', () => {
   let base: BaseDePrueba;

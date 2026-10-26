@@ -15,6 +15,7 @@ import {
   obtenerCalificacion,
   viajesCalificados,
 } from '../../src/calificaciones/repositorio.js';
+import { crearBloqueo } from '../../src/clientes/repositorio.js';
 import { calificarConductor, listarCalificaciones as listarCalificacionesDe, obtenerCalificacion as obtenerCalificacionDe } from '../../src/calificaciones/servicio.js';
 import type { CalificacionNueva } from '../../src/calificaciones/modelo.js';
 import {
@@ -30,6 +31,7 @@ import {
 import { crearM6 } from '../../src/historial/m6.js';
 import { serializarError } from '../../src/logs.js';
 import { CONFIG, POOL_FALSO } from '../ayudas/app.js';
+import { viajeDeM6 as viajeDe } from '../ayudas/m6-simulado.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { type Comportamiento, crearServidorModulo } from '../ayudas/servidor-modulo.js';
 
@@ -691,14 +693,7 @@ describe('calificarConductor con PostgreSQL real y M6 simulado (RF-2.5 a RF-2.5.
   const deCliente = (clienteId: string): Identidad => ({ sub: clienteId, roles: ['CLIENTE'] });
 
   // El viaje como lo responde M6 (`Trip`): completado, del cliente y con conductor, salvo lo que cambie la prueba.
-  const viajeDeM6 = (viajeId: string, clientId: string, extra: object = {}) => ({
-    id: viajeId,
-    state: 'COMPLETED',
-    clientId,
-    driverId: CONDUCTOR,
-    createdAt: '2026-10-01T10:00:00Z',
-    ...extra,
-  });
+  const viajeDeM6 = (viajeId: string, clientId: string, extra: object = {}) => viajeDe(viajeId, clientId, CONDUCTOR, extra);
   const responde = (viajeId: string, clientId: string, extra: object = {}): Comportamiento => ({
     tipo: 'ok',
     cuerpo: viajeDeM6(viajeId, clientId, extra),
@@ -745,6 +740,21 @@ describe('calificarConductor con PostgreSQL real y M6 simulado (RF-2.5 a RF-2.5.
       expect(await filasDe(clienteId)).toEqual([{ viaje_id: viajeId, conductor_id: CONDUCTOR, puntaje: 4, comentario: 'Muy amable' }]);
       expect(serv.rutaRecibida).toBe(`/trips/${viajeId}`);
       expect(serv.encabezadosRecibidos.get('x-request-id')).toBe('id-de-correlacion');
+    });
+
+    // Caso límite y decisión de la spec: un bloqueo de la cuenta no impide calificar un viaje que ya se hizo.
+    it('un cliente con un bloqueo vigente puede calificar: 201 y la calificación guardada', async () => {
+      const clienteId = await perfil();
+      await crearBloqueo((sql, parametros) => pool.consultar(sql, parametros), clienteId, nuevoId(), { motivo: 'Deuda pendiente' }, 'operador-1');
+      const estado = await pool.consultar('SELECT 1 FROM bloqueos_cliente WHERE cliente_id = $1 AND hasta IS NULL', [clienteId]);
+      expect(estado.rowCount).toBe(1);
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+
+      const respuesta = await calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 3 });
+
+      expect(respuesta.estado).toBe(201);
+      expect(await filasDe(clienteId)).toEqual([{ viaje_id: viajeId, conductor_id: CONDUCTOR, puntaje: 3, comentario: null }]);
     });
 
     it('el clienteId y el viajeId en mayúsculas se guardan y van a M6 como los guarda la base; sin comentario, no hay', async () => {
