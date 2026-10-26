@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { aPaginaDeM6, aPaginaViajes, aViajeResumen, type ViajeM6, paginaInalcanzable } from '../../src/historial/modelo.js';
+import {
+  aPaginaDeM6,
+  aPaginaViajes,
+  aViajeResumen,
+  conCalificado,
+  type ViajeM6,
+  paginaInalcanzable,
+} from '../../src/historial/modelo.js';
 
 const CLIENTE = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
 const OTRO_CLIENTE = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
@@ -152,5 +159,47 @@ describe('aPaginaViajes (007/T3, RF-2.4.1, RF-2.4.2, RF-2.4.3, RF-2.4.9)', () =>
     aPaginaViajes(cuerpo, CLIENTE, 0, 20);
 
     expect(cuerpo).toEqual(copia);
+  });
+});
+
+describe('conCalificado (008/T9, RF-2.5.14)', () => {
+  const pagina = () => aPaginaViajes({ items: [viaje(1), viaje(2, { driverId: null }), viaje(3)], total: 42 }, CLIENTE, 1, 3);
+
+  it('agrega calificado a cada viaje: true si está en el conjunto y false si no', () => {
+    const resultado = conCalificado(pagina(), new Set([viaje(1).id, viaje(3).id]));
+
+    expect(resultado.items).toEqual([
+      { viajeId: viaje(1).id, estado: 'COMPLETED', conductorId: CONDUCTOR, calificado: true },
+      { viajeId: viaje(2).id, estado: 'COMPLETED', calificado: false },
+      { viajeId: viaje(3).id, estado: 'COMPLETED', conductorId: CONDUCTOR, calificado: true },
+    ]);
+  });
+
+  it('con el conjunto vacío, todos van con calificado false', () => {
+    expect(conCalificado(pagina(), new Set()).items.map(({ calificado }) => calificado)).toEqual([false, false, false]);
+  });
+
+  it('el conjunto trae los ids en minúsculas, como los guarda la base; el viaje de M6 puede venir en mayúsculas', () => {
+    const minusculas = 'aabbccdd-eeff-4a1b-8c2d-0123456789ab';
+    const enMayusculas = aPaginaViajes({ items: [viaje(1, { id: minusculas.toUpperCase() })], total: 1 }, CLIENTE, 0, 20);
+    expect(minusculas.toUpperCase()).not.toBe(minusculas);
+
+    expect(conCalificado(enMayusculas, new Set([minusculas])).items).toEqual([
+      expect.objectContaining({ viajeId: minusculas.toUpperCase(), calificado: true }),
+    ]);
+  });
+
+  it('conserva page, size y los totales, y no cambia la página que recibe', () => {
+    const original = pagina();
+    const copia = structuredClone(original);
+
+    const resultado = conCalificado(original, new Set([viaje(1).id]));
+
+    expect(resultado).toMatchObject({ page: 1, size: 3, totalElementos: 42, totalPaginas: 14 });
+    expect(original).toEqual(copia);
+  });
+
+  it('una página vacía queda vacía', () => {
+    expect(conCalificado(aPaginaViajes({ items: [], total: 0 }, CLIENTE, 0, 20), new Set()).items).toEqual([]);
   });
 });

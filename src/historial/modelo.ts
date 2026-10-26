@@ -48,3 +48,13 @@ export function aPaginaViajes(cuerpoM6: PaginaM6, clienteId: string, page: numbe
     items: cuerpoM6.items.filter((viaje) => viaje.clientId?.toLowerCase() === propio).map(aViajeResumen),
   };
 }
+
+// Agrega `calificado` a cada viaje de la página (RF-2.5.14): si el cliente ya calificó al conductor de ese viaje, dato de M2.
+// `calificados` son los viajes calificados que devuelve la base, con los ids en minúsculas; los de M6 se comparan en
+// minúsculas, porque un UUID no distingue mayúsculas. Es pura: no cambia la página que recibe.
+export function conCalificado(pagina: PaginaViajes, calificados: ReadonlySet<string>): PaginaViajes {
+  return {
+    ...pagina,
+    items: pagina.items.map((viaje) => ({ ...viaje, calificado: calificados.has(viaje.viajeId.toLowerCase()) })),
+  };
+}
