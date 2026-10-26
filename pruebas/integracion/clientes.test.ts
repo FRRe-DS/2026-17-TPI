@@ -37,9 +37,9 @@ const MIGRACION = readdirSync(DIR_MIGRACIONES)
   .filter((archivo) => /^\d+_perfil-bloqueos\.sql$/.test(archivo))
   .map((archivo) => archivo.slice(0, -'.sql'.length));
 
-// Las migraciones que crean tablas con clave foránea a `clientes`: hay que revertirlas antes que esta.
+// Las migraciones que crean tablas con clave foránea a `clientes` (las specs 005, 006 y 008): hay que revertirlas antes que esta.
 const DEPENDIENTES = readdirSync(DIR_MIGRACIONES)
-  .filter((archivo) => /^\d+_(direcciones|preferencias)\.sql$/.test(archivo))
+  .filter((archivo) => /^\d+_(direcciones|preferencias|calificaciones)\.sql$/.test(archivo))
   .map((archivo) => archivo.slice(0, -'.sql'.length));
 
 // El valor por defecto de M2_TIEMPO_BD_MS: de sobra para la base del contenedor.
@@ -292,7 +292,7 @@ describe('la migración perfil-bloqueos se revierte (RNF-05.1)', () => {
     const cliente = new Client({ connectionString: base.urlBd });
     await cliente.connect();
     try {
-      // Primero las que cuelgan de `clientes` (la 005), como pide el orden inverso; después esta.
+      // Primero las que cuelgan de `clientes` (las specs 005, 006 y 008), como pide el orden inverso; después esta.
       for (const file of [...DEPENDIENTES, MIGRACION[0]]) {
         await runner({
           dbClient: cliente,

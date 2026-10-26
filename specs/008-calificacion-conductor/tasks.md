@@ -2,7 +2,7 @@
 
 Depende de: las specs #3 (cliente de módulos), #4 (perfiles e idempotencia), #5 (listado paginado) y #7 (cliente de M6 y token de servicio) en `main`. T1 cambia el esquema de la base: se pregunta antes de aplicar la migración. T4, T5 y T6 son delicadas (llamada a otro módulo, idempotencia compartida y orden de las comprobaciones con concurrencia): se implementan con Opus. Las pruebas usan un M6 simulado que cumple `contrato/dependencias/m6.yml`; el M6 real solo se necesita al final (ver los supuestos de la spec).
 
-- [ ] **T1. Crear la tabla `calificaciones`.** RNF-05, RNF-08, RF-2.5.3
+- [x] **T1. Crear la tabla `calificaciones`.** RNF-05, RNF-08, RF-2.5.3
   - Hecho cuando: la migración crea la tabla con la restricción única `calificaciones_cliente_viaje_unica` y el índice del listado, y se deshace con su Down; pruebas de integración sobre PostgreSQL real comprueban que la base rechaza un segundo registro del mismo cliente y viaje, un puntaje fuera de 1 a 5 y un comentario de más de 500 caracteres, que admite un comentario vacío y el mismo viaje de otro cliente, y que borrar el perfil borra sus calificaciones.
 - [ ] **T2. Agregar los errores de dominio y la conversión al contrato.** RF-2.5, RF-2.5.2, RF-2.5.3, RF-2.5.8
   - Hecho cuando: pruebas unitarias comprueban que `CalificacionDuplicada` da `409` con `type: /errores/calificacion-duplicada` y `ViajeNoCompletado` da `422` con `type: /errores/viaje-no-completado`, ambos con `title` y `detail` en español y sin datos de la solicitud, y que `aCalificacion` y `aPaginaCalificaciones` dan la forma del contrato (comentario vacío presente, sin comentario ausente, `creadoEn` en ISO, `totalPaginas` por redondeo hacia arriba, página vacía).
