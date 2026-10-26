@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runner } from 'node-pg-migrate';
-import { Client } from 'pg';
+import { Client, type QueryResultRow } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Identidad } from '../../src/auth/tokens.js';
 import { migrar } from '../../src/bd/migraciones.js';
-import { crearPool, type PoolBd } from '../../src/bd/pool.js';
+import { type BaseDeDatos, crearPool, type PoolBd } from '../../src/bd/pool.js';
 import type { Consultar } from '../../src/bd/transaccion.js';
 import {
   crearCalificacion,
@@ -14,8 +15,23 @@ import {
   obtenerCalificacion,
   viajesCalificados,
 } from '../../src/calificaciones/repositorio.js';
-import { CalificacionDuplicada, NoEncontrado } from '../../src/errores.js';
+import { calificarConductor } from '../../src/calificaciones/servicio.js';
+import type { CalificacionNueva } from '../../src/calificaciones/modelo.js';
+import {
+  BaseNoDisponible,
+  CalificacionDuplicada,
+  ErrorDeIntegracion,
+  IdempotenciaReutilizada,
+  ModuloNoDisponible,
+  NoEncontrado,
+  SinPermiso,
+  ViajeNoCompletado,
+} from '../../src/errores.js';
+import { crearM6 } from '../../src/historial/m6.js';
+import { serializarError } from '../../src/logs.js';
+import { CONFIG, POOL_FALSO } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
+import { type Comportamiento, crearServidorModulo } from '../ayudas/servidor-modulo.js';
 
 // La migración de la spec 008: se crea con `--migrations-dir migraciones`, que le pone la marca de tiempo (plan, Datos).
 const DIR_MIGRACIONES = fileURLToPath(new URL('../../migraciones', import.meta.url));
@@ -634,6 +650,380 @@ describe('el repositorio de calificaciones (RF-2.5, RF-2.5.3, RF-2.5.8 a RF-2.5.
 
       expect(resultado.size).toBe(0);
       expect(sentencias).toBe(0);
+    });
+  });
+});
+
+describe('calificarConductor con PostgreSQL real y M6 simulado (RF-2.5 a RF-2.5.4, RF-2.5.11, RF-2.5.12, RNF-08, RNF-19)', () => {
+  let base: BaseDePrueba;
+  let pool: PoolBd;
+  const serv = crearServidorModulo();
+
+  const CONDUCTOR = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
+  const ROLES = ['CLIENTE'] as const;
+
+  beforeAll(async () => {
+    base = await crearBaseDePrueba();
+    await migrar({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: TIEMPO_BD_MS });
+    await serv.levantar();
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+    await base?.borrar();
+    await serv.cerrar();
+  });
+
+  const perfil = async () => {
+    const clienteId = nuevoId();
+    await pool.consultar(`INSERT INTO clientes (cliente_id, nombre, apellido, telefono) VALUES ($1, 'Ana', 'Gómez', '+5493624000000')`, [
+      clienteId,
+    ]);
+    return clienteId;
+  };
+  const deCliente = (clienteId: string): Identidad => ({ sub: clienteId, roles: ['CLIENTE'] });
+
+  // El viaje como lo responde M6 (`Trip`): completado, del cliente y con conductor, salvo lo que cambie la prueba.
+  const viajeDeM6 = (viajeId: string, clientId: string, extra: object = {}) => ({
+    id: viajeId,
+    state: 'COMPLETED',
+    clientId,
+    driverId: CONDUCTOR,
+    createdAt: '2026-10-01T10:00:00Z',
+    ...extra,
+  });
+  const responde = (viajeId: string, clientId: string, extra: object = {}): Comportamiento => ({
+    tipo: 'ok',
+    cuerpo: viajeDeM6(viajeId, clientId, extra),
+  });
+  const CAIDO: Comportamiento = { tipo: '5xx', estado: 503 };
+
+  // Se crea en cada llamada: la URL del M6 simulado se conoce recién cuando levanta.
+  const m6 = () => crearM6({ ...CONFIG, urlM6: serv.url, tiempoModulosMs: 500, reintentosModulos: 1 });
+  const calificar = (identidad: Identidad, clienteId: string, clave: string, datos: CalificacionNueva, bd: BaseDeDatos = pool) =>
+    calificarConductor(bd, m6(), identidad, ROLES, clienteId, clave, datos, 'id-de-correlacion');
+
+  const fallaCon = (promesa: Promise<unknown>) =>
+    promesa.then(
+      () => expect.unreachable('la calificación no falló'),
+      (error: unknown) => error,
+    );
+
+  const filasDe = async (clienteId: string) =>
+    (await pool.consultar(`SELECT viaje_id, conductor_id, puntaje, comentario FROM calificaciones WHERE cliente_id = $1`, [clienteId])).rows;
+  const reservasDe = async (clienteId: string) =>
+    (await pool.consultar(`SELECT clave FROM idempotencias WHERE cliente_id = $1`, [clienteId])).rowCount;
+
+  describe('el alta (RF-2.5)', () => {
+    it('201 con Location y la calificación, guardada con el conductor que informó M6', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+
+      const respuesta = await calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 4, comentario: 'Muy amable' });
+
+      const cuerpo = respuesta.cuerpo as { calificacionId: string };
+      expect(respuesta).toEqual({
+        estado: 201,
+        ubicacion: `/api/v1/clientes/${clienteId}/calificaciones/${cuerpo.calificacionId}`,
+        cuerpo: {
+          calificacionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          viajeId,
+          conductorId: CONDUCTOR,
+          puntaje: 4,
+          comentario: 'Muy amable',
+          creadoEn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+        },
+      });
+      expect(await filasDe(clienteId)).toEqual([{ viaje_id: viajeId, conductor_id: CONDUCTOR, puntaje: 4, comentario: 'Muy amable' }]);
+      expect(serv.rutaRecibida).toBe(`/trips/${viajeId}`);
+      expect(serv.encabezadosRecibidos.get('x-request-id')).toBe('id-de-correlacion');
+    });
+
+    it('el clienteId y el viajeId en mayúsculas se guardan y van a M6 como los guarda la base; sin comentario, no hay', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+
+      const respuesta = await calificar(deCliente(clienteId), clienteId.toUpperCase(), 'clave-1', { viajeId: viajeId.toUpperCase(), puntaje: 5 });
+
+      expect(respuesta.ubicacion).toContain(`/api/v1/clientes/${clienteId}/calificaciones/`);
+      expect(respuesta.cuerpo).toMatchObject({ viajeId });
+      expect(respuesta.cuerpo).not.toHaveProperty('comentario');
+      expect(serv.rutaRecibida).toBe(`/trips/${viajeId}`);
+      expect(await filasDe(clienteId)).toEqual([{ viaje_id: viajeId, conductor_id: CONDUCTOR, puntaje: 5, comentario: null }]);
+    });
+  });
+
+  describe('el orden: propiedad, respuesta guardada, perfil, duplicado, M6 y alta', () => {
+    it('un CLIENTE, el perfil de otro: 403 sin tocar la base ni llamar a M6 (RF-2.5.12)', async () => {
+      serv.responderCon(responde(nuevoId(), nuevoId()));
+
+      for (const roles of [['CLIENTE'], ['CLIENTE', 'OPERADOR']] as const) {
+        const error = await fallaCon(calificar({ sub: nuevoId(), roles: [...roles] }, nuevoId(), 'clave-1', { viajeId: nuevoId(), puntaje: 5 }, POOL_FALSO));
+        expect(error).toBeInstanceOf(SinPermiso);
+      }
+      expect(serv.llamadas).toBe(0);
+    });
+
+    it('sin perfil: 404 sin llamar a M6, aunque M6 esté caído (RF-2.5.11)', async () => {
+      const clienteId = nuevoId();
+      serv.responderCon(CAIDO);
+
+      expect(await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId: nuevoId(), puntaje: 5 }))).toBeInstanceOf(NoEncontrado);
+      expect(serv.llamadas).toBe(0);
+    });
+
+    it('con la base caída: el 503 de la base, sin llamar a M6', async () => {
+      const clienteId = nuevoId();
+      const caida: BaseDeDatos = { ...POOL_FALSO, consultar: async () => Promise.reject(new BaseNoDisponible()) };
+      serv.responderCon(responde(nuevoId(), clienteId));
+
+      expect(await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId: nuevoId(), puntaje: 5 }, caida))).toBeInstanceOf(
+        BaseNoDisponible,
+      );
+      expect(serv.llamadas).toBe(0);
+    });
+
+    it('un viaje ya calificado, con otra clave: 409 sin llamar a M6, aunque esté caído, y queda la primera (RF-2.5.3)', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+      await calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 5 });
+      serv.responderCon(CAIDO);
+
+      const error = await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-2', { viajeId: viajeId.toUpperCase(), puntaje: 1 }));
+
+      expect(error).toBeInstanceOf(CalificacionDuplicada);
+      expect(serv.llamadas).toBe(0);
+      expect(await filasDe(clienteId)).toEqual([expect.objectContaining({ puntaje: 5 })]);
+      expect(await reservasDe(clienteId)).toBe(1);
+    });
+  });
+
+  describe('lo que informa M6 (RF-2.5.1, RF-2.5.2)', () => {
+    it.each<[string, (viajeId: string) => Comportamiento]>([
+      ['no existe (404)', () => ({ tipo: '4xx', estado: 404 })],
+      ['es de otro cliente', (viajeId) => responde(viajeId, nuevoId())],
+      ['es de otro cliente y no está completado', (viajeId) => responde(viajeId, nuevoId(), { state: 'IN_PROGRESS' })],
+    ])('el viaje %s: 404, sin calificación ni reserva', async (_caso, comportamiento) => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(comportamiento(viajeId));
+
+      const error = await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 5 }));
+
+      expect(error).toBeInstanceOf(NoEncontrado);
+      expect(await filasDe(clienteId)).toEqual([]);
+      expect(await reservasDe(clienteId)).toBe(0);
+    });
+
+    it('el 404 de un viaje inexistente y el de uno ajeno son iguales', async () => {
+      const clienteId = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 404 });
+      const inexistente = await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId: nuevoId(), puntaje: 5 }));
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, nuevoId()));
+      const ajeno = await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-2', { viajeId, puntaje: 5 }));
+
+      expect(ajeno).toEqual(inexistente);
+    });
+
+    it.each(['IN_PROGRESS', 'CANCELLED_BY_CLIENT', 'UN_ESTADO_NUEVO'])('un viaje del cliente en %s: 422, sin calificación ni reserva', async (estado) => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId, { state: estado, driverId: undefined }));
+
+      const error = await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 5 }));
+
+      expect(error).toBeInstanceOf(ViajeNoCompletado);
+      expect(await filasDe(clienteId)).toEqual([]);
+      expect(await reservasDe(clienteId)).toBe(0);
+    });
+
+    it('M6 caído: 503 tras el reintento, sin calificación ni reserva', async () => {
+      const clienteId = await perfil();
+      serv.responderCon(CAIDO);
+
+      const error = await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId: nuevoId(), puntaje: 5 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(serv.llamadas).toBe(2);
+      expect(await filasDe(clienteId)).toEqual([]);
+      expect(await reservasDe(clienteId)).toBe(0);
+    });
+
+    it('un 403 de M6: el 500 de integración, sin calificación', async () => {
+      const clienteId = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 403 });
+
+      expect(await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId: nuevoId(), puntaje: 5 }))).toBeInstanceOf(
+        ErrorDeIntegracion,
+      );
+      expect(await filasDe(clienteId)).toEqual([]);
+    });
+  });
+
+  describe('la idempotencia (RF-2.5.4)', () => {
+    it('la misma clave y el mismo cuerpo: el 201 original, sin volver a llamar a M6 aunque esté caído', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+      const primera = await calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 4, comentario: 'Bien' });
+      serv.responderCon(CAIDO);
+
+      const segunda = await calificar(deCliente(clienteId), clienteId, 'clave-1', { comentario: 'Bien', puntaje: 4, viajeId });
+
+      expect(segunda).toEqual(primera);
+      expect(serv.llamadas).toBe(0);
+      expect(await filasDe(clienteId)).toHaveLength(1);
+    });
+
+    it('el viajeId en mayúsculas es el mismo cuerpo', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+      const primera = await calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 4 });
+
+      expect(await calificar(deCliente(clienteId), clienteId.toUpperCase(), 'clave-1', { viajeId: viajeId.toUpperCase(), puntaje: 4 })).toEqual(primera);
+    });
+
+    it('la misma clave con otro cuerpo: 422 sin llamar a M6, y queda la primera', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+      const primera = await calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 4 });
+      serv.responderCon(responde(viajeId, clienteId));
+
+      const error = await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 2 }));
+
+      expect(error).toBeInstanceOf(IdempotenciaReutilizada);
+      expect(serv.llamadas).toBe(0);
+      expect(await calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 4 })).toEqual(primera);
+      expect(await filasDe(clienteId)).toEqual([expect.objectContaining({ puntaje: 4 })]);
+    });
+
+    it('una clave cuyo intento terminó en error se evalúa de nuevo', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      const datos = { viajeId, puntaje: 5 };
+      serv.responderCon(responde(viajeId, clienteId, { state: 'IN_PROGRESS', driverId: undefined }));
+      expect(await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', datos))).toBeInstanceOf(ViajeNoCompletado);
+      serv.responderCon(CAIDO);
+      expect(await fallaCon(calificar(deCliente(clienteId), clienteId, 'clave-1', datos))).toBeInstanceOf(ModuloNoDisponible);
+      serv.responderCon(responde(viajeId, clienteId));
+
+      const respuesta = await calificar(deCliente(clienteId), clienteId, 'clave-1', datos);
+
+      expect(respuesta.estado).toBe(201);
+      expect(await filasDe(clienteId)).toHaveLength(1);
+    });
+  });
+
+  describe('a la vez (RNF-08)', () => {
+    it('diez con claves distintas: un 201, nueve 409 y una calificación', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+
+      const resultados = await Promise.allSettled(
+        Array.from({ length: 10 }, (_, n) => calificar(deCliente(clienteId), clienteId, `clave-${n}`, { viajeId, puntaje: 5 })),
+      );
+
+      const exitos = resultados.filter((resultado) => resultado.status === 'fulfilled');
+      const rechazos = resultados.flatMap((resultado) => (resultado.status === 'rejected' ? [resultado.reason] : []));
+      expect(exitos).toHaveLength(1);
+      expect(rechazos).toHaveLength(9);
+      for (const rechazo of rechazos) expect(rechazo).toBeInstanceOf(CalificacionDuplicada);
+      expect(await filasDe(clienteId)).toHaveLength(1);
+      expect(await reservasDe(clienteId)).toBe(1);
+    });
+
+    it('diez con la misma clave: un solo efecto y la misma respuesta para las diez', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      serv.responderCon(responde(viajeId, clienteId));
+
+      const respuestas = await Promise.all(
+        Array.from({ length: 10 }, () => calificar(deCliente(clienteId), clienteId, 'clave-1', { viajeId, puntaje: 5 })),
+      );
+
+      expect(new Set(respuestas.map((respuesta) => JSON.stringify(respuesta))).size).toBe(1);
+      expect(respuestas[0]?.estado).toBe(201);
+      expect(await filasDe(clienteId)).toHaveLength(1);
+      expect(await reservasDe(clienteId)).toBe(1);
+    });
+
+    it('una igual que se confirma entre la lectura de la respuesta y la del duplicado: recibe la respuesta, no un 409', async () => {
+      const clienteId = await perfil();
+      const viajeId = nuevoId();
+      const datos = { viajeId, puntaje: 5 };
+      serv.responderCon(responde(viajeId, clienteId));
+      // La segunda solicitud ya leyó que no hay respuesta guardada; antes de buscar el duplicado, la primera termina entera.
+      let primera: Promise<unknown> | undefined;
+      const conLaPrimeraEnElMedio: BaseDeDatos = {
+        tiempoBdMs: pool.tiempoBdMs,
+        connect: () => pool.connect(),
+        consultar: async <Fila extends QueryResultRow>(sql: string, parametros?: unknown[]) => {
+          if (primera === undefined && sql.includes('FROM calificaciones WHERE cliente_id')) {
+            primera = calificar(deCliente(clienteId), clienteId, 'clave-1', datos);
+            await primera;
+          }
+          return pool.consultar<Fila>(sql, parametros);
+        },
+      };
+
+      const segunda = await calificar(deCliente(clienteId), clienteId, 'clave-1', datos, conLaPrimeraEnElMedio);
+
+      expect(primera).toBeDefined();
+      expect(segunda).toEqual(await primera);
+      expect(await filasDe(clienteId)).toHaveLength(1);
+    });
+  });
+
+  describe('lo que llega al log (RNF-19)', () => {
+    it('los errores no llevan tokens, comentarios, claves ni identificadores de viajes, conductores o calificaciones', async () => {
+      const clienteId = await perfil();
+      const comentario = 'Comentario-privado-del-cliente';
+      const clave = 'clave-secreta-de-idempotencia';
+      const viajes = Array.from({ length: 8 }, () => nuevoId());
+      const datos = (n: number, extra: object = {}) => ({ viajeId: viajes[n] as string, puntaje: 5, comentario, ...extra });
+      const errores: unknown[] = [];
+      const tokens: string[] = [];
+      const anotar = async (comportamiento: Comportamiento | Comportamiento[], n: number, claveUsada = `${clave}-${n}`, extra: object = {}) => {
+        serv.responderCon(comportamiento);
+        errores.push(await fallaCon(calificar(deCliente(clienteId), clienteId, claveUsada, datos(n, extra))));
+        tokens.push(...serv.autorizaciones.flatMap((autorizacion) => (autorizacion === undefined ? [] : [autorizacion.replace('Bearer ', '')])));
+      };
+
+      serv.responderCon(responde(viajes[0] as string, clienteId));
+      const creada = await calificar(deCliente(clienteId), clienteId, clave, datos(0));
+      await anotar(CAIDO, 1);
+      await anotar({ tipo: 'corta' }, 2);
+      await anotar({ tipo: 'demora-cuerpo', retardoMs: 1000 }, 3);
+      await anotar({ tipo: '4xx', estado: 403, cuerpo: { detail: viajes[4] } }, 4);
+      await anotar(responde(viajes[5] as string, clienteId, { driverId: 'no-es-uuid' }), 5);
+      await anotar(responde(viajes[6] as string, clienteId, { state: 'IN_PROGRESS' }), 6);
+      await anotar({ tipo: '4xx', estado: 404 }, 7);
+      await anotar(CAIDO, 0, clave, { puntaje: 1 });
+      await anotar(CAIDO, 0, `${clave}-otra`);
+
+      const texto = JSON.stringify(errores.map((error) => serializarError(error, [])));
+      const prohibidos = [comentario, clave, CONDUCTOR, (creada.cuerpo as { calificacionId: string }).calificacionId, ...viajes, ...tokens];
+      expect(tokens.length).toBeGreaterThan(0);
+      expect(errores.map((error) => (error as Error).constructor.name)).toEqual([
+        'ModuloNoDisponible',
+        'ModuloNoDisponible',
+        'ModuloNoDisponible',
+        'ErrorDeIntegracion',
+        'ModuloNoDisponible',
+        'ViajeNoCompletado',
+        'NoEncontrado',
+        'IdempotenciaReutilizada',
+        'CalificacionDuplicada',
+      ]);
+      for (const prohibido of prohibidos) expect(texto).not.toContain(prohibido);
     });
   });
 });
