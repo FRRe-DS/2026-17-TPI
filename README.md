@@ -17,6 +17,8 @@ Están implementadas las 20 operaciones del contrato (`contrato/openapi.yml`, v1
 
 Detrás hay la base del servicio: configuración por variables de entorno, base PostgreSQL propia con migraciones, errores `application/problem+json`, autenticación por token, identificador de correlación en los logs, cliente HTTP para llamar a otros módulos con timeout y reintento, imágenes de contenedor y CI. Cada spec tiene una `guia.md` que explica lo hecho, tarea por tarea.
 
+Para ver todo funcionando: `docker compose up -d --build --wait` y `node scripts/demo.mjs`, que recorre las funcionalidades y comprueba cada respuesta. La guía [`docs/probar-m2.md`](docs/probar-m2.md) explica el recorrido, cómo probar a mano, las pruebas automáticas y dónde está cada cosa en el repositorio.
+
 Las calificaciones y el historial dependen de M6 (Viajes): M2 le pregunta por el viaje (`GET /trips/{id}`) y por la lista de viajes del cliente (`GET /trips`), con el token de servicio de la spec 007. Si M6 no responde, esas operaciones dan `503` con `Retry-After`; las demás no se enteran.
 
 ## Stack
@@ -230,5 +232,5 @@ Las claves y contraseñas de `ejemplo.env` no sirven fuera de una máquina de de
 - `contrato/openapi.yml`: el contrato del módulo, acordado con el Grupo 1. No se edita fuera de una rama `contrato/`.
 - `specs/NNN-slug/`: qué se construye (spec), cómo (plan) y en qué pasos (tareas), con la guía de lo implementado.
 - `docs/`: principios (`constitution.md`) y decisiones (`adr/`).
-- `src/`, `pruebas/`, `migraciones/`, `scripts/`: el código, sus pruebas, las migraciones de la base y la prueba de contrato.
+- `src/`, `pruebas/`, `migraciones/`, `scripts/`: el código, sus pruebas, las migraciones de la base, la prueba de contrato y la demostración (`scripts/demo.mjs`).
 - Las reglas de trabajo del grupo, para personas y agentes, están en [`AGENTS.md`](AGENTS.md) y [`MANUAL.md`](MANUAL.md).
