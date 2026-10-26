@@ -430,6 +430,7 @@ describe('arranque normal (RNF-05.2)', () => {
       [
         'actualizarCliente',
         'actualizarDireccion',
+        'calificarConductor',
         'crearBloqueo',
         'crearCliente',
         'crearDireccion',
@@ -437,9 +438,11 @@ describe('arranque normal (RNF-05.2)', () => {
         'guardarPreferencias',
         'levantarBloqueo',
         'listarBloqueos',
+        'listarCalificaciones',
         'listarDirecciones',
         'listarHistorialViajes',
         'obtenerBloqueo',
+        'obtenerCalificacion',
         'obtenerCliente',
         'obtenerDireccion',
         'obtenerEstadoCuenta',
@@ -454,8 +457,8 @@ describe('arranque normal (RNF-05.2)', () => {
       contratoConSalud(
         {},
         {
-          '/clientes/{clienteId}/calificaciones': {
-            get: { operationId: 'listarCalificaciones', responses: { 200: { description: 'Las calificaciones' } } },
+          '/clientes/{clienteId}/sin-manejador': {
+            get: { operationId: 'operacionSinManejador', responses: { 200: { description: 'Sin manejador' } } },
           },
           '/clientes': { post: { responses: { 201: { description: 'Creado' } } } },
         },
@@ -468,7 +471,7 @@ describe('arranque normal (RNF-05.2)', () => {
     expect({ implementadas: linea?.implementadas, pendientes: linea?.pendientes }).toEqual({
       implementadas: [{ operationId: 'verificarSalud', metodo: 'GET', ruta: '/health' }],
       pendientes: [
-        { operationId: 'listarCalificaciones', metodo: 'GET', ruta: '/clientes/{clienteId}/calificaciones' },
+        { operationId: 'operacionSinManejador', metodo: 'GET', ruta: '/clientes/{clienteId}/sin-manejador' },
         { metodo: 'POST', ruta: '/clientes' },
       ],
     });

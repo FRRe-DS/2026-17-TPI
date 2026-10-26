@@ -4,9 +4,20 @@ Servicio de clientes de la plataforma de movilidad urbana: perfil, preferencias,
 
 ## Qué hace hoy
 
-Este repositorio tiene la **base del servicio** (spec `specs/003-base-servicio/`): configuración por variables de entorno, base PostgreSQL propia con migraciones, errores `application/problem+json`, autenticación por token, identificador de correlación en los logs, cliente HTTP para llamar a otros módulos con timeout y reintento, imágenes de contenedor y CI.
+Están implementadas las 20 operaciones del contrato (`contrato/openapi.yml`, v1). Las rutas cuelgan de `/api/v1`, salvo `GET /health`, que no pide token. Cada grupo sale de una spec en `specs/`:
 
-De las operaciones del contrato (`contrato/openapi.yml`, v1) está implementada solo `GET /health`. Las de negocio llegan con las specs 004 a 008, y mientras tanto la prueba de contrato las informa como pendientes.
+| Grupo | Operaciones | Spec |
+|---|---|---|
+| Salud y base del servicio | `verificarSalud` | 003 |
+| Perfil y estado de cuenta | `crearCliente`, `obtenerCliente`, `actualizarCliente`, `obtenerEstadoCuenta`, `listarBloqueos`, `crearBloqueo`, `obtenerBloqueo`, `levantarBloqueo` | 004 |
+| Direcciones frecuentes | `listarDirecciones`, `crearDireccion`, `obtenerDireccion`, `actualizarDireccion`, `eliminarDireccion` | 005 |
+| Preferencias | `obtenerPreferencias`, `guardarPreferencias` | 006 |
+| Historial de viajes (lo arma M6) | `listarHistorialViajes` | 007 |
+| Calificación del conductor | `listarCalificaciones`, `calificarConductor`, `obtenerCalificacion` | 008 |
+
+Detrás hay la base del servicio: configuración por variables de entorno, base PostgreSQL propia con migraciones, errores `application/problem+json`, autenticación por token, identificador de correlación en los logs, cliente HTTP para llamar a otros módulos con timeout y reintento, imágenes de contenedor y CI. Cada spec tiene una `guia.md` que explica lo hecho, tarea por tarea.
+
+Las calificaciones y el historial dependen de M6 (Viajes): M2 le pregunta por el viaje (`GET /trips/{id}`) y por la lista de viajes del cliente (`GET /trips`), con el token de servicio de la spec 007. Si M6 no responde, esas operaciones dan `503` con `Retry-After`; las demás no se enteran.
 
 ## Stack
 
@@ -14,7 +25,7 @@ TypeScript 6 sobre Node.js 24, Fastify 5, PostgreSQL 18 (con `pg` y SQL explíci
 
 ## Diagrama
 
-Línea llena: lo que ya funciona. Línea punteada: relación que define el contrato, todavía sin operación implementada.
+Línea llena: M2 llama a otro módulo o a su base. Línea punteada: otro módulo llama a M2 o emite el token con el que lo hace.
 
 ```mermaid
 flowchart LR
@@ -32,7 +43,7 @@ flowchart LR
     M1 -.->|"token JWT"| API
     M5 -.->|"consulta el estado de cuenta<br/>(rol SERVICIO)"| API
     M9 -.->|"consulta el estado de cuenta<br/>(rol SERVICIO)"| API
-    API -.->|"historial de viajes<br/>(timeout y un reintento)"| M6
+    API -->|"historial y viaje a calificar<br/>(timeout y un reintento)"| M6
 ```
 
 Mientras no exista M1, los tokens los firma el comando de [Generar un token](#generar-un-token). M2 guarda solo sus datos: los de otros módulos los pide por su API.
@@ -93,7 +104,7 @@ npm run build
 npm run lint
 ```
 
-La prueba de contrato corre Schemathesis (una imagen de Docker) sobre las operaciones implementadas. Necesita el servicio levantado como en la sección anterior:
+La prueba de contrato corre Schemathesis (una imagen de Docker) sobre las operaciones implementadas, hoy las 20. Necesita el servicio levantado como en la sección anterior; no hay un M6, así que `listarHistorialViajes` y `calificarConductor` responden el `503` que el contrato declara y `schemathesis.toml` lo acepta solo en esas dos:
 
 ```bash
 npm run contrato:test
@@ -107,6 +118,47 @@ Verificaciones del contrato y de las specs, las mismas que corre CI:
 npx --yes @redocly/cli@2.62.1 lint contrato/openapi.yml
 node scripts/spec-check.mjs
 ```
+
+## Probar las calificaciones con un M6 simulado
+
+El compose no trae un M6, y las calificaciones y el historial le preguntan por los viajes. Para probarlas a mano alcanza con un contenedor que haga de M6: el servicio apunta por defecto a `http://m6:3006/api/v1`, así que basta darle a un contenedor de la red del compose el nombre de red `m6`. Con el servicio levantado (`docker compose up -d --build --wait`):
+
+```bash
+CLIENTE=$(cat /proc/sys/kernel/random/uuid)   # el cliente de la prueba
+VIAJE=11111111-1111-4111-8111-111111111111
+BASE=http://localhost:8082/api/v1
+token() { docker compose exec -T m2 node dist/herramientas/token.js --sub "$1" --roles "$2"; }
+
+# Un M6 que dice que todo viaje está COMPLETED, es de $CLIENTE y lo manejó un conductor fijo. Se detiene con:
+#   docker rm -f m6-simulado
+docker run --rm -d --name m6-simulado --network "$(docker compose ps -q m2 | xargs docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}')" \
+  --network-alias m6 -e CLIENTE="$CLIENTE" m2-clientes:0.1.0 node -e "
+const viaje = (id) => ({ id, state: 'COMPLETED', clientId: process.env.CLIENTE, driverId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', createdAt: '2026-10-01T10:00:00Z' });
+require('http').createServer((req, res) => {
+  const ruta = req.url.split('?')[0];
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify(ruta.endsWith('/trips')
+    ? { items: [viaje('$VIAJE')], page: 1, pageSize: 20, total: 1 }
+    : viaje(ruta.split('/').pop())));
+}).listen(3006);"
+
+TOKEN=$(token "$CLIENTE" CLIENTE)
+# 1. El perfil: el cliente tiene que existir en M2 (201).
+curl -s -X POST $BASE/clientes -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: perfil-1" \
+  -H 'Content-Type: application/json' -d '{"nombre":"Ana","apellido":"Gómez","telefono":"+5493624000000"}'
+# 2. Calificar el viaje: 201 con la calificación y su Location. El conductor sale de M6.
+curl -si -X POST $BASE/clientes/$CLIENTE/calificaciones -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: calificacion-1" \
+  -H 'Content-Type: application/json' -d "{\"viajeId\":\"$VIAJE\",\"puntaje\":5,\"comentario\":\"Muy amable\"}"
+# 3. Repetir lo mismo (misma clave y cuerpo): el mismo 201, sin volver a preguntarle a M6.
+# 4. Calificar el mismo viaje con otra clave: 409 con type /errores/calificacion-duplicada.
+curl -s -X POST $BASE/clientes/$CLIENTE/calificaciones -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: calificacion-2" \
+  -H 'Content-Type: application/json' -d "{\"viajeId\":\"$VIAJE\",\"puntaje\":1}"
+# 5. Listarlas (un OPERADOR también puede, de cualquier cliente) y ver el historial, donde el viaje ya sale con "calificado": true.
+curl -s "$BASE/clientes/$CLIENTE/calificaciones?page=0&size=10" -H "Authorization: Bearer $TOKEN"
+curl -s $BASE/clientes/$CLIENTE/viajes -H "Authorization: Bearer $TOKEN"
+```
+
+Los casos que dependen de M6 se ven cambiando lo que responde: con un viaje `IN_PROGRESS` da `422` (`/errores/viaje-no-completado`), con uno de otro cliente o inexistente da `404`, y con el contenedor detenido (`docker rm -f m6-simulado`) da `503` con `Retry-After`. Los casos a mano de cada spec están en su `guia.md`.
 
 ## Generar un token
 
@@ -127,7 +179,7 @@ TOKEN=$(docker compose exec -T m2 node dist/herramientas/token.js --sub 00000000
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/<ruta de la operación>
 ```
 
-Hoy no hay ninguna operación protegida implementada; `/health` no pide token.
+Todas las operaciones salvo `/health` piden token, y cada una admite ciertos roles (los dice su `security` en el contrato). Un CLIENTE solo opera sobre su propio perfil: su `sub` tiene que ser el `clienteId` de la ruta. Un OPERADOR lee el de cualquiera.
 
 ## Crear una migración
 

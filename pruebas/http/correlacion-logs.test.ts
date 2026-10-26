@@ -806,13 +806,19 @@ describe('construirApp: una línea por solicitud en el log (RNF-14.5, RNF-14.6, 
     expect(deLaSolicitud(logs)).toMatchObject([{ estado: 299 }]);
   });
 
-  it('la ruta es la que pidió el cliente, con sus parámetros y sin la query string', async () => {
+  it('la ruta es la plantilla de la operación, sin los valores de los parámetros ni la query string (RNF-19)', async () => {
     const { app, logs } = crear({ probarParametros: bien });
-    const ruta = `/pruebas/clientes/${CLIENTE_ID}/direcciones/${DIRECCION_ID}`;
 
-    await app.inject({ method: 'GET', url: `${ruta}?pagina=2`, headers: AUTORIZADO });
+    await app.inject({
+      method: 'GET',
+      url: `/pruebas/clientes/${CLIENTE_ID}/direcciones/${DIRECCION_ID}?pagina=2`,
+      headers: AUTORIZADO,
+    });
 
-    expect(deLaSolicitud(logs)).toMatchObject([{ metodo: 'GET', ruta }]);
+    expect(deLaSolicitud(logs)).toMatchObject([{ metodo: 'GET', ruta: '/pruebas/clientes/:clienteId/direcciones/:direccionId' }]);
+    expect(logs.texto()).not.toContain(CLIENTE_ID);
+    expect(logs.texto()).not.toContain(DIRECCION_ID);
+    expect(logs.texto()).not.toContain('pagina');
   });
 
   it('no registra el Authorization ni otros encabezados, ni el cuerpo de la solicitud ni el de la respuesta', async () => {

@@ -29,7 +29,8 @@ declare module 'fastify' {
     deteniendose: boolean;
     // Las respuestas que todavía no terminaron: las que la parada corta si no terminan a tiempo.
     enCurso: ReadonlySet<FastifyReply>;
-    // El cliente de M6 (Viajes) que usa el historial: `request.server.m6.listarViajes(…)`. La app lo crea con la configuración.
+    // El cliente de M6 (Viajes) que usan el historial (`request.server.m6.listarViajes(…)`) y las calificaciones
+    // (`request.server.m6.obtenerViaje(…)`). La app lo crea con la configuración.
     m6: M6;
   }
 }

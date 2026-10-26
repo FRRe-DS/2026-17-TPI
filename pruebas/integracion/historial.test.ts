@@ -4,24 +4,19 @@ import type { Identidad } from '../../src/auth/tokens.js';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type BaseDeDatos, type PoolBd } from '../../src/bd/pool.js';
 import { BaseNoDisponible, ModuloNoDisponible, NoEncontrado, SinPermiso } from '../../src/errores.js';
+import { crearCalificacion } from '../../src/calificaciones/repositorio.js';
 import { crearM6 } from '../../src/historial/m6.js';
 import { listarHistorialViajes, type LogHistorial } from '../../src/historial/servicio.js';
 import { CONFIG, POOL_FALSO } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
+import { paginaDeM6, resumenDeM6 } from '../ayudas/m6-simulado.js';
 import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 
 const ROLES = ['CLIENTE', 'OPERADOR'] as const;
 const CONDUCTOR = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
 
-const viaje = (n: number, clientId: string, extra: object = {}) => ({
-  id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
-  state: 'COMPLETED',
-  clientId,
-  driverId: CONDUCTOR,
-  createdAt: '2026-10-01T10:00:00Z',
-  ...extra,
-});
-const pagina = (items: unknown[], total: number) => ({ items, page: 1, pageSize: 20, total });
+const viaje = (n: number, clientId: string, extra: object = {}) => resumenDeM6(n, clientId, CONDUCTOR, extra);
+const pagina = paginaDeM6;
 
 describe('listarHistorialViajes con PostgreSQL real y M6 simulado (007/T5)', () => {
   let base: BaseDePrueba;
@@ -71,8 +66,8 @@ describe('listarHistorialViajes con PostgreSQL real y M6 simulado (007/T5)', () 
         totalElementos: 42,
         totalPaginas: 21,
         items: [
-          { viajeId: viaje(1, id).id, estado: 'COMPLETED', conductorId: CONDUCTOR },
-          { viajeId: viaje(2, id).id, estado: 'COMPLETED' },
+          { viajeId: viaje(1, id).id, estado: 'COMPLETED', conductorId: CONDUCTOR, calificado: false },
+          { viajeId: viaje(2, id).id, estado: 'COMPLETED', calificado: false },
         ],
       });
       expect(consultaDeM6()).toEqual({ clientId: id, page: '2', pageSize: '2' });
@@ -168,6 +163,112 @@ describe('listarHistorialViajes con PostgreSQL real y M6 simulado (007/T5)', () 
       expect(log.warn).toHaveBeenCalledWith({ descartados: 2 }, 'M6 devolvió viajes de otro cliente');
       const registrado = JSON.stringify(log.warn.mock.calls);
       for (const dato of [id, otro, viaje(2, otro).id, CONDUCTOR]) expect(registrado).not.toContain(dato);
+    });
+  });
+
+  // 008/T9, RF-2.5.14: `calificado` sale de la base de M2, con una sola consulta por página.
+  describe('calificado (RF-2.5.14)', () => {
+    const calificar = (clienteId: string, viajeId: string) =>
+      crearCalificacion((sql, parametros) => pool.consultar(sql, parametros), clienteId, randomUUID(), {
+        viajeId,
+        conductorId: CONDUCTOR,
+        puntaje: 5,
+      });
+
+    // Un pool que cuenta las sentencias que tocan `calificaciones`: el historial hace una por página, y ninguna si no hay viajes.
+    function contando() {
+      const sentencias: string[] = [];
+      const bd: BaseDeDatos = {
+        tiempoBdMs: pool.tiempoBdMs,
+        connect: () => pool.connect(),
+        consultar: (sql, parametros) => {
+          if (/calificaciones/i.test(sql)) sentencias.push(sql);
+          return pool.consultar(sql, parametros);
+        },
+      };
+      return { bd, sentencias };
+    }
+
+    it('true si el cliente calificó el viaje y false si no, con una sola consulta a la base para toda la página', async () => {
+      const id = await perfil();
+      await calificar(id, viaje(1, id).id);
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id), viaje(2, id), viaje(3, id, { driverId: undefined })], 3) });
+      const { bd, sentencias } = contando();
+
+      const resultado = await listar({ sub: id, roles: ['CLIENTE'] }, id, 0, 20, bd);
+
+      expect(resultado.items.map(({ viajeId, calificado }) => [viajeId, calificado])).toEqual([
+        [viaje(1, id).id, true],
+        [viaje(2, id).id, false],
+        [viaje(3, id).id, false],
+      ]);
+      expect(sentencias).toHaveLength(1);
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('la calificación de otro cliente del mismo viaje no cuenta', async () => {
+      const [id, otro] = [await perfil(), await perfil()];
+      await calificar(otro, viaje(1, id).id);
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id)], 1) });
+
+      expect((await listar({ sub: id, roles: ['CLIENTE'] }, id)).items[0]?.calificado).toBe(false);
+    });
+
+    it('un OPERADOR que mira el historial de otro cliente ve lo que ese cliente calificó', async () => {
+      const id = await perfil();
+      await calificar(id, viaje(1, id).id);
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id)], 1) });
+
+      const resultado = await listar({ sub: randomUUID(), roles: ['OPERADOR'] }, id);
+
+      expect(resultado.items[0]?.calificado).toBe(true);
+    });
+
+    it('el viajeId de M6 en mayúsculas se compara sin distinguir mayúsculas', async () => {
+      const id = await perfil();
+      const viajeId = 'aabbccdd-eeff-4a1b-8c2d-0123456789ab';
+      await calificar(id, viajeId);
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id, { id: viajeId.toUpperCase() })], 1) });
+
+      const resultado = await listar({ sub: id, roles: ['CLIENTE'] }, id);
+
+      expect(resultado.items[0]).toMatchObject({ viajeId: viajeId.toUpperCase(), calificado: true });
+    });
+
+    it('un viaje de otro cliente que M6 mandó de más se descarta y no entra a la consulta', async () => {
+      const [id, otro] = [await perfil(), await perfil()];
+      await calificar(id, viaje(2, otro).id);
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id), viaje(2, otro)], 2) });
+
+      const resultado = await listar({ sub: id, roles: ['CLIENTE'] }, id);
+
+      expect(resultado.items.map((item) => item.viajeId)).toEqual([viaje(1, id).id]);
+    });
+
+    it('una página vacía no consulta la tabla de calificaciones', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([], 0) });
+      const { bd, sentencias } = contando();
+
+      const resultado = await listar({ sub: id, roles: ['CLIENTE'] }, id, 0, 20, bd);
+
+      expect(resultado.items).toEqual([]);
+      expect(sentencias).toEqual([]);
+    });
+
+    it('si la base falla al consultar los calificados: el 503 de la base, y no el historial sin calificado', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id)], 1) });
+      const falla: BaseDeDatos = {
+        tiempoBdMs: pool.tiempoBdMs,
+        connect: () => pool.connect(),
+        consultar: (sql, parametros) =>
+          /FROM calificaciones/i.test(sql) && !/FROM clientes/i.test(sql)
+            ? Promise.reject(new BaseNoDisponible())
+            : pool.consultar(sql, parametros),
+      };
+
+      await expect(listar({ sub: id, roles: ['CLIENTE'] }, id, 0, 20, falla)).rejects.toBeInstanceOf(BaseNoDisponible);
     });
   });
 });

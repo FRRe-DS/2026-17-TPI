@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { aProblema, ErrorDeIntegracion, ModuloNoDisponible } from '../../src/errores.js';
 import { crearM6 } from '../../src/historial/m6.js';
 import { CONFIG } from '../ayudas/app.js';
+import { errorDeM6, paginaDeM6, resumenDeM6, viajeDeM6 } from '../ayudas/m6-simulado.js';
 import { crearServidorModulo, type Comportamiento } from '../ayudas/servidor-modulo.js';
 
 const TIEMPO_MS = 200;
@@ -12,19 +13,8 @@ const CONDUCTOR = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
 // Un dato que M6 podría mandar en un cuerpo y que no puede llegar al log ni a la respuesta (RNF-19).
 const DEL_CUERPO = 'dato-del-cuerpo-de-m6';
 
-const viaje = (n: number, extra: object = {}) => ({
-  id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
-  state: 'COMPLETED',
-  clientId: CLIENTE,
-  driverId: CONDUCTOR,
-  distanceKm: 3.2,
-  durationMinutes: 12,
-  createdAt: '2026-10-01T10:00:00Z',
-  ...extra,
-});
-
-// La respuesta de M6 según su contrato publicado (`TripSummaryPage`, Grupo 12).
-const pagina = (items: unknown[], total: number, extra: object = {}) => ({ items, page: 1, pageSize: 20, total, ...extra });
+const viaje = (n: number, extra: object = {}) => resumenDeM6(n, CLIENTE, CONDUCTOR, extra);
+const pagina = paginaDeM6;
 
 const ok = (cuerpo: unknown): Comportamiento => ({ tipo: 'ok', cuerpo });
 
@@ -252,7 +242,7 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
   // RF-2.4.7: un 4xx es un problema de configuración o de acuerdo entre módulos, no del cliente de M2: 500, sin reintento.
   describe('M6 rechaza el pedido: error de integración (RF-2.4.7)', () => {
     it.each([400, 401, 403, 404, 409, 422])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: { type: 'about:blank', status: estado, detail: DEL_CUERPO } });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', DEL_CUERPO) });
 
       const error = await fallaDe(listar());
 
@@ -279,6 +269,238 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
       const error = await fallaDe(listar());
 
       expect(error).toBeInstanceOf(ErrorDeIntegracion);
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+  });
+});
+
+describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
+  const serv = crearServidorModulo();
+  beforeAll(() => serv.levantar());
+  afterAll(() => serv.cerrar());
+
+  const VIAJE = '5c4b3a29-1807-4f6e-9d5c-4b3a29180765';
+  const OTRO_CLIENTE = '9e8d7c6b-5a49-4382-a170-6f5e4d3c2b1a';
+
+  // El viaje según el contrato publicado de M6 (`Trip`, Grupo 12), con los campos que M2 no lee.
+  const detalle = (extra: object = {}) => viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, extra);
+
+  const m6 = (extra: Partial<typeof CONFIG> = {}) =>
+    crearM6({ ...CONFIG, urlM6: serv.url, tiempoModulosMs: TIEMPO_MS, reintentosModulos: 1, ...extra });
+  const obtener = (clienteId = CLIENTE, extra: Partial<typeof CONFIG> = {}) =>
+    m6(extra).obtenerViaje(VIAJE, clienteId, 'id-de-correlacion');
+  const fallaDe = (promesa: Promise<unknown>) => promesa.catch((motivo: unknown) => motivo);
+
+  describe('el pedido (RF-2.5, RNF-14)', () => {
+    it('pide GET /trips/{id} con el id del viaje y el id de correlación', async () => {
+      serv.responderCon(ok(detalle()));
+
+      await obtener();
+
+      const url = new URL(serv.rutaRecibida, serv.url);
+      expect(url.pathname).toBe(`/trips/${VIAJE}`);
+      expect(url.search).toBe('');
+      expect(serv.encabezadosRecibidos.get('x-request-id')).toBe('id-de-correlacion');
+    });
+
+    it('suma /trips/{id} a la URL base de M6, que puede traer un camino', async () => {
+      serv.responderCon(ok(detalle()));
+
+      await m6({ urlM6: `${serv.url}/api/v1` }).obtenerViaje(VIAJE, CLIENTE, 'id');
+
+      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe(`/api/v1/trips/${VIAJE}`);
+    });
+  });
+
+  describe('el token de servicio (RF-2.5.13, RNF-19)', () => {
+    const tokenDe = (autorizacion: string | undefined) => /^Bearer (\S+)$/.exec(autorizacion ?? '')?.[1] ?? '';
+    const verificarComoM6 = (token: string, audiencia = CONFIG.audienciaM6) =>
+      jwtVerify(token, new TextEncoder().encode(CONFIG.claveTokens), {
+        algorithms: ['HS256'],
+        issuer: CONFIG.emisorTokens,
+        audience: audiencia,
+        requiredClaims: ['exp'],
+      });
+
+    it('M6 recibe un token de servicio que verifica con la clave y la audiencia de M6, nunca otro', async () => {
+      serv.responderCon(ok(detalle()));
+
+      await obtener(CLIENTE, { audienciaM6: 'm6-de-prueba' });
+
+      const { payload } = await verificarComoM6(tokenDe(serv.autorizaciones[0]), 'm6-de-prueba');
+      expect(payload).toMatchObject({ sub: 'm2-clientes', roles: ['SERVICIO'], aud: 'm6-de-prueba' });
+      expect(payload.exp! - payload.iat!).toBe(60);
+    });
+
+    it('el reintento lleva un token de servicio propio, que también verifica', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 500 }, ok(detalle())]);
+
+      await obtener();
+
+      expect(serv.llamadas).toBe(2);
+      for (const autorizacion of serv.autorizaciones) await verificarComoM6(tokenDe(autorizacion));
+    });
+
+    it.each([
+      ['un 503 tras el reintento', { tipo: '5xx', estado: 500 }],
+      ['un 500 por un 401 de M6', { tipo: '4xx', estado: 401 }],
+      ['un 503 por un viaje con mala forma', ok(detalle({ state: 7 }))],
+    ] as const)('no aparece en detail, en la causa ni en el error ante %s', async (_caso, falla) => {
+      serv.responderCon(falla);
+
+      const error = await fallaDe(obtener());
+      const token = tokenDe(serv.autorizaciones[0]);
+
+      expect(token).not.toBe('');
+      expect(JSON.stringify(aProblema(error).cuerpo)).not.toContain(token);
+      expect(inspect(error, { depth: 10 })).not.toContain(token);
+    });
+  });
+
+  describe('un viaje completado del cliente (RF-2.5)', () => {
+    it('devuelve el estado y el conductor que informa M6', async () => {
+      serv.responderCon(ok(detalle()));
+
+      expect(await obtener()).toEqual({ estado: 'COMPLETED', conductorId: CONDUCTOR });
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('compara el dueño sin distinguir mayúsculas y devuelve el conductor en minúsculas: son UUID', async () => {
+      serv.responderCon(ok(detalle({ clientId: CLIENTE.toUpperCase(), driverId: CONDUCTOR.toUpperCase() })));
+
+      expect(await obtener()).toEqual({ estado: 'COMPLETED', conductorId: CONDUCTOR });
+      expect(await obtener(CLIENTE.toUpperCase())).toEqual({ estado: 'COMPLETED', conductorId: CONDUCTOR });
+    });
+
+    it('si el reintento responde bien, devuelve esa respuesta', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 503 }, ok(detalle())]);
+
+      expect(await obtener()).toEqual({ estado: 'COMPLETED', conductorId: CONDUCTOR });
+      expect(serv.llamadas).toBe(2);
+    });
+  });
+
+  // RF-2.5.2: cualquier estado en texto distinto de COMPLETED, también uno que M2 no conoce. Sin conductor: no hace falta.
+  describe('un viaje del cliente que no está completado (RF-2.5.2)', () => {
+    it.each(['PENDING_ARRIVAL', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'CANCELLED_BY_CLIENT', 'CANCELLED_BY_DRIVER', 'ARCHIVED', 'completed', ''])(
+      'el estado «%s» vuelve tal cual, sin conductor',
+      async (state) => {
+        serv.responderCon(ok(detalle({ state })));
+
+        expect(await obtener()).toEqual({ estado: state });
+      },
+    );
+
+    it.each([
+      ['sin driverId', { driverId: undefined }],
+      ['con driverId nulo', { driverId: null }],
+      ['con un driverId que no es un UUID', { driverId: 'conductor-7' }],
+    ])('un viaje en curso %s no es una mala forma: el conductor solo se exige al completar', async (_caso, extra) => {
+      serv.responderCon(ok(detalle({ state: 'IN_PROGRESS', ...extra })));
+
+      expect(await obtener()).toEqual({ estado: 'IN_PROGRESS' });
+    });
+  });
+
+  // RF-2.5.1: un viaje inexistente y uno de otro cliente son lo mismo para quien llama. El dueño se mira antes que el estado y
+  // que el conductor: un viaje ajeno nunca revela su estado.
+  describe('un viaje que no existe o es de otro cliente (RF-2.5.1)', () => {
+    it('un 404 de M6 da null, sin reintento', async () => {
+      serv.responderCon({ tipo: '4xx', estado: 404, cuerpo: errorDeM6('NOT_FOUND', DEL_CUERPO) });
+
+      expect(await obtener()).toBeNull();
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it.each([
+      ['completado', detalle({ clientId: OTRO_CLIENTE })],
+      ['en curso', detalle({ clientId: OTRO_CLIENTE, state: 'IN_PROGRESS' })],
+      ['completado sin conductor', detalle({ clientId: OTRO_CLIENTE, driverId: undefined })],
+      ['completado con un conductor que no es un UUID', detalle({ clientId: OTRO_CLIENTE, driverId: 'conductor-7' })],
+      ['con un clientId que no es un UUID', detalle({ clientId: 'cliente-7' })],
+      ['con un clientId vacío', detalle({ clientId: '' })],
+    ])('un viaje de otro cliente, %s, da null', async (_caso, cuerpo) => {
+      serv.responderCon(ok(cuerpo));
+
+      expect(await obtener()).toBeNull();
+    });
+  });
+
+  // RF-2.5.5 y RNF-13: tras un reintento, 503 que nombra a M6 y lleva Retry-After. La causa no trae el cuerpo (RNF-19).
+  describe('M6 no está disponible: 503 con Retry-After (RF-2.5.5, RNF-13)', () => {
+    it.each([
+      ['un 5xx', { tipo: '5xx', estado: 502, cuerpo: { error: DEL_CUERPO } }],
+      ['un cuerpo que no es JSON', { tipo: 'no-json', contenido: `<html>${DEL_CUERPO}</html>` }],
+      ['un corte de la conexión', { tipo: 'corta' }],
+      ['una demora mayor al tiempo', { tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4, cuerpo: detalle() }],
+    ] as const)('%s: se reintenta una vez y da 503', async (_caso, falla) => {
+      serv.responderCon(falla);
+
+      const error = await fallaDe(obtener(CLIENTE, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(serv.llamadas).toBe(2);
+      const respuesta = aProblema(error);
+      expect(respuesta.codigo).toBe(503);
+      expect(respuesta.cuerpo.detail).toBe('M6 no está disponible');
+      expect(respuesta.encabezados['Retry-After']).toBe('7');
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+  });
+
+  // RF-2.5.5: un 200 sin la forma que M2 necesita es falta de disponibilidad. No se reintenta: M6 respondió.
+  describe('un 200 que no tiene la forma esperada: 503 con Retry-After (RF-2.5.5)', () => {
+    it.each([
+      ['nulo', null],
+      ['un texto', 'viaje'],
+      ['una lista', [detalle()]],
+      ['sin state', detalle({ state: undefined })],
+      ['con state nulo', detalle({ state: null })],
+      ['con state numérico', detalle({ state: 3 })],
+      ['sin clientId', detalle({ clientId: undefined })],
+      ['con clientId nulo', detalle({ clientId: null })],
+      ['con clientId numérico', detalle({ clientId: 5 })],
+      ['completado sin driverId', detalle({ driverId: undefined })],
+      ['completado con driverId nulo', detalle({ driverId: null })],
+      ['completado con driverId vacío', detalle({ driverId: '' })],
+      ['completado con driverId numérico', detalle({ driverId: 5 })],
+      ['completado con un driverId que no es un UUID', detalle({ driverId: 'conductor-7' })],
+    ])('%s', async (_caso, cuerpo) => {
+      serv.responderCon(ok(cuerpo));
+
+      const error = await fallaDe(obtener(CLIENTE, { reintentarDespuesS: 5 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('5');
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('la causa dice qué falló, sin nada del cuerpo de M6', async () => {
+      serv.responderCon(ok(detalle({ driverId: `no-uuid-${DEL_CUERPO}` })));
+
+      const error = (await fallaDe(obtener())) as Error;
+
+      expect(error.cause).toBeInstanceOf(Error);
+      expect((error.cause as Error).message).toBe('M6 respondió 200 con un cuerpo que no tiene la forma esperada');
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+      expect(inspect(error, { depth: 10 })).not.toContain(VIAJE);
+      expect(inspect(error, { depth: 10 })).not.toContain(CLIENTE);
+    });
+  });
+
+  // RF-2.5.6: un 4xx distinto de 404 es un problema de configuración o de acuerdo entre módulos: 500, sin reintento.
+  describe('M6 rechaza el pedido: error de integración (RF-2.5.6)', () => {
+    it.each([400, 401, 403, 409, 422, 429])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', DEL_CUERPO) });
+
+      const error = await fallaDe(obtener());
+
+      expect(error).toBeInstanceOf(ErrorDeIntegracion);
+      expect(serv.llamadas).toBe(1);
+      const respuesta = aProblema(error, '/api/v1/clientes/x/calificaciones');
+      expect(respuesta.codigo).toBe(500);
+      expect(respuesta.cuerpo.detail).toBe('Ocurrió un error interno');
+      expect((error as Error).cause).toMatchObject({ message: `M6 respondió ${estado}` });
       expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
     });
   });

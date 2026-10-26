@@ -167,6 +167,32 @@ export class BloqueoNoVigente extends Problema {
   }
 }
 
+// De `calificarConductor`, cuando el cliente ya calificó ese viaje (RF-2.5.3, RNF-08). Es el `409` con `type` propio que muestra
+// el contrato. No lleva el viaje, la calificación ni el comentario (RNF-19).
+export class CalificacionDuplicada extends Problema {
+  constructor() {
+    super({
+      codigo: 409,
+      type: '/errores/calificacion-duplicada',
+      title: 'El viaje ya fue calificado',
+      detail: 'Ya existe una calificación de este viaje',
+    });
+  }
+}
+
+// De `calificarConductor`, cuando M6 informa un viaje del cliente que no está `COMPLETED` (RF-2.5.2). No lleva el viaje ni el
+// estado que informó M6 (RNF-19).
+export class ViajeNoCompletado extends Problema {
+  constructor() {
+    super({
+      codigo: 422,
+      type: '/errores/viaje-no-completado',
+      title: 'Viaje no completado',
+      detail: 'Solo se puede calificar un viaje completado',
+    });
+  }
+}
+
 // Del cliente de módulos, una vez agotados los intentos (RNF-13.3). `modulo` es cómo se lo nombra, por ejemplo «M6», y la
 // `cause`, lo que falló en el último intento: la registra el manejador de errores (RNF-14.8). Con `reintentarDespuesS`, la
 // respuesta lleva `Retry-After` en segundos, para el módulo cuyo 503 lo declara el contrato (spec 007, RF-2.4.6); sin él,

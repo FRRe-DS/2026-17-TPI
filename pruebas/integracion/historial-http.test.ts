@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type BaseDeDatos, type PoolBd } from '../../src/bd/pool.js';
+import { crearCalificacion } from '../../src/calificaciones/repositorio.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { BaseNoDisponible } from '../../src/errores.js';
 import { listarHistorialViajes } from '../../src/historial/operaciones.js';
 import { crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs } from '../ayudas/logs.js';
+import { errorDeM6, paginaDeM6, resumenDeM6 } from '../ayudas/m6-simulado.js';
 import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 import { armarToken } from '../ayudas/tokens.js';
 
@@ -16,15 +18,8 @@ const CONDUCTOR = '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e';
 const OTRO_CONDUCTOR = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
 type Rol = 'CLIENTE' | 'OPERADOR' | 'SERVICIO' | 'CONDUCTOR';
 
-const viaje = (n: number, clientId: string, extra: object = {}) => ({
-  id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
-  state: 'COMPLETED',
-  clientId,
-  driverId: CONDUCTOR,
-  createdAt: '2026-10-01T10:00:00Z',
-  ...extra,
-});
-const pagina = (items: unknown[], total: number) => ({ items, page: 1, pageSize: 20, total });
+const viaje = (n: number, clientId: string, extra: object = {}) => resumenDeM6(n, clientId, CONDUCTOR, extra);
+const pagina = paginaDeM6;
 const url = (id: string, consulta = '') => `/api/v1/clientes/${id}/viajes${consulta}`;
 
 describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007/T6)', () => {
@@ -94,8 +89,8 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
         totalElementos: 42,
         totalPaginas: 3,
         items: [
-          { viajeId: viaje(1, id).id, estado: 'COMPLETED', conductorId: CONDUCTOR },
-          { viajeId: viaje(2, id).id, estado: 'CANCELLED_BY_CLIENT' },
+          { viajeId: viaje(1, id).id, estado: 'COMPLETED', conductorId: CONDUCTOR, calificado: false },
+          { viajeId: viaje(2, id).id, estado: 'CANCELLED_BY_CLIENT', calificado: false },
         ],
       });
       expect(consultaDeM6()).toEqual({ clientId: id, page: '1', pageSize: '20' });
@@ -236,7 +231,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
 
     it.each([400, 401, 403, 404])('un %i de M6 no se reintenta y da 500 genérico', async (estado) => {
       const id = await perfil();
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: { type: 'about:blank', status: estado, detail: 'dato-de-m6' } });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', 'dato-de-m6') });
 
       const respuesta = await crear().pedir(id);
 
@@ -315,6 +310,56 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       for (const secreto of [...tokens, ...credenciales, 'Bearer ey']) expect(texto).not.toContain(secreto);
       for (const viajeId of viajes.map(({ id: v }) => v)) expect(texto).not.toContain(viajeId);
       for (const persona of [CONDUCTOR, OTRO_CONDUCTOR, ajeno]) expect(texto).not.toContain(persona);
+    });
+  });
+
+  // 008/T9, RF-2.5.14: `calificado` es un dato de M2, que el contrato ya declara en cada viaje.
+  describe('calificado (RF-2.5.14)', () => {
+    it('cada viaje trae calificado: true si el cliente lo calificó y false si no; M6 se llama una sola vez', async () => {
+      const id = await perfil();
+      await crearCalificacion((sql, parametros) => pool.consultar(sql, parametros), id, randomUUID(), {
+        viajeId: viaje(1, id).id,
+        conductorId: CONDUCTOR,
+        puntaje: 4,
+      });
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id), viaje(2, id)], 2) });
+
+      const respuesta = await crear().pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(respuesta.json().items.map(({ viajeId, calificado }: { viajeId: string; calificado: boolean }) => [viajeId, calificado])).toEqual([
+        [viaje(1, id).id, true],
+        [viaje(2, id).id, false],
+      ]);
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('el historial vacío no trae calificado y responde 200', async () => {
+      const id = await perfil();
+
+      const respuesta = await crear().pedir(id);
+
+      expect([respuesta.statusCode, respuesta.json().items]).toEqual([200, []]);
+    });
+
+    it('si la base falla al consultar los calificados: 503 genérico, sin Retry-After y sin el historial', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id)], 1) });
+      const falla: BaseDeDatos = {
+        tiempoBdMs: pool.tiempoBdMs,
+        connect: () => pool.connect(),
+        consultar: (sql, parametros) =>
+          /FROM calificaciones/i.test(sql) && !/FROM clientes/i.test(sql)
+            ? Promise.reject(new BaseNoDisponible())
+            : pool.consultar(sql, parametros),
+      };
+
+      const respuesta = await crear({}, falla).pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(respuesta.headers['retry-after']).toBeUndefined();
+      expect(respuesta.json()).not.toHaveProperty('items');
     });
   });
 });
