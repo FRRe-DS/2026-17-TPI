@@ -1,30 +1,58 @@
 # Guía — Spec 008 Calificación del conductor
 
 ## Visión general
-La spec 008 deja que un cliente califique al conductor de un viaje completado (1 a 5, con comentario opcional), que él y los operadores vean esas calificaciones, y que el historial de viajes diga si cada viaje ya fue calificado. Cubre `listarCalificaciones`, `calificarConductor` y `obtenerCalificacion`, y amplía `listarHistorialViajes` con `calificado`. No cambia el contrato de M2 ni agrega variables de entorno.
 
-**Cómo se arma, de afuera hacia adentro:**
-- `src/calificaciones/operaciones.ts` (T8): los tres manejadores HTTP. Solo leen la solicitud y arman la respuesta; la validación sale del OpenAPI antes de llegar. Se registran en `src/operaciones/index.ts`.
-- `src/calificaciones/servicio.ts` (T6, T7): las reglas. Calificar sigue un orden fijo: propiedad, respuesta guardada de la clave, perfil, duplicado, M6 y alta. Los pasos que solo leen (propiedad a duplicado) no llaman a M6, y la llamada a M6 va fuera de toda transacción; la transacción corta del final reserva la clave y hace el INSERT.
-- `src/historial/m6.ts` (T4): `obtenerViaje`, el pedido de `GET /trips/{id}` con el cliente, el token de servicio, el tiempo máximo y el reintento de la spec 007. Decide qué es un viaje inexistente, ajeno, no completado o mal formado.
-- `src/bd/idempotencia.ts` (T5): `buscarRespuesta`, la lectura sin bloqueo que deja repetir una calificación sin volver a M6.
-- `src/calificaciones/repositorio.ts` y la migración `calificaciones` (T1, T3): las consultas y la restricción única (cliente, viaje), que es la que garantiza un solo registro por viaje aunque haya claves distintas o solicitudes a la vez (RNF-08).
-- `src/calificaciones/modelo.ts` y `src/errores.ts` (T2): la forma del contrato y los dos errores nuevos, `409 /errores/calificacion-duplicada` y `422 /errores/viaje-no-completado`.
-- `src/historial/modelo.ts` y `servicio.ts` (T9): `calificado`, con una consulta por página a la base de M2.
-- `src/logs.ts` (T8): el log guarda la plantilla de la ruta y no la URL, para que no queden ids (RNF-19).
+Un cliente califica al conductor de un viaje que ya terminó (1 a 5 y un comentario opcional), y él o un operador pueden ver esas calificaciones. El
+viaje y su conductor los conoce M6, no M2: M2 le pregunta a M6 si el viaje está completado y es del cliente, y de esa respuesta sale el conductor.
+M2 guarda solo la calificación, con los ids del viaje y del conductor. Cada viaje se califica una sola vez por cliente, y eso lo garantiza la base.
+El historial de viajes (spec 007) suma `calificado` en cada viaje. No cambia el contrato ni hay variables de entorno nuevas.
 
-**Qué leer primero:** `servicio.ts` (el orden de `calificarConductor` y por qué) y la entrada T6 de esta guía, que explica la relectura de la respuesta guardada si aparece el duplicado. Después `m6.ts`, para ver cómo se interpreta la respuesta de M6.
+**Recorrido** (`POST /api/v1/clientes/{clienteId}/calificaciones`).
+1. `src/operaciones/index.ts` asocia `calificarConductor`. Ruta, cuerpo, `Idempotency-Key` y roles salen del OpenAPI: `401`, `403` por rol y `400` ocurren antes del manejador.
+2. `src/calificaciones/operaciones.ts:calificarConductor` pasa identidad, roles, ruta, clave, cuerpo y `request.id` a `servicio.ts:calificarConductor`.
+3. `servicio.ts` comprueba en orden: propiedad (`403`), respuesta guardada de la clave (`buscarRespuesta` en `src/bd/idempotencia.ts`: la devuelve, o `422` si el cuerpo cambió), perfil (`404`) y calificación existente (`409`). Hasta acá solo lee y no llama a M6.
+4. `src/historial/m6.ts:obtenerViaje` pide `GET /trips/{id}` con `src/modulos/cliente.ts` (timeout, un reintento) y un token de servicio nuevo por intento. Viaje inexistente o ajeno: `404`; estado distinto de `COMPLETED`: `422`; M6 caído o respuesta mal formada: `503` con `Retry-After`; un `4xx` de M6: `500`.
+5. `conIdempotencia` abre una transacción corta: reserva la clave, `repositorio.ts:crearCalificacion` inserta con el `driverId` de M6 y se guarda la respuesta. Si otra solicitud ganó, la restricción única `calificaciones_cliente_viaje_unica` da `409`.
 
-**Supuestos con M6 y el Grupo 12** (spec, `## Decisiones`; ninguno cambia el plan, y si cambian se ajusta solo `obtenerViaje`):
-- `GET /trips/{id}` acepta el token de servicio de M2 (`aud` `m6-viajes`, o el valor de `M2_AUDIENCIA_M6`). Hoy no hay un M6 real contra el cual comprobarlo: las pruebas usan un M6 simulado que cumple `contrato/dependencias/m6.yml`, y el mensaje al Grupo 12 sigue pendiente (`contrato/dependencias/m6-propuesta.md`, preguntas 5 y 6).
-- `COMPLETED` es el único estado que habilita calificar; cualquier otro texto da `422`, y `503` solo si `state` o `clientId` faltan o no son texto.
-- `driverId` viene informado, y es un UUID, en todo viaje `COMPLETED`; si no, `503`: M2 no inventa conductores.
-- `clientId` del viaje se compara sin distinguir mayúsculas con el cliente de la ruta. Un viaje de otro cliente se trata como inexistente (`404`) y no revela su estado.
-- Un `4xx` de M6 distinto de `404` (incluido `429`) da `500`; el `429` es un hueco conocido, ya anotado como cambio pendiente que toca también al historial.
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos |
+|---|---|---|
+| `migraciones/*_calificaciones.sql` | Tabla, restricción única (cliente, viaje), check de puntaje, índice del listado | RNF-05, RNF-08, RF-2.5.3, RF-2.5.8 |
+| `src/errores.ts`, `src/calificaciones/modelo.ts` | `CalificacionDuplicada`, `ViajeNoCompletado`; forma del contrato | RF-2.5.2, RF-2.5.3, RF-2.5.8 |
+| `src/calificaciones/repositorio.ts` | Alta, existencia, listado paginado, lectura por id, viajes calificados | RF-2.5, RF-2.5.8 a RF-2.5.10, RF-2.5.14 |
+| `src/historial/m6.ts` | `obtenerViaje`: pedido a M6 y lectura de su respuesta | RF-2.5.1, RF-2.5.2, RF-2.5.5, RF-2.5.6, RF-2.5.13, RNF-13 |
+| `src/bd/idempotencia.ts` | `buscarRespuesta`: lectura sin bloqueo de la respuesta guardada | RF-2.5.4 |
+| `src/calificaciones/servicio.ts`, `operaciones.ts` | Orden de las comprobaciones, lecturas y manejadores HTTP | RF-2.5 a RF-2.5.4, RF-2.5.8 a RF-2.5.12, RNF-03 |
+| `src/historial/modelo.ts`, `servicio.ts` | `calificado` en cada viaje del historial | RF-2.5.14 |
+| `src/logs.ts` | El log guarda la plantilla de la ruta y no la URL (sin ids) | RNF-19 |
+| `schemathesis.toml`, `README.md` | `422` y `503` aceptados en `calificarConductor`; operaciones y cómo probarlas | RNF-07, RNF-20 |
+| `pruebas/**/calificaciones*.test.ts`, `m6.test.ts`, `historial*.test.ts`, `clientes.test.ts` | Unitarias, M6 simulado, HTTP e integración con PostgreSQL real | RNF-07, RNF-08, RNF-14, RNF-19 |
 
-**Probar a mano con un M6 simulado:** ver «Probar las calificaciones con un M6 simulado» en el README. Es un contenedor con el alias de red `m6` en el puerto 3006, que no necesita configurar nada en M2.
+**Decisiones.** Detalle y alternativas en `plan.md`. La llamada a M6 va fuera de la transacción, para no tener una conexión ocupada hasta 4 s ni hacer esperar a una
+solicitud igual más que el corte de 2 s. El orden hace que una repetición exitosa devuelva el `201` original sin M6 y que un viaje ya calificado dé `409` sin M6. El dueño del viaje se comprueba
+dentro de `obtenerViaje`, así un viaje ajeno nunca revela su estado. Solo se guarda la respuesta exitosa de una clave. Se agregó una relectura de la respuesta guardada cuando aparece
+el duplicado (T6), para que dos solicitudes iguales a la vez reciban lo mismo. En T8 el log pasó a guardar la plantilla de la ruta, por acuerdo con Lautaro.
 
-**Pendientes que salen de esta spec, y no la bloquean:** actualizar el texto de la spec 007 (`calificado`, por `sdd-change`), el cambio de RNF-14 (registrar cada llamada a M6, hoy solo las fallas) y que el `429` de M6 dé `503`. Están en `EN-CURSO.local.md`.
+**Supuestos con M6 y el Grupo 12** (spec, `## Decisiones`; si cambian se ajusta solo `obtenerViaje`): `GET /trips/{id}` acepta el token de servicio de M2 (`aud` `m6-viajes`);
+`COMPLETED` es el único estado que habilita calificar, y cualquier otro texto da `422`; `driverId` viene como UUID en todo viaje completado, y si no, `503`; el `clientId` se compara sin
+distinguir mayúsculas; y un `4xx` de M6 distinto de `404` (el `429` también) da `500`. No hay un M6 real: las pruebas usan uno simulado con la forma de `contrato/dependencias/m6.yml`
+y que comprueba el token de servicio.
+
+**Conceptos que conviene entender.** Idempotencia (misma clave y cuerpo, misma respuesta; misma clave y otro cuerpo, `422`); restricción única como garantía de unicidad
+(no alcanza con mirar antes de insertar, porque dos solicitudes a la vez pasan la mirada); por qué no se llama a un módulo externo dentro de una transacción; token de servicio
+(M2 se presenta ante M6 con uno propio, nunca reenvía el del usuario); problem+json y los `type` estables de cada error.
+
+**Cómo probarlo uno mismo.** Con un M6 simulado en un contenedor con el alias de red `m6`: el bloque completo, comprobado el 2026-10-26, está en el README, sección «Probar las calificaciones con un M6 simulado»
+(perfil, calificar, repetir, duplicado, listar y ver `calificado: true` en el historial). Con `docker compose up -d --build --wait` levantado, `npm test && npm run contrato:test` corre todo lo automático.
+
+**Preguntas de comprobación.**
+1. ¿Por qué `buscarRespuesta` va antes de comprobar el duplicado, y qué carrera cubre la segunda lectura cuando aparece el duplicado?
+2. Dos calificaciones del mismo viaje llegan a la vez con claves distintas: ¿quién gana, qué recibe la otra y dónde se decide?
+3. ¿Qué ve un cliente que pide el viaje de otro, y por qué no se distingue de uno inexistente?
+4. M6 está caído y el cliente repite una calificación que ya hizo con la misma clave: ¿qué responde M2 y por qué no da `503`?
+5. ¿Qué cambia en el log de una solicitud con `calificacionId` en la ruta, y por qué se tocó `src/logs.ts` en esta spec?
+
+**Pendientes fuera de esta spec** (no bloquean la PR): actualizar el texto de la spec 007 por `sdd-change` (`calificado`), registrar cada llamada a M6 y no solo las fallas (RNF-14), y que el `429` de M6 dé `503` y no `500`.
 
 ## Tareas
 
