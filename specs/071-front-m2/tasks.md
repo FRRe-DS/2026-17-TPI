@@ -53,7 +53,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T15. Fuentes simuladas, sesión y clientes recordados.** RNF-02.2, RNF-12.9, RF-2.1.6, RF-2.1.7
   - Hecho cuando: `pruebas/panel/unitarias/sesion.test.ts` y `recordados.test.ts` comprueban que `fuentes/sesion-simulada.ts` implementa `FuenteDeSesion` (iniciar, cerrar, actual) con almacenamiento de sesión sin tokens y funciona si el almacenamiento falla, que `logica/recordados.ts` conserva hasta 10 clientes con el nuevo primero, sin repetidos y descartando lo que no tenga forma de `{ id: uuid, nombre }`, y que las dos fuentes exponen la etiqueta «simulado, pendiente de M1 / M6».
 
-- [ ] **T16. Hooks de carga y de acción.** RNF-15, RNF-15.2, RNF-15.4
+- [x] **T16. Hooks de carga y de acción.** RNF-15, RNF-15.2, RNF-15.4
   - Hecho cuando: `pruebas/panel/unitarias/estados.test.ts` comprueba los reductores de `usar-carga` (`cargando → listo | vacio | error`, con reintento que repite el mismo pedido) y de `usar-accion` (espera, éxito con aviso, error con «Reintentar» y la misma clave de idempotencia), y que `logica/clave-idempotencia.ts` genera la clave al abrir, la conserva ante un error o un tiempo agotado y la descarta tras un éxito o al cerrar.
 
 - [ ] **T17. Dirección visual, variables de diseño y estructura responsiva.** RNF-15.1, RNF-15.3, RNF-12.7
