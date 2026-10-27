@@ -73,7 +73,8 @@ export function interpretar(hash: string): Ruta {
 // El hash de una pantalla, el que `interpretar` entiende.
 export const enlace = (pantalla: Pantalla, id?: string): string => (id === undefined ? `#/${pantalla}` : `#/${pantalla}/${id}`);
 
-export type Rol = 'CLIENTE' | 'OPERADOR' | 'SERVICIO' | 'CONDUCTOR';
+export const ROLES = ['CLIENTE', 'OPERADOR', 'SERVICIO', 'CONDUCTOR'] as const;
+export type Rol = (typeof ROLES)[number];
 
 // Adonde lleva la raíz a cada rol. El CONDUCTOR no tiene pantallas propias en M2: va al perfil, donde ve el 403 de M2.
 const INICIO: Record<Rol, Pantalla> = { CLIENTE: 'perfil', OPERADOR: 'operador', SERVICIO: 'otro-modulo', CONDUCTOR: 'perfil' };

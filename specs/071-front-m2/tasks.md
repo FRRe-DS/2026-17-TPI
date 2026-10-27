@@ -50,7 +50,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T14. Capa de API del cliente: pedidos a M2, errores y tiempo máximo.** RNF-03.6, RNF-15.4, RNF-02.3
   - Hecho cuando: `pruebas/panel/unitarias/api.test.ts` comprueba, con un `fetch` de mentira, que `api/m2.ts` corta a los 10 segundos, que el `504` del panel y el tiempo agotado dan el mismo error «M2 no responde», que un `problem+json` llega completo (código, `type`, `title`, `detail`, `Retry-After`, `X-Request-Id`) y que toda ruta que arma el cliente existe en `contrato/openapi.yml` con ese método.
 
-- [ ] **T15. Fuentes simuladas, sesión y clientes recordados.** RNF-02.2, RNF-12.9, RF-2.1.6, RF-2.1.7
+- [x] **T15. Fuentes simuladas, sesión y clientes recordados.** RNF-02.2, RNF-12.9, RF-2.1.6, RF-2.1.7
   - Hecho cuando: `pruebas/panel/unitarias/sesion.test.ts` y `recordados.test.ts` comprueban que `fuentes/sesion-simulada.ts` implementa `FuenteDeSesion` (iniciar, cerrar, actual) con almacenamiento de sesión sin tokens y funciona si el almacenamiento falla, que `logica/recordados.ts` conserva hasta 10 clientes con el nuevo primero, sin repetidos y descartando lo que no tenga forma de `{ id: uuid, nombre }`, y que las dos fuentes exponen la etiqueta «simulado, pendiente de M1 / M6».
 
 - [ ] **T16. Hooks de carga y de acción.** RNF-15, RNF-15.2, RNF-15.4
