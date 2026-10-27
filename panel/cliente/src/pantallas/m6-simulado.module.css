@@ -1,0 +1,106 @@
+.m6 {
+  display: grid;
+  gap: var(--e-3);
+  max-width: 72rem;
+  margin-top: var(--e-4);
+}
+
+/* La etiqueta de lo simulado, a la vista como en el encabezado (RNF-12.7). */
+.etiqueta {
+  justify-self: start;
+  padding: 2px 12px;
+  border: 1px dashed var(--borde-campo);
+  border-radius: 999px;
+  color: var(--tinta-suave);
+  font-size: var(--t-menu);
+}
+
+.subtitulo {
+  margin-top: var(--e-2);
+  font-size: var(--t-cuerpo);
+  font-weight: 650;
+}
+
+.nota {
+  max-width: 64ch;
+  color: var(--tinta-suave);
+}
+
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.lista {
+  display: grid;
+}
+
+.escenario {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  padding: var(--e-3);
+}
+
+.escenario + .escenario {
+  border-top: 1px solid var(--regla);
+}
+
+.contenido {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.nombre {
+  font-weight: 600;
+}
+
+.dato {
+  color: var(--tinta-suave);
+  font: var(--t-detalle) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.esperada {
+  font-size: var(--t-menu);
+}
+
+.enlace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--acento);
+  border-radius: var(--radio);
+  color: var(--acento);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .enlace:hover {
+    background: var(--acento-tenue);
+  }
+}
+
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (min-width: 600px) {
+  .escenario {
+    padding-inline: var(--e-4);
+  }
+}

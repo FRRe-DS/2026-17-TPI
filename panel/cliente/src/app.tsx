@@ -16,6 +16,7 @@ import { Direcciones } from './pantallas/direcciones.js';
 import { EstadoDeCuenta } from './pantallas/estado-cuenta.js';
 import { Historial } from './pantallas/historial.js';
 import { Ingresar } from './pantallas/ingresar.js';
+import { M6Simulado } from './pantallas/m6-simulado.js';
 import { Operador } from './pantallas/operador.js';
 import { OtroModulo } from './pantallas/otro-modulo.js';
 import { Perfil } from './pantallas/perfil.js';
@@ -79,6 +80,7 @@ export function App() {
     if (nombre === 'operador' && sesion !== undefined) return <Operador api={api} />;
     if (nombre === 'otro-modulo' && sesion !== undefined) return <OtroModulo api={api} />;
     if (nombre === 'detalle-tecnico' && sesion !== undefined) return <DetalleTecnico apiPanel={apiPanel} />;
+    if (nombre === 'm6-simulado' && sesion !== undefined) return <M6Simulado viajes={fuenteDeViajes} sesion={sesion} />;
     if (nombre === 'historial' && sesion !== undefined) return <Historial api={api} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };

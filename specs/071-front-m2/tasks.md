@@ -103,7 +103,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T31. Pantalla de detalle técnico.** RNF-14.9
   - Hecho cuando: la pantalla `detalle-tecnico` lista los últimos 50 pedidos con método, ruta, código, duración y `X-Request-Id`, permite copiar el `curl` equivalente con `$TOKEN` y muestra el `Authorization` enmascarado; el `X-Request-Id` de un pedido hecho desde cualquier pantalla aparece en `docker compose logs m2`.
 
-- [ ] **T32. Pantalla del M6 simulado: escenarios y modos.** RNF-13.5, RNF-12.7
+- [x] **T32. Pantalla del M6 simulado: escenarios y modos.** RNF-13.5, RNF-12.7
   - Hecho cuando: la pantalla `m6-simulado` permite elegir el modo (normal, lento, caído), muestra los cuatro escenarios con su id y la respuesta esperada de M2 (`201`, `422`, `404`, `404`; `503` con `Retry-After` para lento y caído), copia el id al formulario de calificar, y lleva la etiqueta «simulado, pendiente de M6».
 
 ## Tramo E — Prueba en navegador, CI y documentación
