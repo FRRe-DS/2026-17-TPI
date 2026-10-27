@@ -88,7 +88,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T26. Calificar al conductor.** RF-2.5.15, RF-2.5.16
   - Hecho cuando: `pruebas/panel/unitarias/mensajes.test.ts` comprueba que `logica/mensajes.ts` da el texto de `404`, de `409` `/errores/calificacion-duplicada`, de `422` `/errores/viaje-no-completado` y `/errores/idempotencia-reutilizada` y de `503`; el formulario (puntaje 1 a 5, comentario hasta 500 con contador) conserva la `Idempotency-Key` ante un error y la reutiliza al reintentar, y deshabilita el botón mientras espera, de modo que dos toques envían un solo pedido (comprobado contra M2 real).
 
-- [ ] **T27. Mis calificaciones y detalle.** RF-2.5.17
+- [x] **T27. Mis calificaciones y detalle.** RF-2.5.17
   - Hecho cuando: la pantalla `calificaciones` lista paginado con `listarCalificaciones` y abre el detalle con `obtenerCalificacion`, y el `404` de otra persona se muestra como «no encontrada», comprobado contra M2 real.
 
 - [ ] **T28. Estado de cuenta del cliente.** RF-2.6.5

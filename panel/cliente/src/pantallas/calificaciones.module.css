@@ -1,0 +1,157 @@
+.hoja {
+  max-width: 72rem;
+  margin-top: var(--e-4);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.detalle {
+  display: grid;
+  justify-items: start;
+  gap: var(--e-3);
+  margin-top: var(--e-4);
+  max-width: 72rem;
+}
+
+.detalle > :not(a) {
+  justify-self: stretch;
+}
+
+.detalle .hoja {
+  margin-top: 0;
+}
+
+.lista,
+.filas {
+  display: grid;
+}
+
+.fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  padding: var(--e-3);
+}
+
+.fila + .fila {
+  border-top: 1px solid var(--regla);
+}
+
+.contenido {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.nombre {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--e-2);
+}
+
+.puntaje {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--acento-tenue);
+  color: var(--acento);
+  font: 600 var(--t-chica) / 1.6 var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.comentario {
+  overflow-wrap: anywhere;
+}
+
+.dato {
+  color: var(--tinta-suave);
+  font: var(--t-detalle) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* En la ficha el valor es el dato: toma la tinta normal y no la suave de la lista. */
+.ficha .dato {
+  color: var(--tinta);
+}
+
+.ficha {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--e-3);
+}
+
+.ficha + .ficha {
+  border-top: 1px solid var(--regla);
+}
+
+.ficha dt {
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+}
+
+.ficha dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.enlace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--acento);
+  border-radius: var(--radio);
+  color: var(--acento);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .enlace:hover {
+    background: var(--acento-tenue);
+  }
+}
+
+/* Para el lector de pantalla: «Ver detalle de la calificación del …»; a la vista alcanza con «Ver detalle». */
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.vacia {
+  display: grid;
+  justify-items: start;
+  gap: var(--e-3);
+  padding: var(--e-3);
+}
+
+.volver {
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--acento);
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--acento);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (min-width: 600px) {
+  .fila,
+  .vacia,
+  .ficha {
+    padding-inline: var(--e-4);
+  }
+}
