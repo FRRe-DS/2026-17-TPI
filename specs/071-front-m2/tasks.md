@@ -7,7 +7,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T1. Dependencias, scripts y configuración del proyecto.** RNF-02.1, RNF-07.5
   - Hecho cuando: están instaladas las siete dependencias de desarrollo aprobadas (`react` y `react-dom` 19.3.1, `@types/react` y `@types/react-dom` 19.3.0, `@vitejs/plugin-react` 6.1.2, `playwright-core` 1.64.1, `axe-core` 4.14.0) con versión exacta; existen `panel/tsconfig.servidor.json`, `panel/tsconfig.cliente.json`, los scripts `panel:tipos` y `panel:build` (el segundo todavía solo compila el servidor), ESLint revisa `.tsx`, ignora `panel/dist/` y los tipos generados y prohíbe `dangerouslySetInnerHTML`, y `vitest.config.ts` incluye `pruebas/panel/` con el proyecto `navegador` aparte; `npm ci`, `npm run lint`, `npm run build` y `npm test` terminan en verde y `git diff --stat` no toca `src/`, `contrato/` ni `migraciones/`.
 
-- [ ] **T2. Configuración del panel y valores de `ejemplo.env`.** RNF-06.4
+- [x] **T2. Configuración del panel y valores de `ejemplo.env`.** RNF-06.4
   - Hecho cuando: `pruebas/panel/unitarias/config.test.ts` comprueba que `servidor/config.ts` lee las variables `PANEL_*`, `M6_*` y `M2_*`, aplica los valores por defecto del plan, rechaza una clave de menos de 32 caracteres y un puerto inválido, y que `servidor/entorno-ejemplo.ts` carga los valores de `ejemplo.env` (forma `VARIABLE=${VARIABLE:-valor}`) sin pisar una variable ya definida y sin leer `.env`; `ejemplo.env` tiene la sección nueva con una línea comentada por variable.
 
 - [ ] **T3. Aplicación base del panel: seguridad de acceso, salud y logs.** RNF-12.8, RNF-19.3
