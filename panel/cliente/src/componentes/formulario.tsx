@@ -57,6 +57,10 @@ type PropsCampo = {
   valor: string;
   alCambiar: (valor: string) => void;
   tipo?: 'text' | 'tel' | 'date' | 'email';
+  // Con `opciones` el casillero es un selector y `valor` es el de la opción elegida.
+  opciones?: { valor: string; etiqueta: string }[];
+  // El teclado que ofrece el teléfono: `decimal` para coordenadas y otros números con coma.
+  teclado?: 'decimal';
   multilinea?: boolean;
   maximo?: number | undefined;
   requerido?: boolean;
@@ -66,7 +70,7 @@ type PropsCampo = {
 };
 
 // Un casillero: `<label>` del control, la ayuda y el error asociados con `aria-describedby` y `aria-invalid` (RNF-15.3).
-export function Campo({ id, etiqueta, numero, ayuda, error, valor, alCambiar, tipo = 'text', multilinea = false, maximo, requerido, autoComplete, completo }: PropsCampo) {
+export function Campo({ id, etiqueta, numero, ayuda, error, valor, alCambiar, tipo = 'text', opciones, teclado, multilinea = false, maximo, requerido, autoComplete, completo }: PropsCampo) {
   const atributos = atributosDeCampo(id, { ayuda, error });
   const comunes = {
     id,
@@ -89,10 +93,26 @@ export function Campo({ id, etiqueta, numero, ayuda, error, valor, alCambiar, ti
         )}
         {etiqueta}
       </label>
-      {multilinea ? (
+      {opciones !== undefined ? (
+        <select
+          id={id}
+          value={valor}
+          required={requerido}
+          aria-describedby={comunes['aria-describedby']}
+          aria-invalid={comunes['aria-invalid']}
+          className={estilos.control}
+          onChange={(evento) => alCambiar(evento.target.value)}
+        >
+          {opciones.map((opcion) => (
+            <option key={opcion.valor} value={opcion.valor}>
+              {opcion.etiqueta}
+            </option>
+          ))}
+        </select>
+      ) : multilinea ? (
         <textarea {...comunes} rows={4} onChange={(evento) => alCambiar(evento.target.value)} />
       ) : (
-        <input {...comunes} type={tipo} onChange={(evento) => alCambiar(evento.target.value)} />
+        <input {...comunes} type={tipo} inputMode={teclado} onChange={(evento) => alCambiar(evento.target.value)} />
       )}
       {atributos.idAyuda !== undefined && (
         <p id={atributos.idAyuda} className={estilos.ayuda}>

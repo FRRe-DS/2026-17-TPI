@@ -7,6 +7,7 @@ import { almacenamientoDelNavegador, crearSesionSimulada } from './fuentes/sesio
 import { fuenteDeViajes } from './fuentes/viajes-simulados.js';
 import { usarRuta } from './hooks/usar-ruta.js';
 import { crearRecordadosGuardados, type Ingreso } from './logica/ingresar.js';
+import { Direcciones } from './pantallas/direcciones.js';
 import { Ingresar } from './pantallas/ingresar.js';
 import { Perfil } from './pantallas/perfil.js';
 import { enlace, inicioDe, TITULOS, type Ruta } from './rutas.js';
@@ -49,15 +50,17 @@ export function App() {
   };
 
   // Las pantallas construidas; las demás siguen mostrando su título (tramo D). Las que piden a M2 solo se dibujan con sesión.
-  const pantalla = (nombre: Ruta['pantalla'], tituloPendiente: string) => {
+  const pantalla = (destino: Ruta, tituloPendiente: string) => {
+    const nombre = destino.pantalla;
     if (nombre === 'ingresar') return <Ingresar ingreso={ingreso} alEntrar={entrar} />;
     if (nombre === 'perfil' && sesion !== undefined) return <Perfil api={api} viajes={fuenteDeViajes} sesion={sesion} />;
+    if (nombre === 'direcciones' && sesion !== undefined) return <Direcciones api={api} sesion={sesion} idDireccion={'id' in destino ? destino.id : undefined} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };
 
   return (
     <Marco sesion={sesion} ruta={ruta} etiquetas={ETIQUETAS} ultimo={undefined} alCerrarSesion={cerrarSesion}>
-      {pantalla(ruta.pantalla, titulo)}
+      {pantalla(ruta, titulo)}
     </Marco>
   );
 }

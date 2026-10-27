@@ -1,0 +1,49 @@
+.paginacion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  padding: var(--e-3);
+  border-top: 1px solid var(--regla);
+}
+
+.texto {
+  color: var(--tinta-suave);
+  font: var(--t-detalle) / 1.4 var(--mono);
+}
+
+.botones {
+  display: flex;
+  gap: var(--e-2);
+}
+
+.boton {
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--acento);
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--acento);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.boton:disabled {
+  border-color: var(--regla);
+  color: var(--tinta-suave);
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .boton:hover:not(:disabled) {
+    background: var(--acento-tenue);
+  }
+}
+
+@media (min-width: 600px) {
+  .paginacion {
+    padding-inline: var(--e-4);
+  }
+}

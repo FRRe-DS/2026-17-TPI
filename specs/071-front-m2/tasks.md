@@ -73,7 +73,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T21. «Cargar ejemplo».** RF-2.1.10, RF-2.1.11
   - Hecho cuando: `pruebas/panel/unitarias/ejemplo.test.ts` comprueba que `logica/ejemplo.ts` arma tres direcciones (una `FAVORITA`, dos `RECIENTE`) con claves `ejemplo-dir-{n}-{clienteId}`, unas preferencias y la llamada al M6 simulado, y que un fallo del paso de M6 deja lo demás hecho y reintentable; la pantalla informa cada paso, y repetir el botón no duplica nada (comprobado contra M2 real).
 
-- [ ] **T22. Direcciones: listar, crear y editar.** RF-2.2.6
+- [x] **T22. Direcciones: listar, crear y editar.** RF-2.2.6
   - Hecho cuando: la pantalla `direcciones` lista paginado con `listarDirecciones`, crea con `crearDireccion` y edita con `actualizarDireccion` (tipo, alias, texto y coordenadas opcionales, con los límites del contrato y los errores `400` junto al campo), y una prueba contra M2 real comprueba el alta, la edición precargada con `obtenerDireccion` y el paginado.
 
 - [ ] **T23. Direcciones: eliminar con confirmación.** RF-2.2.7

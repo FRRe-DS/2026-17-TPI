@@ -30,6 +30,10 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+select.control {
+  cursor: pointer;
+}
+
 .campo {
   min-width: 0;
   padding: var(--e-3);
@@ -115,15 +119,15 @@ textarea.control {
     padding: var(--e-3) var(--e-4) 0;
   }
 
+  /* La regla vertical entre las dos columnas es un fondo y no un borde de cada casillero: así los de ancho completo, que la tapan
+     con el color de la hoja, pueden ir en cualquier lugar sin contar pares e impares. */
   .campos {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .campo:not(.completo):nth-child(odd) {
-    border-right: 1px solid var(--regla);
+    background: linear-gradient(var(--regla), var(--regla)) 50% 0 / 1px 100% no-repeat;
   }
 
   .completo {
     grid-column: 1 / -1;
+    background: var(--hoja);
   }
 }
