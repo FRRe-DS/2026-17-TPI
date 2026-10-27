@@ -1,0 +1,29 @@
+# Lo que no entra al contexto de construcción del panel y del M6 simulado (RNF-04.2): se construye desde la raíz del
+# repositorio y solo hace falta package.json, el lockfile, tsconfig.json, contrato/ y panel/.
+node_modules
+dist
+panel/dist
+panel/node_modules
+panel/cliente/src/generado
+src
+migraciones
+pruebas
+scripts
+specs
+docs
+.git
+.github
+.githooks
+.claude
+.agents
+ejemplo.env
+.env
+.env.*
+EN-CURSO.local.md
+CLAUDE.local.md
+*.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+panel/Dockerfile
+panel/Dockerfile.dockerignore

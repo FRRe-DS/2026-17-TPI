@@ -41,7 +41,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T11. Esqueleto del cliente React con Vite, enrutador por `#` y servicio de estáticos.** RNF-04.6, RNF-19.3, RNF-15.1
   - Hecho cuando: `npm run panel:build` compila el cliente con Vite a `panel/dist/cliente` y comprueba sus tipos con `tsc --noEmit`; `pruebas/panel/unitarias/rutas.test.ts` comprueba que `rutas.ts` interpreta cada ruta de las doce pantallas y manda a `#/ingresar` si no hay sesión; una prueba HTTP comprueba que el servidor sirve `/` con `Content-Security-Policy` (`default-src 'self'`), `X-Content-Type-Options` y `Referrer-Policy`, sin scripts ni estilos en línea, y que devuelve `index.html` para las rutas del cliente.
 
-- [ ] **T12. Imagen del panel y del M6 simulado, y perfil `panel` de compose.** RNF-04.6
+- [x] **T12. Imagen del panel y del M6 simulado, y perfil `panel` de compose.** RNF-04.6
   - Hecho cuando: `docker compose --profile panel up -d --build --wait` deja sanos `panel` y `m6`, con el panel publicado solo en `127.0.0.1:8083` y el control del M6 en `127.0.0.1:3007`; `docker compose up -d --build --wait` sin el perfil no crea ninguno de los dos; `docker compose --profile panel config` no cambia los servicios `m2` y `bd`; las imágenes parten de `node:24.22.0-trixie-slim`, instalan con `npm ci --omit=dev --ignore-scripts` y corren como `node`.
 
 - [ ] **T13. `npm run panel` en la máquina y script de humo.** RNF-04.7, RNF-06.4

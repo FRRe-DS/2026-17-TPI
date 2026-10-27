@@ -1,5 +1,7 @@
 # El servicio M2 y su base de datos (RNF-04.1, RNF-04.3, RNF-04.4). Desde un clon limpio, sin crear ni editar archivos:
 #   docker compose up -d --build --wait
+# Con el perfil `panel` suma el panel y el M6 simulado (spec 071); sin él, no se crean:
+#   docker compose --profile panel up -d --build --wait
 # La configuración sale de ejemplo.env; una variable definida en el entorno manda sobre el ejemplo (RNF-06.3).
 services:
   m2:
@@ -39,6 +41,65 @@ services:
       interval: 2s
       timeout: 2s
       retries: 20
+
+  # El panel y el M6 simulado (spec 071, RNF-04.6). Solo con `--profile panel`. Los dos publican su puerto únicamente en
+  # 127.0.0.1: el panel firma tokens de desarrollo y el canal de control cambia el comportamiento del M6; ninguno es para exponerlo.
+  # Leen ejemplo.env como los demás; lo que cambia dentro del contenedor (dónde escuchan y cómo se llaman entre sí) va en `environment`.
+  m6:
+    profiles: [panel]
+    build:
+      context: .
+      dockerfile: panel/Dockerfile
+      target: m6-simulado
+    image: m2-m6-simulado:0.1.0
+    env_file: ejemplo.env
+    init: true
+    # Solo el canal de control. La API de M6 (M6_PUERTO) la ve M2 por la red de compose como m6:3006, sin publicarla.
+    ports:
+      - "127.0.0.1:${M6_PUERTO_CONTROL:-3007}:${M6_PUERTO_CONTROL:-3007}"
+    # El canal sigue sano en el modo caído, que cierra la API: se mira el canal y no la API.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:' + process.env.M6_PUERTO_CONTROL + '/control/estado').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  panel:
+    profiles: [panel]
+    build:
+      context: .
+      dockerfile: panel/Dockerfile
+      target: panel
+    image: m2-panel:0.1.0
+    env_file: ejemplo.env
+    init: true
+    environment:
+      PANEL_ESCUCHA: 0.0.0.0
+      PANEL_URL_M2: http://m2:${M2_PUERTO:-8082}
+      PANEL_URL_M2_PUBLICA: ${PANEL_URL_M2_PUBLICA:-http://localhost:${M2_PUERTO:-8082}}
+      PANEL_URL_M6_CONTROL: http://m6:${M6_PUERTO_CONTROL:-3007}
+    ports:
+      - "127.0.0.1:${PANEL_PUERTO:-8083}:${PANEL_PUERTO:-8083}"
+    depends_on:
+      m2:
+        condition: service_healthy
+      m6:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:' + process.env.PANEL_PUERTO + '/salud-panel').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
 
 volumes:
   datos-bd:
