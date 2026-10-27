@@ -10,7 +10,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T2. Configuración del panel y valores de `ejemplo.env`.** RNF-06.4
   - Hecho cuando: `pruebas/panel/unitarias/config.test.ts` comprueba que `servidor/config.ts` lee las variables `PANEL_*`, `M6_*` y `M2_*`, aplica los valores por defecto del plan, rechaza una clave de menos de 32 caracteres y un puerto inválido, y que `servidor/entorno-ejemplo.ts` carga los valores de `ejemplo.env` (forma `VARIABLE=${VARIABLE:-valor}`) sin pisar una variable ya definida y sin leer `.env`; `ejemplo.env` tiene la sección nueva con una línea comentada por variable.
 
-- [ ] **T3. Aplicación base del panel: seguridad de acceso, salud y logs.** RNF-12.8, RNF-19.3
+- [x] **T3. Aplicación base del panel: seguridad de acceso, salud y logs.** RNF-12.8, RNF-19.3
   - Hecho cuando: `pruebas/panel/http/seguridad.test.ts` comprueba con `app.inject` que una solicitud con `Host` ajeno recibe `403` `application/problem+json` sin ejecutar nada, que un `POST` sin `Origin` o con un `Origin` distinto del propio recibe `403`, que ninguna respuesta lleva cabeceras CORS, que `GET /salud-panel` responde `200`, y que los logs son una línea JSON por pedido sin `authorization` ni cuerpo.
 
 - [ ] **T4. Firma de tokens de desarrollo.** RNF-12.6, RNF-19.3
