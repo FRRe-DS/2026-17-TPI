@@ -33,7 +33,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T9. Reenvío del panel al canal de control del M6 simulado.** RNF-13.5, RF-2.1.10
   - Hecho cuando: `pruebas/panel/http/m6-reenvio.test.ts` comprueba que `GET /panel/m6/estado`, `PUT /panel/m6/modo` y `POST /panel/m6/clientes/{clienteId}/ejemplo` llegan al canal de control con tiempo máximo de 3 segundos y sin reintento, que cualquier otra ruta bajo `/panel/m6/` se rechaza, que un `clienteId` que no es UUID da `400`, y que si el canal no responde el panel contesta `502` `application/problem+json`.
 
-- [ ] **T10. Prueba de integración del panel con M2 real y M6 simulado.** RNF-13.5, RNF-13.7, RF-2.1.5, RF-2.5.15
+- [x] **T10. Prueba de integración del panel con M2 real y M6 simulado.** RNF-13.5, RNF-13.7, RF-2.1.5, RF-2.5.15
   - Hecho cuando: `pruebas/panel/integracion/panel.test.ts`, con PostgreSQL real de Testcontainers, M2 en el proceso de la prueba, el M6 simulado y el panel, recorre por el panel: alta con la misma `Idempotency-Key` dos veces (un solo cliente), «cargar ejemplo» dos veces, historial con `calificado` falso, calificar el completado (`201`), repetirlo (`409`), el en curso (`422`), el ajeno y el inexistente (`404`), el modo `lento` y el `caido` (`503` con `Retry-After`), un bloqueo y su estado de cuenta, y un rol CONDUCTOR (`403`).
 
 ## Tramo C — Base del cliente y empaquetado
