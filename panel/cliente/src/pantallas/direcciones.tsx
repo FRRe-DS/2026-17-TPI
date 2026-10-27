@@ -1,8 +1,9 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ApiM2 } from '../api/m2.js';
 import { Aviso } from '../componentes/aviso.js';
 import { BotonAccion } from '../componentes/boton-accion.js';
 import { CamposDeDireccion } from '../componentes/campos-de-direccion.js';
+import { DialogoConfirmar } from '../componentes/dialogo-confirmar.js';
 import { EstadoPantalla } from '../componentes/estado-pantalla.js';
 import { Formulario } from '../componentes/formulario.js';
 import { Paginacion } from '../componentes/paginacion.js';
@@ -11,6 +12,7 @@ import type { Sesion } from '../fuentes/fuente-de-sesion.js';
 import { usarAccion } from '../hooks/usar-accion.js';
 import { usarCarga } from '../hooks/usar-carga.js';
 import { usarClaveDeIdempotencia } from '../hooks/usar-clave-idempotencia.js';
+import { usarConfirmacion } from '../hooks/usar-confirmacion.js';
 import type { DatosDeError } from '../api/errores.js';
 import type { components } from '../generado/contrato.js';
 import {
@@ -50,14 +52,37 @@ function ListaDeDirecciones({ api, sesion }: { api: ApiM2; sesion: Sesion }) {
     (datos) => datos.totalElementos === 0,
   );
 
+  // «Eliminar» (RF-2.2.7): pide confirmación y solo al confirmar llama a M2. Si era la única de una página que no es la primera, vuelve
+  // a la anterior; si no, la lista se pide de nuevo en la misma página.
+  const eliminacion = usarConfirmacion<Direccion, void>({
+    ejecutar: async (direccion, senal) => {
+      await api.eliminarDireccion(sesion.sub, direccion.direccionId, { senal });
+      if (pagina > 0 && estado.fase === 'listo' && estado.datos.items.length === 1) setPagina(pagina - 1);
+      else setVersion((actual) => actual + 1);
+    },
+    aviso: 'Dirección eliminada.',
+  });
+  const barra = useRef<HTMLDivElement>(null);
+  // La dirección que tenía el foco desaparece: el foco vuelve al primer botón de la pantalla, no se pierde.
+  const hecha = eliminacion.accion.fase === 'hecha';
+  useEffect(() => {
+    if (hecha) barra.current?.querySelector('button')?.focus();
+  }, [hecha]);
+  const cancelarEliminacion = () => {
+    // Si M2 dijo que ya no existe, lo que se ve está viejo: la lista se pide de nuevo.
+    if (eliminacion.accion.fase === 'fallida') setVersion((actual) => actual + 1);
+    eliminacion.cancelar();
+  };
+
   return (
     <>
       <Titulo>{TITULOS.direcciones}</Titulo>
-      <div className={estilos.barra}>
+      <div className={estilos.barra} ref={barra}>
         <BotonAccion esperando={false} variante={creando ? 'contorno' : 'principal'} onClick={() => setCreando(!creando)}>
           {creando ? 'Cerrar el formulario' : 'Agregar una dirección'}
         </BotonAccion>
       </div>
+      <Aviso estado={eliminacion.accion} />
       {creando && (
         <NuevaDireccion
           api={api}
@@ -94,9 +119,14 @@ function ListaDeDirecciones({ api, sesion }: { api: ApiM2; sesion: Sesion }) {
                         </p>
                       )}
                     </div>
-                    <a className={estilos.editar} href={enlace('direcciones', direccion.direccionId)} aria-label={`Editar ${direccion.alias || direccion.texto}`}>
-                      Editar
-                    </a>
+                    <div className={estilos.acciones}>
+                      <a className={estilos.editar} href={enlace('direcciones', direccion.direccionId)}>
+                        Editar<span className={estilos.oculto}> {direccion.alias || direccion.texto}</span>
+                      </a>
+                      <BotonAccion esperando={false} variante="peligro" onClick={() => eliminacion.pedir(direccion)}>
+                        Eliminar<span className={estilos.oculto}> {direccion.alias || direccion.texto}</span>
+                      </BotonAccion>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -105,6 +135,19 @@ function ListaDeDirecciones({ api, sesion }: { api: ApiM2; sesion: Sesion }) {
           </section>
         )}
       </EstadoPantalla>
+      <DialogoConfirmar
+        abierto={eliminacion.objetivo !== undefined}
+        titulo="Eliminar dirección"
+        confirmar="Eliminar"
+        estado={eliminacion.accion}
+        alConfirmar={eliminacion.confirmar}
+        alCancelar={cancelarEliminacion}
+      >
+        <p>
+          ¿Eliminar {eliminacion.objetivo?.alias ? <b>«{eliminacion.objetivo.alias}»</b> : null} {eliminacion.objetivo?.texto}?
+        </p>
+        <p>Esta acción no se puede deshacer.</p>
+      </DialogoConfirmar>
     </>
   );
 }

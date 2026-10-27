@@ -76,7 +76,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T22. Direcciones: listar, crear y editar.** RF-2.2.6
   - Hecho cuando: la pantalla `direcciones` lista paginado con `listarDirecciones`, crea con `crearDireccion` y edita con `actualizarDireccion` (tipo, alias, texto y coordenadas opcionales, con los límites del contrato y los errores `400` junto al campo), y una prueba contra M2 real comprueba el alta, la edición precargada con `obtenerDireccion` y el paginado.
 
-- [ ] **T23. Direcciones: eliminar con confirmación.** RF-2.2.7
+- [x] **T23. Direcciones: eliminar con confirmación.** RF-2.2.7
   - Hecho cuando: «Eliminar» abre el diálogo de confirmación y solo al confirmar llama a `eliminarDireccion`; «Cancelar» no hace ningún pedido y la dirección sigue en la lista, comprobado en una prueba contra M2 real.
 
 - [ ] **T24. Preferencias.** RF-2.3.6

@@ -82,6 +82,22 @@
   font: var(--t-detalle) / 1.4 var(--mono);
 }
 
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2);
+}
+
+/* Para el lector de pantalla: «Editar Casa»; a la vista alcanza con «Editar» en la fila de Casa. */
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .editar {
   display: inline-flex;
   align-items: center;
