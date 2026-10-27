@@ -57,10 +57,11 @@ export function crearSesionSimulada(almacenamiento: Almacenamiento | undefined):
   };
 }
 
-// El almacenamiento de sesión del navegador, o nada si ni siquiera se puede nombrar (algunos navegadores lanzan al leerlo).
-export function almacenamientoDelNavegador(): Almacenamiento | undefined {
+// Un almacenamiento del navegador (el de sesión, salvo que se pida el local), o nada si ni siquiera se puede nombrar (algunos
+// navegadores lanzan al leerlo).
+export function almacenamientoDelNavegador(cual: 'sessionStorage' | 'localStorage' = 'sessionStorage'): Almacenamiento | undefined {
   try {
-    return globalThis.sessionStorage;
+    return globalThis[cual];
   } catch {
     return undefined;
   }

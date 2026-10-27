@@ -1,0 +1,268 @@
+.intro {
+  max-width: 72ch;
+  margin-top: var(--e-2);
+  color: var(--tinta-suave);
+}
+
+/* Tres hojas: en el teléfono una debajo de otra (alta, recordados, otro rol); desde 1200 px el alta y el otro rol a la
+   izquierda y los recordados, que pueden ser diez, en su propia columna. */
+.hojas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'nuevo'
+    'recordados'
+    'rol';
+  gap: var(--e-4);
+  margin-top: var(--e-4);
+}
+
+.nuevo {
+  grid-area: nuevo;
+}
+
+.recordados {
+  grid-area: recordados;
+}
+
+.rol {
+  grid-area: rol;
+}
+
+@media (min-width: 1200px) {
+  .hojas {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    grid-template-areas:
+      'nuevo recordados'
+      'rol recordados';
+    align-items: start;
+  }
+}
+
+.identificador {
+  flex: 1 1 18rem;
+  align-self: center;
+  min-width: 0;
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+  overflow-wrap: anywhere;
+}
+
+.identificador code {
+  color: var(--tinta);
+}
+
+/* ---- Recordados: la misma hoja que un formulario, con una fila por cliente. ---- */
+
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e-1) var(--e-3);
+  padding: var(--e-3);
+  border-bottom: 1px solid var(--regla);
+}
+
+.cabecera h2:focus {
+  outline: none;
+}
+
+.cuenta {
+  color: var(--tinta-suave);
+  font: var(--t-chica) / 1.4 var(--mono);
+}
+
+.vacio {
+  padding: var(--e-3);
+  color: var(--tinta-suave);
+}
+
+.recordado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  padding: var(--e-3);
+}
+
+.recordado + .recordado {
+  border-top: 1px solid var(--regla);
+}
+
+.quien {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 14rem;
+}
+
+.nombre {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.uuid {
+  color: var(--tinta-suave);
+  font: var(--t-chica) / 1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.acciones {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+}
+
+/* Lo que M2 ya no tiene: marcado en ladrillo, con el mismo trazo punteado de lo que no es del todo real. */
+.marca {
+  padding: 3px 10px;
+  border: 1px dashed var(--mal);
+  border-radius: 999px;
+  background: var(--mal-fondo);
+  color: var(--mal);
+  font-size: var(--t-detalle);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.quitar {
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--mal);
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--mal);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.quitar:focus-visible {
+  outline-color: var(--mal);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .quitar:hover {
+    background: var(--mal);
+    color: var(--hoja);
+  }
+}
+
+.error {
+  padding: var(--e-3);
+  border-top: 1px solid var(--regla);
+}
+
+/* Para el lector de pantalla: «Entrar como Ana Gómez»; a la vista alcanza con «Entrar» en la fila de Ana. */
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Otro rol: un casillero con cuatro opciones. ---- */
+
+.roles {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  padding: var(--e-3);
+  border: 0;
+  border-bottom: 1px solid var(--regla);
+}
+
+/* Flotando, la leyenda deja de ir sobre el borde del `fieldset` y respeta su relleno, como la etiqueta de un casillero. */
+.leyenda {
+  float: left;
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  padding: 0;
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+}
+
+.numero {
+  color: var(--acento);
+  font: 600 0.6875rem / 1 var(--mono);
+}
+
+.opciones {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--e-2);
+  margin-top: var(--e-2);
+}
+
+.opcion {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--e-2);
+  min-height: var(--control);
+  padding: 10px 12px;
+  border: 1px solid var(--borde-campo);
+  border-radius: var(--radio);
+  background: var(--campo);
+  cursor: pointer;
+}
+
+.opcion:has(input:checked) {
+  border-color: var(--acento);
+  background: var(--acento-tenue);
+}
+
+.opcion:has(input:focus-visible) {
+  outline: 2px solid var(--foco);
+  outline-offset: 2px;
+}
+
+.opcion input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+}
+
+.opcion input:focus-visible {
+  outline: none;
+}
+
+.textoOpcion {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.nombreRol {
+  font: 600 var(--t-detalle) / 1.3 var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.descripcion {
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+  line-height: 1.35;
+}
+
+@media (min-width: 600px) {
+  .cabecera,
+  .recordado,
+  .vacio,
+  .error,
+  .roles {
+    padding-inline: var(--e-4);
+  }
+}

@@ -64,7 +64,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 
 ## Tramo D — Pantallas
 
-- [ ] **T19. Inicio de sesión simulado, «Entrar como cliente nuevo» y clientes recordados.** RF-2.1.5, RF-2.1.6, RF-2.1.7, RNF-12.9
+- [x] **T19. Inicio de sesión simulado, «Entrar como cliente nuevo» y clientes recordados.** RF-2.1.5, RF-2.1.6, RF-2.1.7, RNF-12.9
   - Hecho cuando: contra el panel con M2 real, la pantalla `ingresar` permite elegir rol e identificador o crear un cliente con `crearCliente` (formulario con valores de ejemplo editables y validaciones del contrato, `Idempotency-Key` propia), lista los recordados con un clic para volver a entrar, marca «ya no existe» al `404` y permite quitarlo, y «Cerrar sesión» olvida el rol y el cliente; `pruebas/panel/integracion/pantalla-ingresar.test.ts` lo recorre.
 
 - [ ] **T20. Perfil: ver y editar.** RF-2.1.8, RF-2.1.9
