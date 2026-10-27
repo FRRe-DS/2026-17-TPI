@@ -27,7 +27,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T7. M6 simulado: API de `m6.yml` con verificación del token de servicio.** RNF-13.7
   - Hecho cuando: `pruebas/panel/unitarias/m6-simulado.test.ts` valida con Ajv contra `contrato/dependencias/m6.yml` el cuerpo de `GET /api/v1/trips` (`TripSummaryPage`) y de `GET /api/v1/trips/{id}` (`Trip`) y del `ErrorResponse`, y una prueba HTTP comprueba que sin token o con un token sin rol `SERVICIO`, de otra audiencia o con otra clave responde `401`, que filtra por `clientId` y `state`, y que un viaje inexistente da `404`.
 
-- [ ] **T8. M6 simulado: canal de control, viajes de ejemplo y modos.** RNF-13.5, RF-2.1.10, RF-2.1.11
+- [x] **T8. M6 simulado: canal de control, viajes de ejemplo y modos.** RNF-13.5, RF-2.1.10, RF-2.1.11
   - Hecho cuando: `pruebas/panel/http/m6-control.test.ts` comprueba que cargar el ejemplo de un cliente registra un viaje completado y uno en curso con ids derivados del `clienteId`, que repetirlo no duplica, que `escenarios` devuelve completado (`201`), en curso (`422`), ajeno y de otro cliente y inexistente (`404`, `404`) con sus ids, que en modo `caido` el puerto de la API rechaza conexiones mientras el de control responde, que volver a `normal` lo reabre, y que en modo `lento` la respuesta tarda al menos `M6_RETARDO_LENTO_MS`.
 
 - [ ] **T9. Reenvío del panel al canal de control del M6 simulado.** RNF-13.5, RF-2.1.10

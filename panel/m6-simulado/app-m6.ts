@@ -2,6 +2,7 @@ import Fastify, { LogController, type FastifyInstance, type FastifyReply } from 
 import { jwtVerify } from 'jose';
 import { randomUUID } from 'node:crypto';
 import type { Writable } from 'node:stream';
+import { setTimeout as esperar } from 'node:timers/promises';
 import type { ConfigM6 } from '../servidor/config.js';
 import { errorM6, ESTADOS_DE_VIAJE, pagina, resumen, type EstadoDeViaje } from './cuerpos.js';
 import type { EstadoM6 } from './estado.js';
@@ -76,8 +77,18 @@ function leerEstado(valor: unknown): EstadoDeViaje | undefined {
   return valor as EstadoDeViaje;
 }
 
+// Modo lento: espera el retardo antes de contestar. Si la conexión se corta antes (M2 se cansó de esperar, o el modo pasó a
+// caído), deja de esperar para no mantener vivo el proceso.
+async function esperarRetardo(reply: FastifyReply, ms: number): Promise<void> {
+  const cortar = new AbortController();
+  reply.raw.once('close', () => cortar.abort());
+  await esperar(ms, undefined, { signal: cortar.signal }).catch(() => undefined);
+}
+
 export function construirAppM6({ config, estado, flujoLog }: OpcionesAppM6): FastifyInstance {
   const app = Fastify({
+    // El modo caído cierra el puerto con `close()`: tiene que cortar también los pedidos en espera del modo lento.
+    forceCloseConnections: true,
     exposeHeadRoutes: false,
     requestIdHeader: false,
     genReqId: (req) => {
@@ -91,9 +102,11 @@ export function construirAppM6({ config, estado, flujoLog }: OpcionesAppM6): Fas
   const responderError = (reply: FastifyReply, error: ErrorM6) =>
     reply.code(error.estado).send(errorM6(error.codigo, error.message, reply.request.id));
 
-  // El token antes que todo, también en una ruta que no existe.
-  app.addHook('onRequest', async (request) => {
+  // El token antes que todo, también en una ruta que no existe, y después la espera del modo lento: un token que no sirve
+  // no hace esperar a nadie.
+  app.addHook('onRequest', async (request, reply) => {
     await verificarTokenDeServicio(request.headers.authorization, config);
+    if (estado.modo() === 'lento') await esperarRetardo(reply, config.retardoLentoMs);
   });
 
   app.addHook('onResponse', async (request, reply) => {
