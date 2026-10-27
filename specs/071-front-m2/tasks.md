@@ -24,7 +24,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 
 ## Tramo B — M6 simulado
 
-- [ ] **T7. M6 simulado: API de `m6.yml` con verificación del token de servicio.** RNF-13.7
+- [x] **T7. M6 simulado: API de `m6.yml` con verificación del token de servicio.** RNF-13.7
   - Hecho cuando: `pruebas/panel/unitarias/m6-simulado.test.ts` valida con Ajv contra `contrato/dependencias/m6.yml` el cuerpo de `GET /api/v1/trips` (`TripSummaryPage`) y de `GET /api/v1/trips/{id}` (`Trip`) y del `ErrorResponse`, y una prueba HTTP comprueba que sin token o con un token sin rol `SERVICIO`, de otra audiencia o con otra clave responde `401`, que filtra por `clientId` y `state`, y que un viaje inexistente da `404`.
 
 - [ ] **T8. M6 simulado: canal de control, viajes de ejemplo y modos.** RNF-13.5, RF-2.1.10, RF-2.1.11
