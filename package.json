@@ -17,7 +17,7 @@
     "pretest": "npm run contrato:tipos",
     "test": "vitest run --project unitarias --project integracion",
     "panel:tipos": "openapi-typescript contrato/openapi.yml -o panel/cliente/src/generado/contrato.ts",
-    "panel:build": "npm run panel:tipos && tsc -p panel/tsconfig.servidor.json",
+    "panel:build": "npm run panel:tipos && tsc -p panel/tsconfig.servidor.json && tsc -p panel/tsconfig.cliente.json && vite build --config panel/vite.config.ts",
     "panel:navegador": "vitest run --project navegador"
   },
   "dependencies": {

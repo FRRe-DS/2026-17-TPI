@@ -38,7 +38,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 
 ## Tramo C — Base del cliente y empaquetado
 
-- [ ] **T11. Esqueleto del cliente React con Vite, enrutador por `#` y servicio de estáticos.** RNF-04.6, RNF-19.3, RNF-15.1
+- [x] **T11. Esqueleto del cliente React con Vite, enrutador por `#` y servicio de estáticos.** RNF-04.6, RNF-19.3, RNF-15.1
   - Hecho cuando: `npm run panel:build` compila el cliente con Vite a `panel/dist/cliente` y comprueba sus tipos con `tsc --noEmit`; `pruebas/panel/unitarias/rutas.test.ts` comprueba que `rutas.ts` interpreta cada ruta de las doce pantallas y manda a `#/ingresar` si no hay sesión; una prueba HTTP comprueba que el servidor sirve `/` con `Content-Security-Policy` (`default-src 'self'`), `X-Content-Type-Options` y `Referrer-Policy`, sin scripts ni estilos en línea, y que devuelve `index.html` para las rutas del cliente.
 
 - [ ] **T12. Imagen del panel y del M6 simulado, y perfil `panel` de compose.** RNF-04.6

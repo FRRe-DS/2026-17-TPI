@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { STATUS_CODES } from 'node:http';
 import type { Writable } from 'node:stream';
 import type { ConfigPanel } from './config.js';
+import { registrarEncabezadosDeSeguridad, registrarEstaticos } from './estaticos.js';
 import { ESPERA_CONTROL_MS, registrarControlM6 } from './m6-control.js';
 import { crearRegistroDePedidos, registrarPedidos } from './pedidos.js';
 import { responderProblema } from './problemas.js';
@@ -17,6 +18,8 @@ export type OpcionesApp = {
   esperaM2Ms?: number | undefined;
   // Cuánto se espera al canal de control del M6 simulado. Solo las pruebas lo cambian.
   esperaControlMs?: number | undefined;
+  // La carpeta con el cliente compilado (`panel/dist/cliente`). Sin ella, el panel no sirve archivos.
+  directorioCliente?: string | undefined;
 };
 
 // El mismo patrón que M2 (RNF-14.3): de 1 a 128 caracteres de letras, números, punto, guion bajo y guion.
@@ -36,8 +39,8 @@ function estadoDe(error: unknown): number {
 }
 
 // La app del panel: seguridad de acceso, salud, logs, reenvío a M2, detalle técnico de sus pedidos y reenvío al canal de control del
-// M6 simulado. Las demás rutas se suman después (archivos del cliente). No escucha en ningún puerto; eso lo hace el arranque.
-export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS }: OpcionesApp): FastifyInstance {
+// M6 simulado y, si se le da la carpeta, los archivos del cliente. No escucha en ningún puerto; eso lo hace el arranque.
+export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente }: OpcionesApp): FastifyInstance {
   const app = Fastify({
     // El cuerpo se pasa tal cual a M2, que es quien lo valida; el límite de 1 MiB es el de M2 (RNF-03.2).
     bodyLimit: 1024 * 1024,
@@ -51,6 +54,7 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
 
   // Antes que toda ruta: el 403 va primero, también en una ruta que no existe.
   registrarSeguridad(app, config.puerto);
+  registrarEncabezadosDeSeguridad(app);
 
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);
@@ -85,6 +89,7 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   registrarPedidos(app, pedidos, config.urlM2Publica);
   app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos });
   app.register(registrarControlM6, { config, esperaMs: esperaControlMs });
+  if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
 
   return app;
 }
