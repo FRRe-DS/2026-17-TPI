@@ -22,6 +22,6 @@ export function usarAccion<A extends unknown[], R>(opciones: OpcionesAccion<A, R
   );
   useLayoutEffect(() => accion.detener, [accion]);
 
-  const estado: EstadoAccion<R> = useSyncExternalStore(accion.suscribir, accion.estado);
+  const estado: EstadoAccion<R> = useSyncExternalStore(accion.suscribir, accion.estado, accion.estado);
   return { estado, esperando: estaEsperando(estado), enviar: accion.enviar, reintentar: accion.reintentar, reiniciar: accion.reiniciar };
 }

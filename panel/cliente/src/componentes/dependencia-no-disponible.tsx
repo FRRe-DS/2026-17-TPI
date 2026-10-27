@@ -1,6 +1,7 @@
 import type { ErrorDeApi } from '../api/errores.js';
 import { usarCuentaRegresiva } from '../hooks/usar-cuenta-regresiva.js';
 import { segundosDeCuenta, textoDeEspera } from '../logica/cuenta-regresiva.js';
+import { dependeDeViajes } from '../logica/mensajes.js';
 import { ErrorDeM2 } from './error-de-m2.js';
 import estilos from './dependencia-no-disponible.module.css';
 
@@ -15,7 +16,7 @@ export function DependenciaNoDisponible({ error, que, alReintentar }: Props) {
   return (
     <div className={estilos.aviso} role="alert">
       <p className={estilos.explicacion}>
-        {que} depende del módulo de viajes (M6), que no contestó. El resto del panel sigue funcionando.
+        {dependeDeViajes(que)} El resto del panel sigue funcionando.
       </p>
       {restantes !== undefined && (
         // Un temporizador no se anuncia cada segundo: `role="timer"` lo deja fuera de la lectura automática.

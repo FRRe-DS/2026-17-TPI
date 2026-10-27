@@ -193,3 +193,15 @@ textarea.control {
 .opcion input:focus-visible {
   outline: none;
 }
+
+/* Una sola elección entre pocas, cortas (el puntaje): una fila de casillas que no se parte, incluso a 360 px. */
+.enFila {
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--e-1);
+}
+
+.enFila .opcion {
+  justify-content: center;
+  gap: 6px;
+  padding-inline: 4px;
+}

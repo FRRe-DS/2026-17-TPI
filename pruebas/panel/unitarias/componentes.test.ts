@@ -278,3 +278,56 @@ describe('GrupoDeOpciones: casillas para marcar (T24, RF-2.3.6)', () => {
     expect(html).toContain('<p id="canales-ayuda"');
   });
 });
+
+describe('GrupoDeOpciones de una sola elección y con error (T26, RF-2.5.15)', () => {
+  const PUNTOS = [1, 2, 3].map((n) => ({ valor: String(n), etiqueta: String(n) }));
+
+  it('con `unica` son casillas redondas del mismo nombre: se recorren con las flechas y se elige una', async () => {
+    const Grupo = await componente('formulario.tsx', 'GrupoDeOpciones');
+
+    const html = dibujar(Grupo, { id: 'puntaje', etiqueta: 'Puntaje', opciones: PUNTOS, seleccionados: ['2'], alCambiar: nada, unica: true });
+
+    expect(html.match(/type="radio"/g)).toHaveLength(3);
+    expect(html.match(/name="puntaje"/g)).toHaveLength(3);
+    expect(html).not.toContain('type="checkbox"');
+    expect(html.match(/checked=""/g)).toHaveLength(1);
+  });
+
+  it('sin `unica` siguen siendo casillas para marcar, sin nombre', async () => {
+    const Grupo = await componente('formulario.tsx', 'GrupoDeOpciones');
+
+    const html = dibujar(Grupo, { id: 'puntaje', etiqueta: 'Puntaje', opciones: PUNTOS, seleccionados: [], alCambiar: nada });
+
+    expect(html).toContain('type="checkbox"');
+    expect(html).not.toContain('name=');
+  });
+
+  it('el error se asocia al grupo junto con la ayuda', async () => {
+    const Grupo = await componente('formulario.tsx', 'GrupoDeOpciones');
+
+    const html = dibujar(Grupo, { id: 'puntaje', etiqueta: 'Puntaje', ayuda: 'De 1 a 3.', error: 'Elegí uno.', opciones: PUNTOS, seleccionados: [], alCambiar: nada, unica: true });
+
+    expect(html).toContain('aria-describedby="puntaje-ayuda puntaje-error"');
+    expect(html).toContain('<p id="puntaje-error"');
+    expect(html).toContain('Elegí uno.');
+  });
+});
+
+describe('ErrorDeM2 con la frase de la pantalla (T26, RF-2.5.16)', () => {
+  const error = new ErrorDeApi({ sinRespuesta: false, estado: 409, type: '/errores/calificacion-duplicada', title: 'El viaje ya fue calificado', detail: 'Ya existe una calificación de este viaje' });
+
+  it('la frase va primero y el error de M2 sigue completo debajo', async () => {
+    const Error = await componente('error-de-m2.tsx', 'ErrorDeM2');
+
+    const html = dibujar(Error, { error, mensaje: 'Ya calificaste este viaje.' });
+
+    expect(html.indexOf('Ya calificaste este viaje.')).toBeLessThan(html.indexOf('El viaje ya fue calificado'));
+    for (const dato of ['409', '/errores/calificacion-duplicada', 'Ya existe una calificación de este viaje']) expect(html).toContain(dato);
+  });
+
+  it('sin frase, es el de siempre', async () => {
+    const Error = await componente('error-de-m2.tsx', 'ErrorDeM2');
+
+    expect(dibujar(Error, { error })).not.toContain('Ya calificaste');
+  });
+});

@@ -7,6 +7,7 @@ import { almacenamientoDelNavegador, crearSesionSimulada } from './fuentes/sesio
 import { fuenteDeViajes } from './fuentes/viajes-simulados.js';
 import { usarRuta } from './hooks/usar-ruta.js';
 import { crearRecordadosGuardados, type Ingreso } from './logica/ingresar.js';
+import { Calificar } from './pantallas/calificar.js';
 import { Direcciones } from './pantallas/direcciones.js';
 import { Historial } from './pantallas/historial.js';
 import { Ingresar } from './pantallas/ingresar.js';
@@ -58,6 +59,7 @@ export function App() {
     if (nombre === 'perfil' && sesion !== undefined) return <Perfil api={api} viajes={fuenteDeViajes} sesion={sesion} />;
     if (nombre === 'direcciones' && sesion !== undefined) return <Direcciones api={api} sesion={sesion} idDireccion={'id' in destino ? destino.id : undefined} />;
     if (nombre === 'preferencias' && sesion !== undefined) return <PantallaPreferencias api={api} sesion={sesion} />;
+    if (nombre === 'calificar' && sesion !== undefined && 'id' in destino && destino.id !== undefined) return <Calificar key={destino.id} api={api} sesion={sesion} viajeId={destino.id} />;
     if (nombre === 'historial' && sesion !== undefined) return <Historial api={api} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };

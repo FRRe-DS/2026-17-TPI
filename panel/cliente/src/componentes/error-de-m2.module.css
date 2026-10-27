@@ -45,3 +45,10 @@
     grid-template-columns: 8rem minmax(0, 1fr);
   }
 }
+
+/* La frase de la pantalla va primero y más grande que el título de M2: es lo que la persona lee; lo de M2 es para quien busca. */
+.mensaje {
+  margin-bottom: var(--e-1);
+  font-size: var(--t-cuerpo);
+  font-weight: 650;
+}

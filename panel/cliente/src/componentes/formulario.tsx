@@ -12,6 +12,8 @@ type PropsFormulario = {
   // El error de M2 al enviar: se muestra completo junto a los campos, que conservan lo escrito.
   error?: DatosDeError | undefined;
   alReintentar?: (() => void) | undefined;
+  // La frase de la pantalla para ese error, encima del error de M2.
+  mensajeDelError?: string | undefined;
   // Los botones del pie: «Descartar», «Guardar».
   acciones?: ReactNode;
   children: ReactNode;
@@ -19,7 +21,7 @@ type PropsFormulario = {
 
 // Una hoja del formulario: cabecera con título y folio, los casilleros y el pie con las acciones. La validación es del panel
 // (cada error con su campo), no la del navegador, que no se puede leer igual en todos.
-export function Formulario({ titulo, folio, alEnviar, error, alReintentar, acciones, children }: PropsFormulario) {
+export function Formulario({ titulo, folio, alEnviar, error, alReintentar, mensajeDelError, acciones, children }: PropsFormulario) {
   const id = useId();
   const enviar = (evento: FormEvent) => {
     evento.preventDefault();
@@ -39,7 +41,7 @@ export function Formulario({ titulo, folio, alEnviar, error, alReintentar, accio
       <div className={estilos.campos}>{children}</div>
       {error !== undefined && (
         <div role="alert" className={estilos.error}>
-          <ErrorDeM2 error={error} alReintentar={alReintentar} />
+          <ErrorDeM2 error={error} alReintentar={alReintentar} mensaje={mensajeDelError} />
         </div>
       )}
       {acciones !== undefined && <div className={estilos.pie}>{acciones}</div>}
@@ -136,14 +138,18 @@ type PropsGrupo = {
   opciones: { valor: string; etiqueta: string }[];
   seleccionados: readonly string[];
   alCambiar: (valor: string, marcado: boolean) => void;
+  // Se elige una sola: casillas redondas (`radio`) que se recorren con las flechas, en vez de marcar varias.
+  unica?: boolean;
+  error?: string | undefined;
 };
 
 // Un casillero con varias casillas para marcar (RF-2.3.6): un `<fieldset>` con su `<legend>`, de ancho completo. Cada casilla es un
 // `<label>` de al menos 44 px (RNF-15.1) y la ayuda se asocia al grupo con `aria-describedby` (RNF-15.3).
-export function GrupoDeOpciones({ id, etiqueta, numero, ayuda, opciones, seleccionados, alCambiar }: PropsGrupo) {
+export function GrupoDeOpciones({ id, etiqueta, numero, ayuda, opciones, seleccionados, alCambiar, unica = false, error }: PropsGrupo) {
   const idAyuda = ayuda ? `${id}-ayuda` : undefined;
+  const idError = error ? `${id}-error` : undefined;
   return (
-    <fieldset className={`${estilos.campo} ${estilos.completo} ${estilos.grupo}`} aria-describedby={idAyuda}>
+    <fieldset className={`${estilos.campo} ${estilos.completo} ${estilos.grupo}`} aria-describedby={[idAyuda, idError].filter(Boolean).join(' ') || undefined}>
       <legend className={estilos.leyenda}>
         {numero !== undefined && (
           <span className={estilos.numero} aria-hidden="true">
@@ -152,10 +158,15 @@ export function GrupoDeOpciones({ id, etiqueta, numero, ayuda, opciones, selecci
         )}
         {etiqueta}
       </legend>
-      <div className={estilos.opciones}>
+      <div className={unica ? `${estilos.opciones} ${estilos.enFila}` : estilos.opciones}>
         {opciones.map((opcion) => (
           <label key={opcion.valor} className={estilos.opcion}>
-            <input type="checkbox" checked={seleccionados.includes(opcion.valor)} onChange={(evento) => alCambiar(opcion.valor, evento.target.checked)} />
+            <input
+              type={unica ? 'radio' : 'checkbox'}
+              name={unica ? id : undefined}
+              checked={seleccionados.includes(opcion.valor)}
+              onChange={(evento) => alCambiar(opcion.valor, evento.target.checked)}
+            />
             <span>{opcion.etiqueta}</span>
           </label>
         ))}
@@ -163,6 +174,11 @@ export function GrupoDeOpciones({ id, etiqueta, numero, ayuda, opciones, selecci
       {idAyuda !== undefined && (
         <p id={idAyuda} className={estilos.ayuda}>
           {ayuda}
+        </p>
+      )}
+      {idError !== undefined && (
+        <p id={idError} className={estilos.mensajeDeError}>
+          {error}
         </p>
       )}
     </fieldset>
