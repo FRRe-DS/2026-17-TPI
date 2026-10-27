@@ -1,9 +1,10 @@
+import type { UltimoPedido } from '../logica/ultimo-pedido.js';
 import { enlace } from '../rutas.js';
 import estilos from './franja-tecnica.module.css';
 
 // El último pedido a M2, siempre a la vista y sin molestar: método, ruta, código, duración y folio (`X-Request-Id`), el puente con
-// los logs de M2. Lo llena el registro de pedidos de la pantalla de detalle técnico (T31).
-export type UltimoPedido = { metodo: string; ruta: string; estado: number; ms: number; requestId: string };
+// los logs de M2. Lo publica el cliente de M2 al terminar cada pedido (`logica/ultimo-pedido`).
+export type { UltimoPedido };
 
 // La barra dibuja la duración a escala: el ancho completo es un segundo; lo que tarda más la llena.
 const ESCALA_MS = 1000;
@@ -29,9 +30,11 @@ export function FranjaTecnica({ ultimo, conSesion }: Props) {
             </svg>
             {ultimo.ms} ms
           </span>
-          <span className={estilos.folio}>
-            folio <b>{ultimo.requestId}</b>
-          </span>
+          {ultimo.requestId !== undefined && (
+            <span className={estilos.folio}>
+              folio <b>{ultimo.requestId}</b>
+            </span>
+          )}
         </>
       )}
       {conSesion && (

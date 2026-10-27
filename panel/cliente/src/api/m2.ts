@@ -1,5 +1,6 @@
 import type { components } from '../generado/contrato.js';
 import type { Rol } from '../rutas.js';
+import type { UltimoPedido } from '../logica/ultimo-pedido.js';
 import { ErrorDeApi, errorDeRespuesta, m2NoResponde } from './errores.js';
 
 // El cliente de M2 que usan las pantallas: un método por operación de `contrato/openapi.yml` (RNF-02.3), que pide al servidor del
@@ -42,6 +43,9 @@ export type Identidad = { rol: Rol; sub: string };
 
 export type OpcionesApiM2 = {
   identidad?: () => Identidad | undefined;
+  // Se llama al terminar cada pedido que tuvo respuesta (de M2 o del panel) o se agotó, con lo que muestra la franja del pie
+  // (RNF-14.9). Un pedido que la persona cancela no cuenta.
+  alTerminar?: (pedido: UltimoPedido) => void;
   // Solo para las pruebas.
   fetch?: typeof fetch;
   tiempoMaximoMs?: number;
@@ -57,7 +61,7 @@ type Datos = {
   clave?: string;
 };
 
-export function crearApiM2({ identidad, fetch: pedirHttp = (...args) => globalThis.fetch(...args), tiempoMaximoMs = TIEMPO_MAXIMO_MS }: OpcionesApiM2 = {}) {
+export function crearApiM2({ identidad, alTerminar, fetch: pedirHttp = (...args) => globalThis.fetch(...args), tiempoMaximoMs = TIEMPO_MAXIMO_MS }: OpcionesApiM2 = {}) {
   async function pedir<T>(nombre: Nombre, { camino = {}, consulta = {}, cuerpo, clave }: Datos, { senal }: OpcionesDePedido = {}): Promise<T> {
     const { metodo, ruta } = OPERACIONES[nombre];
     const parametros = new URLSearchParams();
@@ -77,6 +81,9 @@ export function crearApiM2({ identidad, fetch: pedirHttp = (...args) => globalTh
     // El tiempo máximo cuenta hasta tener el cuerpo entero, no solo hasta las cabeceras.
     const tiempo = new AbortController();
     const temporizador = setTimeout(() => tiempo.abort(), tiempoMaximoMs);
+    const inicio = performance.now();
+    const informar = (estado: number, requestId?: string) =>
+      alTerminar?.({ metodo, ruta: url, estado, ms: Math.round(performance.now() - inicio), requestId });
     try {
       const respuesta = await pedirHttp(url, {
         method: metodo,
@@ -84,6 +91,7 @@ export function crearApiM2({ identidad, fetch: pedirHttp = (...args) => globalTh
         body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
         signal: senal === undefined ? tiempo.signal : AbortSignal.any([tiempo.signal, senal]),
       });
+      informar(respuesta.status, respuesta.headers.get('x-request-id') ?? undefined);
       if (!respuesta.ok) throw await errorDeRespuesta(respuesta);
       if (respuesta.status === 204) return undefined as T;
       try {
@@ -97,6 +105,7 @@ export function crearApiM2({ identidad, fetch: pedirHttp = (...args) => globalTh
       if (error instanceof ErrorDeApi) throw error;
       // La persona canceló: se devuelve tal cual, no es un fallo de M2. Si el tiempo también se agotó, manda el tiempo.
       if (senal?.aborted && !tiempo.signal.aborted) throw error;
+      informar(504);
       throw m2NoResponde();
     } finally {
       clearTimeout(temporizador);

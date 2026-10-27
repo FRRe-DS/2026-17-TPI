@@ -100,7 +100,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T30. Vista de otro módulo.** RF-2.6.7
   - Hecho cuando: al entrar como SERVICIO con el identificador por defecto `m5-despacho` (editable), la pantalla `otro-modulo` solo ofrece consultar el estado de cualquier UUID con `obtenerEstadoCuenta` y el menú no muestra ninguna otra operación, comprobado contra M2 real.
 
-- [ ] **T31. Pantalla de detalle técnico.** RNF-14.9
+- [x] **T31. Pantalla de detalle técnico.** RNF-14.9
   - Hecho cuando: la pantalla `detalle-tecnico` lista los últimos 50 pedidos con método, ruta, código, duración y `X-Request-Id`, permite copiar el `curl` equivalente con `$TOKEN` y muestra el `Authorization` enmascarado; el `X-Request-Id` de un pedido hecho desde cualquier pantalla aparece en `docker compose logs m2`.
 
 - [ ] **T32. Pantalla del M6 simulado: escenarios y modos.** RNF-13.5, RNF-12.7

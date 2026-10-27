@@ -9,6 +9,21 @@ export type NombreDeEscenario = 'completado' | 'enCurso' | 'ajeno' | 'inexistent
 export type Escenario = { nombre: NombreDeEscenario; viajeId: string; respuestaDeM2: 201 | 422 | 404 };
 export type EjemploDeViajes = { clienteId: string; escenarios: Escenario[] };
 
+// Un pedido a M2 tal como lo guarda el panel para el detalle técnico (RNF-14.9): con el `Authorization` ya enmascarado y el `curl`
+// que lo repite, con `$TOKEN` en lugar del token. El más nuevo viene primero y son 50 como mucho.
+export type PedidoDelPanel = {
+  requestId: string;
+  hora: string;
+  metodo: string;
+  ruta: string;
+  encabezados: Record<string, string>;
+  cuerpo?: string;
+  cuerpoOmitido?: boolean;
+  estado: number;
+  duracionMs: number;
+  curl: string;
+};
+
 export type OpcionesApiPanel = {
   // Solo para las pruebas.
   fetch?: typeof fetch;
@@ -38,6 +53,8 @@ export function crearApiPanel({ fetch: pedirHttp = (...args) => globalThis.fetch
   }
 
   return {
+    // Los últimos pedidos que el panel le hizo a M2 (RNF-14.9). Este pedido no es de M2 y no queda registrado.
+    listarPedidos: (senal?: AbortSignal) => pedir<{ pedidos: PedidoDelPanel[] }>('GET', '/panel/pedidos', senal),
     // Repone los viajes de ejemplo del cliente en el M6 simulado y devuelve sus escenarios. Repetirlo da lo mismo (RF-2.1.11).
     cargarEjemploDeViajes: (clienteId: string, senal?: AbortSignal) =>
       pedir<EjemploDeViajes>('POST', `/panel/m6/clientes/${encodeURIComponent(clienteId)}/ejemplo`, senal),

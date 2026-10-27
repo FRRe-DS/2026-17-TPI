@@ -1,0 +1,140 @@
+.detalle {
+  display: grid;
+  gap: var(--e-3);
+  max-width: 72rem;
+  margin-top: var(--e-4);
+}
+
+.nota {
+  max-width: 64ch;
+  color: var(--tinta-suave);
+}
+
+.nota code {
+  font: var(--t-detalle) / 1.4 var(--mono);
+}
+
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.lista {
+  display: grid;
+}
+
+.pedido + .pedido {
+  border-top: 1px solid var(--regla);
+}
+
+.resumen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--e-1) var(--e-3);
+  min-height: var(--control);
+  padding: var(--e-2) var(--e-3);
+  cursor: pointer;
+  font: var(--t-detalle) / 1.5 var(--mono);
+}
+
+.resumen:focus-visible {
+  outline: 2px solid var(--foco);
+  outline-offset: -2px;
+}
+
+.hora,
+.dato {
+  color: var(--tinta-suave);
+}
+
+.metodo {
+  font-weight: 600;
+}
+
+.ruta {
+  flex: 1 1 14rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ok,
+.mal {
+  padding: 0 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.ok {
+  background: var(--acento-tenue);
+  color: var(--acento);
+}
+
+.mal {
+  background: var(--mal-fondo);
+  color: var(--mal);
+}
+
+.cuerpo {
+  display: grid;
+  gap: var(--e-2);
+  justify-items: start;
+  padding: var(--e-2) var(--e-3) var(--e-3);
+}
+
+.subtitulo {
+  font-size: var(--t-detalle);
+  font-weight: 650;
+  color: var(--tinta-suave);
+}
+
+.encabezados {
+  display: grid;
+  gap: 2px;
+  max-width: 100%;
+  font: var(--t-detalle) / 1.45 var(--mono);
+}
+
+.encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--e-2);
+}
+
+.encabezado dt {
+  color: var(--tinta-suave);
+}
+
+.encabezado dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pre {
+  max-width: 100%;
+  margin: 0;
+  padding: var(--e-2);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio);
+  background: var(--campo);
+  font: var(--t-detalle) / 1.45 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (min-width: 600px) {
+  .resumen,
+  .cuerpo {
+    padding-inline: var(--e-4);
+  }
+}

@@ -5,7 +5,8 @@ import type { Config } from '../../../src/config.js';
 import { cargarContrato } from '../../../src/contrato/cargar.js';
 import { manejadores } from '../../../src/operaciones/index.js';
 import { crearApiM2, type ApiM2, type Identidad } from '../../../panel/cliente/src/api/m2.js';
-import { crearApiPanel } from '../../../panel/cliente/src/api/panel.js';
+import { crearApiPanel, type ApiPanel } from '../../../panel/cliente/src/api/panel.js';
+import type { UltimoPedido } from '../../../panel/cliente/src/logica/ultimo-pedido.js';
 import { crearViajesSimulados, type FuenteDeViajes } from '../../../panel/cliente/src/fuentes/viajes-simulados.js';
 import { construirAppControl } from '../../../panel/m6-simulado/app-control.js';
 import { construirAppM6 } from '../../../panel/m6-simulado/app-m6.js';
@@ -36,7 +37,10 @@ export type PanelConM2 = {
   // El M6 simulado visto por dentro, para comprobar qué guardó.
   estadoM6: ReturnType<typeof crearEstadoM6>;
   // Un cliente de M2 que pide con la identidad que devuelve `identidad` en cada pedido.
-  api: (identidad: () => Identidad | undefined) => ApiM2;
+  // `alTerminar` recibe lo mismo que la franja del pie.
+  api: (identidad: () => Identidad | undefined, alTerminar?: (pedido: UltimoPedido) => void) => ApiM2;
+  // Lo que el navegador le pide al panel y no a M2: el detalle técnico y el canal de control.
+  apiPanel: ApiPanel;
   cerrar: () => Promise<void>;
 };
 
@@ -101,7 +105,8 @@ export async function levantarPanelConM2(): Promise<PanelConM2> {
     viajes,
     ponerModo,
     estadoM6,
-    api: (identidad) => crearApiM2({ identidad, fetch: porElPanel }),
+    apiPanel: crearApiPanel({ fetch: porElPanel }),
+    api: (identidad, alTerminar) => crearApiM2({ identidad, fetch: porElPanel, alTerminar }),
     async cerrar() {
       await panel.close();
       await m2.close();
