@@ -47,7 +47,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T13. `npm run panel` en la máquina y script de humo.** RNF-04.7, RNF-06.4
   - Hecho cuando: con `docker compose up -d --build --wait` y `docker compose --profile panel up -d --build --wait m6` levantados, `npm run panel` compila, arranca con los valores de `ejemplo.env` y `node scripts/panel-humo.mjs` termina en verde (salud del panel, `GET /health` reenviado, estado del M6 simulado, `403` con `Origin` ajeno); el mismo script termina en verde contra el perfil `panel` de compose.
 
-- [ ] **T14. Capa de API del cliente: pedidos a M2, errores y tiempo máximo.** RNF-03.6, RNF-15.4, RNF-02.3
+- [x] **T14. Capa de API del cliente: pedidos a M2, errores y tiempo máximo.** RNF-03.6, RNF-15.4, RNF-02.3
   - Hecho cuando: `pruebas/panel/unitarias/api.test.ts` comprueba, con un `fetch` de mentira, que `api/m2.ts` corta a los 10 segundos, que el `504` del panel y el tiempo agotado dan el mismo error «M2 no responde», que un `problem+json` llega completo (código, `type`, `title`, `detail`, `Retry-After`, `X-Request-Id`) y que toda ruta que arma el cliente existe en `contrato/openapi.yml` con ese método.
 
 - [ ] **T15. Fuentes simuladas, sesión y clientes recordados.** RNF-02.2, RNF-12.9, RF-2.1.6, RF-2.1.7
