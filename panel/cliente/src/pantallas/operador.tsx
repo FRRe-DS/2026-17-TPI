@@ -3,6 +3,7 @@ import { ErrorDeApi, type DatosDeError } from '../api/errores.js';
 import type { ApiM2 } from '../api/m2.js';
 import { Aviso } from '../componentes/aviso.js';
 import { BotonAccion } from '../componentes/boton-accion.js';
+import { BuscarCliente } from '../componentes/buscar-cliente.js';
 import { ErrorDeM2 } from '../componentes/error-de-m2.js';
 import { EstadoPantalla } from '../componentes/estado-pantalla.js';
 import { FichaDeCuenta } from '../componentes/ficha-de-cuenta.js';
@@ -20,7 +21,6 @@ import {
   LARGO_MAXIMO_MOTIVO,
   mensajeDeBloqueo,
   validarBloqueo,
-  validarBusqueda,
   validarLevantamiento,
   type CamposBloqueo,
 } from '../logica/bloqueos.js';
@@ -38,43 +38,13 @@ const sePuedeReintentar = (error: DatosDeError | undefined) => error !== undefin
 // La vista del operador (RF-2.6.6): busca un cliente por su UUID, muestra su estado de cuenta y su historial de bloqueos, bloquea y
 // levanta. Tras cada acción vuelve a pedir el estado a M2, así lo que se ve es lo que M2 tiene.
 export function Operador({ api }: { api: ApiM2 }) {
-  const id = useId();
-  const [texto, setTexto] = useState('');
-  const [intentado, setIntentado] = useState(false);
   const [clienteId, setClienteId] = useState<string | undefined>();
-  const errorDeBusqueda = intentado ? validarBusqueda(texto) : undefined;
-
-  const buscar = () => {
-    setIntentado(true);
-    if (validarBusqueda(texto) !== undefined) return document.getElementById(`${id}-cliente`)?.focus();
-    setClienteId(texto.trim().toLowerCase());
-  };
 
   return (
     <>
       <Titulo>{TITULOS.operador}</Titulo>
       <div className={estilos.operador}>
-        <Formulario
-          titulo="Buscar un cliente"
-          alEnviar={buscar}
-          acciones={
-            <BotonAccion tipo="submit" esperando={false}>
-              Buscar
-            </BotonAccion>
-          }
-        >
-          <Campo
-            id={`${id}-cliente`}
-            numero={1}
-            etiqueta="UUID del cliente"
-            valor={texto}
-            alCambiar={setTexto}
-            error={errorDeBusqueda}
-            ayuda="El identificador que M2 le dio al crear su perfil."
-            autoComplete="off"
-            completo
-          />
-        </Formulario>
+        <BuscarCliente titulo="Buscar un cliente" boton="Buscar" alBuscar={setClienteId} />
         {clienteId !== undefined && <BloqueosDelCliente key={clienteId} api={api} clienteId={clienteId} />}
       </div>
     </>

@@ -99,7 +99,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const IDENTIFICADOR_DE_EJEMPLO: Record<Rol, string> = {
   CLIENTE: '',
   OPERADOR: 'operador-1',
-  SERVICIO: 'modulo-pagos',
+  SERVICIO: 'm5-despacho',
   CONDUCTOR: 'conductor-1',
 };
 
