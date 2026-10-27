@@ -14,6 +14,13 @@
   margin-top: var(--e-2);
 }
 
+/* El enlace de vuelta es un control más: alto de 44 px, como todos (RNF-15.1). */
+.volver a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control);
+}
+
 .hoja {
   max-width: 72rem;
   margin-top: var(--e-4);

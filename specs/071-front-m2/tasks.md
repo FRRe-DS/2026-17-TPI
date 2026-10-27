@@ -108,7 +108,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 
 ## Tramo E — Prueba en navegador, CI y documentación
 
-- [ ] **T33. Prueba en navegador I: base, tamaños, teclado y accesibilidad.** RNF-07.5, RNF-15.1, RNF-15.3
+- [x] **T33. Prueba en navegador I: base, tamaños, teclado y accesibilidad.** RNF-07.5, RNF-15.1, RNF-15.3
   - Hecho cuando: `npm run panel:navegador` levanta M2 real, el M6 simulado y el panel, abre Chrome con `playwright-core` y, a 360 y a 1280 píxeles, en modo claro y oscuro, recorre cada pantalla comprobando que no hay desplazamiento horizontal, que los controles miden al menos 44×44 píxeles, que se puede usar solo con teclado con foco visible y que `axe-core` no informa violaciones de contraste ni de etiquetas.
 
 - [ ] **T34. Prueba en navegador II: estados, doble clic y valores máximos.** RNF-15, RNF-15.2, RNF-15.4, RNF-15.5, RF-2.5.15

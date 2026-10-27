@@ -41,10 +41,13 @@ export type PanelConM2 = {
   api: (identidad: () => Identidad | undefined, alTerminar?: (pedido: UltimoPedido) => void) => ApiM2;
   // Lo que el navegador le pide al panel y no a M2: el detalle técnico y el canal de control.
   apiPanel: ApiPanel;
+  // Donde escucha el panel (`http://127.0.0.1:{puerto}`): lo que abre Chrome en la prueba en navegador.
+  origen: string;
   cerrar: () => Promise<void>;
 };
 
-export async function levantarPanelConM2(): Promise<PanelConM2> {
+// `directorioCliente`: la carpeta del cliente compilado, para que el panel también sirva las pantallas (prueba en navegador).
+export async function levantarPanelConM2(opciones: { directorioCliente?: string } = {}): Promise<PanelConM2> {
   const base = await crearBaseDePrueba();
   await migrar({ urlBd: base.urlBd, tiempoBdMs: 2000 });
   const pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: 2000 });
@@ -83,6 +86,7 @@ export async function levantarPanelConM2(): Promise<PanelConM2> {
   const puerto = await puertoLibre();
   const panel = crearAppPanel({
     config: { puerto, urlM2: `http://127.0.0.1:${puertoM2}`, urlM6Control: `http://127.0.0.1:${puertoControlM6}` },
+    directorioCliente: opciones.directorioCliente,
   });
   await panel.listen({ port: puerto, host: '127.0.0.1' });
   const origen = `http://127.0.0.1:${puerto}`;
@@ -106,6 +110,7 @@ export async function levantarPanelConM2(): Promise<PanelConM2> {
     ponerModo,
     estadoM6,
     apiPanel: crearApiPanel({ fetch: porElPanel }),
+    origen,
     api: (identidad, alTerminar) => crearApiM2({ identidad, fetch: porElPanel, alTerminar }),
     async cerrar() {
       await panel.close();
