@@ -58,7 +58,7 @@ type PropsCampo = {
   error?: string | undefined;
   valor: string;
   alCambiar: (valor: string) => void;
-  tipo?: 'text' | 'tel' | 'date' | 'email';
+  tipo?: 'text' | 'tel' | 'date' | 'email' | 'datetime-local';
   // Con `opciones` el casillero es un selector y `valor` es el de la opción elegida.
   opciones?: { valor: string; etiqueta: string }[];
   // El teclado que ofrece el teléfono: `decimal` para coordenadas y otros números con coma.

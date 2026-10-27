@@ -16,3 +16,9 @@ export const textoDeEstado = (estado: EstadoCliente): string =>
   estado === 'BLOQUEADO' ? 'Bloqueado: no puede solicitar viajes mientras haya un bloqueo vigente.' : 'Activo: puede solicitar viajes.';
 
 export const textoDeVigencia = ({ hasta }: Pick<Bloqueo, 'hasta'>): string => (hasta === undefined ? 'Hasta que se levante' : `Hasta ${instante(hasta)} (UTC)`);
+
+// En qué quedó un bloqueo del historial: vigente, levantado por un operador o vencido por su fecha sin que nadie lo levantara.
+export function estadoDeBloqueo(bloqueo: Pick<Bloqueo, 'vigente' | 'levantadoEn'>): 'vigente' | 'levantado' | 'vencido' {
+  if (bloqueo.vigente) return 'vigente';
+  return bloqueo.levantadoEn === undefined ? 'vencido' : 'levantado';
+}

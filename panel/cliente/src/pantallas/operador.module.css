@@ -1,0 +1,112 @@
+.operador {
+  display: grid;
+  gap: var(--e-3);
+  max-width: 72rem;
+  margin-top: var(--e-4);
+}
+
+.cliente {
+  display: grid;
+  gap: var(--e-3);
+}
+
+.subtitulo {
+  margin-top: var(--e-2);
+  font-size: var(--t-cuerpo);
+  font-weight: 650;
+}
+
+.errorAlLevantar {
+  max-width: 72rem;
+}
+
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.lista {
+  display: grid;
+}
+
+.bloqueo {
+  display: grid;
+  gap: var(--e-3);
+  padding: var(--e-3);
+}
+
+.bloqueo + .bloqueo {
+  border-top: 1px solid var(--regla);
+}
+
+.cabeza {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+}
+
+.contenido {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.nombre {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--e-2);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.vigente,
+.cerrado {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font: 600 var(--t-chica) / 1.6 var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.vigente {
+  background: var(--mal-fondo);
+  color: var(--mal);
+}
+
+.cerrado {
+  border: 1px solid var(--regla);
+  color: var(--tinta-suave);
+}
+
+.dato {
+  color: var(--tinta-suave);
+  font: var(--t-detalle) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.vacia {
+  display: grid;
+  justify-items: start;
+  gap: var(--e-3);
+  padding: var(--e-3);
+}
+
+@media (min-width: 600px) {
+  .bloqueo,
+  .vacia {
+    padding-inline: var(--e-4);
+  }
+}

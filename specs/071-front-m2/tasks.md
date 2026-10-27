@@ -94,7 +94,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T28. Estado de cuenta del cliente.** RF-2.6.5
   - Hecho cuando: la pantalla `estado-cuenta` muestra con `obtenerEstadoCuenta` si el cliente está activo o bloqueado y sus bloqueos vigentes, y un cliente bloqueado sigue pudiendo ver sus pantallas, comprobado contra M2 real.
 
-- [ ] **T29. Vista del operador: buscar, bloquear y levantar.** RF-2.6.6
+- [x] **T29. Vista del operador: buscar, bloquear y levantar.** RF-2.6.6
   - Hecho cuando: la pantalla `operador` busca un cliente por UUID, muestra su estado y sus bloqueos con `listarBloqueos`, crea uno con `crearBloqueo` (motivo de 1 a 500 caracteres y `hasta` opcional) y lo levanta con `levantarBloqueo`, actualizando el estado tras cada acción, comprobado contra M2 real.
 
 - [ ] **T30. Vista de otro módulo.** RF-2.6.7

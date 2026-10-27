@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estaBloqueado, textoDeEstado, textoDeVigencia } from '../../../panel/cliente/src/logica/cuenta.js';
+import { estadoDeBloqueo, estaBloqueado, textoDeEstado, textoDeVigencia } from '../../../panel/cliente/src/logica/cuenta.js';
 
 // Lo que dice el estado de cuenta (T28, RF-2.6.5), sin React.
 
@@ -36,5 +36,13 @@ describe('textoDeVigencia: hasta cuándo dura un bloqueo', () => {
 
   it('con fecha, hasta ese instante en UTC', () => {
     expect(textoDeVigencia(bloqueo({ hasta: '2026-12-31T23:59:59.000Z' }))).toBe('Hasta 2026-12-31 23:59:59 (UTC)');
+  });
+});
+
+describe('estadoDeBloqueo: en qué quedó cada bloqueo del historial', () => {
+  it('vigente, levantado por un operador o vencido por su fecha', () => {
+    expect(estadoDeBloqueo({ vigente: true })).toBe('vigente');
+    expect(estadoDeBloqueo({ vigente: false, levantadoEn: '2026-10-28T10:00:00.000Z' })).toBe('levantado');
+    expect(estadoDeBloqueo({ vigente: false })).toBe('vencido');
   });
 });

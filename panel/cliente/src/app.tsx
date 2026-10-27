@@ -13,6 +13,7 @@ import { Direcciones } from './pantallas/direcciones.js';
 import { EstadoDeCuenta } from './pantallas/estado-cuenta.js';
 import { Historial } from './pantallas/historial.js';
 import { Ingresar } from './pantallas/ingresar.js';
+import { Operador } from './pantallas/operador.js';
 import { Perfil } from './pantallas/perfil.js';
 import { PantallaPreferencias } from './pantallas/preferencias.js';
 import { enlace, inicioDe, TITULOS, type Ruta } from './rutas.js';
@@ -64,6 +65,7 @@ export function App() {
     if (nombre === 'calificar' && sesion !== undefined && 'id' in destino && destino.id !== undefined) return <Calificar key={destino.id} api={api} sesion={sesion} viajeId={destino.id} />;
     if (nombre === 'calificaciones' && sesion !== undefined) return <Calificaciones api={api} sesion={sesion} idCalificacion={'id' in destino ? destino.id : undefined} />;
     if (nombre === 'estado-cuenta' && sesion !== undefined) return <EstadoDeCuenta api={api} sesion={sesion} />;
+    if (nombre === 'operador' && sesion !== undefined) return <Operador api={api} />;
     if (nombre === 'historial' && sesion !== undefined) return <Historial api={api} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };
