@@ -7,6 +7,12 @@ export type CamposCliente = { nombre: string; apellido: string; telefono: string
 export type ErroresDeCampos = Partial<Record<keyof CamposCliente, string>>;
 
 export const LARGO_MAXIMO_NOMBRE = 100;
+// El orden de los casilleros del formulario, el del contrato.
+export const ORDEN_DE_CAMPOS: readonly (keyof CamposCliente)[] = ['nombre', 'apellido', 'telefono', 'fechaNacimiento'];
+
+// El primer casillero con error, al que va el foco al intentar enviar.
+export const primerCampoConError = (errores: ErroresDeCampos): keyof CamposCliente | undefined =>
+  ORDEN_DE_CAMPOS.find((campo) => errores[campo] !== undefined);
 const TELEFONO = /^\+[1-9][0-9]{6,14}$/;
 const FECHA = /^(\d{4})-(\d{2})-(\d{2})$/;
 

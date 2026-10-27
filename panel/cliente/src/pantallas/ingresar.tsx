@@ -2,12 +2,13 @@ import { useId, useRef, useState } from 'react';
 import { Aviso } from '../componentes/aviso.js';
 import { BotonAccion } from '../componentes/boton-accion.js';
 import { ErrorDeM2 } from '../componentes/error-de-m2.js';
+import { CamposDeCliente } from '../componentes/campos-de-cliente.js';
 import { Campo, Formulario } from '../componentes/formulario.js';
 import { Titulo } from '../componentes/titulo.js';
 import type { Sesion } from '../fuentes/fuente-de-sesion.js';
 import { usarAccion } from '../hooks/usar-accion.js';
 import { usarClaveDeIdempotencia } from '../hooks/usar-clave-idempotencia.js';
-import { CLIENTE_DE_EJEMPLO, LARGO_MAXIMO_NOMBRE, validarCamposCliente, type CamposCliente } from '../logica/campos-cliente.js';
+import { CLIENTE_DE_EJEMPLO, primerCampoConError, validarCamposCliente, type CamposCliente } from '../logica/campos-cliente.js';
 import {
   entrarComoNuevo,
   entrarConRol,
@@ -40,14 +41,6 @@ export function Ingresar({ ingreso, alEntrar }: Props) {
   );
 }
 
-const ETIQUETAS: Record<keyof CamposCliente, string> = {
-  nombre: 'Nombre',
-  apellido: 'Apellido',
-  telefono: 'Teléfono',
-  fechaNacimiento: 'Fecha de nacimiento (opcional)',
-};
-const ORDEN: (keyof CamposCliente)[] = ['nombre', 'apellido', 'telefono', 'fechaNacimiento'];
-
 // El alta con valores de ejemplo editables. El UUID y la clave se generan al abrir la pantalla y se conservan hasta que M2
 // contesta bien: «Reintentar» o un segundo envío tras un error mandan los mismos y no crean otro cliente.
 function ClienteNuevo({ ingreso, alEntrar }: Props) {
@@ -70,7 +63,7 @@ function ClienteNuevo({ ingreso, alEntrar }: Props) {
 
   const alEnviar = () => {
     setIntentado(true);
-    const primero = ORDEN.find((campo) => validarCamposCliente(campos)[campo] !== undefined);
+    const primero = primerCampoConError(validarCamposCliente(campos));
     if (primero !== undefined) return document.getElementById(`${id}-${primero}`)?.focus();
     void enviar(campos);
   };
@@ -93,23 +86,7 @@ function ClienteNuevo({ ingreso, alEntrar }: Props) {
           </>
         }
       >
-        {ORDEN.map((campo, indice) => (
-          <Campo
-            key={campo}
-            id={`${id}-${campo}`}
-            numero={indice + 1}
-            etiqueta={ETIQUETAS[campo]}
-            valor={campos[campo]}
-            alCambiar={(valor) => setCampos((previos) => ({ ...previos, [campo]: valor }))}
-            error={errores[campo]}
-            tipo={campo === 'telefono' ? 'tel' : campo === 'fechaNacimiento' ? 'date' : 'text'}
-            maximo={campo === 'nombre' || campo === 'apellido' ? LARGO_MAXIMO_NOMBRE : undefined}
-            ayuda={campo === 'telefono' ? 'Formato E.164, por ejemplo +5493624000000.' : undefined}
-            requerido={campo !== 'fechaNacimiento'}
-            // Son datos de prueba: el navegador no tiene que ofrecer los de quien evalúa.
-            autoComplete="off"
-          />
-        ))}
+        <CamposDeCliente id={id} campos={campos} errores={errores} alCambiar={(campo, valor) => setCampos((previos) => ({ ...previos, [campo]: valor }))} />
       </Formulario>
       <Aviso estado={estado} />
     </div>

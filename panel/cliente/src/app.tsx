@@ -8,7 +8,8 @@ import { fuenteDeViajes } from './fuentes/viajes-simulados.js';
 import { usarRuta } from './hooks/usar-ruta.js';
 import { crearRecordadosGuardados, type Ingreso } from './logica/ingresar.js';
 import { Ingresar } from './pantallas/ingresar.js';
-import { enlace, inicioDe, TITULOS } from './rutas.js';
+import { Perfil } from './pantallas/perfil.js';
+import { enlace, inicioDe, TITULOS, type Ruta } from './rutas.js';
 
 const fuenteDeSesion = crearSesionSimulada(almacenamientoDelNavegador());
 
@@ -19,6 +20,9 @@ const ingreso: Ingreso = {
   recordados: crearRecordadosGuardados(almacenamientoDelNavegador('localStorage')),
   apiPara: (identidad: Identidad) => crearApiM2({ identidad: () => identidad }),
 };
+
+// El cliente de M2 de las demás pantallas: pide con la sesión que haya en cada momento (RNF-12.9).
+const api = crearApiM2({ identidad: () => fuenteDeSesion.actual() });
 
 // Las dos fuentes simuladas, nombradas en el encabezado de toda vista (RNF-12.7).
 const ETIQUETAS = [
@@ -44,9 +48,16 @@ export function App() {
     setSesion(undefined);
   };
 
+  // Las pantallas construidas; las demás siguen mostrando su título (tramo D). Las que piden a M2 solo se dibujan con sesión.
+  const pantalla = (nombre: Ruta['pantalla'], tituloPendiente: string) => {
+    if (nombre === 'ingresar') return <Ingresar ingreso={ingreso} alEntrar={entrar} />;
+    if (nombre === 'perfil' && sesion !== undefined) return <Perfil api={api} sesion={sesion} />;
+    return <PantallaPendiente titulo={tituloPendiente} />;
+  };
+
   return (
     <Marco sesion={sesion} ruta={ruta} etiquetas={ETIQUETAS} ultimo={undefined} alCerrarSesion={cerrarSesion}>
-      {ruta.pantalla === 'ingresar' ? <Ingresar ingreso={ingreso} alEntrar={entrar} /> : <PantallaPendiente titulo={titulo} />}
+      {pantalla(ruta.pantalla, titulo)}
     </Marco>
   );
 }

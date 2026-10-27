@@ -1,0 +1,95 @@
+.perfil {
+  display: grid;
+  gap: var(--e-4);
+  max-width: 72rem;
+  margin-top: var(--e-4);
+}
+
+/* Lo que es de M2 y no se edita: va aparte de los casilleros, en la misma hoja de papel y con los datos en monoespaciada. */
+.datos {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.filas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.fila {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--e-3);
+}
+
+.fila + .fila {
+  border-top: 1px solid var(--regla);
+}
+
+.fila dt {
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+}
+
+.fila dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dato {
+  font: var(--t-detalle) / 1.5 var(--mono);
+}
+
+.activo,
+.bloqueado {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font: 600 var(--t-chica) / 1.6 var(--mono);
+  letter-spacing: 0.06em;
+}
+
+.activo {
+  background: var(--ok-fondo);
+  color: var(--ok);
+}
+
+.bloqueado {
+  background: var(--mal-fondo);
+  color: var(--mal);
+}
+
+@media (min-width: 600px) {
+  .filas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fila {
+    padding-inline: var(--e-4);
+  }
+
+  .fila:nth-child(even) {
+    border-left: 1px solid var(--regla);
+  }
+
+  .fila:nth-child(2) {
+    border-top: 0;
+  }
+}
+
+@media (min-width: 1200px) {
+  .filas {
+    grid-template-columns: 8rem minmax(0, 3fr) repeat(2, minmax(0, 2fr));
+  }
+
+  .fila,
+  .fila + .fila {
+    border-top: 0;
+  }
+
+  .fila + .fila {
+    border-left: 1px solid var(--regla);
+  }
+}
