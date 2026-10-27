@@ -7,27 +7,29 @@ import { EstadoPantalla } from '../componentes/estado-pantalla.js';
 import { Formulario } from '../componentes/formulario.js';
 import { Titulo } from '../componentes/titulo.js';
 import type { Sesion } from '../fuentes/fuente-de-sesion.js';
+import type { FuenteDeViajes } from '../fuentes/viajes-simulados.js';
 import { usarAccion } from '../hooks/usar-accion.js';
 import { usarCarga } from '../hooks/usar-carga.js';
 import { calcularCambios, camposDePerfil, guardarCambios, validarEdicion } from '../logica/cambios.js';
 import { primerCampoConError, type CamposCliente } from '../logica/campos-cliente.js';
 import type { components } from '../generado/contrato.js';
 import { TITULOS } from '../rutas.js';
+import { CargarEjemplo } from './cargar-ejemplo.js';
 import estilos from './perfil.module.css';
 
 type Cliente = components['schemas']['Cliente'];
-type Props = { api: ApiM2; sesion: Sesion };
+type Props = { api: ApiM2; viajes: FuenteDeViajes; sesion: Sesion };
 
 // El perfil de quien tiene la sesión (RF-2.1.8, RF-2.1.9): se carga con `obtenerCliente` y se edita con `actualizarCliente`,
 // que recibe solo lo modificado. El CONDUCTOR llega acá también y ve el error de M2.
-export function Perfil({ api, sesion }: Props) {
+export function Perfil({ api, viajes, sesion }: Props) {
   const { estado, reintentar } = usarCarga((senal) => api.obtenerCliente(sesion.sub, { senal }), [api, sesion.sub]);
 
   return (
     <>
       <Titulo>{TITULOS.perfil}</Titulo>
       <EstadoPantalla estado={estado} vacio="No hay perfil para mostrar." alReintentar={reintentar}>
-        {(perfil) => <EditarPerfil key={perfil.clienteId} api={api} inicial={perfil} />}
+        {(perfil) => <EditarPerfil key={perfil.clienteId} api={api} viajes={viajes} inicial={perfil} />}
       </EstadoPantalla>
     </>
   );
@@ -37,7 +39,7 @@ const FECHA_Y_HORA = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/;
 // El instante tal como lo trae M2, en UTC y sin milisegundos: es un dato, no una fecha para leer en voz alta.
 const instante = (iso: string) => FECHA_Y_HORA.exec(iso)?.slice(1).join(' ') ?? iso;
 
-function EditarPerfil({ api, inicial }: { api: ApiM2; inicial: Cliente }) {
+function EditarPerfil({ api, viajes, inicial }: { api: ApiM2; viajes: FuenteDeViajes; inicial: Cliente }) {
   const id = useId();
   // El perfil de M2: el que se cargó, o el que devolvió el último guardado.
   const [perfil, setPerfil] = useState(inicial);
@@ -127,6 +129,7 @@ function EditarPerfil({ api, inicial }: { api: ApiM2; inicial: Cliente }) {
         <CamposDeCliente id={id} campos={campos} errores={errores} alCambiar={alCambiar} />
       </Formulario>
       <Aviso estado={estado} />
+      <CargarEjemplo api={api} viajes={viajes} clienteId={perfil.clienteId} />
     </div>
   );
 }

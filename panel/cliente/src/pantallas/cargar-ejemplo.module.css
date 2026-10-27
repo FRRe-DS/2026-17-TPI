@@ -1,0 +1,92 @@
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  padding: var(--e-3);
+  border-bottom: 1px solid var(--regla);
+}
+
+/* Lo simulado va con borde punteado, como las etiquetas del encabezado (RNF-12.7). */
+.etiqueta {
+  padding: 3px 10px;
+  border: 1px dashed var(--acento);
+  border-radius: 999px;
+  background: var(--etiqueta-fondo);
+  color: var(--acento);
+  font-size: var(--t-detalle);
+}
+
+.cuerpo {
+  display: grid;
+  gap: var(--e-3);
+  padding: var(--e-3);
+}
+
+.cuerpo > .texto {
+  color: var(--tinta-suave);
+  max-width: 72ch;
+}
+
+.pasos {
+  display: grid;
+}
+
+.paso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e-1) var(--e-3);
+  padding: var(--e-2) 0;
+  border-top: 1px solid var(--regla);
+}
+
+.estado {
+  font: 600 var(--t-chica) / 1.4 var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.pendiente .estado {
+  color: var(--tinta-suave);
+  font-weight: 400;
+}
+
+.enCurso .estado {
+  color: var(--acento);
+}
+
+.hecho .estado {
+  color: var(--ok);
+}
+
+.fallido .estado {
+  color: var(--mal);
+}
+
+.corte {
+  margin-bottom: var(--e-2);
+  font-weight: 500;
+}
+
+.pie {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--e-3);
+  border-top: 1px solid var(--regla);
+}
+
+@media (min-width: 600px) {
+  .cabecera,
+  .cuerpo,
+  .pie {
+    padding-inline: var(--e-4);
+  }
+}

@@ -70,7 +70,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T20. Perfil: ver y editar.** RF-2.1.8, RF-2.1.9
   - Hecho cuando: `pruebas/panel/unitarias/cambios.test.ts` comprueba que `logica/cambios.ts` manda solo los campos distintos y no llama a M2 si no hay ninguno; la pantalla `perfil` muestra `obtenerCliente`, guarda con `actualizarCliente` y, ante un `400`, muestra el `detail` junto al formulario conservando lo escrito.
 
-- [ ] **T21. «Cargar ejemplo».** RF-2.1.10, RF-2.1.11
+- [x] **T21. «Cargar ejemplo».** RF-2.1.10, RF-2.1.11
   - Hecho cuando: `pruebas/panel/unitarias/ejemplo.test.ts` comprueba que `logica/ejemplo.ts` arma tres direcciones (una `FAVORITA`, dos `RECIENTE`) con claves `ejemplo-dir-{n}-{clienteId}`, unas preferencias y la llamada al M6 simulado, y que un fallo del paso de M6 deja lo demás hecho y reintentable; la pantalla informa cada paso, y repetir el botón no duplica nada (comprobado contra M2 real).
 
 - [ ] **T22. Direcciones: listar, crear y editar.** RF-2.2.6

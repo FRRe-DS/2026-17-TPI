@@ -51,7 +51,7 @@ export function App() {
   // Las pantallas construidas; las demás siguen mostrando su título (tramo D). Las que piden a M2 solo se dibujan con sesión.
   const pantalla = (nombre: Ruta['pantalla'], tituloPendiente: string) => {
     if (nombre === 'ingresar') return <Ingresar ingreso={ingreso} alEntrar={entrar} />;
-    if (nombre === 'perfil' && sesion !== undefined) return <Perfil api={api} sesion={sesion} />;
+    if (nombre === 'perfil' && sesion !== undefined) return <Perfil api={api} viajes={fuenteDeViajes} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };
 
