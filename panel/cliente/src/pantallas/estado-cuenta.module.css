@@ -1,0 +1,10 @@
+.cuenta {
+  display: grid;
+  gap: var(--e-3);
+  margin-top: var(--e-4);
+}
+
+.nota {
+  max-width: 60ch;
+  color: var(--tinta-suave);
+}

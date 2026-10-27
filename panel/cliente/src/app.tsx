@@ -10,6 +10,7 @@ import { crearRecordadosGuardados, type Ingreso } from './logica/ingresar.js';
 import { Calificaciones } from './pantallas/calificaciones.js';
 import { Calificar } from './pantallas/calificar.js';
 import { Direcciones } from './pantallas/direcciones.js';
+import { EstadoDeCuenta } from './pantallas/estado-cuenta.js';
 import { Historial } from './pantallas/historial.js';
 import { Ingresar } from './pantallas/ingresar.js';
 import { Perfil } from './pantallas/perfil.js';
@@ -62,6 +63,7 @@ export function App() {
     if (nombre === 'preferencias' && sesion !== undefined) return <PantallaPreferencias api={api} sesion={sesion} />;
     if (nombre === 'calificar' && sesion !== undefined && 'id' in destino && destino.id !== undefined) return <Calificar key={destino.id} api={api} sesion={sesion} viajeId={destino.id} />;
     if (nombre === 'calificaciones' && sesion !== undefined) return <Calificaciones api={api} sesion={sesion} idCalificacion={'id' in destino ? destino.id : undefined} />;
+    if (nombre === 'estado-cuenta' && sesion !== undefined) return <EstadoDeCuenta api={api} sesion={sesion} />;
     if (nombre === 'historial' && sesion !== undefined) return <Historial api={api} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };

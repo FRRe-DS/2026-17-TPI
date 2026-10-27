@@ -1,0 +1,81 @@
+.hoja {
+  display: grid;
+  gap: var(--e-3);
+  max-width: 72rem;
+  padding: var(--e-3);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.estado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--e-2) var(--e-3);
+}
+
+.activo,
+.bloqueado {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font: 600 var(--t-chica) / 1.6 var(--mono);
+  letter-spacing: 0.04em;
+}
+
+.activo {
+  background: var(--acento-tenue);
+  color: var(--acento);
+}
+
+.bloqueado {
+  background: var(--mal-fondo);
+  color: var(--mal);
+}
+
+.cliente {
+  color: var(--tinta-suave);
+}
+
+.dato {
+  font: var(--t-detalle) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.subtitulo {
+  font-size: var(--t-cuerpo);
+  font-weight: 650;
+}
+
+.ninguno {
+  color: var(--tinta-suave);
+}
+
+.lista {
+  display: grid;
+  gap: var(--e-2);
+}
+
+.bloqueo {
+  display: grid;
+  gap: 2px;
+  padding: var(--e-2) var(--e-3);
+  border: 1px solid var(--regla);
+  border-left: 3px solid var(--mal);
+  border-radius: var(--radio);
+}
+
+.motivo {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.bloqueo .dato {
+  color: var(--tinta-suave);
+}
+
+@media (min-width: 600px) {
+  .hoja {
+    padding: var(--e-4);
+  }
+}
