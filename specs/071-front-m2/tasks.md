@@ -56,7 +56,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T16. Hooks de carga y de acción.** RNF-15, RNF-15.2, RNF-15.4
   - Hecho cuando: `pruebas/panel/unitarias/estados.test.ts` comprueba los reductores de `usar-carga` (`cargando → listo | vacio | error`, con reintento que repite el mismo pedido) y de `usar-accion` (espera, éxito con aviso, error con «Reintentar» y la misma clave de idempotencia), y que `logica/clave-idempotencia.ts` genera la clave al abrir, la conserva ante un error o un tiempo agotado y la descarta tras un éxito o al cerrar.
 
-- [ ] **T17. Dirección visual, variables de diseño y estructura responsiva.** RNF-15.1, RNF-15.3, RNF-12.7
+- [x] **T17. Dirección visual, variables de diseño y estructura responsiva.** RNF-15.1, RNF-15.3, RNF-12.7
   - Hecho cuando: está elegida la dirección visual con las skills en el orden del plan y anotada en `guia.md`; existen las variables de diseño en claro y oscuro, el menú por rol y el encabezado con las etiquetas «simulado» en todas las vistas, sin fuentes ni recursos de terceros; `pruebas/panel/unitarias/contraste.test.ts` calcula que cada par de colores de texto y fondo de las variables cumple 4,5:1 en los dos modos, y la estructura se ve sin desplazamiento horizontal a 360 y a 1280 píxeles.
 
 - [ ] **T18. Componentes base: botón de acción, aviso, diálogo de confirmación, formulario y estado de pantalla.** RNF-15, RNF-15.2, RNF-15.3

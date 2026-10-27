@@ -1,0 +1,101 @@
+.encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  min-height: var(--encabezado-alto);
+  padding: var(--e-2) var(--e-3);
+  border-bottom: 1px solid var(--regla);
+  background: var(--hoja);
+}
+
+.etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2);
+  min-width: 0;
+}
+
+/* Lo simulado se marca con borde punteado: es provisorio, no un estado. */
+.etiqueta {
+  padding: 3px 10px;
+  border: 1px dashed var(--acento);
+  border-radius: 999px;
+  background: var(--etiqueta-fondo);
+  color: var(--acento);
+  font-size: var(--t-chica);
+  line-height: 1.4;
+}
+
+.sesion {
+  display: flex;
+  align-items: center;
+  gap: var(--e-3);
+  min-width: 0;
+  margin-left: auto;
+  font-size: var(--t-menu);
+}
+
+.rol {
+  flex: none;
+  padding: var(--e-1) var(--e-2);
+  border-radius: 4px;
+  background: var(--tinta);
+  color: var(--hoja);
+  font: 600 0.6875rem / 1.2 var(--mono);
+  letter-spacing: 0.08em;
+}
+
+/* El identificador puede ser un UUID o un texto de 128 caracteres: se corta con puntos suspensivos y el título lo muestra entero. */
+.sub {
+  min-width: 0;
+  max-width: 22ch;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--t-detalle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cerrar {
+  flex: none;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--acento);
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--acento);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--rapido) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cerrar:hover {
+    background: var(--acento-tenue);
+  }
+}
+
+.cerrar:active {
+  transform: scale(0.97);
+}
+
+@media (min-width: 600px) {
+  .encabezado {
+    padding: var(--e-2) var(--e-5);
+  }
+}
+
+@media (min-width: 960px) {
+  .encabezado {
+    padding: var(--e-2) var(--e-6);
+  }
+
+  .sub {
+    max-width: 38ch;
+  }
+}

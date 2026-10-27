@@ -1,0 +1,76 @@
+.marco {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr auto;
+  grid-template-areas:
+    'lateral'
+    'encabezado'
+    'contenido'
+    'franja';
+}
+
+.marco > aside {
+  grid-area: lateral;
+}
+
+.marco > header {
+  grid-area: encabezado;
+}
+
+.marco > footer {
+  grid-area: franja;
+}
+
+.contenido {
+  grid-area: contenido;
+  min-width: 0;
+  padding: var(--e-4) var(--e-3) var(--e-5);
+}
+
+.contenido:focus {
+  outline: none;
+}
+
+/* Visible solo con el teclado: lleva el foco a la pantalla salteando el menú. */
+.salto {
+  position: absolute;
+  top: var(--e-2);
+  left: var(--e-2);
+  z-index: 3;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 0;
+  border-radius: var(--radio);
+  background: var(--hoja);
+  color: var(--tinta);
+  font-weight: 600;
+  transform: translateY(calc(-100% - var(--e-3)));
+}
+
+/* Aparece sobre el menú oscuro: el anillo va en el color del texto del menú. */
+.salto:focus-visible {
+  outline-color: var(--lateral-texto);
+  transform: none;
+}
+
+@media (min-width: 600px) {
+  .contenido {
+    padding: var(--e-5) var(--e-5) var(--e-6);
+  }
+}
+
+@media (min-width: 960px) {
+  .marco {
+    grid-template-columns: var(--lateral-ancho) minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'lateral encabezado'
+      'lateral contenido'
+      'lateral franja';
+  }
+
+  .contenido {
+    padding: var(--e-5) var(--e-6) var(--e-6);
+  }
+}

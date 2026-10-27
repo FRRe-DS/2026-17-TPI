@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Legajo</title>
+<style>
+:root{--papel:#FAF6EE;--manila:#EADBC0;--kraft:#C9A57A;--tinta:#261C14;--marron:#7A5232;--regla:#DCCBAE;--suave:#6B5D4E;--ok:#2F6B3A;--mal:#A23B2A;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,"Noto Sans",sans-serif;--mono:ui-monospace,"SF Mono","Ubuntu Mono",Menlo,Consolas,monospace}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:var(--papel);color:var(--tinta);font:15px/1.5 var(--sans);display:flex;flex-direction:column}
+header{height:64px;background:var(--kraft);display:flex;align-items:center;gap:32px;padding:0 40px;border-bottom:2px solid var(--marron)}
+.marca{font-weight:800;font-size:18px}
+nav{display:flex;gap:4px}
+nav a{color:var(--tinta);text-decoration:none;padding:10px 14px;border-radius:6px;font-size:14px}
+nav a.on{background:var(--papel)}
+.der{margin-left:auto;display:flex;gap:12px;align-items:center;font-size:14px}
+.etq{font-size:12px;padding:4px 10px;border:1px dashed var(--tinta);border-radius:999px}
+.btn{font:600 14px var(--sans);border-radius:6px;padding:10px 16px;min-height:44px;border:1px solid var(--marron);background:transparent;color:var(--marron)}
+.btn.prim{background:var(--marron);color:var(--papel)}
+main{flex:1;padding:32px 40px;display:flex;flex-direction:column}
+.tapa{background:var(--manila);border:1px solid var(--kraft);border-radius:4px 12px 4px 4px;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-end}
+.tapa .rotulo{background:var(--papel);border:1px solid var(--kraft);padding:12px 18px;min-width:520px}
+.rotulo small{font:11px var(--mono);letter-spacing:.1em;color:var(--suave)}
+.rotulo h1{font-size:26px;line-height:1.2}
+.rotulo p{font:13px var(--mono);color:var(--suave)}
+.sello{border:2px solid var(--ok);color:var(--ok);font:700 13px var(--mono);letter-spacing:.12em;padding:6px 12px;border-radius:4px}
+.pestanas{display:flex;gap:4px;margin-top:24px}
+.pestanas a{padding:10px 18px;background:var(--manila);border:1px solid var(--kraft);border-bottom:0;border-radius:8px 8px 0 0;color:var(--tinta);text-decoration:none;font-size:14px}
+.pestanas a.on{background:#fff;font-weight:600}
+.hoja{background:#fff;border:1px solid var(--kraft);padding:24px 28px;display:grid;grid-template-columns:1fr 1fr;gap:20px 32px;flex:1}
+label{font-size:12px;color:var(--suave)}
+input{display:block;margin-top:6px;width:100%;font:16px var(--sans);border:1px solid var(--regla);border-radius:6px;padding:10px 12px;min-height:44px}
+.acciones{grid-column:1/3;display:flex;justify-content:flex-end;gap:12px;align-self:end}
+footer{height:52px;background:var(--tinta);color:#EADBC0;display:flex;align-items:center;gap:20px;padding:0 40px;font:13px var(--mono)}
+footer b{color:var(--kraft)}
+</style></head><body>
+<header>
+  <span class="marca">M2 · Clientes</span>
+  <nav><a class="on" href="#">Legajo</a><a href="#">Detalle técnico</a><a href="#">M6 simulado</a></nav>
+  <div class="der"><span class="etq">simulado, pendiente de M1</span><span class="etq">simulado, pendiente de M6</span><b>CLIENTE · Ana Pérez</b><button class="btn">Cerrar sesión</button></div>
+</header>
+<main>
+  <div class="tapa">
+    <div class="rotulo"><small>LEGAJO DE CLIENTE</small><h1>Pérez, Ana</h1><p>3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b · alta 12/10/2026</p></div>
+    <span class="sello">ACTIVO</span>
+  </div>
+  <div class="pestanas"><a class="on" href="#">Perfil</a><a href="#">Direcciones · 3</a><a href="#">Preferencias</a><a href="#">Historial · 2</a><a href="#">Calificaciones · 1</a><a href="#">Cuenta</a></div>
+  <div class="hoja">
+    <div><label>Nombre</label><input value="Ana"></div>
+    <div><label>Apellido</label><input value="Pérez"></div>
+    <div><label>Teléfono</label><input value="+5493624000000"></div>
+    <div><label>Fecha de nacimiento</label><input value="1998-04-17"></div>
+    <div class="acciones"><button class="btn">Descartar</button><button class="btn prim">Guardar cambios</button></div>
+  </div>
+</main>
+<footer><b>PATCH</b> /api/v1/clientes/3f2b…5a6b · 200 · 84 ms · X-Request-Id panel-4f1c9a</footer>
+</body></html>

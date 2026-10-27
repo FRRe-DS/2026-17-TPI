@@ -1,0 +1,111 @@
+/* Las variables de diseño del panel (T17, dirección «Formulario con folio»): papel cálido, hojas más claras, tinta sepia y una
+   franja técnica oscura al pie. Los colores se prueban en `pruebas/panel/unitarias/contraste.test.ts` (4,5:1 en texto, 3:1 en
+   bordes de campo y foco); un color nuevo hay que clasificarlo ahí. Sin fuentes de terceros: pila del sistema. */
+
+:root {
+  --papel: #f3ece0;
+  --hoja: #fbf8f2;
+  --campo: #ffffff;
+  --tinta: #2a2018;
+  --tinta-suave: #665a4d;
+  --acento: #6b4a2e;
+  --acento-tenue: #efe4d3;
+  --sobre-acento: #fbf8f2;
+  --regla: #d8cab4;
+  --borde-campo: #8f7e69;
+  --foco: #6b4a2e;
+  --seleccion: #e6d3b3;
+  --etiqueta-fondo: #f6efe3;
+  --lateral: #4e3420;
+  --lateral-hover: #5e412a;
+  --lateral-texto: #f3ece0;
+  --lateral-suave: #d2bfa3;
+  --lateral-regla: #6b4a2e;
+  --franja: #2a2018;
+  --franja-texto: #e9dfd0;
+  --franja-metodo: #d6b48a;
+  --franja-ok: #8cc79a;
+  --franja-mal: #f09a86;
+  --franja-pista: #4a3d33;
+  --ok: #2f6b3a;
+  --ok-fondo: #e8f0e6;
+  --mal: #a23b2a;
+  --mal-fondo: #f7e6e1;
+  --aviso: #7a5410;
+  --aviso-fondo: #f5ebd6;
+
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Ubuntu Mono', Menlo, Consolas, monospace;
+
+  /* Una sola grilla de 8 px (4 px para lo muy apretado). */
+  --e-1: 4px;
+  --e-2: 8px;
+  --e-3: 16px;
+  --e-4: 24px;
+  --e-5: 32px;
+  --e-6: 40px;
+
+  --t-chica: 0.75rem;
+  --t-detalle: 0.8125rem;
+  --t-menu: 0.875rem;
+  --t-cuerpo: 1rem;
+  --t-campo: 1rem;
+  --t-titulo: 1.75rem;
+
+  --radio: 6px;
+  --radio-hoja: 8px;
+  --control: 44px;
+  --lateral-ancho: 248px;
+  --encabezado-alto: 64px;
+  --franja-alto: 56px;
+
+  --salida: cubic-bezier(0.16, 1, 0.3, 1);
+  --rapido: 160ms;
+
+  color-scheme: light;
+}
+
+/* En el teléfono el cuerpo va a 16 px; en la notebook, a 15, la densidad del boceto. */
+@media (min-width: 960px) {
+  :root {
+    --t-cuerpo: 0.9375rem;
+  }
+}
+
+/* El mismo escritorio de noche: papel marrón oscuro, hojas un paso más claras y tinta color cuero. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --papel: #1c1611;
+    --hoja: #262019;
+    --campo: #1f1914;
+    --tinta: #efe6d8;
+    --tinta-suave: #bbaa94;
+    --acento: #ddb98d;
+    --acento-tenue: #3a2e23;
+    --sobre-acento: #1c1611;
+    --regla: #3e3329;
+    --borde-campo: #7d6c59;
+    --foco: #ddb98d;
+    --seleccion: #5a4632;
+    --etiqueta-fondo: #2c241c;
+    --lateral: #22180f;
+    --lateral-hover: #32251a;
+    --lateral-texto: #efe6d8;
+    --lateral-suave: #b9a387;
+    --lateral-regla: #3d2e21;
+    --franja: #0f0b08;
+    --franja-texto: #e2d6c4;
+    --franja-metodo: #ddb98d;
+    --franja-ok: #8cc79a;
+    --franja-mal: #f09a86;
+    --franja-pista: #3a2f26;
+    --ok: #8cc79a;
+    --ok-fondo: #1e2a1f;
+    --mal: #f09a86;
+    --mal-fondo: #33201b;
+    --aviso: #e2b45e;
+    --aviso-fondo: #30261a;
+
+    color-scheme: dark;
+  }
+}

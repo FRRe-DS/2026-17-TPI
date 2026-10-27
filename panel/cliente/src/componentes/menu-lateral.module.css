@@ -1,0 +1,147 @@
+.lateral {
+  background: var(--lateral);
+  color: var(--lateral-texto);
+}
+
+.barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-3);
+  min-height: var(--encabezado-alto);
+  padding: var(--e-2) var(--e-3);
+}
+
+.marca {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+.grupo {
+  display: block;
+  margin-top: 2px;
+  color: var(--lateral-suave);
+  font-size: var(--t-detalle);
+  font-weight: 400;
+}
+
+.alternar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  min-width: var(--control);
+  min-height: var(--control);
+  padding: 0 var(--e-3) 0 var(--e-2);
+  border: 1px solid var(--lateral-regla);
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--lateral-texto);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--rapido) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+.alternar:active {
+  transform: scale(0.97);
+}
+
+.icono {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.lateral :focus-visible {
+  outline-color: var(--lateral-texto);
+}
+
+/* En el teléfono el menú está cerrado y se abre debajo de la barra, empujando la pantalla (no la tapa). */
+.menu {
+  display: none;
+  padding: 0 var(--e-3) var(--e-3);
+  border-top: 1px solid var(--lateral-regla);
+}
+
+.menu.abierto {
+  display: block;
+  transition:
+    opacity 200ms var(--salida),
+    transform 200ms var(--salida);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.seccion + .seccion {
+  margin-top: var(--e-2);
+}
+
+.titulo {
+  padding: var(--e-3) var(--e-3) var(--e-1);
+  color: var(--lateral-suave);
+  font-size: var(--t-detalle);
+  font-weight: 600;
+}
+
+.elemento {
+  display: flex;
+  align-items: center;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border-radius: var(--radio);
+  color: var(--lateral-texto);
+  font-size: var(--t-menu);
+  text-decoration: none;
+  transition: background-color var(--rapido) var(--salida);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .alternar:hover,
+  .elemento:hover {
+    background: var(--lateral-hover);
+  }
+}
+
+.elemento[aria-current='page'] {
+  background: var(--lateral-texto);
+  color: var(--lateral);
+  font-weight: 600;
+}
+
+@media (min-width: 960px) {
+  .lateral {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+    scrollbar-color: var(--lateral-regla) var(--lateral);
+  }
+
+  .barra {
+    display: block;
+    min-height: 0;
+    margin: 0 var(--e-3);
+    padding: var(--e-4) var(--e-3) var(--e-3);
+    border-bottom: 1px solid var(--lateral-regla);
+  }
+
+  .alternar {
+    display: none;
+  }
+
+  .menu {
+    display: block;
+    padding: var(--e-1) var(--e-3) var(--e-4);
+    border-top: 0;
+  }
+}

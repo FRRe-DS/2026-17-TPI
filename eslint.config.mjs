@@ -15,6 +15,7 @@ export default defineConfig([
       'no-restricted-syntax': [
         'error',
         { selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']", message: 'No se usa dangerouslySetInnerHTML: React escapa el texto.' },
+        { selector: "JSXAttribute[name.name='style']", message: 'Sin estilos en línea: la política de seguridad del panel los bloquea. Van en un CSS Module.' },
       ],
     },
   },

@@ -123,13 +123,16 @@ describe('GET / (RNF-04.6, RNF-19.3)', () => {
 });
 
 describe('/assets/ (lo que referencia el index.html)', () => {
-  it('cada script y hoja de estilos que carga el index.html se sirve con su tipo, nosniff y caché larga', async () => {
+  it('cada script, hoja de estilos e ícono que carga el index.html se sirve con su tipo, nosniff y caché larga', async () => {
     const archivos = [...indexHtml.matchAll(/\b(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1] as string);
+    const tipo = (archivo: string) =>
+      archivo.endsWith('.css') ? 'text/css; charset=utf-8' : archivo.endsWith('.svg') ? 'image/svg+xml' : 'text/javascript; charset=utf-8';
 
+    expect(archivos.some((archivo) => archivo.endsWith('.svg'))).toBe(true);
     for (const archivo of archivos) {
       const respuesta = await pedir(archivo);
       expect(respuesta.statusCode, archivo).toBe(200);
-      expect(respuesta.headers['content-type'], archivo).toBe(archivo.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
+      expect(respuesta.headers['content-type'], archivo).toBe(tipo(archivo));
       expect(respuesta.headers['x-content-type-options']).toBe('nosniff');
       expect(respuesta.headers['cache-control']).toBe('public, max-age=31536000, immutable');
       expect(respuesta.rawPayload.equals(readFileSync(join(carpeta, archivo)))).toBe(true);
