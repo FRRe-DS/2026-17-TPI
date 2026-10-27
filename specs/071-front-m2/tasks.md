@@ -59,7 +59,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T17. Dirección visual, variables de diseño y estructura responsiva.** RNF-15.1, RNF-15.3, RNF-12.7
   - Hecho cuando: está elegida la dirección visual con las skills en el orden del plan y anotada en `guia.md`; existen las variables de diseño en claro y oscuro, el menú por rol y el encabezado con las etiquetas «simulado» en todas las vistas, sin fuentes ni recursos de terceros; `pruebas/panel/unitarias/contraste.test.ts` calcula que cada par de colores de texto y fondo de las variables cumple 4,5:1 en los dos modos, y la estructura se ve sin desplazamiento horizontal a 360 y a 1280 píxeles.
 
-- [ ] **T18. Componentes base: botón de acción, aviso, diálogo de confirmación, formulario y estado de pantalla.** RNF-15, RNF-15.2, RNF-15.3
+- [x] **T18. Componentes base: botón de acción, aviso, diálogo de confirmación, formulario y estado de pantalla.** RNF-15, RNF-15.2, RNF-15.3
   - Hecho cuando: existen los componentes con CSS Modules y, en `pruebas/panel/unitarias/componentes.test.ts`, la lógica de cada uno (qué se deshabilita y qué se muestra en cada estado, a qué campo se asocia un error, qué texto lee una región `aria-live`) está probada; se usan `<button>`, `<label>`, `<dialog>` y `aria-describedby`, y el foco pasa al título de la pantalla al cambiar de ruta.
 
 ## Tramo D — Pantallas

@@ -211,6 +211,8 @@ Esquinas suaves y pocas: 4 px en el chip de rol, 6 px en botones, campos y eleme
 - **Shape:** esquinas de 6 px, 44 px de alto, 16 px a los costados, peso 600.
 - **Principal:** fondo tinta sepia y texto hoja.
 - **Contorno:** borde sepia de 1 px, fondo transparente y texto sepia; al pasar el puntero, fondo sepia tenue (solo con puntero fino). Las acciones que deshacen (como «Cerrar sesión») van en contorno y apartadas.
+- **Peligro:** para lo que no se deshace: borde y texto ladrillo (`mal`) sobre transparente; se llena de ladrillo con texto hoja recién con el foco o el puntero encima. Va apartado de «Cancelar», en el otro extremo.
+- **Esperando:** deshabilitado, `aria-busy`, un aro que gira y el texto «Enviando…»; fuera de la espera nunca queda deshabilitado.
 - **Press / Focus:** `scale(0.97)` al presionar, 160 ms con salida exponencial; foco con anillo de 2 px separado 2 px, del color `foco` (o del texto del menú sobre fondos oscuros).
 
 ### Chips
@@ -220,8 +222,15 @@ Esquinas suaves y pocas: 4 px en el chip de rol, 6 px en botones, campos y eleme
 ### Cards / Containers
 - **Hoja:** fondo hoja, borde regla de 1 px, esquinas de 8 px, 24 px de relleno, sin sombra. Las hojas no se anidan.
 
+### Error de M2
+- **Style:** bloque con borde ladrillo de 1 px sobre `mal-fondo`, título en ladrillo y las filas tal como vinieron (código, tipo, detalle, instancia, reintentar en, folio): nombre en la letra del cuerpo, valor en monoespaciada cortable. Debajo, «Reintentar» en contorno.
+
+### Diálogo de confirmación
+- **Style:** `<dialog>` modal de hasta 28rem sobre el velo (`velo`), hoja con borde regla, esquinas de 8 px y la única sombra del sistema (`sombra-flotante`); entra en 200 ms con opacidad y 8 px. «Cancelar» a la izquierda con el foco inicial, la acción en peligro a la derecha.
+
 ### Inputs / Fields
-- **Style:** fondo campo, borde `borde-campo` de 1 px, esquinas de 6 px, 44 px de alto y 16 px de letra (sin zoom en el teléfono). Los detalles de error y espera llegan con T18.
+- **Style:** fondo campo, borde `borde-campo` de 1 px, esquinas de 6 px, 44 px de alto y 16 px de letra (sin zoom en el teléfono). Cada casillero lleva su número en monoespaciada sepia antes de la etiqueta; una columna en el teléfono y dos desde 600 px, separados por reglas; los textos largos ocupan las dos.
+- **Error:** borde ladrillo, `aria-invalid` y el mensaje en ladrillo debajo, asociado con `aria-describedby` junto con la ayuda.
 
 ### Navigation
 - **Menú lateral:** marca «M2 · Clientes» con «Grupo 17 · TPI 2026» debajo, grupos por rol con su título en minúscula de oración, elementos de 44 px. El actual lleva `aria-current="page"` y se invierte (fondo del texto del menú, texto del lateral); el resto cambia solo de fondo al pasar el puntero.

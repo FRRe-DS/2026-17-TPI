@@ -70,6 +70,9 @@ export function interpretar(hash: string): Ruta {
   return regla === 'ninguno' || !UUID.test(id) ? NO_ENCONTRADA : { pantalla: nombre, id };
 }
 
+// Lo que identifica una ruta: la pantalla y su id. Cambia al pasar a otra pantalla o a otro elemento de la misma.
+export const claveDeRuta = (ruta: Ruta): string => ('id' in ruta && ruta.id !== undefined ? `${ruta.pantalla}/${ruta.id}` : ruta.pantalla);
+
 // El hash de una pantalla, el que `interpretar` entiende.
 export const enlace = (pantalla: Pantalla, id?: string): string => (id === undefined ? `#/${pantalla}` : `#/${pantalla}/${id}`);
 

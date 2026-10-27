@@ -1,0 +1,129 @@
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e-1) var(--e-3);
+  padding: var(--e-3);
+  border-bottom: 1px solid var(--regla);
+}
+
+.folio {
+  color: var(--tinta-suave);
+  font: var(--t-chica) / 1.4 var(--mono);
+}
+
+.folio b {
+  color: var(--acento);
+  font-weight: 600;
+}
+
+/* Los casilleros: una columna en el teléfono, dos desde 600 px, separados por reglas como en un formulario impreso. */
+.campos {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.campo {
+  min-width: 0;
+  padding: var(--e-3);
+  border-bottom: 1px solid var(--regla);
+}
+
+.etiqueta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+}
+
+.numero {
+  color: var(--acento);
+  font: 600 0.6875rem / 1 var(--mono);
+}
+
+.control {
+  display: block;
+  width: 100%;
+  min-height: var(--control);
+  margin-top: var(--e-2);
+  padding: 10px 12px;
+  border: 1px solid var(--borde-campo);
+  border-radius: var(--radio);
+  background: var(--campo);
+  color: var(--tinta);
+  font-size: var(--t-campo);
+  line-height: 1.4;
+}
+
+textarea.control {
+  min-height: 7.5rem;
+  resize: vertical;
+}
+
+.control:focus-visible {
+  outline-offset: 1px;
+}
+
+.control[aria-invalid='true'] {
+  border-color: var(--mal);
+}
+
+.ayuda,
+.mensajeDeError {
+  margin-top: var(--e-2);
+  font-size: var(--t-detalle);
+  overflow-wrap: anywhere;
+}
+
+.ayuda {
+  color: var(--tinta-suave);
+}
+
+.mensajeDeError {
+  color: var(--mal);
+  font-weight: 500;
+}
+
+.error {
+  padding: var(--e-3) var(--e-3) 0;
+}
+
+.pie {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--e-3);
+  padding: var(--e-3);
+}
+
+@media (min-width: 600px) {
+  .cabecera,
+  .campo,
+  .pie {
+    padding-inline: var(--e-4);
+  }
+
+  .error {
+    padding: var(--e-3) var(--e-4) 0;
+  }
+
+  .campos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .campo:not(.completo):nth-child(odd) {
+    border-right: 1px solid var(--regla);
+  }
+
+  .completo {
+    grid-column: 1 / -1;
+  }
+}

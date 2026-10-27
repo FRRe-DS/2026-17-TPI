@@ -39,11 +39,11 @@ function contraste(a: string, b: string): number {
 
 // Cada color de texto con cada fondo sobre el que aparece.
 const TEXTO: [string, string[]][] = [
-  ['--tinta', ['--papel', '--hoja', '--campo', '--seleccion']],
+  ['--tinta', ['--papel', '--hoja', '--campo', '--seleccion', '--ok-fondo', '--mal-fondo', '--aviso-fondo']],
   ['--tinta-suave', ['--papel', '--hoja', '--campo']],
   ['--acento', ['--papel', '--hoja', '--campo', '--etiqueta-fondo', '--acento-tenue']],
   ['--sobre-acento', ['--acento']],
-  ['--hoja', ['--tinta']],
+  ['--hoja', ['--tinta', '--mal']],
   ['--lateral-texto', ['--lateral', '--lateral-hover']],
   ['--lateral-suave', ['--lateral']],
   ['--lateral', ['--lateral-texto']],

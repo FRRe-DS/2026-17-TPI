@@ -1,0 +1,47 @@
+.error {
+  padding: var(--e-3);
+  border: 1px solid var(--mal);
+  border-radius: var(--radio);
+  background: var(--mal-fondo);
+  color: var(--tinta);
+  font-size: var(--t-menu);
+}
+
+.titulo {
+  color: var(--mal);
+  font-weight: 650;
+}
+
+.explicacion {
+  margin-top: var(--e-1);
+}
+
+.filas {
+  display: grid;
+  gap: var(--e-1);
+  margin-top: var(--e-2);
+}
+
+/* El nombre arriba en el teléfono, al costado desde 600 px. El valor es dato de M2: monoespaciada y cortable (un detalle puede
+   ser largo y un `type` es una ruta sin espacios). */
+.fila {
+  display: grid;
+  align-items: baseline;
+  gap: 0 var(--e-3);
+}
+
+.fila dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: var(--t-detalle) / 1.45 var(--mono);
+}
+
+.acciones {
+  margin-top: var(--e-3);
+}
+
+@media (min-width: 600px) {
+  .fila {
+    grid-template-columns: 8rem minmax(0, 1fr);
+  }
+}

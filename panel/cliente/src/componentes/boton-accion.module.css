@@ -1,0 +1,79 @@
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--e-2);
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid transparent;
+  border-radius: var(--radio);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--rapido) var(--salida),
+    color var(--rapido) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+.boton:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Esperando: el control no se puede volver a usar, pero se sigue leyendo. */
+.boton:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+.principal {
+  border-color: var(--acento);
+  background: var(--acento);
+  color: var(--sobre-acento);
+}
+
+.contorno {
+  border-color: var(--acento);
+  background: transparent;
+  color: var(--acento);
+}
+
+/* Lo que no se deshace queda apartado y solo contorneado; se llena recién con el foco o el puntero encima. */
+.peligro {
+  border-color: var(--mal);
+  background: transparent;
+  color: var(--mal);
+}
+
+.peligro:focus-visible {
+  outline-color: var(--mal);
+  background: var(--mal);
+  color: var(--hoja);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .contorno:hover:not(:disabled) {
+    background: var(--acento-tenue);
+  }
+
+  .peligro:hover:not(:disabled) {
+    background: var(--mal);
+    color: var(--hoja);
+  }
+}
+
+.giro {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: girar 700ms linear infinite;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(1turn);
+  }
+}

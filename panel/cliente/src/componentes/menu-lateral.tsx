@@ -1,18 +1,16 @@
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { marcadaEn, menuDe } from '../logica/menu.js';
-import { enlace, type Rol, type Ruta } from '../rutas.js';
+import { claveDeRuta, enlace, type Rol, type Ruta } from '../rutas.js';
 import estilos from './menu-lateral.module.css';
 
 type Props = { rol: Rol | undefined; ruta: Ruta };
-
-// La clave de la ruta: el menú abierto en el teléfono se cierra solo al cambiar de pantalla, también con «atrás».
-const claveDe = (ruta: Ruta) => ('id' in ruta ? `${ruta.pantalla}/${ruta.id}` : ruta.pantalla);
 
 export function MenuLateral({ rol, ruta }: Props) {
   const idMenu = useId();
   const boton = useRef<HTMLButtonElement>(null);
   const [abiertoEn, setAbiertoEn] = useState<string | undefined>(undefined);
-  const abierto = abiertoEn === claveDe(ruta);
+  // El menú abierto en el teléfono se cierra solo al cambiar de ruta, también con «atrás».
+  const abierto = abiertoEn === claveDeRuta(ruta);
   const marcada = marcadaEn(ruta);
 
   const cerrarConEscape = (evento: KeyboardEvent) => {
@@ -33,7 +31,7 @@ export function MenuLateral({ rol, ruta }: Props) {
           className={estilos.alternar}
           aria-expanded={abierto}
           aria-controls={idMenu}
-          onClick={() => setAbiertoEn(abierto ? undefined : claveDe(ruta))}
+          onClick={() => setAbiertoEn(abierto ? undefined : claveDeRuta(ruta))}
         >
           <svg className={estilos.icono} viewBox="0 0 20 20" aria-hidden="true">
             {abierto ? <path d="M5 5l10 10M15 5L5 15" /> : <path d="M3 6h14M3 10h14M3 14h14" />}

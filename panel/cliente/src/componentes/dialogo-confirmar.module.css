@@ -1,0 +1,79 @@
+/* Lo único que flota en el panel: por eso es lo único con sombra. */
+.dialogo {
+  width: min(28rem, calc(100vw - 2 * var(--e-3)));
+  max-height: calc(100dvh - 2 * var(--e-3));
+  padding: var(--e-4);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+  color: var(--tinta);
+  box-shadow: var(--sombra-flotante);
+  transition:
+    opacity 200ms var(--salida),
+    transform 200ms var(--salida);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+/* Mientras espera, sus dos botones están deshabilitados y el foco queda en el diálogo mismo: no se marca la caja entera. */
+.dialogo:focus-visible {
+  outline: none;
+}
+
+.dialogo::backdrop {
+  background: var(--velo);
+}
+
+.titulo {
+  font-size: 1.125rem;
+  line-height: 1.3;
+}
+
+.mensaje {
+  margin-top: var(--e-2);
+  overflow-wrap: anywhere;
+}
+
+.error {
+  margin-top: var(--e-3);
+}
+
+/* «Cancelar» a la izquierda y la acción que no se deshace a la derecha, separadas. */
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--e-3);
+  margin-top: var(--e-4);
+}
+
+.cancelar {
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--acento);
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--acento);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--rapido) var(--salida);
+}
+
+.cancelar:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.cancelar:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cancelar:hover:not(:disabled) {
+    background: var(--acento-tenue);
+  }
+}
