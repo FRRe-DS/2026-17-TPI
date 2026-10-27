@@ -60,7 +60,7 @@ describe('engines.node (RNF-01.1)', () => {
   });
 });
 
-// Los dos proyectos de Vitest (RNF-07.1), tal como los declara vitest.config.ts: `include` dice qué pruebas son de cada uno
+// Los proyectos de Vitest (RNF-07.1, RNF-07.5), tal como los declara vitest.config.ts: `include` dice qué pruebas son de cada uno
 // y `globalSetup`, qué corre antes de ellas.
 type Proyecto = { test: { name: string; include: string[]; globalSetup?: string[] } };
 
@@ -73,9 +73,9 @@ const conBarras = (ruta: string) => ruta.replaceAll('\\', '/');
 const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco }).map(conBarras);
 const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
-describe('vitest.config.ts: unitarias e integracion (RNF-07.1)', () => {
-  it('declara los dos proyectos, en ese orden', () => {
-    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion']);
+describe('vitest.config.ts: unitarias, integracion y navegador (RNF-07.1, RNF-07.5)', () => {
+  it('declara los tres proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador']);
   });
 
   // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
@@ -86,28 +86,34 @@ describe('vitest.config.ts: unitarias e integracion (RNF-07.1)', () => {
     expect(existsSync(new URL('pruebas/ayudas/global.ts', raiz))).toBe(true);
   });
 
-  it('hay pruebas en los dos proyectos', () => {
-    for (const proyecto of proyectos) expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
+  // `navegador` queda fuera: sus pruebas llegan en las últimas tareas de la spec 071 (corren con `npm run panel:navegador`, no con `npm test`).
+  it('hay pruebas en unitarias y en integracion', () => {
+    for (const proyecto of proyectos.filter((candidato) => candidato.test.name !== 'navegador')) {
+      expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
+    }
   });
 
-  // Un archivo fuera de los dos `include` no correría nunca y la suite seguiría en verde.
+  // Un archivo fuera de los `include` no correría nunca y la suite seguiría en verde.
   it('toda prueba de pruebas/ cae en un proyecto', () => {
     const cubiertas = new Set(proyectos.flatMap(archivosDe));
     expect(todasLasPruebas.filter((archivo) => !cubiertas.has(archivo))).toEqual([]);
   });
 
-  it('ninguna prueba cae en los dos proyectos', () => {
+  it('ninguna prueba cae en dos proyectos', () => {
     const repetidas = proyectos.flatMap(archivosDe).filter((archivo, i, todas) => todas.indexOf(archivo) !== i);
     expect(repetidas).toEqual([]);
   });
 
-  it('las de pruebas/integracion/ son de integracion, y las demás, de unitarias', () => {
-    const [unitarias, integracion] = proyectos;
-    const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
+  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, y las demás, de unitarias', () => {
+    const [unitarias, integracion, navegador] = proyectos;
     const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
-    const alReves = todasLasPruebas.filter((archivo) =>
-      archivo.startsWith('pruebas/integracion/') ? !deIntegracion.has(archivo) : !deUnitarias.has(archivo),
-    );
+    const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
+    const deNavegador = new Set(navegador ? archivosDe(navegador) : []);
+    const alReves = todasLasPruebas.filter((archivo) => {
+      if (/^pruebas\/(panel\/)?integracion\//.test(archivo)) return !deIntegracion.has(archivo);
+      if (archivo.startsWith('pruebas/panel/navegador/')) return !deNavegador.has(archivo);
+      return !deUnitarias.has(archivo);
+    });
     expect(alReves).toEqual([]);
   });
 });

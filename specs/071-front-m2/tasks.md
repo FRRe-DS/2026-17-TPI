@@ -4,7 +4,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 
 ## Tramo A — Servidor del panel
 
-- [ ] **T1. Dependencias, scripts y configuración del proyecto.** RNF-02.1, RNF-07.5
+- [x] **T1. Dependencias, scripts y configuración del proyecto.** RNF-02.1, RNF-07.5
   - Hecho cuando: están instaladas las siete dependencias de desarrollo aprobadas (`react` y `react-dom` 19.3.1, `@types/react` y `@types/react-dom` 19.3.0, `@vitejs/plugin-react` 6.1.2, `playwright-core` 1.64.1, `axe-core` 4.14.0) con versión exacta; existen `panel/tsconfig.servidor.json`, `panel/tsconfig.cliente.json`, los scripts `panel:tipos` y `panel:build` (el segundo todavía solo compila el servidor), ESLint revisa `.tsx`, ignora `panel/dist/` y los tipos generados y prohíbe `dangerouslySetInnerHTML`, y `vitest.config.ts` incluye `pruebas/panel/` con el proyecto `navegador` aparte; `npm ci`, `npm run lint`, `npm run build` y `npm test` terminan en verde y `git diff --stat` no toca `src/`, `contrato/` ni `migraciones/`.
 
 - [ ] **T2. Configuración del panel y valores de `ejemplo.env`.** RNF-06.4
