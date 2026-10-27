@@ -13,7 +13,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T3. Aplicación base del panel: seguridad de acceso, salud y logs.** RNF-12.8, RNF-19.3
   - Hecho cuando: `pruebas/panel/http/seguridad.test.ts` comprueba con `app.inject` que una solicitud con `Host` ajeno recibe `403` `application/problem+json` sin ejecutar nada, que un `POST` sin `Origin` o con un `Origin` distinto del propio recibe `403`, que ninguna respuesta lleva cabeceras CORS, que `GET /salud-panel` responde `200`, y que los logs son una línea JSON por pedido sin `authorization` ni cuerpo.
 
-- [ ] **T4. Firma de tokens de desarrollo.** RNF-12.6, RNF-19.3
+- [x] **T4. Firma de tokens de desarrollo.** RNF-12.6, RNF-19.3
   - Hecho cuando: `pruebas/panel/unitarias/tokens.test.ts` comprueba que un token firmado por `servidor/tokens.ts` lo acepta `verificarToken` de M2 con el emisor, la audiencia, la clave y el campo de roles de `ejemplo.env`, que vence a los 300 segundos, y que un `sub` vacío o de más de 128 caracteres y un rol fuera de CLIENTE, OPERADOR, SERVICIO y CONDUCTOR se rechazan.
 
 - [ ] **T5. Reenvío a M2 con token por pedido.** RNF-12.6, RNF-03.6, RNF-15.4

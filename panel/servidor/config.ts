@@ -11,7 +11,7 @@ export type ErrorConfig = { variable: string; motivo: string };
 export type ResultadoConfig<T> = { config: T; errores?: undefined } | { config?: undefined; errores: ErrorConfig[] };
 
 // Con lo que se firman y se verifican los tokens: son las M2_* que ya existen, las mismas que usa M2.
-type ConfigTokens = {
+export type ConfigTokens = {
   claveTokens: string;
   emisorTokens: string;
   audienciaTokens: string;
