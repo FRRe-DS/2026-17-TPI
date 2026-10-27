@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { cuerpoDeCalificacion } from '../../../panel/cliente/src/logica/calificacion.js';
-import { CLIENTE_DE_EJEMPLO, cuerpoDeAlta } from '../../../panel/cliente/src/logica/campos-cliente.js';
+import { CLIENTE_DE_EJEMPLO, cuerpoDeAlta, type CamposCliente } from '../../../panel/cliente/src/logica/campos-cliente.js';
 import { cargarEjemplo } from '../../../panel/cliente/src/logica/ejemplo.js';
 import type { Rol } from '../../../panel/cliente/src/rutas.js';
 import type { PanelConM2 } from './panel-con-m2.js';
@@ -25,15 +25,20 @@ export const LADO_MINIMO = 44;
 
 export const abrirChrome = (): Promise<Browser> => chromium.launch({ channel: 'chrome', headless: true });
 
-export type Caso = { ancho: number; esquema: Esquema; sesion?: { rol: Rol; sub: string } };
+export type Caso = { ancho: number; esquema: Esquema; sesion?: { rol: Rol; sub: string } | undefined; local?: Record<string, string> };
 
 // Un contexto nuevo por caso: el almacenamiento de uno no se cuela en el siguiente. La sesión se escribe antes de que cargue el
-// panel, como la dejaría la pantalla `ingresar`.
-export async function abrirContexto(navegador: Browser, { ancho, esquema, sesion }: Caso): Promise<BrowserContext> {
+// panel, como la dejaría la pantalla `ingresar`; `local` es lo que haya en el almacenamiento local (los clientes recordados).
+export async function abrirContexto(navegador: Browser, { ancho, esquema, sesion, local = {} }: Caso): Promise<BrowserContext> {
   const contexto = await navegador.newContext({ viewport: { width: ancho, height: 800 }, colorScheme: esquema, locale: 'es-AR' });
+  // Menos que el tiempo de cada prueba: si algo no aparece, el error dice qué se esperaba en vez de «la prueba tardó demasiado».
+  contexto.setDefaultTimeout(10_000);
   if (sesion !== undefined) {
     await contexto.addInitScript((guardada) => sessionStorage.setItem('panel.sesion', guardada), JSON.stringify(sesion));
   }
+  await contexto.addInitScript((valores) => {
+    for (const [clave, valor] of Object.entries(valores)) localStorage.setItem(clave, valor);
+  }, local);
   return contexto;
 }
 
@@ -168,24 +173,29 @@ export type DatosDeRecorrido = {
   viajes: { completado: string; enCurso: string };
 };
 
-// Un cliente con todo lo que muestran sus pantallas: «Cargar ejemplo» (direcciones, preferencias y viajes del M6), una calificación
-// del viaje completado y un bloqueo vigente, para que ninguna pantalla se recorra vacía.
-export async function prepararCliente(panel: PanelConM2): Promise<DatosDeRecorrido> {
+export type ClienteDeEjemplo = { clienteId: string; viajes: { completado: string; enCurso: string } };
+
+// Un cliente recién creado con «Cargar ejemplo»: tres direcciones, preferencias y dos viajes en el M6 simulado (uno completado y
+// otro en curso), sin calificar. Los campos del alta se pueden cambiar (los valores máximos).
+export async function clienteConEjemplo(panel: PanelConM2, cambios: Partial<CamposCliente> = {}): Promise<ClienteDeEjemplo> {
   const clienteId = randomUUID();
   const api = panel.api(() => ({ rol: 'CLIENTE', sub: clienteId }));
-  await api.crearCliente(cuerpoDeAlta(CLIENTE_DE_EJEMPLO), randomUUID());
+  await api.crearCliente(cuerpoDeAlta({ ...CLIENTE_DE_EJEMPLO, ...cambios }), randomUUID());
   const { escenarios } = await cargarEjemplo({ api, viajes: panel.viajes }, clienteId, () => undefined);
   const viaje = (nombre: string) => escenarios.find((e) => e.nombre === nombre)!.viajeId;
-  const calificacion = await api.calificarConductor(clienteId, cuerpoDeCalificacion(viaje('completado'), { puntaje: '4', comentario: 'Puntual' }), randomUUID());
+  return { clienteId, viajes: { completado: viaje('completado'), enCurso: viaje('enCurso') } };
+}
+
+// Un cliente con todo lo que muestran sus pantallas: el del ejemplo, una calificación del viaje completado y un bloqueo vigente,
+// para que ninguna pantalla se recorra vacía.
+export async function prepararCliente(panel: PanelConM2): Promise<DatosDeRecorrido> {
+  const { clienteId, viajes } = await clienteConEjemplo(panel);
+  const api = panel.api(() => ({ rol: 'CLIENTE', sub: clienteId }));
+  const calificacion = await api.calificarConductor(clienteId, cuerpoDeCalificacion(viajes.completado, { puntaje: '4', comentario: 'Puntual' }), randomUUID());
   const operador = panel.api(() => ({ rol: 'OPERADOR', sub: 'operador-de-prueba' }));
   await operador.crearBloqueo(clienteId, { motivo: 'Pagos pendientes' }, randomUUID());
   const { items } = await api.listarDirecciones(clienteId);
-  return {
-    clienteId,
-    direccionId: items[0]!.direccionId,
-    calificacionId: calificacion.calificacionId,
-    viajes: { completado: viaje('completado'), enCurso: viaje('enCurso') },
-  };
+  return { clienteId, direccionId: items[0]!.direccionId, calificacionId: calificacion.calificacionId, viajes };
 }
 
 // Pulsa Tab hasta que el foco llegue a un control con ese nombre visible (texto o `aria-label`), sin usar el ratón. Falla si da la
@@ -201,3 +211,63 @@ export async function tabularHasta(pagina: Page, nombre: string, maximo = 60): P
   }
   throw new Error(`El tabulador no llegó a «${nombre}» en ${maximo} pasos`);
 }
+
+// Los pedidos a M2 que salen del navegador (por el panel), con su método, su camino y su `Idempotency-Key`: cuántas veces se mandó
+// algo y con qué clave.
+export type PedidoVisto = { metodo: string; camino: string; clave: string | undefined };
+export function verPedidosAM2(pagina: Page): PedidoVisto[] {
+  const vistos: PedidoVisto[] = [];
+  pagina.on('request', (pedido) => {
+    const { pathname } = new URL(pedido.url());
+    if (pathname.startsWith('/api/v1/')) vistos.push({ metodo: pedido.method(), camino: pathname, clave: pedido.headers()['idempotency-key'] });
+  });
+  return vistos;
+}
+
+// Demora los pedidos a M2 que cumplan con `metodo` (todos, sin él) para ver la espera: el navegador los retiene antes de mandarlos.
+export async function demorarPedidos(pagina: Page, ms: number, metodo?: string): Promise<() => Promise<void>> {
+  const patron = (url: URL) => url.pathname.startsWith('/api/v1/');
+  await pagina.route(patron, async (ruta) => {
+    if (metodo === undefined || ruta.request().method() === metodo) await new Promise((listo) => setTimeout(listo, ms));
+    await ruta.fallback();
+  });
+  return () => pagina.unroute(patron);
+}
+
+// Los controles visibles deshabilitados: después de «M2 no responde» no tiene que quedar ninguno (RNF-15.4).
+export const controlesDeshabilitados = (pagina: Page): Promise<string[]> =>
+  pagina.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('button, input, select, textarea')]
+      .filter((control) => control.matches(':disabled') && control.checkVisibility({ visibilityProperty: true }))
+      .map((control) => (control.getAttribute('aria-label') ?? (control.textContent || control.tagName)).trim().slice(0, 60)),
+  );
+
+// Los trozos de `texto` que se dibujan fuera de la vista o recortados por su caja (RNF-15.5): cada nodo de texto que lo contiene
+// tiene que quedar entre el borde izquierdo y el derecho de la ventana, y entero dentro de su elemento si este recorta.
+export const textoFueraDeLugar = (pagina: Page, texto: string): Promise<string[]> =>
+  pagina.evaluate((buscado) => {
+    const problemas: string[] = [];
+    const recorrido = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let encontrados = 0;
+    for (let nodo = recorrido.nextNode(); nodo !== null; nodo = recorrido.nextNode()) {
+      if (!nodo.textContent?.includes(buscado)) continue;
+      const padre = nodo.parentElement!;
+      // Lo que solo lee el lector de pantalla (una caja de 1×1 que recorta) no se dibuja.
+      const { width, height } = padre.getBoundingClientRect();
+      if (!padre.checkVisibility({ visibilityProperty: true }) || (width <= 1 && height <= 1)) continue;
+      encontrados++;
+      const rango = document.createRange();
+      rango.selectNodeContents(nodo);
+      const caja = rango.getBoundingClientRect();
+      const etiqueta = `<${padre.tagName.toLowerCase()} class="${padre.className}">`;
+      if (caja.left < -0.5 || caja.right > document.documentElement.clientWidth + 0.5) {
+        problemas.push(`${etiqueta} se sale de la ventana: ${Math.round(caja.left)} a ${Math.round(caja.right)}`);
+      }
+      const estilo = getComputedStyle(padre);
+      if (estilo.overflowX !== 'visible' && padre.scrollWidth > padre.clientWidth + 1 && estilo.textOverflow !== 'ellipsis') {
+        problemas.push(`${etiqueta} recorta el texto: ${padre.scrollWidth} de ancho en ${padre.clientWidth}`);
+      }
+    }
+    if (encontrados === 0) problemas.push('el texto no está en la pantalla');
+    return problemas;
+  }, texto);

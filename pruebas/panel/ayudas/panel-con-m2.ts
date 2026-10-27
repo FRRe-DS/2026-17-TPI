@@ -43,6 +43,9 @@ export type PanelConM2 = {
   apiPanel: ApiPanel;
   // Donde escucha el panel (`http://127.0.0.1:{puerto}`): lo que abre Chrome en la prueba en navegador.
   origen: string;
+  // Detiene M2 y lo vuelve a levantar en el mismo puerto, con la misma base: «M2 no responde» y la recuperación (RNF-15.4).
+  detenerM2: () => Promise<void>;
+  arrancarM2: () => Promise<void>;
   cerrar: () => Promise<void>;
 };
 
@@ -79,7 +82,9 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
     reintentosModulos: 1,
     reintentarDespuesS: REINTENTAR_DESPUES_S,
   };
-  const m2 = construirM2({ config: configM2, pool, contrato: cargarContrato(), manejadores, flujoLog: descartarLogs });
+  const contrato = cargarContrato();
+  const construir = () => construirM2({ config: configM2, pool, contrato, manejadores, flujoLog: descartarLogs });
+  let m2: ReturnType<typeof construirM2> | undefined = construir();
   const puertoM2 = await escuchar(m2);
 
   // El panel solo acepta su propio Host, con el puerto configurado: escucha en el mismo que tiene en la configuración.
@@ -112,9 +117,18 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
     apiPanel: crearApiPanel({ fetch: porElPanel }),
     origen,
     api: (identidad, alTerminar) => crearApiM2({ identidad, fetch: porElPanel, alTerminar }),
+    async detenerM2() {
+      await m2?.close();
+      m2 = undefined;
+    },
+    async arrancarM2() {
+      if (m2 !== undefined) return;
+      m2 = construir();
+      await m2.listen({ port: puertoM2, host: '127.0.0.1' });
+    },
     async cerrar() {
       await panel.close();
-      await m2.close();
+      await m2?.close();
       await controlM6.close();
       await apiM6.cerrar();
       await pool.end();
