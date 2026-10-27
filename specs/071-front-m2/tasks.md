@@ -30,7 +30,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T8. M6 simulado: canal de control, viajes de ejemplo y modos.** RNF-13.5, RF-2.1.10, RF-2.1.11
   - Hecho cuando: `pruebas/panel/http/m6-control.test.ts` comprueba que cargar el ejemplo de un cliente registra un viaje completado y uno en curso con ids derivados del `clienteId`, que repetirlo no duplica, que `escenarios` devuelve completado (`201`), en curso (`422`), ajeno y de otro cliente y inexistente (`404`, `404`) con sus ids, que en modo `caido` el puerto de la API rechaza conexiones mientras el de control responde, que volver a `normal` lo reabre, y que en modo `lento` la respuesta tarda al menos `M6_RETARDO_LENTO_MS`.
 
-- [ ] **T9. Reenvío del panel al canal de control del M6 simulado.** RNF-13.5, RF-2.1.10
+- [x] **T9. Reenvío del panel al canal de control del M6 simulado.** RNF-13.5, RF-2.1.10
   - Hecho cuando: `pruebas/panel/http/m6-reenvio.test.ts` comprueba que `GET /panel/m6/estado`, `PUT /panel/m6/modo` y `POST /panel/m6/clientes/{clienteId}/ejemplo` llegan al canal de control con tiempo máximo de 3 segundos y sin reintento, que cualquier otra ruta bajo `/panel/m6/` se rechaza, que un `clienteId` que no es UUID da `400`, y que si el canal no responde el panel contesta `502` `application/problem+json`.
 
 - [ ] **T10. Prueba de integración del panel con M2 real y M6 simulado.** RNF-13.5, RNF-13.7, RF-2.1.5, RF-2.5.15

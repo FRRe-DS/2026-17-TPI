@@ -76,7 +76,7 @@ async function tokenDelPedido(request: FastifyRequest, config: ConfigPanel): Pro
 }
 
 // El nombre y el código de lo que hizo fallar a fetch, para el log: sin la URL ni encabezados.
-function causaDe(error: unknown): { tipo: string; codigo?: string } {
+export function causaDe(error: unknown): { tipo: string; codigo?: string } {
   const { name, cause } = error instanceof Error ? error : { name: typeof error, cause: undefined };
   const codigo = (cause as { code?: unknown } | undefined)?.code;
   return typeof codigo === 'string' ? { tipo: name, codigo } : { tipo: name };
