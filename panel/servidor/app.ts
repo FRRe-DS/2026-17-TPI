@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { STATUS_CODES } from 'node:http';
 import type { Writable } from 'node:stream';
 import type { ConfigPanel } from './config.js';
+import { crearRegistroDePedidos, registrarPedidos } from './pedidos.js';
 import { responderProblema } from './problemas.js';
 import { ESPERA_M2_MS, registrarReenvio } from './proxy.js';
 import { registrarSeguridad } from './seguridad.js';
@@ -31,7 +32,7 @@ function estadoDe(error: unknown): number {
   return typeof estado === 'number' && estado >= 400 && estado < 500 ? estado : 500;
 }
 
-// La app del panel: seguridad de acceso, salud, logs y reenvío a M2. Las demás rutas se suman después (canal de control del
+// La app del panel: seguridad de acceso, salud, logs, reenvío a M2 y detalle técnico de sus pedidos. Las demás rutas se suman después (canal de control del
 // M6 simulado, archivos del cliente). No escucha en ningún puerto; eso lo hace el arranque.
 export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS }: OpcionesApp): FastifyInstance {
   const app = Fastify({
@@ -77,7 +78,9 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS }: Op
   });
 
   app.get('/salud-panel', async () => ({ estado: 'ok' }));
-  app.register(registrarReenvio, { config, esperaMs: esperaM2Ms });
+  const pedidos = crearRegistroDePedidos();
+  registrarPedidos(app, pedidos, config.urlM2Publica);
+  app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos });
 
   return app;
 }

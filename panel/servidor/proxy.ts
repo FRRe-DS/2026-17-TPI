@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ConfigPanel } from './config.js';
+import { type RegistroDePedidos } from './pedidos.js';
 import { responderProblema, type Problema } from './problemas.js';
 import { firmarToken, TokenInvalido } from './tokens.js';
 
@@ -33,6 +34,13 @@ export function rutaPermitida(ruta: string): boolean {
 const ENCABEZADOS_DEL_PEDIDO = ['accept', 'content-type', 'idempotency-key'] as const;
 // Lo que se copia de la respuesta de M2. `x-request-id` lo pone el panel en toda respuesta, y es el mismo que mandó a M2.
 const ENCABEZADOS_DE_LA_RESPUESTA = ['content-type', 'location', 'retry-after', 'allow'] as const;
+
+// `idempotency-key` → `Idempotency-Key`, como se escribe en un `curl`.
+const nombreCanonico = (nombre: string) =>
+  nombre
+    .split('-')
+    .map((parte) => parte.charAt(0).toUpperCase() + parte.slice(1))
+    .join('-');
 
 const METODOS_DE_CLIENTES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 const SIN_CUERPO = new Set(['GET', 'HEAD']);
@@ -74,10 +82,10 @@ function causaDe(error: unknown): { tipo: string; codigo?: string } {
   return typeof codigo === 'string' ? { tipo: name, codigo } : { tipo: name };
 }
 
-export type OpcionesReenvio = { config: ConfigPanel; esperaMs: number };
+export type OpcionesReenvio = { config: ConfigPanel; esperaMs: number; pedidos: RegistroDePedidos };
 
 // Se registra como plugin: así el lector de cuerpos crudos vale solo para estas rutas.
-export async function registrarReenvio(app: FastifyInstance, { config, esperaMs }: OpcionesReenvio): Promise<void> {
+export async function registrarReenvio(app: FastifyInstance, { config, esperaMs, pedidos }: OpcionesReenvio): Promise<void> {
   const tokens = new WeakMap<FastifyRequest, string | undefined>();
 
   // El cuerpo va a M2 tal como llegó, sin parsear: M2 es quien lo valida. El límite de 1 MiB es el de la app.
@@ -97,15 +105,32 @@ export async function registrarReenvio(app: FastifyInstance, { config, esperaMs 
   });
 
   async function reenviar(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
-    const encabezados: Record<string, string> = { 'x-request-id': request.id };
+    const encabezados: Record<string, string> = {};
     for (const nombre of ENCABEZADOS_DEL_PEDIDO) {
       const valor = request.headers[nombre];
       if (typeof valor === 'string') encabezados[nombre] = valor;
     }
+    encabezados['x-request-id'] = request.id;
+    // Lo que se registra para el detalle técnico: lo mismo que sale, sin el token (que se agrega después).
+    const registrados = Object.fromEntries(Object.entries(encabezados).map(([nombre, valor]) => [nombreCanonico(nombre), valor]));
     const token = tokens.get(request);
     if (token !== undefined) encabezados['authorization'] = `Bearer ${token}`;
     // fetch tipa el cuerpo como BufferSource, y un Buffer de Node no lo es para TypeScript: se copia (es 1 MiB como mucho).
     const cuerpo = !SIN_CUERPO.has(request.method) && Buffer.isBuffer(request.body) ? Uint8Array.from(request.body) : undefined;
+
+    const inicio = performance.now();
+    const registrar = (estado: number) =>
+      pedidos.registrar({
+        requestId: request.id,
+        hora: new Date().toISOString(),
+        metodo: request.method,
+        ruta: request.url,
+        encabezados: registrados,
+        conToken: token !== undefined,
+        ...(cuerpo !== undefined && cuerpo.length > 0 ? { cuerpo: Buffer.from(cuerpo).toString('utf8') } : {}),
+        estado,
+        duracionMs: Math.round(performance.now() - inicio),
+      });
 
     let respuesta: Response;
     let contenido: Buffer;
@@ -121,8 +146,10 @@ export async function registrarReenvio(app: FastifyInstance, { config, esperaMs 
       contenido = Buffer.from(await respuesta.arrayBuffer());
     } catch (error) {
       request.log.warn({ causa: causaDe(error) }, 'M2 no responde');
+      registrar(M2_NO_RESPONDE.status);
       return responderProblema(reply, M2_NO_RESPONDE);
     }
+    registrar(respuesta.status);
 
     reply.code(respuesta.status);
     for (const nombre of ENCABEZADOS_DE_LA_RESPUESTA) {
