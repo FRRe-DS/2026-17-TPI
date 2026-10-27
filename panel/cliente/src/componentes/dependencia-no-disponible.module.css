@@ -1,0 +1,14 @@
+.aviso {
+  display: grid;
+  gap: var(--e-3);
+  max-width: 72rem;
+}
+
+.explicacion {
+  max-width: 60ch;
+}
+
+.cuenta {
+  color: var(--tinta-suave);
+  font: var(--t-detalle) / 1.4 var(--mono);
+}

@@ -82,7 +82,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T24. Preferencias.** RF-2.3.6
   - Hecho cuando: la pantalla `preferencias` muestra `obtenerPreferencias` (vacías si no hay), ofrece solo los valores del contrato (tipos de vehículo, canales, accesibilidad, observaciones hasta 255 caracteres) y guarda con `guardarPreferencias`; una prueba contra M2 real comprueba que lo guardado se vuelve a leer.
 
-- [ ] **T25. Historial con «calificado» y cuenta regresiva.** RF-2.4.12, RF-2.4.13
+- [x] **T25. Historial con «calificado» y cuenta regresiva.** RF-2.4.12, RF-2.4.13
   - Hecho cuando: `pruebas/panel/unitarias/cuenta-regresiva.test.ts` comprueba que `logica/cuenta-regresiva.ts` lee `Retry-After` de 1 a 3600 y cuenta hasta 0; la pantalla `historial` lista paginado con estado y «calificado», ofrece «Calificar» solo en los completados sin calificar, y ante el `503` de M6 explica que depende del módulo de viajes, cuenta los segundos, ofrece «Reintentar» y deja el menú utilizable (comprobado con el M6 simulado en modo `caido`).
 
 - [ ] **T26. Calificar al conductor.** RF-2.5.15, RF-2.5.16

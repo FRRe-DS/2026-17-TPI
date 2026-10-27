@@ -12,6 +12,7 @@ import { usarAccion } from '../hooks/usar-accion.js';
 import { usarCarga } from '../hooks/usar-carga.js';
 import { calcularCambios, camposDePerfil, guardarCambios, validarEdicion } from '../logica/cambios.js';
 import { primerCampoConError, type CamposCliente } from '../logica/campos-cliente.js';
+import { instante } from '../logica/historial.js';
 import type { components } from '../generado/contrato.js';
 import { TITULOS } from '../rutas.js';
 import { CargarEjemplo } from './cargar-ejemplo.js';
@@ -34,10 +35,6 @@ export function Perfil({ api, viajes, sesion }: Props) {
     </>
   );
 }
-
-const FECHA_Y_HORA = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/;
-// El instante tal como lo trae M2, en UTC y sin milisegundos: es un dato, no una fecha para leer en voz alta.
-const instante = (iso: string) => FECHA_Y_HORA.exec(iso)?.slice(1).join(' ') ?? iso;
 
 function EditarPerfil({ api, viajes, inicial }: { api: ApiM2; viajes: FuenteDeViajes; inicial: Cliente }) {
   const id = useId();
