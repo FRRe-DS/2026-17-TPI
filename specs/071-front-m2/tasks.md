@@ -16,7 +16,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T4. Firma de tokens de desarrollo.** RNF-12.6, RNF-19.3
   - Hecho cuando: `pruebas/panel/unitarias/tokens.test.ts` comprueba que un token firmado por `servidor/tokens.ts` lo acepta `verificarToken` de M2 con el emisor, la audiencia, la clave y el campo de roles de `ejemplo.env`, que vence a los 300 segundos, y que un `sub` vacío o de más de 128 caracteres y un rol fuera de CLIENTE, OPERADOR, SERVICIO y CONDUCTOR se rechazan.
 
-- [ ] **T5. Reenvío a M2 con token por pedido.** RNF-12.6, RNF-03.6, RNF-15.4
+- [x] **T5. Reenvío a M2 con token por pedido.** RNF-12.6, RNF-03.6, RNF-15.4
   - Hecho cuando: `pruebas/panel/http/reenvio.test.ts`, con un M2 de mentira (`servidor-modulo.ts`), comprueba que solo se reenvían `/api/v1/clientes…` y `GET /health`, que una ruta con `..`, `//` o `@` se rechaza, que el pedido sale con `Authorization` firmado y con `Idempotency-Key`, `Content-Type` y `X-Request-Id` (el recibido o uno `panel-…`), que un `problem+json` de M2 vuelve intacto con su código, `Location` y `Retry-After`, que un cuerpo de más de 1 MiB se rechaza y que sin respuesta de M2 en 10 segundos o con la conexión rechazada el panel responde `504` con `type` `/panel/errores/m2-no-responde`.
 
 - [ ] **T6. Detalle técnico en el servidor: buffer de pedidos y `curl` equivalente.** RNF-14.9, RNF-19.3

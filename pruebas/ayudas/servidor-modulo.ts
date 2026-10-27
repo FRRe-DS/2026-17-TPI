@@ -2,12 +2,15 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { type AddressInfo } from 'node:net';
 
 export type Comportamiento =
-  | { tipo: 'ok'; estado?: number; cuerpo?: unknown }
+  // `encabezados` se suma a los de la respuesta y puede reemplazar el Content-Type (lo usa el panel, spec 071).
+  | { tipo: 'ok'; estado?: number; cuerpo?: unknown; encabezados?: Record<string, string> }
   | { tipo: 'demora-cuerpo'; retardoMs: number; estado?: number; cuerpo?: unknown }
   | { tipo: '4xx'; estado: number; cuerpo?: unknown }
   | { tipo: '5xx'; estado: number; cuerpo?: unknown }
   | { tipo: 'no-json'; contenido?: string; estado?: number }
-  | { tipo: 'corta' };
+  | { tipo: 'corta' }
+  // No responde nunca: la conexión queda abierta hasta que el cliente se canse o se cierre el servidor.
+  | { tipo: 'cuelga' };
 
 export function crearServidorModulo() {
   // Uno por llamada, en orden; cuando se acaban, sigue valiendo el último.
@@ -21,6 +24,9 @@ export function crearServidorModulo() {
   // El Authorization de cada llamada, en orden (undefined si no vino), para ver qué llevó cada intento.
   const autorizaciones: (string | undefined)[] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
+  // El método y el cuerpo de la última llamada, tal como llegaron.
+  let metodoRecibido = '';
+  let cuerpoRecibido = Buffer.alloc(0);
 
   const servidor = createServer((req: IncomingMessage, res: ServerResponse) => {
     llamadas++;
@@ -32,12 +38,23 @@ export function crearServidorModulo() {
       if (typeof valor === 'string') encabezadosRecibidos.set(clave.toLowerCase(), valor);
     }
 
+    metodoRecibido = req.method ?? '';
     res.on('error', () => {});
 
+    // Responde cuando terminó de llegar el cuerpo, así quien prueba lo encuentra completo en `cuerpoRecibido`.
+    const partes: Buffer[] = [];
+    req.on('data', (parte: Buffer) => partes.push(parte));
+    req.on('end', () => {
+      cuerpoRecibido = Buffer.concat(partes);
+      responder(req, res);
+    });
+  });
+
+  function responder(req: IncomingMessage, res: ServerResponse): void {
     const c = comportamientos[Math.min(llamadas, comportamientos.length) - 1]!;
     if (c.tipo === 'ok') {
       const cuerpo = JSON.stringify(c.cuerpo ?? { ok: true });
-      res.writeHead(c.estado ?? 200, { 'Content-Type': 'application/json' });
+      res.writeHead(c.estado ?? 200, { 'Content-Type': 'application/json', ...c.encabezados });
       res.end(cuerpo);
     } else if (c.tipo === 'demora-cuerpo') {
       // Envía los encabezados de inmediato, demora el cuerpo
@@ -61,7 +78,7 @@ export function crearServidorModulo() {
     } else if (c.tipo === 'corta') {
       req.socket.destroy();
     }
-  });
+  }
 
   let puerto = 0;
 
@@ -88,6 +105,12 @@ export function crearServidorModulo() {
     },
     get autorizaciones(): (string | undefined)[] {
       return autorizaciones;
+    },
+    get metodoRecibido(): string {
+      return metodoRecibido;
+    },
+    get cuerpoRecibido(): Buffer {
+      return cuerpoRecibido;
     },
     // Un comportamiento para todas las llamadas, o una lista: uno por llamada y el último para las que siguen.
     responderCon(c: Comportamiento | Comportamiento[]): void {

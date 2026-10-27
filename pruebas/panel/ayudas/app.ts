@@ -23,6 +23,10 @@ export const CONFIG_PANEL: ConfigPanel = {
 export const DESDE_EL_PANEL = { host: `127.0.0.1:${PUERTO_PANEL}` };
 export const DESDE_EL_PANEL_CON_ORIGEN = { ...DESDE_EL_PANEL, origin: `http://127.0.0.1:${PUERTO_PANEL}` };
 
-export function crearAppPanel(opciones: { config?: Partial<ConfigPanel>; flujoLog?: Writable } = {}) {
-  return construirApp({ config: { ...CONFIG_PANEL, ...opciones.config }, flujoLog: opciones.flujoLog ?? descartarLogs });
+export function crearAppPanel(opciones: { config?: Partial<ConfigPanel>; flujoLog?: Writable; esperaM2Ms?: number } = {}) {
+  return construirApp({
+    config: { ...CONFIG_PANEL, ...opciones.config },
+    flujoLog: opciones.flujoLog ?? descartarLogs,
+    esperaM2Ms: opciones.esperaM2Ms,
+  });
 }
