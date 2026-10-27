@@ -10,6 +10,7 @@ import { crearRecordadosGuardados, type Ingreso } from './logica/ingresar.js';
 import { Direcciones } from './pantallas/direcciones.js';
 import { Ingresar } from './pantallas/ingresar.js';
 import { Perfil } from './pantallas/perfil.js';
+import { PantallaPreferencias } from './pantallas/preferencias.js';
 import { enlace, inicioDe, TITULOS, type Ruta } from './rutas.js';
 
 const fuenteDeSesion = crearSesionSimulada(almacenamientoDelNavegador());
@@ -55,6 +56,7 @@ export function App() {
     if (nombre === 'ingresar') return <Ingresar ingreso={ingreso} alEntrar={entrar} />;
     if (nombre === 'perfil' && sesion !== undefined) return <Perfil api={api} viajes={fuenteDeViajes} sesion={sesion} />;
     if (nombre === 'direcciones' && sesion !== undefined) return <Direcciones api={api} sesion={sesion} idDireccion={'id' in destino ? destino.id : undefined} />;
+    if (nombre === 'preferencias' && sesion !== undefined) return <PantallaPreferencias api={api} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };
 

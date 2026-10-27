@@ -244,3 +244,37 @@ describe('lo que dibuja cada componente', () => {
     expect(dibujar(Titulo, {}, 'Mi perfil')).toBe('<h1 tabindex="-1">Mi perfil</h1>');
   });
 });
+
+describe('GrupoDeOpciones: casillas para marcar (T24, RF-2.3.6)', () => {
+  const OPCIONES = [{ valor: 'EMAIL', etiqueta: 'Correo electrónico' }, { valor: 'SMS', etiqueta: 'SMS' }, { valor: 'PUSH', etiqueta: 'Notificación' }];
+
+  it('un fieldset con su legend y una casilla por opción, cada una con su label', async () => {
+    const Grupo = await componente('formulario.tsx', 'GrupoDeOpciones');
+
+    const html = dibujar(Grupo, { id: 'canales', etiqueta: 'Avisos por', numero: 2, opciones: OPCIONES, seleccionados: ['SMS'], alCambiar: nada });
+
+    expect(html).toMatch(/^<fieldset[^>]*>\s*<legend[^>]*>/);
+    expect(html).toContain('Avisos por');
+    expect(html.match(/<input type="checkbox"/g)).toHaveLength(3);
+    expect(html.match(/<label/g)).toHaveLength(3);
+    expect(html).toContain('Correo electrónico');
+  });
+
+  it('marca solo las seleccionadas', async () => {
+    const Grupo = await componente('formulario.tsx', 'GrupoDeOpciones');
+
+    const html = dibujar(Grupo, { id: 'canales', etiqueta: 'Avisos por', opciones: OPCIONES, seleccionados: ['SMS'], alCambiar: nada });
+
+    expect(html.match(/checked=""/g)).toHaveLength(1);
+    expect(html).toMatch(/checked=""[^>]*\/><span>SMS<\/span>/);
+  });
+
+  it('la ayuda se asocia al grupo con aria-describedby', async () => {
+    const Grupo = await componente('formulario.tsx', 'GrupoDeOpciones');
+
+    const html = dibujar(Grupo, { id: 'canales', etiqueta: 'Avisos por', ayuda: 'Sin marcar, ninguno.', opciones: OPCIONES, seleccionados: [], alCambiar: nada });
+
+    expect(html).toContain('aria-describedby="canales-ayuda"');
+    expect(html).toContain('<p id="canales-ayuda"');
+  });
+});

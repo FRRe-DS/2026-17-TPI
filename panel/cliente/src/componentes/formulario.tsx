@@ -127,3 +127,44 @@ export function Campo({ id, etiqueta, numero, ayuda, error, valor, alCambiar, ti
     </div>
   );
 }
+
+type PropsGrupo = {
+  id: string;
+  etiqueta: string;
+  numero?: number | undefined;
+  ayuda?: string | undefined;
+  opciones: { valor: string; etiqueta: string }[];
+  seleccionados: readonly string[];
+  alCambiar: (valor: string, marcado: boolean) => void;
+};
+
+// Un casillero con varias casillas para marcar (RF-2.3.6): un `<fieldset>` con su `<legend>`, de ancho completo. Cada casilla es un
+// `<label>` de al menos 44 px (RNF-15.1) y la ayuda se asocia al grupo con `aria-describedby` (RNF-15.3).
+export function GrupoDeOpciones({ id, etiqueta, numero, ayuda, opciones, seleccionados, alCambiar }: PropsGrupo) {
+  const idAyuda = ayuda ? `${id}-ayuda` : undefined;
+  return (
+    <fieldset className={`${estilos.campo} ${estilos.completo} ${estilos.grupo}`} aria-describedby={idAyuda}>
+      <legend className={estilos.leyenda}>
+        {numero !== undefined && (
+          <span className={estilos.numero} aria-hidden="true">
+            {String(numero).padStart(2, '0')}
+          </span>
+        )}
+        {etiqueta}
+      </legend>
+      <div className={estilos.opciones}>
+        {opciones.map((opcion) => (
+          <label key={opcion.valor} className={estilos.opcion}>
+            <input type="checkbox" checked={seleccionados.includes(opcion.valor)} onChange={(evento) => alCambiar(opcion.valor, evento.target.checked)} />
+            <span>{opcion.etiqueta}</span>
+          </label>
+        ))}
+      </div>
+      {idAyuda !== undefined && (
+        <p id={idAyuda} className={estilos.ayuda}>
+          {ayuda}
+        </p>
+      )}
+    </fieldset>
+  );
+}

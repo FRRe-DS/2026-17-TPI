@@ -131,3 +131,65 @@ textarea.control {
     background: var(--hoja);
   }
 }
+
+/* ---- Grupo de casillas: un `fieldset` que se ve como un casillero más. ---- */
+
+.grupo {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--regla);
+  min-width: 0;
+}
+
+/* Flotando, la leyenda deja de ir sobre el borde del `fieldset` y respeta su relleno, como la etiqueta de un casillero. */
+.leyenda {
+  float: left;
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  width: 100%;
+  padding: 0;
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+}
+
+.opciones {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--e-2);
+  margin-top: var(--e-2);
+}
+
+.opcion {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  min-height: var(--control);
+  padding: 10px 12px;
+  border: 1px solid var(--borde-campo);
+  border-radius: var(--radio);
+  background: var(--campo);
+  cursor: pointer;
+}
+
+.opcion:has(input:checked) {
+  border-color: var(--acento);
+  background: var(--acento-tenue);
+}
+
+.opcion:has(input:focus-visible) {
+  outline: 2px solid var(--foco);
+  outline-offset: 2px;
+}
+
+.opcion input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.opcion input:focus-visible {
+  outline: none;
+}
