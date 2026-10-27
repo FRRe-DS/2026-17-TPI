@@ -44,7 +44,7 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T12. Imagen del panel y del M6 simulado, y perfil `panel` de compose.** RNF-04.6
   - Hecho cuando: `docker compose --profile panel up -d --build --wait` deja sanos `panel` y `m6`, con el panel publicado solo en `127.0.0.1:8083` y el control del M6 en `127.0.0.1:3007`; `docker compose up -d --build --wait` sin el perfil no crea ninguno de los dos; `docker compose --profile panel config` no cambia los servicios `m2` y `bd`; las imágenes parten de `node:24.22.0-trixie-slim`, instalan con `npm ci --omit=dev --ignore-scripts` y corren como `node`.
 
-- [ ] **T13. `npm run panel` en la máquina y script de humo.** RNF-04.7, RNF-06.4
+- [x] **T13. `npm run panel` en la máquina y script de humo.** RNF-04.7, RNF-06.4
   - Hecho cuando: con `docker compose up -d --build --wait` y `docker compose --profile panel up -d --build --wait m6` levantados, `npm run panel` compila, arranca con los valores de `ejemplo.env` y `node scripts/panel-humo.mjs` termina en verde (salud del panel, `GET /health` reenviado, estado del M6 simulado, `403` con `Origin` ajeno); el mismo script termina en verde contra el perfil `panel` de compose.
 
 - [ ] **T14. Capa de API del cliente: pedidos a M2, errores y tiempo máximo.** RNF-03.6, RNF-15.4, RNF-02.3
