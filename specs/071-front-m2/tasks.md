@@ -114,8 +114,8 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 - [x] **T34. Prueba en navegador II: estados, doble clic y valores máximos.** RNF-15, RNF-15.2, RNF-15.4, RNF-15.5, RF-2.5.15
   - Hecho cuando: `npm run panel:navegador` comprueba por pantalla los estados de espera, confirmación, rechazo, cancelación, error y recuperación, que un doble clic al calificar envía un solo pedido, que con nombre de 100 caracteres, dirección de 255 y comentario de 500 el diseño no se rompe, y que con M2 detenido aparece «M2 no responde» con «Reintentar» sin controles deshabilitados.
 
-- [ ] **T35. Integración continua.** RNF-07.5, RNF-04.6, RNF-02.1
+- [x] **T35. Integración continua.** RNF-07.5, RNF-04.6, RNF-02.1
   - Hecho cuando: `build-test` corre también `npm run panel:build`; existe un job `panel` que corre después de `build-test`, ejecuta `npm run panel:navegador` con el Chrome de `ubuntu-24.04` y levanta el perfil `panel` para `scripts/panel-humo.mjs`; los nombres de los jobs que exige la protección de `main` no cambian, y `git diff --stat origin/main` no muestra cambios en `src/`, `contrato/` ni `migraciones/`.
 
-- [ ] **T36. Documentación.** RNF-20.2
+- [x] **T36. Documentación.** RNF-20.2
   - Hecho cuando: el `README.md`, `docs/probar-m2.md` y `ejemplo.env` explican cómo levantar el panel de las dos formas, qué hace cada vista y qué está simulado; `guia.md` tiene una entrada por tarea y su visión general explica React, Vite, los hooks y los dos puntos de conexión para quien nunca los usó; `node scripts/spec-check.mjs` termina en verde.
