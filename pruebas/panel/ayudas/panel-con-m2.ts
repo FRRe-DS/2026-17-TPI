@@ -43,6 +43,11 @@ export type PanelConM2 = {
   apiPanel: ApiPanel;
   // Donde escucha el panel (`http://127.0.0.1:{puerto}`): lo que abre Chrome en la prueba en navegador.
   origen: string;
+  // Donde escuchan M2 y el canal de control del M6 simulado, y la base de M2: lo que el servidor del panel usa sin pasar por el
+  // reenvío (spec 072: pruebas simultáneas y acceso a la base).
+  urlM2: string;
+  urlM6Control: string;
+  urlBd: string;
   // Detiene M2 y lo vuelve a levantar en el mismo puerto, con la misma base: «M2 no responde» y la recuperación (RNF-15.4).
   detenerM2: () => Promise<void>;
   arrancarM2: () => Promise<void>;
@@ -116,6 +121,9 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
     estadoM6,
     apiPanel: crearApiPanel({ fetch: porElPanel }),
     origen,
+    urlM2: `http://127.0.0.1:${puertoM2}`,
+    urlM6Control: `http://127.0.0.1:${puertoControlM6}`,
+    urlBd: base.urlBd,
     api: (identidad, alTerminar) => crearApiM2({ identidad, fetch: porElPanel, alTerminar }),
     async detenerM2() {
       await m2?.close();

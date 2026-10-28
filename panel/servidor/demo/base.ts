@@ -85,3 +85,5 @@ export function crearBaseDemo(urlBd: string | undefined) {
     },
   };
 }
+
+export type BaseDemo = ReturnType<typeof crearBaseDemo>;

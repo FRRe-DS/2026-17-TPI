@@ -16,7 +16,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T4. Pedidos directos a M2 y al control del M6 simulado.** RNF-08.2, RNF-08.4, RNF-12.10
   - Hecho cuando: `pruebas/panel/http/demo-m2-directo.test.ts`, con `servidor-modulo.ts`, comprueba que `servidor/demo/m2-directo.ts` firma el token con `tokens.ts`, manda `Idempotency-Key`, `Content-Type` y un `X-Request-Id` con el prefijo de la corrida, corta a los 10 s devolviendo código `0`, y no registra nada en el buffer del detalle técnico; `pedirControlM6` queda separado en `servidor/m6-control.ts` y las pruebas de la 071 sobre `/panel/m6/…` siguen en verde sin cambios.
 
-- [ ] **T5. Altas simultáneas.** RNF-08.2, RNF-08.3
+- [x] **T5. Altas simultáneas.** RNF-08.2, RNF-08.3
   - Hecho cuando: `pruebas/panel/integracion/demo-concurrencia.test.ts`, con M2 real, la base de Testcontainers y el panel, comprueba que `altasSimultaneas` con N = 10 y la misma clave da `{ 201: 10 }`, `cuerposIguales: true` y 1 fila, y con claves distintas da `{ 201: 1, 409: 9 }` y 1 fila, ambos con `cumple: true`; que los N pedidos salen a la vez (el M2 de mentira de una prueba HTTP los ve llegar antes de responder el primero); y que con la base del panel no disponible el resultado trae `filas: null` y `cumple: false`.
 
 - [ ] **T6. Calificaciones simultáneas.** RNF-08.4
