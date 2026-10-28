@@ -25,7 +25,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T7. Control de Docker.** RNF-13.4, RNF-13.6, RNF-12.10
   - Hecho cuando: `pruebas/panel/unitarias/docker.test.ts`, con un `ejecutar` de mentira, comprueba que `servidor/demo/docker.ts` llama a `docker` con exactamente `["compose", "stop", "bd"]`, `["compose", "start", "bd"]` y `["compose", "ps", "--format", "json", "bd"]`, sin shell, con la raíz del repositorio como `cwd` y cortes de 30, 60 y 5 s; que informa no disponible con su motivo y `comoActivar` para `PANEL_DOCKER=no`, `ENOENT`, «permission denied» y servicio ausente, sin rutas ni variables en el texto; que guarda la disponibilidad 10 s; y que sin Docker disponible `apagar` y `encender` no ejecutan nada.
 
-- [ ] **T8. Rutas de la vista en el servidor.** RNF-12.10, RNF-13.4, RNF-13.6, RNF-19.4, RNF-05.4
+- [x] **T8. Rutas de la vista en el servidor.** RNF-12.10, RNF-13.4, RNF-13.6, RNF-19.4, RNF-05.4
   - Hecho cuando: `pruebas/panel/http/demo-rutas.test.ts`, con base, Docker y M2 de mentira, comprueba `GET /panel/demo/estado`, `POST /panel/demo/altas-simultaneas`, `POST /panel/demo/calificaciones-simultaneas`, `POST /panel/demo/restriccion-puntaje`, `POST /panel/demo/base/apagar` y `…/encender` (`409` `/panel/errores/docker-no-disponible` sin Docker) y `GET /panel/demo/salud` (`estado: null` si M2 no contesta en 3 s); que un cuerpo con N fuera de 2 a 50, otro `modo` o campos de más recibe `400`; que cada ruta da `403` con `Host` u `Origin` ajenos sin ejecutar nada; y que ni las respuestas ni las líneas de log contienen la URL ni la contraseña de la base.
 
 ## Tramo B — Empaquetado

@@ -14,7 +14,8 @@ export type PedidoDirecto = {
   metodo: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   // El camino con su query string, como se pediría a M2: `/api/v1/clientes/…`.
   ruta: string;
-  identidad: { rol: RolDelPanel; sub: string };
+  // Sin identidad el pedido va sin token, como `/health`, que no lo pide.
+  identidad?: { rol: RolDelPanel; sub: string };
   requestId: string;
   claveIdempotencia?: string;
   // Se manda como JSON.
@@ -34,8 +35,11 @@ export async function m2Directo(
   esperaMs = ESPERA_M2_DIRECTO_MS,
 ): Promise<RespuestaDirecta> {
   // Una identidad que no sirve lanza `TokenInvalido` antes de salir: es un error de quien llama, no una falla de M2.
-  const token = await firmarToken({ sub: pedido.identidad.sub, roles: [pedido.identidad.rol] }, config);
-  const encabezados: Record<string, string> = { authorization: `Bearer ${token}`, 'x-request-id': pedido.requestId };
+  const encabezados: Record<string, string> = { 'x-request-id': pedido.requestId };
+  if (pedido.identidad !== undefined) {
+    const token = await firmarToken({ sub: pedido.identidad.sub, roles: [pedido.identidad.rol] }, config);
+    encabezados['authorization'] = `Bearer ${token}`;
+  }
   if (pedido.claveIdempotencia !== undefined) encabezados['idempotency-key'] = pedido.claveIdempotencia;
   if (pedido.cuerpo !== undefined) encabezados['content-type'] = 'application/json';
 
