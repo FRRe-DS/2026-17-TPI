@@ -1,6 +1,6 @@
 # Spec 072 — Front de M2: vista de demostración e integridad de datos
 
-Estado: borrador
+Estado: aprobada
 Issue: #72
 Etapa: TP1
 Responsable: @sandobaitt
