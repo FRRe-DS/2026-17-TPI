@@ -7,7 +7,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T1. Configuración nueva del panel.** RNF-06.5, RNF-19.4
   - Hecho cuando: `pruebas/panel/unitarias/config.test.ts` comprueba que `servidor/config.ts` lee `PANEL_URL_BD` (opcional; vacía, sin acciones de base), `PANEL_DOCKER` (`si` o `no`, por defecto `si`) y `PANEL_SERVICIO_BD` (por defecto `bd`, rechaza lo que no cumpla `^[a-z0-9][a-z0-9_-]{0,62}$`), que un error nombra la variable sin repetir su valor (una URL con contraseña no aparece en el mensaje), y que `entorno-ejemplo.ts` toma las tres de `ejemplo.env`; `ejemplo.env` tiene las cuatro variables nuevas (también `PANEL_PUERTO_BD`), comentadas, y `pruebas/unitarias/ejemplo-env.test.ts` las acepta.
 
-- [ ] **T2. Acceso a la base: conteos y disponibilidad.** RNF-05.4, RNF-19.4
+- [x] **T2. Acceso a la base: conteos y disponibilidad.** RNF-05.4, RNF-19.4
   - Hecho cuando: `pruebas/panel/integracion/demo-base.test.ts`, con PostgreSQL de Testcontainers y las migraciones de M2, comprueba que `servidor/demo/base.ts` cuenta las filas de `clientes` y de `calificaciones` de un cliente, que sin `PANEL_URL_BD` informa «no configurada» sin conectarse, que con la base detenida devuelve `filas: null` con un motivo que lleva el código de Node y no la dirección ni la contraseña, y que el pool no pasa de 2 conexiones ni espera más de 2 s.
 
 - [ ] **T3. Prueba de la restricción del puntaje.** RNF-05.5, RNF-05.4
