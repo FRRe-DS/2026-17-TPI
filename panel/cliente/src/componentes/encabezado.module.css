@@ -18,13 +18,12 @@
   min-width: 0;
 }
 
-/* Lo simulado se marca con borde punteado: es provisorio, no un estado. */
+/* Lo simulado se marca con borde punteado: es provisorio, no un estado, y no compite con el acento. */
 .etiqueta {
   padding: 3px 10px;
-  border: 1px dashed color-mix(in srgb, var(--acento) 55%, transparent);
+  border: 1px dashed var(--borde-campo);
   border-radius: 999px;
-  background: var(--etiqueta-fondo);
-  color: var(--acento);
+  color: var(--tinta-suave);
   font-size: var(--t-chica);
   font-weight: 500;
   line-height: 1.4;
@@ -43,8 +42,8 @@
   flex: none;
   padding: var(--e-1) var(--e-2);
   border-radius: 999px;
-  background: var(--tinta);
-  color: var(--hoja);
+  background: var(--acento-tenue);
+  color: var(--acento);
   font: 600 0.6875rem / 1.2 var(--mono);
   letter-spacing: 0.08em;
 }

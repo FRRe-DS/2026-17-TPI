@@ -13,7 +13,7 @@
   padding: var(--e-2) var(--e-3);
 }
 
-/* La marca: un sello índigo con «M2» y el nombre al lado. */
+/* La marca: un sello del color del acento con «M2» y el nombre al lado. */
 .marca {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -151,12 +151,13 @@
   }
 }
 
-/* La pantalla actual: una píldora oscura (clara de noche), lo más contrastado del menú. */
+/* La pantalla actual: una pestaña del color de las tarjetas, con el texto en el acento, como si saliera del menú hacia la
+   pantalla. */
 .elemento[aria-current='page'] {
-  background: var(--lateral-texto);
-  color: var(--lateral);
+  background: var(--hoja);
+  color: var(--acento);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgb(16 24 40 / 0.12), 0 4px 10px -4px rgb(16 24 40 / 0.3);
+  box-shadow: var(--sombra-boton), 0 0 0 1px var(--lateral-regla);
 }
 
 @media (min-width: 960px) {

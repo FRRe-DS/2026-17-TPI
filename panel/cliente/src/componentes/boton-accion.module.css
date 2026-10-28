@@ -61,23 +61,12 @@
   opacity: 0.85;
 }
 
-/* ---- Principal: relleno índigo con un brillo arriba y una sombra del mismo color que crece al acercarse. ---- */
+/* ---- Principal: relleno del acento con un brillo arriba y una sombra del mismo color que crece al acercarse. ---- */
 .principal {
   border-color: var(--acento);
   background: var(--acento);
   color: var(--sobre-acento);
   box-shadow: var(--brillo), var(--sombra-acento);
-}
-
-/* Un reflejo que cruza el botón una vez cuando llega el puntero. */
-.principal::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.22) 50%, transparent 65%);
-  transform: translateX(-110%);
-  pointer-events: none;
 }
 
 /* ---- Contorno: lo secundario, una tecla blanca con borde fino. ---- */
@@ -110,12 +99,8 @@
   }
 
   .principal:hover:not(:disabled) {
-    box-shadow: var(--brillo), var(--sombra-acento), 0 10px 24px -8px color-mix(in srgb, var(--acento) 55%, transparent);
-  }
-
-  .principal:hover:not(:disabled)::after {
-    transform: translateX(110%);
-    transition: transform 650ms var(--en-pantalla);
+    background: color-mix(in srgb, var(--acento) 90%, var(--tinta));
+    box-shadow: var(--brillo), var(--sombra-acento), 0 8px 18px -8px color-mix(in srgb, var(--acento) 50%, transparent);
   }
 
   .contorno:hover:not(:disabled) {
@@ -151,11 +136,5 @@
 @keyframes girar {
   to {
     transform: rotate(1turn);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .principal::after {
-    display: none;
   }
 }

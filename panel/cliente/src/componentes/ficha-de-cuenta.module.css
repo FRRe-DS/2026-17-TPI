@@ -1,7 +1,8 @@
+/* Una ficha de pocos datos: no se estira a todo el ancho, para que el estado y los bloqueos se lean juntos. */
 .hoja {
   display: grid;
   gap: var(--e-3);
-  max-width: 72rem;
+  max-width: 48rem;
   padding: var(--e-3);
   border: 1px solid var(--regla);
   border-radius: var(--radio-hoja);
@@ -13,6 +14,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--e-2) var(--e-3);
+  padding-bottom: var(--e-3);
+  border-bottom: 1px solid var(--regla);
+  font-size: 1.0625rem;
+  font-weight: 600;
 }
 
 .activo,
@@ -43,6 +48,7 @@
 }
 
 .subtitulo {
+  margin-top: var(--e-1);
   font-size: var(--t-cuerpo);
   font-weight: 650;
 }
@@ -59,10 +65,10 @@
 .bloqueo {
   display: grid;
   gap: 2px;
-  padding: var(--e-2) var(--e-3);
-  border: 1px solid var(--regla);
-  border-left: 3px solid var(--mal);
+  padding: 12px var(--e-3);
+  border: 1px solid color-mix(in srgb, var(--mal) 30%, transparent);
   border-radius: var(--radio);
+  background: var(--mal-fondo);
 }
 
 .motivo {

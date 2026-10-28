@@ -39,6 +39,37 @@
   font: var(--t-detalle) / 1.5 var(--mono);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .resumen:hover {
+    background: color-mix(in srgb, var(--acento-tenue) 55%, transparent);
+  }
+}
+
+/* En la notebook, cada dato en su columna: hora, método, ruta, código y duración quedan alineados de fila a fila, y el folio va
+   debajo de la ruta para que ella tenga lugar. */
+@media (min-width: 960px) {
+  .resumen {
+    display: grid;
+    grid-template-columns: 4.5rem 3.25rem minmax(0, 1fr) 3rem 3.5rem;
+    align-items: baseline;
+    column-gap: var(--e-3);
+    padding-inline: var(--e-4);
+  }
+
+  .ok,
+  .mal {
+    justify-self: start;
+  }
+
+  .resumen > .dato:nth-last-child(2) {
+    text-align: right;
+  }
+
+  .resumen > .dato:last-child {
+    grid-column: 3 / -1;
+  }
+}
+
 .resumen:focus-visible {
   outline: 2px solid var(--foco);
   outline-offset: -2px;

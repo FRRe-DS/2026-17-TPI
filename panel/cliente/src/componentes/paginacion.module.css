@@ -10,7 +10,8 @@
 
 .texto {
   color: var(--tinta-suave);
-  font: var(--t-detalle) / 1.4 var(--mono);
+  font-size: var(--t-detalle);
+  line-height: 1.4;
 }
 
 .botones {
@@ -21,13 +22,18 @@
 .boton {
   min-height: var(--control);
   padding: 0 var(--e-3);
-  border: 1px solid var(--acento);
+  border: 1px solid var(--regla);
   border-radius: var(--radio);
-  background: transparent;
-  color: var(--acento);
+  background: var(--hoja);
+  color: var(--tinta);
   font-size: var(--t-menu);
   font-weight: 600;
   cursor: pointer;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    transform var(--rapido) var(--salida);
 }
 
 .boton:disabled {
@@ -38,7 +44,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .boton:hover:not(:disabled) {
-    background: var(--acento-tenue);
+    border-color: color-mix(in srgb, var(--acento) 40%, var(--regla));
+    color: var(--acento);
   }
 }
 

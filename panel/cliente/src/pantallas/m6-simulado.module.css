@@ -8,15 +8,15 @@
 /* La etiqueta de lo simulado, a la vista como en el encabezado (RNF-12.7). */
 .etiqueta {
   justify-self: start;
-  padding: 2px 12px;
+  padding: 3px 10px;
   border: 1px dashed var(--borde-campo);
   border-radius: 999px;
   color: var(--tinta-suave);
-  font-size: var(--t-menu);
+  font-size: var(--t-chica);
 }
 
 .subtitulo {
-  margin-top: var(--e-2);
+  margin-top: var(--e-4);
   font-size: var(--t-cuerpo);
   font-weight: 650;
 }
@@ -76,17 +76,24 @@
   justify-content: center;
   min-height: var(--control);
   padding: 0 var(--e-3);
-  border: 1px solid var(--acento);
+  border: 1px solid var(--regla);
+  background: var(--hoja);
   border-radius: var(--radio);
-  color: var(--acento);
+  color: var(--tinta);
   font-size: var(--t-menu);
   font-weight: 600;
   text-decoration: none;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    transform var(--rapido) var(--salida);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .enlace:hover {
-    background: var(--acento-tenue);
+    border-color: color-mix(in srgb, var(--acento) 40%, var(--regla));
+    color: var(--acento);
   }
 }
 

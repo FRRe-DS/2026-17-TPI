@@ -66,8 +66,9 @@
 .reciente {
   padding: 2px 10px;
   border-radius: 999px;
-  font: 600 var(--t-chica) / 1.6 var(--mono);
-  letter-spacing: 0.04em;
+  font-size: var(--t-chica);
+  font-weight: 600;
+  line-height: 1.6;
 }
 
 .favorita {
@@ -111,17 +112,24 @@
   justify-content: center;
   min-height: var(--control);
   padding: 0 var(--e-3);
-  border: 1px solid var(--acento);
+  border: 1px solid var(--regla);
+  background: var(--hoja);
   border-radius: var(--radio);
-  color: var(--acento);
+  color: var(--tinta);
   font-size: var(--t-menu);
   font-weight: 600;
   text-decoration: none;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    transform var(--rapido) var(--salida);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .editar:hover {
-    background: var(--acento-tenue);
+    border-color: color-mix(in srgb, var(--acento) 40%, var(--regla));
+    color: var(--acento);
   }
 }
 

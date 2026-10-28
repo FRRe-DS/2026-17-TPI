@@ -220,12 +220,7 @@ function OtroRol({ ingreso, alEntrar }: Props) {
         }
       >
         <fieldset className={estilos.roles}>
-          <legend className={estilos.leyenda}>
-            <span className={estilos.numero} aria-hidden="true">
-              01
-            </span>
-            Rol
-          </legend>
+          <legend className={estilos.leyenda}>Rol</legend>
           <div className={estilos.opciones}>
             {ROLES.map((opcion) => (
               <label key={opcion} className={estilos.opcion}>

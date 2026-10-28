@@ -1,49 +1,50 @@
 ---
 name: M2 · Clientes
-description: Panel web de M2 para el cliente de prueba y para quien evalúa; un formulario con folio en papel cálido.
+description: Panel web de M2 para el cliente de prueba y para quien evalúa; tarjetas blancas sobre un fondo verde muy leve, con un solo acento verde azulado.
 colors:
-  papel: "#f3ece0"
-  hoja: "#fbf8f2"
+  papel: "#f3f6f4"
+  hoja: "#ffffff"
   campo: "#ffffff"
-  tinta: "#2a2018"
-  tinta-suave: "#665a4d"
-  acento: "#6b4a2e"
-  acento-tenue: "#efe4d3"
-  sobre-acento: "#fbf8f2"
-  regla: "#d8cab4"
-  borde-campo: "#8f7e69"
-  foco: "#6b4a2e"
-  seleccion: "#e6d3b3"
-  etiqueta-fondo: "#f6efe3"
-  lateral: "#4e3420"
-  lateral-hover: "#5e412a"
-  lateral-texto: "#f3ece0"
-  lateral-suave: "#d2bfa3"
-  lateral-regla: "#6b4a2e"
-  franja: "#2a2018"
-  franja-texto: "#e9dfd0"
-  franja-metodo: "#d6b48a"
-  franja-ok: "#8cc79a"
-  franja-mal: "#f09a86"
-  franja-pista: "#4a3d33"
-  ok: "#2f6b3a"
-  ok-fondo: "#e8f0e6"
-  mal: "#a23b2a"
-  mal-fondo: "#f7e6e1"
-  aviso: "#7a5410"
-  aviso-fondo: "#f5ebd6"
+  tinta: "#0f1f1a"
+  tinta-suave: "#4a5a55"
+  acento: "#0f766e"
+  acento-tenue: "#e6f4f1"
+  sobre-acento: "#ffffff"
+  regla: "#dfe7e4"
+  borde-campo: "#7f8f8a"
+  foco: "#0f766e"
+  seleccion: "#c9ebe5"
+  etiqueta-fondo: "#ecf6f3"
+  lateral: "#eaf1ee"
+  lateral-hover: "#dde8e4"
+  lateral-texto: "#0f2a24"
+  lateral-suave: "#4f625c"
+  lateral-regla: "#d5e0dc"
+  franja: "#0c1a17"
+  franja-texto: "#d5e3de"
+  franja-metodo: "#5eead4"
+  franja-ok: "#6ee7a0"
+  franja-mal: "#fca5a5"
+  franja-pista: "#24352f"
+  ok: "#15803d"
+  ok-fondo: "#ecfdf3"
+  mal: "#b42318"
+  mal-fondo: "#fef3f2"
+  aviso: "#92400e"
+  aviso-fondo: "#fffbeb"
 typography:
   headline:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif"
     fontSize: "1.75rem"
-    fontWeight: 700
-    lineHeight: 1.2
-    letterSpacing: "-0.01em"
+    fontWeight: 750
+    lineHeight: 1.15
+    letterSpacing: "-0.025em"
   title:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif"
-    fontSize: "0.9375rem"
+    fontSize: "1.0625rem"
     fontWeight: 650
     lineHeight: 1.3
+    letterSpacing: "-0.01em"
   body:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif"
     fontSize: "1rem"
@@ -53,17 +54,23 @@ typography:
   label:
     fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif"
     fontSize: "0.8125rem"
-    fontWeight: 600
+    fontWeight: 500
     lineHeight: 1.3
+  group:
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif"
+    fontSize: "0.6875rem"
+    fontWeight: 650
+    lineHeight: 1.3
+    letterSpacing: "0.06em"
   data:
     fontFamily: "ui-monospace, 'SF Mono', 'Cascadia Mono', 'Ubuntu Mono', Menlo, Consolas, monospace"
     fontSize: "0.8125rem"
     fontWeight: 400
     lineHeight: 1.4
 rounded:
-  chip: "4px"
-  control: "6px"
-  hoja: "8px"
+  control: "10px"
+  hoja: "18px"
+  sello: "10px"
   etiqueta: "999px"
 spacing:
   e-1: "4px"
@@ -73,41 +80,46 @@ spacing:
   e-5: "32px"
   e-6: "40px"
 components:
-  boton-contorno:
-    backgroundColor: "transparent"
-    textColor: "{colors.acento}"
-    rounded: "{rounded.control}"
-    padding: "0 16px"
-    height: "44px"
-  boton-contorno-hover:
-    backgroundColor: "{colors.acento-tenue}"
-    textColor: "{colors.acento}"
   boton-principal:
     backgroundColor: "{colors.acento}"
     textColor: "{colors.sobre-acento}"
     rounded: "{rounded.control}"
     padding: "0 16px"
     height: "44px"
-  etiqueta-simulado:
-    backgroundColor: "{colors.etiqueta-fondo}"
+  boton-contorno:
+    backgroundColor: "{colors.hoja}"
+    textColor: "{colors.tinta}"
+    rounded: "{rounded.control}"
+    padding: "0 16px"
+    height: "44px"
+  boton-contorno-hover:
+    backgroundColor: "{colors.hoja}"
     textColor: "{colors.acento}"
+  etiqueta-simulado:
+    backgroundColor: "transparent"
+    textColor: "{colors.tinta-suave}"
     rounded: "{rounded.etiqueta}"
     padding: "3px 10px"
+  etiqueta-estado:
+    backgroundColor: "{colors.acento-tenue}"
+    textColor: "{colors.acento}"
+    rounded: "{rounded.etiqueta}"
+    padding: "2px 10px"
   chip-rol:
-    backgroundColor: "{colors.tinta}"
-    textColor: "{colors.hoja}"
+    backgroundColor: "{colors.acento-tenue}"
+    textColor: "{colors.acento}"
     typography: "{typography.data}"
-    rounded: "{rounded.chip}"
+    rounded: "{rounded.etiqueta}"
     padding: "4px 8px"
   menu-elemento:
     backgroundColor: "{colors.lateral}"
     textColor: "{colors.lateral-texto}"
     rounded: "{rounded.control}"
-    padding: "0 16px"
+    padding: "0 12px"
     height: "44px"
   menu-elemento-actual:
-    backgroundColor: "{colors.lateral-texto}"
-    textColor: "{colors.lateral}"
+    backgroundColor: "{colors.hoja}"
+    textColor: "{colors.acento}"
   hoja:
     backgroundColor: "{colors.hoja}"
     textColor: "{colors.tinta}"
@@ -126,132 +138,131 @@ Las variables viven en `cliente/src/estilos/variables.css` y son la fuente norma
 
 ## Overview
 
-**Creative North Star: "El formulario con folio"**
+**Creative North Star: "Verde ciudad"**
 
-El panel es un formulario de papel: cada pantalla es una hoja con sus casilleros, y cada respuesta de M2 queda archivada bajo su folio, el `X-Request-Id`, que es el puente con los logs de M2. Tres planos lo arman: el menú lateral en sepia oscuro, la hoja clara donde se trabaja y la franja técnica oscura al pie, siempre a la vista y siempre chica.
+El panel es una herramienta de una app de movilidad: tarjetas blancas donde se trabaja, sobre un fondo y un menú con un tinte verde muy leve, y un solo color de marca, el verde azulado de las apps de transporte. Tres planos lo arman: el menú lateral claro, las tarjetas de cada pantalla y la franja técnica oscura al pie, que muestra el último pedido a M2 y su folio (el `X-Request-Id`, el puente con los logs).
 
-Es una herramienta (modo Operate): densidad de notebook a 1280 px, lectura rápida y nada que compita con los datos. La marca está en los detalles precisos (tinta sepia, etiquetas punteadas de lo simulado, números tabulares), no en decoración. Se rechaza a propósito el aspecto de cafetería o rústico (nada de texturas, madera ni tipografías manuscritas) y el tablero sobrecargado de tarjetas con cifras.
+Es una herramienta (modo Operate): densidad de notebook a 1280 px, lectura rápida y nada que compita con los datos. La marca está en los detalles precisos (el acento solo en lo que se toca o lo que está elegido, etiquetas punteadas de lo simulado, números tabulares), no en decoración. Lautaro eligió este estilo el 2026-10-28 entre cinco opciones (índigo, grafito, verde ciudad, azul tránsito y arena); reemplaza al «formulario con folio» en papel marrón.
 
 **Key Characteristics:**
-- Papel cálido de fondo, hoja un paso más clara para trabajar, tinta casi negra.
-- Un solo acento, sepia, en acciones, enlaces y foco.
-- Lo simulado se marca con borde punteado; lo técnico va en monoespaciada.
-- Plano: separación por líneas de 1 px y por escalones de tono, sin sombras.
-- Mismo escritorio de noche en modo oscuro, nunca un negro azulado.
+- Fondo verde casi gris, tarjetas blancas con sombra suave, tinta casi negra con un dejo verde.
+- Un solo acento, verde azulado, en la acción principal, el elemento actual del menú, lo elegido, los enlaces y el foco.
+- Lo simulado se marca con borde punteado gris; la monoespaciada va solo sobre datos reales de M2.
+- Esquinas redondeadas y generosas (10 px en controles, 18 px en tarjetas).
+- De noche: fondo casi negro verdoso, tarjetas un paso más claras y el acento pasado a turquesa claro.
 
 ## Colors
 
-Marrones y beige de baja saturación, con verde, ladrillo y ámbar reservados para estados.
+Neutros con un tinte verde muy bajo y un acento verde azulado, con verde, rojo y ámbar reservados para estados.
 
 ### Primary
-- **Tinta sepia** (#6b4a2e; oscuro #ddb98d): botón principal, botones de contorno, enlaces, texto de las etiquetas de lo simulado y anillo de foco (`foco`).
-- **Sepia tenue** (#efe4d3; oscuro #3a2e23): fondo del botón de contorno al pasar el puntero.
+- **Verde ciudad** (#0f766e; oscuro #5eead4): botón principal, texto del elemento actual del menú, opciones elegidas, enlaces, chip de rol y anillo de foco (`foco`).
+- **Verde tenue** (#e6f4f1; oscuro #10302b): fondo de las opciones elegidas, del chip de rol y de las etiquetas de estado positivas (Completado, Favorita).
 
 ### Neutral
-- **Papel** (#f3ece0; oscuro #1c1611): fondo de la página.
-- **Hoja** (#fbf8f2; oscuro #262019): superficies de trabajo, el encabezado y el texto del chip de rol.
-- **Campo** (#ffffff; oscuro #1f1914): fondo de los campos de formulario.
-- **Tinta** (#2a2018; oscuro #efe6d8): todo el texto corrido y el fondo del chip de rol.
-- **Tinta suave** (#665a4d; oscuro #bbaa94): texto secundario, nunca texto corrido.
-- **Regla** (#d8cab4; oscuro #3e3329): líneas de 1 px entre superficies.
-- **Borde de campo** (#8f7e69; oscuro #7d6c59): contorno de los campos, 3:1 contra el campo.
-- **Lateral** (#4e3420; oscuro #22180f) con **texto lateral** (#f3ece0) y **lateral suave** (#d2bfa3; oscuro #b9a387) para grupos y subtítulos.
-- **Franja** (#2a2018; oscuro #0f0b08) con su propio texto (#e9dfd0), método (#d6b48a), código bueno (#8cc79a), código malo (#f09a86) y pista de la barra (#4a3d33).
+- **Papel** (#f3f6f4; oscuro #0a1210): fondo de la página.
+- **Hoja** (#ffffff; oscuro #111c19): tarjetas, el elemento actual del menú y los botones de contorno.
+- **Campo** (#ffffff; oscuro #0c1513): fondo de los campos de formulario.
+- **Tinta** (#0f1f1a; oscuro #e6efec): todo el texto corrido.
+- **Tinta suave** (#4a5a55; oscuro #9fb3ad): texto secundario, ayudas y etiquetas de lo simulado.
+- **Regla** (#dfe7e4; oscuro #1f2f2b): líneas de 1 px y borde de las tarjetas y los botones de contorno.
+- **Borde de campo** (#7f8f8a; oscuro #6b7f79): contorno de los campos y de las etiquetas de lo simulado, 3:1 contra el campo.
+- **Lateral** (#eaf1ee; oscuro #0d1714) con **texto lateral** (#0f2a24) y **lateral suave** (#4f625c; oscuro #93a8a1) para los títulos de grupo.
+- **Franja** (#0c1a17; oscuro #060c0b) con su propio texto (#d5e3de), método (#5eead4), código bueno (#6ee7a0), código malo (#fca5a5) y pista de la barra (#24352f).
 
 ### Estados
-- **Bien** (#2f6b3a / fondo #e8f0e6; oscuro #8cc79a / #1e2a1f), **Mal** (#a23b2a / #f7e6e1; oscuro #f09a86 / #33201b), **Aviso** (#7a5410 / #f5ebd6; oscuro #e2b45e / #30261a).
+- **Bien** (#15803d / fondo #ecfdf3; oscuro #6ee7a0 / #0f2a1c), **Mal** (#b42318 / #fef3f2; oscuro #fca5a5 / #3a1414), **Aviso** (#92400e / #fffbeb; oscuro #fcd34d / #2e2510).
 
 ### Named Rules
-**The Un Solo Acento Rule.** El sepia es el único color de marca. Verde, ladrillo y ámbar significan estado y no se usan para decorar.
+**The Un Solo Acento Rule.** El verde azulado es el único color de marca y marca lo que se toca o lo que está elegido. Verde, rojo y ámbar significan estado y no se usan para decorar. Las etiquetas de lo simulado van en gris: avisan, no llaman la atención.
 
 **The Clasificado Rule.** Todo color nuevo se agrega en los dos modos y se clasifica en `contraste.test.ts` como texto (4,5:1), componente (3:1) o decorativo; si no, la prueba falla.
 
 ## Typography
 
 **Body Font:** pila del sistema (`system-ui` y alternativas).
-**Data Font:** `ui-monospace` y alternativas, solo para datos: identificadores, método y ruta HTTP, códigos, folios, duraciones.
+**Data Font:** `ui-monospace` y alternativas, solo para datos: identificadores, método y ruta HTTP, códigos, folios, duraciones, valores literales de M2 (`ACTIVO`, `CLIENTE`).
 
-**Character:** letra del sistema operativo, sobria y familiar para quien usa la herramienta todos los días; la monoespaciada marca lo que se copia o se busca en un log. No se cargan fuentes de terceros (política de seguridad del panel); una fuente propia solo entra guardada en `cliente/fuentes/` con su licencia.
+**Character:** letra del sistema operativo, sobria y familiar para quien usa la herramienta todos los días; la monoespaciada marca lo que se copia o se busca en un log. No se cargan fuentes de terceros (política de seguridad del panel).
 
 ### Hierarchy
-- **Headline** (700, 1.75rem, 1.2): el título `h1` de cada pantalla, uno por vista.
-- **Title** (650, 0.9375rem, 1.3): títulos de secciones y de hojas.
+- **Headline** (750, 1.75rem, 1.15, -0.025em): el título `h1` de cada pantalla, uno por vista.
+- **Title** (650, 1.0625rem, 1.3): títulos de tarjetas y secciones (`h2`), con aire debajo antes del primer campo.
 - **Body** (400, 1rem en teléfono y 0.9375rem desde 960 px, 1.5): texto y controles; cifras tabulares en todo el cuerpo.
-- **Label** (600, 0.8125rem): títulos de grupo del menú, en minúscula de oración.
+- **Label** (500, 0.8125rem): etiquetas de campo y leyendas de grupos de opciones.
+- **Group** (650, 0.6875rem, mayúsculas con 0.06em): solo los títulos de grupo del menú lateral.
 - **Data** (400, 0.8125rem, 1.4): la franja técnica, el chip de rol y los identificadores.
 
 ### Named Rules
-**The Mono Es Dato Rule.** La monoespaciada va solo sobre valores que existen tal cual en M2 o en un log. Nunca como adorno de «técnico».
-
-**The Sin Versalitas Rule.** Nada de etiquetas chicas en mayúsculas con espaciado; los grupos se escriben en minúscula de oración. La única mayúscula es la del valor real del rol (`CLIENTE`).
+**The Mono Es Dato Rule.** La monoespaciada va solo sobre valores que existen tal cual en M2 o en un log. Las etiquetas de estado escritas para la persona («En curso», «Favorita», «hecho») y la paginación van en la letra del cuerpo.
 
 ## Layout
 
 Una sola grilla de 8 px (4 px para lo muy apretado): `e-1` a `e-6`. Controles de 44 px de alto como mínimo.
 
-- **Desde 960 px:** dos columnas, menú lateral fijo de 248 px a toda la altura y, a la derecha, encabezado de 64 px, pantalla y franja técnica de 56 px pegada al pie de la ventana. Márgenes de la pantalla de 40 px.
+- **Desde 960 px:** dos columnas, menú lateral fijo de 248 px a toda la altura y, a la derecha, encabezado de 64 px (fijo arriba, translúcido), pantalla y franja técnica de 56 px pegada al pie. Márgenes de la pantalla de 40 px.
 - **De 600 a 959 px:** una columna, márgenes de 32 px; el menú pasa arriba como barra con el botón «Menú».
-- **Menos de 600 px:** márgenes de 16 px; las etiquetas de lo simulado se apilan, el identificador se corta con puntos suspensivos, la franja oculta la barra de duración y el folio y acorta su enlace.
-- El menú abierto en el teléfono empuja la pantalla, no la tapa, y se cierra al navegar o con Escape.
+- **Menos de 600 px:** márgenes de 16 px; las etiquetas de lo simulado se apilan, el identificador se corta con puntos suspensivos y la franja se acorta.
+- Las fichas de pocos datos no se estiran: el estado de cuenta hasta 48rem, la consulta de otro módulo hasta 48rem y el operador hasta 56rem. Las listas y los formularios de varios campos llegan hasta 72rem.
 - `scroll-padding-bottom` deja libre la franja: lo que recibe el foco nunca queda debajo de ella.
 
 ## Elevation & Depth
 
-Plano. La profundidad sale de tres escalones de tono (lateral, papel y hoja) y de líneas de 1 px; no hay sombras en reposo. Solo lo que realmente flota (un diálogo de confirmación, T18) puede llevar sombra suave.
-
-**The Plano Por Defecto Rule.** Una superficie se separa de otra por tono o por una regla de 1 px, nunca por sombra ni degradado.
+Tarjetas con una sombra muy suave en capas (`sombra-hoja`: una línea de contacto y una difusa) y borde de 1 px; los botones llevan una sombra mínima (`sombra-boton`) y el principal una del color del acento (`sombra-acento`). Lo que flota de verdad (el diálogo de confirmación) lleva `sombra-flotante`. Nada de halos de color sin desplazamiento.
 
 ## Shapes
 
-Esquinas suaves y pocas: 4 px en el chip de rol, 6 px en botones, campos y elementos del menú, 8 px en las hojas, píldora completa solo en las etiquetas de lo simulado. Los bordes son de 1 px; el punteado queda reservado a lo simulado.
+Esquinas de 10 px en botones, campos, opciones y elementos del menú; 18 px en las tarjetas; 10 px en el sello «M2»; píldora completa en etiquetas, chips y el chip de rol. Bordes de 1 px; el punteado queda reservado a lo simulado.
 
 ## Components
 
 ### Buttons
-- **Shape:** esquinas de 6 px, 44 px de alto, 16 px a los costados, peso 600.
-- **Principal:** fondo tinta sepia y texto hoja.
-- **Contorno:** borde sepia de 1 px, fondo transparente y texto sepia; al pasar el puntero, fondo sepia tenue (solo con puntero fino). Las acciones que deshacen (como «Cerrar sesión») van en contorno y apartadas.
-- **Peligro:** para lo que no se deshace: borde y texto ladrillo (`mal`) sobre transparente; se llena de ladrillo con texto hoja recién con el foco o el puntero encima. Va apartado de «Cancelar», en el otro extremo.
-- **Esperando:** deshabilitado, `aria-busy`, un aro que gira y el texto «Enviando…»; fuera de la espera nunca queda deshabilitado.
-- **Press / Focus:** `scale(0.97)` al presionar, 160 ms con salida exponencial; foco con anillo de 2 px separado 2 px, del color `foco` (o del texto del menú sobre fondos oscuros).
+- **Shape:** esquinas de 10 px, 44 px de alto, 16 px a los costados, peso 600.
+- **Principal:** fondo verde ciudad, texto blanco, un brillo arriba y sombra del acento; al pasar el puntero sube 1 px y se oscurece apenas. Uno por tarjeta, abajo a la derecha.
+- **Contorno:** la acción secundaria: fondo blanco, borde regla y texto tinta; al pasar el puntero el borde y el texto toman el acento. Los enlaces con forma de botón («Editar», «Calificar», la paginación) usan este mismo estilo.
+- **Peligro:** borde rojo suave y texto rojo; se llena de rojo con el foco o el puntero encima. Va apartado de «Cancelar».
+- **Esperando:** deshabilitado, `aria-busy`, un aro que gira y el texto de espera.
+- **Press / Focus:** `scale(0.97)` al presionar, 160 ms con salida exponencial; foco con anillo de 2 px separado 2 px, del color `foco`.
 
 ### Chips
-- **Etiqueta de lo simulado:** píldora con borde punteado sepia, fondo `etiqueta-fondo`, texto sepia de 12 px: «Sesión: simulado, pendiente de M1», «Viajes: simulado, pendiente de M6». Va en el encabezado de toda vista.
-- **Chip de rol:** fondo tinta, texto hoja, monoespaciada 600 de 11 px con 0.08em; muestra el valor del rol tal cual.
+- **Etiqueta de lo simulado:** píldora con borde punteado gris (`borde-campo`), sin fondo, texto `tinta-suave` de 12 px: «Sesión: simulado, pendiente de M1», «Viajes: simulado, pendiente de M6».
+- **Etiqueta de estado:** píldora de 12 px en la letra del cuerpo, peso 600: verde tenue con texto verde para lo positivo, borde regla con texto suave para lo neutro, rojo tenue para lo bloqueado.
+- **Chip de rol:** verde tenue con texto verde, monoespaciada 600 de 11 px; muestra el valor del rol tal cual.
 
 ### Cards / Containers
-- **Hoja:** fondo hoja, borde regla de 1 px, esquinas de 8 px, 24 px de relleno, sin sombra. Las hojas no se anidan.
+- **Hoja:** fondo blanco, borde regla de 1 px, esquinas de 18 px, `sombra-hoja`. Los formularios tienen el título arriba sin línea divisoria y un pie gris claro con las acciones; las listas tienen una línea entre fila y fila. Las hojas no se anidan.
 
 ### Error de M2
-- **Style:** bloque con borde ladrillo de 1 px sobre `mal-fondo`, título en ladrillo y las filas tal como vinieron (código, tipo, detalle, instancia, reintentar en, folio): nombre en la letra del cuerpo, valor en monoespaciada cortable. Debajo, «Reintentar» en contorno.
+- **Style:** bloque con borde rojo de 1 px sobre `mal-fondo`, título en rojo y las filas tal como vinieron (código, tipo, detalle, instancia, reintentar en, folio). Debajo, «Reintentar» en contorno.
 
-### Diálogo de confirmación
-- **Style:** `<dialog>` modal de hasta 28rem sobre el velo (`velo`), hoja con borde regla, esquinas de 8 px y la única sombra del sistema (`sombra-flotante`); entra en 200 ms con opacidad y 8 px. «Cancelar» a la izquierda con el foco inicial, la acción en peligro a la derecha.
+### Bloqueo vigente
+- **Style:** caja con fondo `mal-fondo` y borde rojo al 30 %, sin franja lateral gruesa: motivo en negrita, vigencia y quién lo registró debajo.
 
 ### Inputs / Fields
-- **Style:** fondo campo, borde `borde-campo` de 1 px, esquinas de 6 px, 44 px de alto y 16 px de letra (sin zoom en el teléfono). Cada casillero lleva su número en monoespaciada sepia antes de la etiqueta; una columna en el teléfono y dos desde 600 px, separados por reglas; los textos largos ocupan las dos.
-- **Error:** borde ladrillo, `aria-invalid` y el mensaje en ladrillo debajo, asociado con `aria-describedby` junto con la ayuda.
+- **Style:** fondo campo, borde `borde-campo` de 1 px, esquinas de 10 px, 44 px de alto y 16 px de letra (sin zoom en el teléfono). Al enfocar, borde del acento y un halo (`anillo`). Una columna en el teléfono y dos desde 600 px.
+- **Opciones (casillas y radios):** cajas de 44 px con borde `borde-campo`; la elegida, con borde y fondo del acento.
+- **Error:** borde rojo, `aria-invalid` y el mensaje en rojo debajo, asociado con `aria-describedby`.
 
 ### Navigation
-- **Menú lateral:** marca «M2 · Clientes» con «Grupo 17 · TPI 2026» debajo, grupos por rol con su título en minúscula de oración, elementos de 44 px. El actual lleva `aria-current="page"` y se invierte (fondo del texto del menú, texto del lateral); el resto cambia solo de fondo al pasar el puntero.
-- **Teléfono:** barra con la marca y el botón «Menú» (ícono SVG propio de 20 px, `aria-expanded`); el menú aparece con 200 ms de opacidad y 4 px de desplazamiento.
-- **Saltar al contenido:** primer elemento del orden de foco, visible solo con teclado, lleva el foco a `main`.
+- **Menú lateral:** sello «M2» en el acento con «M2 · Clientes» y «Grupo 17 · TPI 2026» al lado; grupos por rol con su título chico en mayúsculas; elementos de 44 px. El actual lleva `aria-current="page"` y es una pestaña blanca con el texto en el acento y una sombra mínima; el resto cambia solo de fondo al pasar el puntero.
+- **Teléfono:** barra con la marca y el botón «Menú»; el menú aparece con 200 ms de opacidad y 4 px de desplazamiento y empuja la pantalla.
+- **Saltar al contenido:** primer elemento del orden de foco, visible solo con teclado.
 
 ### Franja técnica
-La firma del sistema: fija al pie, fondo franja, monoespaciada de 13 px. Muestra el último pedido a M2 (método, ruta cortada con puntos suspensivos, código en verde o ladrillo, duración dibujada a escala con una barra SVG de 120 px en la que el ancho completo es un segundo, y el folio) y el enlace «Ver pedidos y respuestas». Sin pedidos dice «Sin pedidos a M2 todavía». El registro que la llena llega con la pantalla de detalle técnico (T31).
+Fija al pie, fondo franja, monoespaciada de 13 px: método, ruta cortada, código en verde o rojo, duración dibujada a escala (barra de 120 px = 1 s) y el folio, con el enlace «Ver pedidos y respuestas». En «Detalle técnico» cada pedido se alinea en columnas (hora, método, ruta, código, duración) con el folio debajo de la ruta.
 
 ## Do's and Don'ts
 
 ### Do:
 - **Do** usar solo las variables de `variables.css`; un valor nuevo se agrega en claro y oscuro y se clasifica en `contraste.test.ts`.
 - **Do** marcar con borde punteado todo lo que sale de una fuente simulada.
-- **Do** mostrar en monoespaciada los valores reales de M2 (UUID, método, ruta, código, folio).
+- **Do** mostrar en monoespaciada solo los valores reales de M2 (UUID, método, ruta, código, folio, estados literales).
 - **Do** mantener controles de 44×44 px, foco visible y el uso completo con teclado de 360 a 1440 px.
-- **Do** limitar el movimiento a respuesta: presión, aparición del menú; nada de entradas al cargar.
+- **Do** limitar el movimiento a respuesta: presión, paso del puntero, aparición del menú y de los avisos.
 
 ### Don't:
 - **Don't** usar estilos en línea (`style`): la política de seguridad del panel los bloquea y el lint lo prohíbe.
 - **Don't** cargar fuentes, imágenes ni scripts de terceros, ni usar `data:`.
-- **Don't** usar sombras en reposo, degradados ni texturas de papel o madera: el pedido fue profesional, no rústico.
+- **Don't** usar el acento para decorar ni para etiquetas que solo avisan (lo simulado va en gris).
+- **Don't** usar franjas de color gruesas al costado de tarjetas o cajas, degradados de texto ni reflejos animados.
 - **Don't** armar las pantallas con filas de tarjetas de cifras ni poner etiquetas sobre los títulos.
-- **Don't** usar verde, ladrillo o ámbar para algo que no sea un estado.

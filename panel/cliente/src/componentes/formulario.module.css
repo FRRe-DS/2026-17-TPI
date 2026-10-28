@@ -11,7 +11,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--e-1) var(--e-3);
-  padding: var(--e-3) var(--e-3) 0;
+  padding: 20px var(--e-3) var(--e-2);
 }
 
 .folio {
@@ -28,7 +28,8 @@
 .campos {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  padding-block: var(--e-1);
+  row-gap: var(--e-1);
+  padding-block: 0 var(--e-2);
 }
 
 select.control {
@@ -46,7 +47,7 @@ select.control {
   gap: var(--e-2);
   color: var(--tinta);
   font-size: var(--t-detalle);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 /* El número de casillero era del formulario impreso; la etiqueta ya alcanza. */
@@ -78,7 +79,7 @@ select.control {
   }
 }
 
-/* Al enfocar, con ratón o teclado: borde índigo y un halo suave. El contorno de `:focus-visible` se suma con el teclado. */
+/* Al enfocar, con ratón o teclado: borde del acento y un halo suave. El contorno de `:focus-visible` se suma con el teclado. */
 .control:focus {
   border-color: var(--acento);
   box-shadow: var(--anillo);
@@ -174,7 +175,7 @@ textarea.control {
   padding: 0;
   color: var(--tinta);
   font-size: var(--t-detalle);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .opciones {

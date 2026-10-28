@@ -1,7 +1,7 @@
 .operador {
   display: grid;
   gap: var(--e-3);
-  max-width: 72rem;
+  max-width: 56rem;
   margin-top: var(--e-4);
 }
 
@@ -17,7 +17,7 @@
 }
 
 .errorAlLevantar {
-  max-width: 72rem;
+  max-width: 56rem;
 }
 
 .hoja {
@@ -68,8 +68,9 @@
 .cerrado {
   padding: 2px 10px;
   border-radius: 999px;
-  font: 600 var(--t-chica) / 1.6 var(--mono);
-  letter-spacing: 0.04em;
+  font-size: var(--t-chica);
+  font-weight: 600;
+  line-height: 1.6;
 }
 
 .vigente {

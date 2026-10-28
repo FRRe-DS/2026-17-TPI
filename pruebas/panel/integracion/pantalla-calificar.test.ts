@@ -260,6 +260,6 @@ describe('el formulario dibujado', () => {
     expect(html.match(/type="radio"/g)).toHaveLength(5);
     expect(html).toContain('0 de 500 caracteres');
     expect(html).toContain(viajeId);
-    expect(html).toMatch(/<button[^>]*type="submit"(?![^>]*disabled)[^>]*>Enviar calificación/);
+    expect(html).toMatch(/<button[^>]*type="submit"(?![^>]*disabled)[^>]*><span[^>]*>Enviar calificación/);
   });
 });

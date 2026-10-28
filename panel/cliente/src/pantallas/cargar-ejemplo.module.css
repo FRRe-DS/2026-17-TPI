@@ -17,11 +17,10 @@
 /* Lo simulado va con borde punteado, como las etiquetas del encabezado (RNF-12.7). */
 .etiqueta {
   padding: 3px 10px;
-  border: 1px dashed var(--acento);
+  border: 1px dashed var(--borde-campo);
   border-radius: 999px;
-  background: var(--etiqueta-fondo);
-  color: var(--acento);
-  font-size: var(--t-detalle);
+  color: var(--tinta-suave);
+  font-size: var(--t-chica);
 }
 
 .cuerpo {
@@ -50,8 +49,9 @@
 }
 
 .estado {
-  font: 600 var(--t-chica) / 1.4 var(--mono);
-  letter-spacing: 0.04em;
+  font-size: var(--t-chica);
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .pendiente .estado {

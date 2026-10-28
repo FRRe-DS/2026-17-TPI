@@ -41,7 +41,8 @@ Una sola app que es a la vez la del cliente y la del evaluador: cada acción del
 ## Brand Commitments
 
 - Nombre en el encabezado: **M2 · Clientes**.
-- Pedido de Lautaro (2026-10-27): **profesional en lo estético y en lo funcional**, con **marrones y beige** como base de las páginas.
+- Pedido de Lautaro (2026-10-27): **profesional en lo estético y en lo funcional**.
+- Estilo elegido por Lautaro (2026-10-28) entre cinco opciones: **«Verde ciudad»**, neutros con un tinte verde muy leve y un solo acento verde azulado. Reemplaza el pedido anterior de marrones y beige.
 
 ## Evidence on Hand
 

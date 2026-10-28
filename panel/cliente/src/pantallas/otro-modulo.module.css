@@ -1,6 +1,6 @@
 .consulta {
   display: grid;
   gap: var(--e-3);
-  max-width: 72rem;
+  max-width: 48rem;
   margin-top: var(--e-4);
 }
