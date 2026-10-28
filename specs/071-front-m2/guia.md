@@ -16,6 +16,8 @@
 
 **Decisiones clave** (en `plan.md` y en el ADR 071): React y Vite por decisión de Lautaro; tokens firmados por el servidor y no por el navegador; ruta por `#`; la prueba en Chrome usa M2 real y no uno de mentira.
 
+**El aspecto.** Estilo «Verde ciudad», elegido por Lautaro después de T36 (entrada «Rediseño visual» al final): `panel/DESIGN.md` describe colores, tipografía y movimiento, y todo color pasa por `contraste.test.ts`. Arriba de cada vista, una banda ámbar «Entorno de prueba» dice qué es simulado (RNF-12.7).
+
 **Probarlo.** `docker compose --profile panel up -d --build --wait` y abrir <http://localhost:8083>; `node scripts/panel-humo.mjs` lo comprueba. Pruebas: `npm test` y `npm run panel:navegador`. Más en `README.md` y `docs/probar-m2.md`, sección 7.
 
 **Para comprobar que se entendió.**
