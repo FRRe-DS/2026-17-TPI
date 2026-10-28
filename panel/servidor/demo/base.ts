@@ -28,7 +28,7 @@ const MENSAJES_DE_TIEMPO = ['timeout exceeded when trying to connect', 'Query re
 // Por qué falló, sin lo que puede traer un secreto. El mensaje de un error de red de Node trae la dirección (`connect ECONNREFUSED
 // 127.0.0.1:5433`) y el de la base puede traer el usuario: no se usa nunca. Solo el código (`ECONNREFUSED`, el SQLSTATE `28P01`)
 // o, si no lo tiene, que se agotó el tiempo (RNF-19.4).
-function motivoDeFalla(error: unknown): string {
+export function motivoDeFalla(error: unknown): string {
   const codigo = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
   if (typeof codigo === 'string' && codigo !== '') return `la base no responde (${codigo})`;
   if (error instanceof Error && MENSAJES_DE_TIEMPO.some((mensaje) => error.message.startsWith(mensaje))) return 'la base no responde (tiempo agotado)';

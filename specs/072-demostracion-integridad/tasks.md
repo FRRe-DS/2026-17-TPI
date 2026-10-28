@@ -10,7 +10,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T2. Acceso a la base: conteos y disponibilidad.** RNF-05.4, RNF-19.4
   - Hecho cuando: `pruebas/panel/integracion/demo-base.test.ts`, con PostgreSQL de Testcontainers y las migraciones de M2, comprueba que `servidor/demo/base.ts` cuenta las filas de `clientes` y de `calificaciones` de un cliente, que sin `PANEL_URL_BD` informa «no configurada» sin conectarse, que con la base detenida devuelve `filas: null` con un motivo que lleva el código de Node y no la dirección ni la contraseña, y que el pool no pasa de 2 conexiones ni espera más de 2 s.
 
-- [ ] **T3. Prueba de la restricción del puntaje.** RNF-05.5, RNF-05.4
+- [x] **T3. Prueba de la restricción del puntaje.** RNF-05.5, RNF-05.4
   - Hecho cuando: `pruebas/panel/integracion/demo-restriccion.test.ts`, contra la base real, comprueba que `servidor/demo/restriccion.ts` devuelve `restriccion: "calificaciones_puntaje_valido"`, código `23514` y el mensaje de PostgreSQL, que `filasAntes` es igual a `filasDespues`, que después no queda ninguna fila nueva en `calificaciones` ni una transacción abierta (`pg_stat_activity`), y que si la inserción no fallara (simulado con un pool de mentira) el resultado es `cumple: false` y se deshace igual.
 
 - [ ] **T4. Pedidos directos a M2 y al control del M6 simulado.** RNF-08.2, RNF-08.4, RNF-12.10
