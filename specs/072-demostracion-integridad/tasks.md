@@ -19,7 +19,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T5. Altas simultáneas.** RNF-08.2, RNF-08.3
   - Hecho cuando: `pruebas/panel/integracion/demo-concurrencia.test.ts`, con M2 real, la base de Testcontainers y el panel, comprueba que `altasSimultaneas` con N = 10 y la misma clave da `{ 201: 10 }`, `cuerposIguales: true` y 1 fila, y con claves distintas da `{ 201: 1, 409: 9 }` y 1 fila, ambos con `cumple: true`; que los N pedidos salen a la vez (el M2 de mentira de una prueba HTTP los ve llegar antes de responder el primero); y que con la base del panel no disponible el resultado trae `filas: null` y `cumple: false`.
 
-- [ ] **T6. Calificaciones simultáneas.** RNF-08.4
+- [x] **T6. Calificaciones simultáneas.** RNF-08.4
   - Hecho cuando: la misma prueba de integración comprueba que `calificacionesSimultaneas` con N = 10 y con N = 50 da `{ 201: 1, 409: N−1 }` y 1 fila en `calificaciones` con el M6 simulado, que deja el modo del M6 como estaba (también si estaba en `caido` antes de empezar y si un paso falla), y anota en `guia.md` qué códigos dio N = 50 (si aparece algún `503` por capacidad de M2, se registra como hallazgo y la prueba de N = 50 se queda en lo que comprueba la integridad: 1 fila).
 
 - [ ] **T7. Control de Docker.** RNF-13.4, RNF-13.6, RNF-12.10

@@ -25,8 +25,8 @@ export type PedidoDirecto = {
 // error, nunca la dirección (RNF-19.4). El cuerpo queda como texto para poder comparar dos respuestas tal cual llegaron.
 export type RespuestaDirecta = { estado: number; texto: string; tipoContenido: string | null; motivo?: string };
 
-// El `X-Request-Id` del pedido número `indice` de una corrida.
-export const idDePedido = (corrida: string, indice: number) => `panel-demo-${corrida}-${indice}`;
+// El `X-Request-Id` del pedido número `indice` de una corrida, o de uno de sus pasos de preparación (`cliente`).
+export const idDePedido = (corrida: string, indice: number | string) => `panel-demo-${corrida}-${indice}`;
 
 export async function m2Directo(
   config: Pick<ConfigPanel, 'urlM2'> & ConfigTokens,

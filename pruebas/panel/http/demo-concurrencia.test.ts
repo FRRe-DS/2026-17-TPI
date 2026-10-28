@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { altasSimultaneas } from '../../../panel/servidor/demo/concurrencia.js';
+import { altasSimultaneas, calificacionesSimultaneas, PreparacionFallida } from '../../../panel/servidor/demo/concurrencia.js';
 import { CONFIG_PANEL } from '../ayudas/app.js';
 
 // Las pruebas simultáneas contra un M2 de mentira (spec 072, T5): se ve qué llega y cuándo. Este M2 no contesta nada hasta que
@@ -129,5 +129,139 @@ describe('altasSimultaneas: el veredicto', () => {
     );
 
     expect(resultado).toMatchObject({ filas: 2, cumple: false });
+  });
+});
+
+// M2 y el canal de control del M6 simulado de mentira, en un mismo servidor: se ve qué modo pidió el panel y en qué orden, y se
+// puede hacer fallar cada paso.
+const VIAJE = '77777777-7777-4777-8777-777777777777';
+type Fallas = { crearCliente?: number; estado?: number; ejemplo?: number; modo?: number };
+
+function m2YControl(modoInicial: string, fallas: Fallas = {}) {
+  let modo = modoInicial;
+  const pedidos: string[] = [];
+  const modos: string[] = [];
+  let calificaciones = 0;
+  const servidor = createServer((req, res) => {
+    const partes: Buffer[] = [];
+    req.on('data', (parte: Buffer) => partes.push(parte));
+    req.on('end', () => {
+      const ruta = `${req.method} ${req.url}`;
+      pedidos.push(ruta);
+      const json = (estado: number, cuerpo: unknown) => {
+        res.writeHead(estado, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(cuerpo));
+      };
+      if (ruta === 'POST /api/v1/clientes') return json(fallas.crearCliente ?? 201, { clienteId: 'x' });
+      if (ruta === 'GET /control/estado') return json(fallas.estado ?? 200, { modo, retardoLentoMs: 5000 });
+      if (ruta === 'PUT /control/modo') {
+        if (fallas.modo !== undefined) return json(fallas.modo, {});
+        modo = JSON.parse(Buffer.concat(partes).toString('utf8')).modo;
+        modos.push(modo);
+        return json(200, { modo });
+      }
+      if (/^POST \/control\/clientes\/[^/]+\/ejemplo$/.test(ruta)) {
+        return json(fallas.ejemplo ?? 200, { escenarios: [{ nombre: 'enCurso', viajeId: 'otro' }, { nombre: 'completado', viajeId: VIAJE }] });
+      }
+      if (/^POST \/api\/v1\/clientes\/[^/]+\/calificaciones$/.test(ruta)) {
+        calificaciones++;
+        expect(JSON.parse(Buffer.concat(partes).toString('utf8'))).toEqual({ viajeId: VIAJE, puntaje: 5 });
+        return json(calificaciones === 1 ? 201 : 409, {});
+      }
+      return json(404, {});
+    });
+  });
+  return {
+    pedidos,
+    modos,
+    get modo() {
+      return modo;
+    },
+    async levantar() {
+      await new Promise<void>((listo) => servidor.listen(0, '127.0.0.1', listo));
+      return `http://127.0.0.1:${(servidor.address() as AddressInfo).port}`;
+    },
+    cerrar: () =>
+      new Promise<void>((listo) => {
+        servidor.closeAllConnections();
+        servidor.close(() => listo());
+      }),
+  };
+}
+
+async function levantarConControl(modoInicial: string, fallas?: Fallas) {
+  const falso = m2YControl(modoInicial, fallas);
+  abiertos.push(falso);
+  const url = await falso.levantar();
+  return { falso, dependencias: { config: { ...CONFIG_PANEL, urlM2: url, urlM6Control: url }, base: unaFila } };
+}
+
+describe('calificacionesSimultaneas: preparación y modo del M6 simulado (RNF-08.4)', () => {
+  it('crea el cliente, carga su ejemplo y califica N veces el viaje completado', async () => {
+    const { falso, dependencias } = await levantarConControl('normal');
+
+    const resultado = await calificacionesSimultaneas(dependencias, { n: 4 });
+
+    expect(falso.pedidos.filter((pedido) => pedido.endsWith('/calificaciones'))).toHaveLength(4);
+    expect(falso.pedidos).toContain(`POST /control/clientes/${resultado.clienteId}/ejemplo`);
+    expect(falso.pedidos.indexOf('POST /api/v1/clientes')).toBeLessThan(falso.pedidos.findIndex((p) => p.endsWith('/ejemplo')));
+    expect(resultado).toMatchObject({ porCodigo: { 201: 1, 409: 3 }, filas: 1, cumple: true });
+  });
+
+  it('en modo normal no cambia el modo', async () => {
+    const { falso, dependencias } = await levantarConControl('normal');
+
+    await calificacionesSimultaneas(dependencias, { n: 2 });
+
+    expect(falso.modos).toEqual([]);
+  });
+
+  it.each(['caido', 'lento'])('en modo %s lo pone en normal para la prueba y lo repone al terminar', async (modo) => {
+    const { falso, dependencias } = await levantarConControl(modo);
+
+    await calificacionesSimultaneas(dependencias, { n: 2 });
+
+    expect(falso.modos).toEqual(['normal', modo]);
+    expect(falso.modo).toBe(modo);
+  });
+
+  it('si falla la carga del ejemplo, repone el modo y lanza PreparacionFallida sin calificar nada', async () => {
+    const { falso, dependencias } = await levantarConControl('caido', { ejemplo: 500 });
+
+    await expect(calificacionesSimultaneas(dependencias, { n: 3 })).rejects.toThrow(PreparacionFallida);
+
+    expect(falso.modo).toBe('caido');
+    expect(falso.pedidos.some((pedido) => pedido.endsWith('/calificaciones'))).toBe(false);
+  });
+
+  it('si no se puede crear el cliente, no toca el M6 simulado', async () => {
+    const { falso, dependencias } = await levantarConControl('caido', { crearCliente: 503 });
+
+    const error = await calificacionesSimultaneas(dependencias, { n: 3 }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PreparacionFallida);
+    expect((error as Error).message).toContain('503');
+    expect(falso.pedidos.some((pedido) => pedido.includes('/control/'))).toBe(false);
+  });
+
+  it('si no se puede leer el modo, no lo cambia', async () => {
+    const { falso, dependencias } = await levantarConControl('caido', { estado: 500 });
+
+    await expect(calificacionesSimultaneas(dependencias, { n: 3 })).rejects.toThrow(PreparacionFallida);
+
+    expect(falso.modos).toEqual([]);
+  });
+
+  it('si el canal de control no responde, lo dice sin la dirección', async () => {
+    const { dependencias } = await levantarConControl('normal');
+
+    const error = await calificacionesSimultaneas(
+      { ...dependencias, config: { ...dependencias.config, urlM6Control: 'http://127.0.0.1:9' } },
+      { n: 3 },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PreparacionFallida);
+    expect((error as Error).message).toContain('canal de control');
+    expect((error as Error).message).not.toContain('127.0.0.1');
   });
 });
