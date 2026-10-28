@@ -30,11 +30,13 @@ Además de la API, hay una interfaz web, «el panel» (spec 071), para usar las 
 docker compose --profile panel up -d --build --wait
 # 2. El panel como proceso en la máquina, contra M2 y el M6 simulado de compose:
 docker compose up -d --build --wait
-docker compose --profile panel up -d --build --wait m6
+docker compose --profile panel up -d --build --wait m6 bd-puente
 npm ci && npm run panel
 ```
 
 Después se abre <http://localhost:8083> (`node scripts/panel-humo.mjs` comprueba que está sano). El panel escucha solo en `127.0.0.1`, porque firma tokens de desarrollo. La sesión, los clientes y el M6 son simulados y lo dice el encabezado de cada vista. Detalle de las vistas y de lo simulado: [`docs/probar-m2.md`](docs/probar-m2.md), sección 7. La prueba en Chrome (`npm run panel:navegador`) es aparte de `npm test` y necesita Chrome y Docker.
+
+La vista «Demostración» (spec 072, `#/demostracion`) recorre los 37 casos de la API con sus resultados, lanza las pruebas de integridad (altas y calificaciones simultáneas, y la restricción del puntaje en la base) y permite apagar y encender la base para ver a M2 responder `503` y recuperarse. Contar filas y probar la restricción funcionan con cualquiera de las dos formas de levantar el panel (la base llega por el servicio `bd-puente`, que publica `127.0.0.1:5433` solo con el perfil `panel`); apagar y encender la base solo funcionan con la segunda (panel en la máquina y tu usuario en el grupo `docker`), y en el contenedor esos dos botones quedan deshabilitados con su explicación. Qué comprueba cada prueba y cómo activar Docker: [`docs/probar-m2.md`](docs/probar-m2.md), sección 7.
 
 ## Stack
 

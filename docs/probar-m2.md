@@ -140,7 +140,7 @@ Es la forma de probar todo desde el navegador (spec 071). Dos maneras de levanta
 ```bash
 docker compose --profile panel up -d --build --wait     # todo en contenedores
 # o, para desarrollar el panel: M2 y el M6 simulado en compose, el panel en la máquina
-docker compose up -d --build --wait && docker compose --profile panel up -d --build --wait m6
+docker compose up -d --build --wait && docker compose --profile panel up -d --build --wait m6 bd-puente
 npm run panel
 ```
 
@@ -156,7 +156,42 @@ Se abre <http://localhost:8083>. Sin sesión solo está «Ingresar»: se entra c
 | Consultar estado de cuenta (SERVICIO) | Lo que consultan M5 y M9 |
 | Detalle técnico | Cada pedido a M2: método, ruta, encabezados, cuerpo, respuesta y el `curl` equivalente |
 | M6 simulado | Cambiar el modo (normal, lento, caído) y ver qué contesta M2 en cada escenario |
+| Demostración | Recorrer la API de M2 caso por caso, probar la integridad de los datos y apagar y encender la base (spec 072, más abajo) |
 
 Si M2 no responde en 10 segundos, la vista dice «M2 no responde» con «Reintentar». Las pruebas: `npm test` cubre la lógica y cada vista contra M2 real; `npm run panel:navegador` abre Chrome a 360 y a 1280 px (claro y oscuro) y comprueba tamaños, teclado, accesibilidad, estados y valores máximos.
+
+### La vista «Demostración» (spec 072)
+
+Está en el menú de todos los roles (Herramientas). Sirve para que quien evalúa recorra lo que hace M2 sin armar nada: cada caso y cada prueba crea sus propios datos (un cliente con UUID nuevo, sus propios tokens), así que no cambia tu sesión y se puede repetir sin limpiar la base. Tiene tres secciones y comparten un cerrojo: mientras algo corre, los demás botones quedan deshabilitados (comparten M2 y el M6 simulado).
+
+**Casos.** Los 37 casos de la API, en ocho áreas (perfil, direcciones, preferencias, historial, calificación, estado de cuenta, seguridad y errores, resiliencia con el M6 caído). Cada uno tiene «Ejecutar» y muestra el pedido, la respuesta, lo esperado y ✔ «Correcto» o ✘ «No coincide». «Ejecutar todo» los corre uno tras otro (nunca en paralelo, porque los de resiliencia ponen el M6 simulado en «caído»), sigue aunque uno falle y termina con el resumen («Los 37 casos dieron lo esperado»). No apaga la base. Tarda unos 10 s.
+
+**Integridad.** Qué comprueba cada una (N es el campo de arriba, de 2 a 50, por defecto 10):
+
+| Prueba | Qué hace | Qué se espera |
+|---|---|---|
+| Altas simultáneas con la misma clave | N altas del mismo cliente a la vez, con la misma `Idempotency-Key` y el mismo cuerpo | N respuestas `201` con el mismo cuerpo y 1 fila en `clientes` (RNF-08.2) |
+| Altas simultáneas con claves distintas | N altas del mismo cliente a la vez, cada una con su clave | un `201`, N−1 `409` y 1 fila: lo garantiza la restricción única de la base (RNF-08.3) |
+| Calificaciones simultáneas del mismo viaje | N calificaciones del mismo viaje completado, cada una con su clave | un `201`, N−1 `409` y 1 fila en `calificaciones` (RNF-08.4) |
+| Restricción del puntaje | Intenta guardar puntaje 9 directo en la base, en una transacción que siempre se deshace | PostgreSQL la rechaza con `calificaciones_puntaje_valido` (`23514`) y las filas no cambian (RNF-05.5) |
+
+Las simultáneas salen del servidor del panel y no del navegador, que pone en fila los pedidos y no serían simultáneas. Cada una muestra la tabla de respuestas por código (llegaron y se esperaban), las filas que quedaron en la base de M2 y un folio de corrida para buscar los pedidos con `docker compose logs m2`.
+
+**Base de datos.** «Apagar la base» (pide confirmación, porque deja a M2 sin base para cualquiera que lo use) ejecuta `docker compose stop bd` y la vista consulta la salud de M2 cada 2 s: se espera `503`. «Encender la base» ejecuta `docker compose start bd` y espera hasta 60 s a que la salud vuelva a `200`, o dice que no volvió. Con la base apagada, los casos que la usan dan ✘ con el `503` de M2; volver a apagar o a encender no es un error.
+
+**Cómo activar apagar y encender.** Solo andan con el panel en la máquina, porque el contenedor del panel no tiene Docker (a propósito: darle el socket de Docker sería darle control de toda la máquina):
+
+1. Levantá M2, el M6 simulado y el puente a la base: `docker compose up -d --build --wait && docker compose --profile panel up -d --build --wait m6 bd-puente`.
+2. Si levantaste todo el perfil, parar el panel del contenedor: `docker compose stop panel`.
+3. Corré el panel en la máquina: `npm run panel`, y abrí <http://localhost:8083/#/demostracion>.
+4. Tu usuario tiene que estar en el grupo `docker` (sin `sudo`).
+
+Si falta algo, los dos botones quedan deshabilitados con el motivo («el panel corre en un contenedor», «Docker no está instalado», «el usuario no puede usar Docker sin sudo») y cómo activarlos; el resto de la vista sigue funcionando. Las consultas de filas y la prueba de la restricción no necesitan Docker.
+
+**El puente a la base.** El panel cuenta filas y prueba la restricción conectándose a la base de M2 con una lista fija de acciones (nunca SQL libre), con el mismo usuario que usa M2. Con el panel en la máquina llega por el servicio `bd-puente` del perfil `panel`, que publica la base solo en `127.0.0.1:5433` (cambiable con `PANEL_PUERTO_BD`); sin ese perfil no se publica ningún puerto nuevo, y el servicio `bd` no cambia. Dentro de compose, el contenedor del panel llega por la red a `bd:5432`.
+
+Variables del panel para esta vista (valores por defecto en `ejemplo.env`): `PANEL_URL_BD` (la base de M2; vacía, las acciones de base quedan deshabilitadas), `PANEL_PUERTO_BD`, `PANEL_DOCKER` (`si`, o `no` en el contenedor) y `PANEL_SERVICIO_BD` (el servicio a apagar y encender, `bd`). Como el resto de las acciones del panel, rechazan pedidos con `Host` u `Origin` ajenos (RNF-12.10).
+
+Las pruebas de esta vista: `npm test` las recorre contra M2 real y la base de Testcontainers, con un Docker de mentira para apagar y encender (la base de M2 detrás de un proxy TCP que se corta y se reabre); `npm run panel:navegador` abre Chrome y comprueba la vista a 360 y 1280 px, la confirmación, el doble clic, «Ejecutar todo» hasta el resumen y la salud en vivo. Apagar y encender la base de verdad no se prueba en CI: se comprobó a mano con el panel en la máquina (evidencia en la guía de la spec).
 
 Simulado en el panel: la sesión (pendiente de M1, el panel firma tokens de desarrollo en su servidor y la clave nunca llega al navegador) y los viajes (M6 simulado en contenedor propio). Cuando existan M1 y M6 se cambian en `panel/cliente/src/fuentes/`.

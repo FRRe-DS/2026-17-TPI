@@ -61,5 +61,5 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T17. Prueba en navegador de la vista.** RNF-15.6, RNF-07.6, RNF-13.6
   - Hecho cuando: `npm run panel:navegador` recorre `#/demostracion` a 360 y 1280 px en claro y oscuro sin desplazamiento horizontal, con controles de al menos 44×44 px, uso solo con teclado y sin violaciones de `axe-core`; «Ejecutar todo» llega al resumen; una prueba simultánea muestra su tabla; un doble clic lanza una sola ejecución; y con `PANEL_DOCKER=no` apagar y encender están deshabilitados con su motivo. El job `panel` de CI lo corre sin cambiar los nombres de los jobs que exige la protección de `main`.
 
-- [ ] **T18. Documentación.** RNF-20.3
+- [x] **T18. Documentación.** RNF-20.3
   - Hecho cuando: el `README.md` y `docs/probar-m2.md` (sección 7) explican la vista, cómo activar las acciones de Docker (panel en la máquina, grupo `docker`), qué comprueba cada prueba de integridad y el puente en `127.0.0.1:5433`; `guia.md` tiene una entrada por tarea; `git diff --stat origin/main` no muestra cambios en `src/`, `contrato/` ni `migraciones/`; y `node scripts/spec-check.mjs` termina en verde.
