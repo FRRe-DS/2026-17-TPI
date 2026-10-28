@@ -38,7 +38,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T10. Catálogo de casos.** RNF-07.3, RNF-07.4
   - Hecho cuando: `pruebas/panel/unitarias/casos.test.ts` comprueba que `logica/casos.ts` tiene casos en las ocho áreas, en el orden de `docs/probar-m2.md`, con ids únicos; que cada `operacion` existe en `contrato/openapi.yml` con ese método y ruta, que cada `esperado.estado` está declarado en sus respuestas y que cada `type` es uno de los errores de M2; y que cada variable que usa una ruta la guarda un paso anterior del mismo caso.
 
-- [ ] **T11. Ejecutar un caso, comparar y ejecutar todo.** RNF-07.4, RNF-07.6
+- [x] **T11. Ejecutar un caso, comparar y ejecutar todo.** RNF-07.4, RNF-07.6
   - Hecho cuando: `pruebas/panel/unitarias/ejecutar-caso.test.ts`, con un `pedir` y un M6 de mentira, comprueba que `logica/ejecutar-caso.ts` prepara, ejecuta y devuelve pedido, respuesta, esperado y veredicto; que una preparación fallida da ✘ «no se pudo preparar»; que un caso de resiliencia repone el modo anterior del M6 aunque falle; que `ejecutarTodo` va uno tras otro, informa el avance, sigue tras un ✘ o una excepción y termina con `{ correctos, incorrectos }`; y que `logica/resultado.ts` decide por código, `type`, `Retry-After`, `Location` y `application/problem+json`, con el motivo en una línea.
 
 - [ ] **T12. Catálogo completo contra M2 real.** RNF-07.3, RNF-07.4
