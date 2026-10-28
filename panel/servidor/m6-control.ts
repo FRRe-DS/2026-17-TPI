@@ -29,6 +29,51 @@ const CLIENTE_ID_INVALIDO: Problema = {
 
 type Destino = { metodo: 'GET' | 'PUT' | 'POST'; ruta: string; conCuerpo?: boolean };
 
+// Un pedido al canal de control. Solo lleva lo necesario: ni el token, ni la identidad, ni `Origin` ni cookies del navegador pasan
+// al canal. Sin `Origin`, que el canal rechaza en lo que cambia algo (T8): el que llama es este servidor, no una página.
+export type PedidoControl = {
+  metodo: 'GET' | 'PUT' | 'POST';
+  // La ruta del canal (`/control/…`), no la del panel.
+  ruta: string;
+  requestId: string;
+  cuerpo?: Uint8Array<ArrayBuffer>;
+  tipoContenido?: string;
+};
+
+export type RespuestaControl = { estado: number; tipoContenido: string | null; contenido: Buffer };
+
+// El canal no contestó a tiempo o rechazó la conexión. `causa` es el error de `fetch`, para que quien llama lo registre sin la URL.
+export class ControlM6NoResponde extends Error {
+  override readonly name = 'ControlM6NoResponde';
+  constructor(readonly causa: unknown) {
+    super('El canal de control del M6 simulado no respondió');
+  }
+}
+
+// El pedido al canal de control, separado de las rutas del panel para usarlo también desde la vista de demostración (spec 072,
+// plan «Estructura»). Una sola vez, sin reintento: la persona repite desde la pantalla. `esperaMs` cuenta el cuerpo de la respuesta.
+export async function pedirControlM6(
+  { urlM6Control }: Pick<ConfigPanel, 'urlM6Control'>,
+  { metodo, ruta, requestId, cuerpo, tipoContenido }: PedidoControl,
+  esperaMs = ESPERA_CONTROL_MS,
+): Promise<RespuestaControl> {
+  const encabezados: Record<string, string> = { 'x-request-id': requestId };
+  if (cuerpo !== undefined && tipoContenido !== undefined) encabezados['content-type'] = tipoContenido;
+  try {
+    const respuesta = await fetch(urlM6Control + ruta, {
+      method: metodo,
+      headers: encabezados,
+      body: cuerpo,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(esperaMs),
+    });
+    const contenido = Buffer.from(await respuesta.arrayBuffer());
+    return { estado: respuesta.status, tipoContenido: respuesta.headers.get('content-type'), contenido };
+  } catch (error) {
+    throw new ControlM6NoResponde(error);
+  }
+}
+
 export type OpcionesControlM6 = { config: ConfigPanel; esperaMs: number };
 
 // Se registra como plugin: así el lector de cuerpos crudos vale solo para estas rutas.
@@ -38,34 +83,28 @@ export async function registrarControlM6(app: FastifyInstance, { config, esperaM
   app.addContentTypeParser('*', { parseAs: 'buffer' }, (_request, cuerpo, listo) => listo(null, cuerpo));
 
   async function reenviar(request: FastifyRequest, reply: FastifyReply, { metodo, ruta, conCuerpo = false }: Destino): Promise<FastifyReply> {
-    // Solo lo necesario: ni el token, ni la identidad, ni `Origin` ni cookies del navegador pasan al canal. Sin `Origin`, que el
-    // canal rechaza en lo que cambia algo (T8): el que llama es este servidor, no una página.
-    const encabezados: Record<string, string> = { 'x-request-id': request.id };
     const tipo = request.headers['content-type'];
-    if (conCuerpo && typeof tipo === 'string') encabezados['content-type'] = tipo;
     // fetch tipa el cuerpo como BufferSource, y un Buffer de Node no lo es para TypeScript: se copia.
     const cuerpo = conCuerpo && Buffer.isBuffer(request.body) ? Uint8Array.from(request.body) : undefined;
 
-    let respuesta: Response;
-    let contenido: Buffer;
+    let respuesta: RespuestaControl;
     try {
-      respuesta = await fetch(config.urlM6Control + ruta, {
-        method: metodo,
-        headers: encabezados,
-        body: cuerpo,
-        redirect: 'manual',
-        signal: AbortSignal.timeout(esperaMs),
-      });
-      contenido = Buffer.from(await respuesta.arrayBuffer());
+      respuesta = await pedirControlM6(config, {
+        metodo,
+        ruta,
+        requestId: request.id,
+        cuerpo,
+        tipoContenido: conCuerpo && typeof tipo === 'string' ? tipo : undefined,
+      }, esperaMs);
     } catch (error) {
-      request.log.warn({ causa: causaDe(error) }, 'Canal de control del M6 simulado no responde');
+      if (!(error instanceof ControlM6NoResponde)) throw error;
+      request.log.warn({ causa: causaDe(error.causa) }, 'Canal de control del M6 simulado no responde');
       return responderProblema(reply, CANAL_NO_RESPONDE);
     }
 
-    reply.code(respuesta.status);
-    const tipoDeLaRespuesta = respuesta.headers.get('content-type');
-    if (tipoDeLaRespuesta !== null) reply.header('content-type', tipoDeLaRespuesta);
-    return contenido.length > 0 ? reply.send(contenido) : reply.send();
+    reply.code(respuesta.estado);
+    if (respuesta.tipoContenido !== null) reply.header('content-type', respuesta.tipoContenido);
+    return respuesta.contenido.length > 0 ? reply.send(respuesta.contenido) : reply.send();
   }
 
   app.get('/panel/m6/estado', (request, reply) => reenviar(request, reply, { metodo: 'GET', ruta: '/control/estado' }));

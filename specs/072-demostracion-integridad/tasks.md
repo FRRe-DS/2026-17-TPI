@@ -13,7 +13,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T3. Prueba de la restricción del puntaje.** RNF-05.5, RNF-05.4
   - Hecho cuando: `pruebas/panel/integracion/demo-restriccion.test.ts`, contra la base real, comprueba que `servidor/demo/restriccion.ts` devuelve `restriccion: "calificaciones_puntaje_valido"`, código `23514` y el mensaje de PostgreSQL, que `filasAntes` es igual a `filasDespues`, que después no queda ninguna fila nueva en `calificaciones` ni una transacción abierta (`pg_stat_activity`), y que si la inserción no fallara (simulado con un pool de mentira) el resultado es `cumple: false` y se deshace igual.
 
-- [ ] **T4. Pedidos directos a M2 y al control del M6 simulado.** RNF-08.2, RNF-08.4, RNF-12.10
+- [x] **T4. Pedidos directos a M2 y al control del M6 simulado.** RNF-08.2, RNF-08.4, RNF-12.10
   - Hecho cuando: `pruebas/panel/http/demo-m2-directo.test.ts`, con `servidor-modulo.ts`, comprueba que `servidor/demo/m2-directo.ts` firma el token con `tokens.ts`, manda `Idempotency-Key`, `Content-Type` y un `X-Request-Id` con el prefijo de la corrida, corta a los 10 s devolviendo código `0`, y no registra nada en el buffer del detalle técnico; `pedirControlM6` queda separado en `servidor/m6-control.ts` y las pruebas de la 071 sobre `/panel/m6/…` siguen en verde sin cambios.
 
 - [ ] **T5. Altas simultáneas.** RNF-08.2, RNF-08.3
