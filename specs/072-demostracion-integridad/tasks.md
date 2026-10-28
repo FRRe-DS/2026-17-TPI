@@ -44,7 +44,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T12. Catálogo completo contra M2 real.** RNF-07.3, RNF-07.4
   - Hecho cuando: `pruebas/panel/integracion/demo-casos.test.ts`, con M2 real, la base de Testcontainers, el M6 simulado y el panel, ejecuta `ejecutarTodo` con todo el catálogo por el reenvío del panel y todos los casos dan ✔; si algún caso no da lo que dice el contrato, se corrige el caso (no M2) o se anota como hallazgo de M2 en `guia.md` y se avisa antes de seguir.
 
-- [ ] **T13. Lógica de integridad, salud en vivo y API del cliente.** RNF-13.4, RNF-08.2, RNF-08.3, RNF-08.4
+- [x] **T13. Lógica de integridad, salud en vivo y API del cliente.** RNF-13.4, RNF-08.2, RNF-08.3, RNF-08.4
   - Hecho cuando: `pruebas/panel/unitarias/integridad.test.ts` y `salud-en-vivo.test.ts` comprueban que `logica/integridad.ts` acepta N entero de 2 a 50 y da el motivo si no, y arma la tabla de conteo y el veredicto desde `ResultadoSimultaneo`; que el reductor de `logica/salud-en-vivo.ts` va de quieto a apagando, observando, encendiendo y recuperada al primer `200`, o no-volvio a los 60 s; que `hooks/usar-sondeo.ts` pide cada 2 s y para al desmontarse (con temporizadores falsos); y que `api/panel.ts` tiene una función por ruta `/panel/demo/…` con el corte de 10 s de la 071 (o 70 s para encender).
 
 - [ ] **T14. Vista «Demostración»: ruta, menú y casos.** RNF-07.3, RNF-07.4, RNF-07.6, RNF-15.6

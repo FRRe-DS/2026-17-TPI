@@ -12,6 +12,42 @@ export type ModoM6 = 'normal' | 'lento' | 'caido';
 export type EstadoM6 = { modo: ModoM6; retardoLentoMs: number };
 export type EjemploDeViajes = { clienteId: string; escenarios: Escenario[] };
 
+// Lo que el panel responde en `/panel/demo/…` (spec 072): el mismo contrato que `panel/servidor/demo/`, escrito acá porque el
+// navegador no importa código del servidor.
+export type Disponibilidad = { disponible: boolean; motivo?: string; comoActivar?: string };
+export type EstadoDemo = { base: Disponibilidad; docker: Disponibilidad };
+export type ModoDeAltas = 'misma-clave' | 'claves-distintas';
+// Cuántas respuestas hubo de cada código; `0` es «sin respuesta».
+export type PorCodigo = Record<string, number>;
+export type ResultadoSimultaneo = {
+  clienteId: string;
+  n: number;
+  porCodigo: PorCodigo;
+  // Solo con la misma clave: si todos los 201 trajeron el mismo cuerpo.
+  cuerposIguales?: boolean;
+  // `null` si no se pudo contar, con el motivo.
+  filas: number | null;
+  motivoFilas?: string;
+  esperado: { porCodigo: PorCodigo; filas: number };
+  cumple: boolean;
+  // El comienzo del `X-Request-Id` de los N pedidos, para buscarlos en `docker compose logs m2`.
+  prefijoRequestId: string;
+};
+export type ResultadoRestriccion = {
+  clienteId: string;
+  filasAntes: number | null;
+  filasDespues: number | null;
+  restriccion?: string;
+  codigo?: string;
+  mensaje?: string;
+  cumple: boolean;
+};
+// La salud de M2: `estado` es el código de `GET /health`, o `null` si no respondió.
+export type SaludDeM2 = { estado: number | null; duracionMs: number };
+
+// `docker compose start` espera hasta 60 s (spec 072, RNF-13.4): el pedido de encender espera un poco más.
+export const CORTE_DE_ENCENDER_MS = 70_000;
+
 // Un pedido a M2 tal como lo guarda el panel para el detalle técnico (RNF-14.9): con el `Authorization` ya enmascarado y el `curl`
 // que lo repite, con `$TOKEN` en lugar del token. El más nuevo viene primero y son 50 como mucho.
 export type PedidoDelPanel = {
@@ -34,9 +70,9 @@ export type OpcionesApiPanel = {
 };
 
 export function crearApiPanel({ fetch: pedirHttp = (...args) => globalThis.fetch(...args), tiempoMaximoMs = TIEMPO_MAXIMO_MS }: OpcionesApiPanel = {}) {
-  async function pedir<T>(metodo: 'GET' | 'PUT' | 'POST', ruta: string, senal?: AbortSignal, cuerpo?: unknown): Promise<T> {
+  async function pedir<T>(metodo: 'GET' | 'PUT' | 'POST', ruta: string, senal?: AbortSignal, cuerpo?: unknown, corteMs: number = tiempoMaximoMs): Promise<T> {
     const tiempo = new AbortController();
-    const temporizador = setTimeout(() => tiempo.abort(), tiempoMaximoMs);
+    const temporizador = setTimeout(() => tiempo.abort(), corteMs);
     try {
       const respuesta = await pedirHttp(ruta, {
         method: metodo,
@@ -65,6 +101,18 @@ export function crearApiPanel({ fetch: pedirHttp = (...args) => globalThis.fetch
     // Repone los viajes de ejemplo del cliente en el M6 simulado y devuelve sus escenarios. Repetirlo da lo mismo (RF-2.1.11).
     cargarEjemploDeViajes: (clienteId: string, senal?: AbortSignal) =>
       pedir<EjemploDeViajes>('POST', `/panel/m6/clientes/${encodeURIComponent(clienteId)}/ejemplo`, senal),
+
+    // La vista «Demostración» (spec 072): lo que ve la persona antes de probar, las pruebas simultáneas desde el servidor del panel,
+    // la restricción de la base y el control de la base con Docker.
+    obtenerEstadoDemo: (senal?: AbortSignal) => pedir<EstadoDemo>('GET', '/panel/demo/estado', senal),
+    lanzarAltasSimultaneas: (n: number, modo: ModoDeAltas, senal?: AbortSignal) =>
+      pedir<ResultadoSimultaneo>('POST', '/panel/demo/altas-simultaneas', senal, { n, modo }),
+    lanzarCalificacionesSimultaneas: (n: number, senal?: AbortSignal) => pedir<ResultadoSimultaneo>('POST', '/panel/demo/calificaciones-simultaneas', senal, { n }),
+    probarRestriccionDelPuntaje: (senal?: AbortSignal) => pedir<ResultadoRestriccion>('POST', '/panel/demo/restriccion-puntaje', senal, {}),
+    apagarBase: (senal?: AbortSignal) => pedir<{ ejecutado: true }>('POST', '/panel/demo/base/apagar', senal, {}),
+    encenderBase: (senal?: AbortSignal) => pedir<{ ejecutado: true }>('POST', '/panel/demo/base/encender', senal, {}, CORTE_DE_ENCENDER_MS),
+    // El sondeo de la salud en vivo: no queda en el detalle técnico.
+    consultarSaludDeM2: (senal?: AbortSignal) => pedir<SaludDeM2>('GET', '/panel/demo/salud', senal),
   };
 }
 
