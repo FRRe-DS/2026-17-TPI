@@ -2,9 +2,27 @@
 
 ## Visión general
 
-El panel es una app web propia (React 19 y Vite 8) con un servidor chico en Fastify que le firma tokens de desarrollo y le reenvía los pedidos a M2.
-Vive entera en `panel/`, con pruebas en `pruebas/panel/`, y no toca `src/`, `contrato/` ni `migraciones/`. Esta guía crece con cada tarea; por ahora
-solo está la configuración del proyecto.
+**Qué se construyó.** Una interfaz web para usar M2 sin `curl`: «el panel». Tiene doce pantallas (ingresar, perfil, direcciones, preferencias, historial, calificar, calificaciones, estado de cuenta, operador, otro módulo, detalle técnico y M6 simulado) y un M6 simulado para probar calificaciones y fallas. Vive en `panel/`, con pruebas en `pruebas/panel/`, y no toca `src/`, `contrato/` ni `migraciones/`.
+
+**Las piezas, para quien nunca usó React ni Vite.**
+- *React* arma la pantalla con funciones llamadas componentes (`pantallas/*.tsx`, `componentes/*.tsx`): cada una devuelve lo que se dibuja según su estado. Cuando el estado cambia, React vuelve a dibujar solo lo que cambió.
+- *Los hooks* son funciones `usar…` que dan a un componente memoria o efectos. Acá: `usar-carga` (lo que se lee de M2: cargando, listo, vacío o error), `usar-accion` (lo que cambia algo: espera, hecho o falla, y deshabilita el botón), `usar-clave-idempotencia`, `usar-confirmacion`, `usar-cuenta-regresiva` y `usar-ruta` (la pantalla según el `#` de la URL). Lo que decide algo no está en el hook sino en `logica/`, funciones puras que se prueban sin navegador.
+- *Vite* compila el cliente (`panel:build`) a archivos estáticos en `panel/dist/cliente`; no hay servidor de desarrollo en el flujo del grupo.
+- *El servidor del panel* (`panel/servidor/`, Fastify) sirve esos archivos, firma el token de cada pedido con la clave (que nunca llega al navegador) y reenvía a M2 y al canal de control del M6 simulado, anotando cada pedido para el detalle técnico.
+
+**Recorrido de un clic.** Calificar un viaje: `pantallas/calificar.tsx` valida con `logica/calificacion.ts` y llama a `usarAccion`; `api/m2.ts` hace el `fetch` con `Idempotency-Key` y `X-Request-Id`, con corte a los 10 s; `servidor/proxy.ts` firma el token (`servidor/tokens.ts`) y reenvía a M2; M2 contesta (si M6 no responde, `503`) y el panel devuelve la respuesta tal cual; la pantalla muestra el aviso, o el error con «Reintentar» (`componentes/error-de-m2.tsx`).
+
+**Los dos puntos de conexión.** La sesión simulada (`fuentes/sesion-simulada.ts`, pendiente de M1) y los viajes simulados (`fuentes/viajes-simulados.ts`, pendiente de M6). Cuando existan M1 y M6, se cambia esa pieza y el resto no se entera (RNF-02.2).
+
+**Decisiones clave** (en `plan.md` y en el ADR 071): React y Vite por decisión de Lautaro; tokens firmados por el servidor y no por el navegador; ruta por `#`; la prueba en Chrome usa M2 real y no uno de mentira.
+
+**Probarlo.** `docker compose --profile panel up -d --build --wait` y abrir <http://localhost:8083>; `node scripts/panel-humo.mjs` lo comprueba. Pruebas: `npm test` y `npm run panel:navegador`. Más en `README.md` y `docs/probar-m2.md`, sección 7.
+
+**Para comprobar que se entendió.**
+1. ¿Por qué el navegador no firma los tokens y qué manda en su lugar?
+2. ¿Qué evita que un doble clic en «Enviar calificación» cree dos calificaciones? (Hay tres capas.)
+3. ¿Dónde se cambiaría la sesión simulada cuando exista M1?
+4. ¿Qué muestra la pantalla si M2 tarda más de 10 segundos, y qué queda deshabilitado?
 
 ## Tareas
 
@@ -258,3 +276,13 @@ solo está la configuración del proyecto.
 - Cómo se conecta: la misma base que T33 (`panel-con-m2.ts` con el cliente compilado); cada archivo de prueba levanta su propio M2, así detener el de esta no toca el recorrido de T33, que corre en paralelo.
 - Tests: la propia prueba (40 casos; con T33, 99 en `npm run panel:navegador`, alrededor de un minuto). **Se comprobó quitando las dos protecciones contra el doble envío** (el botón deshabilitado y la guarda de `enviar` en `logica/estados.ts`): la prueba ve dos `POST` y falla; la base igual queda con una fila por la clave de idempotencia, por eso se cuentan los pedidos y no solo las filas.
 - Para mirar con atención: el texto que solo lee el lector de pantalla (los `<span>` ocultos de 1×1, como «Editar Casa») no cuenta como recortado. La consola registra el `504` de los pedidos que fallaron con M2 detenido: es lo esperado y se ignora solo ese. En una corrida de `npm test` lanzada justo después de la prueba en navegador falló `pantalla-m6-simulado.test.ts` (modos caído y normal) y pasó sola y en las dos corridas siguientes: parece la misma inestabilidad bajo carga que la de `clientes.test.ts`.
+
+### T35 — Integración continua · commit `071/T35`
+- Qué cambió: `.github/workflows/ci.yml`: `build-test` corre también `npm run panel:build`, y un job nuevo `panel` (después de `build-test`) corre `npm run panel:navegador` con el Chrome que trae `ubuntu-24.04`, levanta el perfil `panel` de compose, corre `scripts/panel-humo.mjs`, muestra los logs si falla y baja el perfil siempre.
+- Por qué así: los nombres de `build-test`, `contract-test`, `specs` y `contrato` no cambian (los exige la protección de `main`, RNF-17.2); `panel` no es uno de ellos, así que una falla suya no bloquea el merge hasta que el grupo decida exigirlo. Sin descargar navegadores: `playwright-core` usa `channel: 'chrome'`.
+- Tests: se validó el YAML y `git diff --stat origin/main -- src contrato migraciones` queda vacío. El job en sí solo se ve corriendo en GitHub.
+- Para mirar con atención: no se pudo correr el job en local; si el Chrome de los runners cambia de ruta o versión, falla `panel:navegador`.
+
+### T36 — Documentación · commit `071/T36`
+- Qué cambió: `README.md` (sección «El panel»), `docs/probar-m2.md` (sección 7: las dos formas de levantarlo, qué hace cada vista y qué está simulado), comentario de `ejemplo.env` con las dos formas, y la visión general de esta guía.
+- Por qué así: la visión general explica React, Vite y los hooks para quien nunca los usó, y señala los dos puntos de conexión.

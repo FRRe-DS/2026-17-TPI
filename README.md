@@ -21,6 +21,21 @@ Para ver todo funcionando: `docker compose up -d --build --wait` y `node scripts
 
 Las calificaciones y el historial dependen de M6 (Viajes): M2 le pregunta por el viaje (`GET /trips/{id}`) y por la lista de viajes del cliente (`GET /trips`), con el token de servicio de la spec 007. Si M6 no responde, esas operaciones dan `503` con `Retry-After`; las demás no se enteran.
 
+## El panel (interfaz web)
+
+Además de la API, hay una interfaz web, «el panel» (spec 071), para usar las 20 operaciones sin armar `curl` a mano. Vive en `panel/` y se levanta de dos formas:
+
+```bash
+# 1. Todo en contenedores: M2, la base, el M6 simulado y el panel.
+docker compose --profile panel up -d --build --wait
+# 2. El panel como proceso en la máquina, contra M2 y el M6 simulado de compose:
+docker compose up -d --build --wait
+docker compose --profile panel up -d --build --wait m6
+npm ci && npm run panel
+```
+
+Después se abre <http://localhost:8083> (`node scripts/panel-humo.mjs` comprueba que está sano). El panel escucha solo en `127.0.0.1`, porque firma tokens de desarrollo. La sesión, los clientes y el M6 son simulados y lo dice el encabezado de cada vista. Detalle de las vistas y de lo simulado: [`docs/probar-m2.md`](docs/probar-m2.md), sección 7. La prueba en Chrome (`npm run panel:navegador`) es aparte de `npm test` y necesita Chrome y Docker.
+
 ## Stack
 
 TypeScript 6 sobre Node.js 24, Fastify 5, PostgreSQL 18 (con `pg` y SQL explícito, sin ORM), migraciones con node-pg-migrate, pruebas con Vitest y Testcontainers, y contrato OpenAPI 3.1 probado con Schemathesis. Versiones exactas y motivos: [`docs/adr/003-stack.md`](docs/adr/003-stack.md) y `package.json`.
