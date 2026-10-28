@@ -164,7 +164,8 @@ describe('lo que dibuja cada componente', () => {
     for (const parte of ['Solicitud inválida', '400', '/errores/validacion', 'telefono: tiene que estar en formato E.164.', 'panel-4f1c9a']) {
       expect(html).toContain(parte);
     }
-    expect(html).toMatch(/<button type="button"[^>]*>Reintentar<\/button>/);
+    // El texto va dentro del contenido del botón (el que se funde al cambiar de estado).
+    expect(html).toMatch(/<button type="button"[^>]*><span[^>]*>Reintentar<\/span><\/button>/);
     expect(html).not.toContain('disabled');
 
     const sinRespuesta = dibujar(ErrorDeM2, { error: NO_RESPONDE, alReintentar: nada });

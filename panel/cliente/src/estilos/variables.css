@@ -1,38 +1,39 @@
-/* Las variables de diseño del panel (T17, dirección «Formulario con folio»): papel cálido, hojas más claras, tinta sepia y una
-   franja técnica oscura al pie. Los colores se prueban en `pruebas/panel/unitarias/contraste.test.ts` (4,5:1 en texto, 3:1 en
+/* Las variables de diseño del panel (rediseño de la dirección de T17): fondo neutro frío, tarjetas blancas con sombra suave en
+   capas, tinta casi negra, un solo acento índigo, menú claro con la pantalla actual en una píldora oscura y la franja técnica
+   oscura al pie, como una consola. Los colores se prueban en `pruebas/panel/unitarias/contraste.test.ts` (4,5:1 en texto, 3:1 en
    bordes de campo y foco); un color nuevo hay que clasificarlo ahí. Sin fuentes de terceros: pila del sistema. */
 
 :root {
-  --papel: #f3ece0;
-  --hoja: #fbf8f2;
+  --papel: #f5f6f8;
+  --hoja: #ffffff;
   --campo: #ffffff;
-  --tinta: #2a2018;
-  --tinta-suave: #665a4d;
-  --acento: #6b4a2e;
-  --acento-tenue: #efe4d3;
-  --sobre-acento: #fbf8f2;
-  --regla: #d8cab4;
-  --borde-campo: #8f7e69;
-  --foco: #6b4a2e;
-  --seleccion: #e6d3b3;
-  --etiqueta-fondo: #f6efe3;
-  --lateral: #4e3420;
-  --lateral-hover: #5e412a;
-  --lateral-texto: #f3ece0;
-  --lateral-suave: #d2bfa3;
-  --lateral-regla: #6b4a2e;
-  --franja: #2a2018;
-  --franja-texto: #e9dfd0;
-  --franja-metodo: #d6b48a;
-  --franja-ok: #8cc79a;
-  --franja-mal: #f09a86;
-  --franja-pista: #4a3d33;
-  --ok: #2f6b3a;
-  --ok-fondo: #e8f0e6;
-  --mal: #a23b2a;
-  --mal-fondo: #f7e6e1;
-  --aviso: #7a5410;
-  --aviso-fondo: #f5ebd6;
+  --tinta: #111827;
+  --tinta-suave: #4b5563;
+  --acento: #4f46e5;
+  --acento-tenue: #eef0ff;
+  --sobre-acento: #ffffff;
+  --regla: #e5e7eb;
+  --borde-campo: #868d9a;
+  --foco: #4f46e5;
+  --seleccion: #dfe3ff;
+  --etiqueta-fondo: #f2f3ff;
+  --lateral: #fbfbfc;
+  --lateral-hover: #eff0f4;
+  --lateral-texto: #1f2433;
+  --lateral-suave: #5b6274;
+  --lateral-regla: #e6e8ee;
+  --franja: #0d0f14;
+  --franja-texto: #d7dbe4;
+  --franja-metodo: #a5b4fc;
+  --franja-ok: #6ee7a0;
+  --franja-mal: #fca5a5;
+  --franja-pista: #2a2f3b;
+  --ok: #15803d;
+  --ok-fondo: #ecfdf3;
+  --mal: #b42318;
+  --mal-fondo: #fef3f2;
+  --aviso: #92400e;
+  --aviso-fondo: #fffbeb;
 
   --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Noto Sans', sans-serif;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Ubuntu Mono', Menlo, Consolas, monospace;
@@ -52,19 +53,28 @@
   --t-campo: 1rem;
   --t-titulo: 1.75rem;
 
-  --radio: 6px;
-  --radio-hoja: 8px;
+  --radio: 8px;
+  --radio-hoja: 14px;
   --control: 44px;
   --lateral-ancho: 248px;
   --encabezado-alto: 64px;
   --franja-alto: 56px;
 
-  /* Solo lo que flota (el diálogo) tiene sombra y velo. */
-  --sombra-flotante: 0 16px 40px rgb(42 32 24 / 0.22);
-  --velo: rgb(42 32 24 / 0.45);
+  /* Sombras en capas: una línea de contacto y una difusa. Las tarjetas apenas se separan del fondo; lo que flota, bastante. */
+  --sombra-hoja: 0 1px 2px rgb(16 24 40 / 0.04), 0 2px 8px rgb(16 24 40 / 0.04);
+  --sombra-boton: 0 1px 2px rgb(16 24 40 / 0.08);
+  --sombra-acento: 0 1px 2px rgb(79 70 229 / 0.25), 0 6px 16px -4px rgb(79 70 229 / 0.45);
+  --sombra-peligro: 0 1px 2px rgb(180 35 24 / 0.2), 0 6px 16px -4px rgb(180 35 24 / 0.4);
+  --brillo: inset 0 1px 0 rgb(255 255 255 / 0.18);
+  --anillo: 0 0 0 4px rgb(79 70 229 / 0.16);
+  --sombra-flotante: 0 24px 48px -12px rgb(16 24 40 / 0.25), 0 2px 6px rgb(16 24 40 / 0.06);
+  --velo: rgb(15 18 30 / 0.45);
 
-  --salida: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Movimiento: salida fuerte para lo que responde a la persona, rápido siempre (menos de 300 ms). */
+  --salida: cubic-bezier(0.23, 1, 0.32, 1);
+  --en-pantalla: cubic-bezier(0.77, 0, 0.175, 1);
   --rapido: 160ms;
+  --medio: 220ms;
 
   color-scheme: light;
 }
@@ -76,41 +86,47 @@
   }
 }
 
-/* El mismo escritorio de noche: papel marrón oscuro, hojas un paso más claras y tinta color cuero. */
+/* De noche: fondo casi negro azulado, tarjetas un paso más claras y el acento índigo aclarado para que se lea. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --papel: #1c1611;
-    --hoja: #262019;
-    --campo: #1f1914;
-    --tinta: #efe6d8;
-    --tinta-suave: #bbaa94;
-    --acento: #ddb98d;
-    --acento-tenue: #3a2e23;
-    --sobre-acento: #1c1611;
-    --regla: #3e3329;
-    --borde-campo: #7d6c59;
-    --foco: #ddb98d;
-    --seleccion: #5a4632;
-    --etiqueta-fondo: #2c241c;
-    --lateral: #22180f;
-    --lateral-hover: #32251a;
-    --lateral-texto: #efe6d8;
-    --lateral-suave: #b9a387;
-    --lateral-regla: #3d2e21;
-    --franja: #0f0b08;
-    --franja-texto: #e2d6c4;
-    --franja-metodo: #ddb98d;
-    --franja-ok: #8cc79a;
-    --franja-mal: #f09a86;
-    --franja-pista: #3a2f26;
-    --ok: #8cc79a;
-    --ok-fondo: #1e2a1f;
-    --mal: #f09a86;
-    --mal-fondo: #33201b;
-    --aviso: #e2b45e;
-    --aviso-fondo: #30261a;
-    --sombra-flotante: 0 16px 40px rgb(0 0 0 / 0.5);
-    --velo: rgb(8 5 3 / 0.6);
+    --papel: #0b0d12;
+    --hoja: #14171f;
+    --campo: #0f1218;
+    --tinta: #e8eaf0;
+    --tinta-suave: #a1a8b6;
+    --acento: #a5b4fc;
+    --acento-tenue: #1e2240;
+    --sobre-acento: #0b0d12;
+    --regla: #262a35;
+    --borde-campo: #6b7280;
+    --foco: #a5b4fc;
+    --seleccion: #2e3566;
+    --etiqueta-fondo: #191c2c;
+    --lateral: #0f1117;
+    --lateral-hover: #1b1e27;
+    --lateral-texto: #e8eaf0;
+    --lateral-suave: #9aa1af;
+    --lateral-regla: #232733;
+    --franja: #07080b;
+    --franja-texto: #d7dbe4;
+    --franja-metodo: #a5b4fc;
+    --franja-ok: #6ee7a0;
+    --franja-mal: #fca5a5;
+    --franja-pista: #262a35;
+    --ok: #6ee7a0;
+    --ok-fondo: #0f2a1c;
+    --mal: #fca5a5;
+    --mal-fondo: #3a1414;
+    --aviso: #fcd34d;
+    --aviso-fondo: #2e2510;
+    --sombra-hoja: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 2px 8px rgb(0 0 0 / 0.3);
+    --sombra-boton: 0 1px 2px rgb(0 0 0 / 0.4);
+    --sombra-acento: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -4px rgb(165 180 252 / 0.35);
+    --sombra-peligro: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -4px rgb(252 165 165 / 0.3);
+    --brillo: inset 0 1px 0 rgb(255 255 255 / 0.35);
+    --anillo: 0 0 0 4px rgb(165 180 252 / 0.2);
+    --sombra-flotante: 0 24px 48px -12px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
+    --velo: rgb(3 4 8 / 0.65);
 
     color-scheme: dark;
   }

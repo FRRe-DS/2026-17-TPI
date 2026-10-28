@@ -1,79 +1,161 @@
+/* El botón del panel (RNF-15.2). El movimiento responde a la persona y nada más: baja al apretarlo, sube un poco con el puntero
+   encima (solo con ratón: en el teléfono el hover queda pegado), y al pasar a «esperando» el texto cambia con un fundido corto
+   y un desenfoque leve, sin saltos. Solo se animan `transform`, `opacity`, `filter`, sombras y colores. */
 .boton {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--e-2);
   min-height: var(--control);
-  padding: 0 var(--e-3);
+  padding: 0 18px;
   border: 1px solid transparent;
   border-radius: var(--radio);
   font-size: var(--t-menu);
   font-weight: 600;
+  letter-spacing: -0.005em;
   white-space: nowrap;
   cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   transition:
-    background-color var(--rapido) var(--salida),
-    color var(--rapido) var(--salida),
-    transform var(--rapido) var(--salida);
+    transform var(--rapido) var(--salida),
+    box-shadow var(--medio) var(--salida),
+    background-color var(--rapido) ease,
+    border-color var(--rapido) ease,
+    color var(--rapido) ease;
 }
 
+/* Al apretar: se hunde enseguida (100 ms) y al soltar vuelve con la transición normal. */
 .boton:active:not(:disabled) {
   transform: scale(0.97);
+  transition-duration: 100ms;
+}
+
+.contenido {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+}
+
+.entra {
+  animation: aparecer var(--medio) var(--salida);
+}
+
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+    transform: translateY(2px);
+  }
 }
 
 /* Esperando: el control no se puede volver a usar, pero se sigue leyendo. */
 .boton:disabled {
   cursor: progress;
-  opacity: 0.75;
+  box-shadow: none;
 }
 
+.boton:disabled .contenido {
+  opacity: 0.85;
+}
+
+/* ---- Principal: relleno índigo con un brillo arriba y una sombra del mismo color que crece al acercarse. ---- */
 .principal {
   border-color: var(--acento);
   background: var(--acento);
   color: var(--sobre-acento);
+  box-shadow: var(--brillo), var(--sombra-acento);
 }
 
+/* Un reflejo que cruza el botón una vez cuando llega el puntero. */
+.principal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.22) 50%, transparent 65%);
+  transform: translateX(-110%);
+  pointer-events: none;
+}
+
+/* ---- Contorno: lo secundario, una tecla blanca con borde fino. ---- */
 .contorno {
-  border-color: var(--acento);
-  background: transparent;
-  color: var(--acento);
+  border-color: var(--regla);
+  background: var(--hoja);
+  color: var(--tinta);
+  box-shadow: var(--sombra-boton);
 }
 
-/* Lo que no se deshace queda apartado y solo contorneado; se llena recién con el foco o el puntero encima. */
+/* ---- Peligro: lo que no se deshace queda contorneado en rojo y se llena recién con el foco o el puntero encima. ---- */
 .peligro {
-  border-color: var(--mal);
-  background: transparent;
+  border-color: color-mix(in srgb, var(--mal) 45%, transparent);
+  background: var(--hoja);
   color: var(--mal);
 }
 
 .peligro:focus-visible {
   outline-color: var(--mal);
+  border-color: var(--mal);
   background: var(--mal);
   color: var(--hoja);
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .principal:hover:not(:disabled),
+  .contorno:hover:not(:disabled),
+  .peligro:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .principal:hover:not(:disabled) {
+    box-shadow: var(--brillo), var(--sombra-acento), 0 10px 24px -8px color-mix(in srgb, var(--acento) 55%, transparent);
+  }
+
+  .principal:hover:not(:disabled)::after {
+    transform: translateX(110%);
+    transition: transform 650ms var(--en-pantalla);
+  }
+
   .contorno:hover:not(:disabled) {
-    background: var(--acento-tenue);
+    border-color: color-mix(in srgb, var(--acento) 40%, var(--regla));
+    color: var(--acento);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
   }
 
   .peligro:hover:not(:disabled) {
+    border-color: var(--mal);
     background: var(--mal);
     color: var(--hoja);
+    box-shadow: var(--sombra-peligro);
+  }
+
+  /* Apretado con el puntero encima: baja de la elevación al hundido. */
+  .boton:hover:active:not(:disabled) {
+    transform: translateY(0) scale(0.97);
   }
 }
 
+/* El giro entra creciendo desde un tamaño visible, nunca desde cero. */
 .giro {
+  flex: none;
   width: 14px;
   height: 14px;
   border: 2px solid currentColor;
   border-top-color: transparent;
   border-radius: 50%;
-  animation: girar 700ms linear infinite;
+  animation: girar 600ms linear infinite;
 }
 
 @keyframes girar {
   to {
     transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .principal::after {
+    display: none;
   }
 }

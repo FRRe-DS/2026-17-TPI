@@ -7,7 +7,8 @@
   min-height: var(--encabezado-alto);
   padding: var(--e-2) var(--e-3);
   border-bottom: 1px solid var(--regla);
-  background: var(--hoja);
+  background: color-mix(in srgb, var(--papel) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
 }
 
 .etiquetas {
@@ -20,11 +21,12 @@
 /* Lo simulado se marca con borde punteado: es provisorio, no un estado. */
 .etiqueta {
   padding: 3px 10px;
-  border: 1px dashed var(--acento);
+  border: 1px dashed color-mix(in srgb, var(--acento) 55%, transparent);
   border-radius: 999px;
   background: var(--etiqueta-fondo);
   color: var(--acento);
   font-size: var(--t-chica);
+  font-weight: 500;
   line-height: 1.4;
 }
 
@@ -40,7 +42,7 @@
 .rol {
   flex: none;
   padding: var(--e-1) var(--e-2);
-  border-radius: 4px;
+  border-radius: 999px;
   background: var(--tinta);
   color: var(--hoja);
   font: 600 0.6875rem / 1.2 var(--mono);
@@ -62,26 +64,30 @@
   flex: none;
   min-height: var(--control);
   padding: 0 var(--e-3);
-  border: 1px solid var(--acento);
+  border: 1px solid var(--regla);
   border-radius: var(--radio);
-  background: transparent;
-  color: var(--acento);
+  background: var(--hoja);
+  color: var(--tinta);
   font-size: var(--t-menu);
   font-weight: 600;
+  box-shadow: var(--sombra-boton);
   cursor: pointer;
   transition:
-    background-color var(--rapido) var(--salida),
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
     transform var(--rapido) var(--salida);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .cerrar:hover {
-    background: var(--acento-tenue);
+    border-color: color-mix(in srgb, var(--mal) 45%, var(--regla));
+    color: var(--mal);
   }
 }
 
 .cerrar:active {
   transform: scale(0.97);
+  transition-duration: 100ms;
 }
 
 @media (min-width: 600px) {
@@ -91,7 +97,11 @@
 }
 
 @media (min-width: 960px) {
+  /* En la notebook queda arriba mientras se desplaza la pantalla, translúcido. */
   .encabezado {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     padding: var(--e-2) var(--e-6);
   }
 

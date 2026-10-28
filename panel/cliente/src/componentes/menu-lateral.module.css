@@ -1,4 +1,5 @@
 .lateral {
+  border-bottom: 1px solid var(--lateral-regla);
   background: var(--lateral);
   color: var(--lateral-texto);
 }
@@ -12,19 +13,39 @@
   padding: var(--e-2) var(--e-3);
 }
 
+/* La marca: un sello índigo con «M2» y el nombre al lado. */
 .marca {
-  font-size: 1.0625rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: center;
+  font-size: 1rem;
   font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.marca::before {
+  content: 'M2';
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--acento) 78%, white), var(--acento));
+  box-shadow: var(--brillo), var(--sombra-acento);
+  color: var(--sobre-acento);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .grupo {
   display: block;
-  margin-top: 2px;
   color: var(--lateral-suave);
-  font-size: var(--t-detalle);
-  font-weight: 400;
+  font-size: var(--t-chica);
+  font-weight: 500;
 }
 
 .alternar {
@@ -36,18 +57,20 @@
   padding: 0 var(--e-3) 0 var(--e-2);
   border: 1px solid var(--lateral-regla);
   border-radius: var(--radio);
-  background: transparent;
+  background: var(--hoja);
   color: var(--lateral-texto);
   font-size: var(--t-menu);
   font-weight: 600;
+  box-shadow: var(--sombra-boton);
   cursor: pointer;
   transition:
-    background-color var(--rapido) var(--salida),
+    background-color var(--rapido) ease,
     transform var(--rapido) var(--salida);
 }
 
 .alternar:active {
   transform: scale(0.97);
+  transition-duration: 100ms;
 }
 
 .icono {
@@ -87,22 +110,38 @@
 }
 
 .titulo {
-  padding: var(--e-3) var(--e-3) var(--e-1);
+  padding: var(--e-3) 12px 6px;
   color: var(--lateral-suave);
-  font-size: var(--t-detalle);
-  font-weight: 600;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.seccion ul {
+  display: grid;
+  gap: 2px;
 }
 
 .elemento {
   display: flex;
   align-items: center;
   min-height: var(--control);
-  padding: 0 var(--e-3);
+  padding: 0 12px;
   border-radius: var(--radio);
   color: var(--lateral-texto);
   font-size: var(--t-menu);
+  font-weight: 500;
   text-decoration: none;
-  transition: background-color var(--rapido) var(--salida);
+  transition:
+    background-color var(--rapido) ease,
+    color var(--rapido) ease,
+    transform var(--rapido) var(--salida);
+}
+
+.elemento:active {
+  transform: scale(0.98);
+  transition-duration: 100ms;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -112,10 +151,12 @@
   }
 }
 
+/* La pantalla actual: una píldora oscura (clara de noche), lo más contrastado del menú. */
 .elemento[aria-current='page'] {
   background: var(--lateral-texto);
   color: var(--lateral);
   font-weight: 600;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.12), 0 4px 10px -4px rgb(16 24 40 / 0.3);
 }
 
 @media (min-width: 960px) {
@@ -124,6 +165,8 @@
     top: 0;
     height: 100dvh;
     overflow-y: auto;
+    border-right: 1px solid var(--lateral-regla);
+    border-bottom: 0;
     scrollbar-color: var(--lateral-regla) var(--lateral);
   }
 
@@ -131,8 +174,7 @@
     display: block;
     min-height: 0;
     margin: 0 var(--e-3);
-    padding: var(--e-4) var(--e-3) var(--e-3);
-    border-bottom: 1px solid var(--lateral-regla);
+    padding: var(--e-4) 12px var(--e-3);
   }
 
   .alternar {

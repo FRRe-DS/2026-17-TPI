@@ -33,6 +33,13 @@ html {
   scroll-padding-bottom: calc(var(--franja-alto) + var(--e-3));
 }
 
+/* En la notebook el encabezado queda fijo arriba: lo que recibe el foco tampoco puede quedar debajo de él. */
+@media (min-width: 960px) {
+  html {
+    scroll-padding-top: calc(var(--encabezado-alto) + var(--e-3));
+  }
+}
+
 body {
   min-height: 100dvh;
   background: var(--papel);
@@ -47,9 +54,9 @@ body {
 
 h1 {
   font-size: var(--t-titulo);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  font-weight: 750;
   text-wrap: balance;
 }
 

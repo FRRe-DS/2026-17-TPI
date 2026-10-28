@@ -1,10 +1,33 @@
+/* El rechazo entra con un temblor corto, una vez: se distingue de un aviso de lo hecho sin tener que leerlo. */
 .error {
   padding: var(--e-3);
-  border: 1px solid var(--mal);
+  border: 1px solid color-mix(in srgb, var(--mal) 40%, transparent);
+  border-left: 3px solid var(--mal);
   border-radius: var(--radio);
   background: var(--mal-fondo);
   color: var(--tinta);
   font-size: var(--t-menu);
+  animation: temblar 360ms var(--salida);
+}
+
+@keyframes temblar {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translateX(-5px);
+  }
+  45% {
+    transform: translateX(4px);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
 .titulo {

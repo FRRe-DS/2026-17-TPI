@@ -1,4 +1,5 @@
-/* Lo único que flota en el panel: por eso es lo único con sombra. */
+/* Lo que más flota en el panel: la sombra más marcada. Entra desde un poco más chico, centrado (un modal no tiene un disparador del
+   que crecer), y el velo de atrás se funde a la vez. */
 .dialogo {
   width: min(28rem, calc(100vw - 2 * var(--e-3)));
   max-height: calc(100dvh - 2 * var(--e-3));
@@ -9,12 +10,12 @@
   color: var(--tinta);
   box-shadow: var(--sombra-flotante);
   transition:
-    opacity 200ms var(--salida),
-    transform 200ms var(--salida);
+    opacity var(--medio) var(--salida),
+    transform var(--medio) var(--salida);
 
   @starting-style {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
+    transform: translateY(6px) scale(0.96);
   }
 }
 
@@ -25,6 +26,12 @@
 
 .dialogo::backdrop {
   background: var(--velo);
+  backdrop-filter: blur(2px);
+  transition: opacity var(--medio) ease;
+
+  @starting-style {
+    opacity: 0;
+  }
 }
 
 .titulo {
@@ -53,18 +60,22 @@
 .cancelar {
   min-height: var(--control);
   padding: 0 var(--e-3);
-  border: 1px solid var(--acento);
+  border: 1px solid var(--regla);
   border-radius: var(--radio);
-  background: transparent;
-  color: var(--acento);
+  background: var(--hoja);
+  color: var(--tinta);
   font-size: var(--t-menu);
   font-weight: 600;
+  box-shadow: var(--sombra-boton);
   cursor: pointer;
-  transition: transform var(--rapido) var(--salida);
+  transition:
+    transform var(--rapido) var(--salida),
+    border-color var(--rapido) ease;
 }
 
 .cancelar:active:not(:disabled) {
   transform: scale(0.97);
+  transition-duration: 100ms;
 }
 
 .cancelar:disabled {
@@ -74,6 +85,6 @@
 
 @media (hover: hover) and (pointer: fine) {
   .cancelar:hover:not(:disabled) {
-    background: var(--acento-tenue);
+    border-color: var(--tinta-suave);
   }
 }
