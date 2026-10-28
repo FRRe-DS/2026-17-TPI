@@ -21,13 +21,14 @@ describe('menuDe: el menú según el rol (T17)', () => {
       'estado-cuenta',
       'detalle-tecnico',
       'm6-simulado',
+      'demostracion',
     ]);
   });
 
   it('el OPERADOR ve los bloqueos; el SERVICIO, la consulta de otro módulo; el CONDUCTOR, el perfil', () => {
-    expect(pantallasDe('OPERADOR')).toEqual(['operador', 'detalle-tecnico', 'm6-simulado']);
-    expect(pantallasDe('SERVICIO')).toEqual(['otro-modulo', 'detalle-tecnico', 'm6-simulado']);
-    expect(pantallasDe('CONDUCTOR')).toEqual(['perfil', 'detalle-tecnico', 'm6-simulado']);
+    expect(pantallasDe('OPERADOR')).toEqual(['operador', 'detalle-tecnico', 'm6-simulado', 'demostracion']);
+    expect(pantallasDe('SERVICIO')).toEqual(['otro-modulo', 'detalle-tecnico', 'm6-simulado', 'demostracion']);
+    expect(pantallasDe('CONDUCTOR')).toEqual(['perfil', 'detalle-tecnico', 'm6-simulado', 'demostracion']);
   });
 
   it.each(ROLES)('la pantalla de inicio de %s está en su menú y «Ingresar» no', (rol) => {
@@ -39,6 +40,14 @@ describe('menuDe: el menú según el rol (T17)', () => {
     const enAlguno = new Set([undefined, ...ROLES].flatMap((rol) => pantallasDe(rol)));
 
     expect(PANTALLAS.filter((p) => !enAlguno.has(p))).toEqual(['calificar']);
+  });
+
+  it('la «Demostración» está en el menú de los cuatro roles, en Herramientas, y no sin sesión (spec 072, T14)', () => {
+    for (const rol of ROLES) {
+      const herramientas = menuDe(rol).find((g) => g.titulo === 'Herramientas');
+      expect(herramientas?.elementos.map((e) => e.etiqueta)).toContain('Demostración');
+    }
+    expect(pantallasDe(undefined)).not.toContain('demostracion');
   });
 
   it('ninguna etiqueta se repite dentro de un menú', () => {

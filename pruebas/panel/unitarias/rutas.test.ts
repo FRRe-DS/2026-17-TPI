@@ -3,10 +3,10 @@ import { enlace, inicioDe, interpretar, PANTALLAS, resolver, TITULOS } from '../
 
 const ID = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
 
-describe('las doce pantallas (plan, Estructura)', () => {
-  it('son doce y cada una tiene título', () => {
-    expect(PANTALLAS).toHaveLength(12);
-    expect(new Set(PANTALLAS).size).toBe(12);
+describe('las trece pantallas (plan, Estructura; la 072 suma «demostracion»)', () => {
+  it('son trece y cada una tiene título', () => {
+    expect(PANTALLAS).toHaveLength(13);
+    expect(new Set(PANTALLAS).size).toBe(13);
     for (const pantalla of PANTALLAS) expect(TITULOS[pantalla].trim(), pantalla).not.toBe('');
   });
 
@@ -21,6 +21,22 @@ describe('las doce pantallas (plan, Estructura)', () => {
     const id = pantalla === 'calificar' ? ID : undefined;
 
     expect(interpretar(enlace(pantalla, id))).toEqual(id === undefined ? { pantalla } : { pantalla, id });
+  });
+});
+
+describe('#/demostracion (spec 072, T14)', () => {
+  it('se interpreta, sin id, y se llama «Demostración»', () => {
+    expect(interpretar('#/demostracion')).toEqual({ pantalla: 'demostracion' });
+    expect(interpretar('#/demostracion/')).toEqual({ pantalla: 'demostracion' });
+    expect(interpretar(`#/demostracion/${ID}`)).toEqual({ pantalla: 'no-encontrada' });
+    expect(TITULOS.demostracion).toBe('Demostración');
+  });
+
+  it('sin sesión manda a #/ingresar, y con ella la deja pasar', () => {
+    expect(resolver('#/demostracion', undefined)).toEqual({ ruta: { pantalla: 'ingresar' }, redirigirA: '#/ingresar' });
+    for (const rol of ['CLIENTE', 'OPERADOR', 'SERVICIO', 'CONDUCTOR'] as const) {
+      expect(resolver('#/demostracion', { rol })).toEqual({ ruta: { pantalla: 'demostracion' } });
+    }
   });
 });
 

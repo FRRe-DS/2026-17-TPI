@@ -1,6 +1,6 @@
 import type { Writable } from 'node:stream';
 import type { ConfigPanel } from '../../../panel/servidor/config.js';
-import { construirApp } from '../../../panel/servidor/app.js';
+import { construirApp, type OpcionesApp } from '../../../panel/servidor/app.js';
 import { descartarLogs } from '../../ayudas/logs.js';
 
 export const PUERTO_PANEL = 8083;
@@ -12,6 +12,9 @@ export const CONFIG_PANEL: ConfigPanel = {
   urlM2: 'http://localhost:8082',
   urlM2Publica: 'http://localhost:8082',
   urlM6Control: 'http://localhost:3007',
+  urlBd: undefined,
+  docker: true,
+  servicioBd: 'bd',
   claveTokens: 'clave-de-prueba-de-32-caracteres!',
   emisorTokens: 'm1-identidad',
   audienciaTokens: 'm2-clientes',
@@ -24,7 +27,7 @@ export const DESDE_EL_PANEL = { host: `127.0.0.1:${PUERTO_PANEL}` };
 export const DESDE_EL_PANEL_CON_ORIGEN = { ...DESDE_EL_PANEL, origin: `http://127.0.0.1:${PUERTO_PANEL}` };
 
 export function crearAppPanel(
-  opciones: { config?: Partial<ConfigPanel>; flujoLog?: Writable; esperaM2Ms?: number; esperaControlMs?: number; directorioCliente?: string | undefined } = {},
+  opciones: { config?: Partial<ConfigPanel>; flujoLog?: Writable; esperaM2Ms?: number; esperaControlMs?: number; directorioCliente?: string | undefined; demo?: OpcionesApp['demo'] } = {},
 ) {
   return construirApp({
     config: { ...CONFIG_PANEL, ...opciones.config },
@@ -32,5 +35,6 @@ export function crearAppPanel(
     esperaM2Ms: opciones.esperaM2Ms,
     esperaControlMs: opciones.esperaControlMs,
     directorioCliente: opciones.directorioCliente,
+    demo: opciones.demo,
   });
 }

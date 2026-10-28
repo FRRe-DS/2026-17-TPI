@@ -1,5 +1,5 @@
 // El enrutador por `#` del panel (plan, Decisiones): funciones puras, sin React ni DOM. El navegador nunca manda el `#` al
-// servidor, así que las rutas no necesitan que el servidor las conozca. Son doce pantallas; lo que no es una de ellas es
+// servidor, así que las rutas no necesitan que el servidor las conozca. Son trece pantallas; lo que no es una de ellas es
 // «no encontrada», y sin sesión todo menos `#/ingresar` manda a `#/ingresar` (RNF-12.9).
 
 export const PANTALLAS = [
@@ -15,10 +15,11 @@ export const PANTALLAS = [
   'otro-modulo',
   'detalle-tecnico',
   'm6-simulado',
+  'demostracion',
 ] as const;
 export type Pantalla = (typeof PANTALLAS)[number];
 
-// `raiz` es el hash vacío; `no-encontrada` es todo lo que no se pudo interpretar. Ninguna es una de las doce.
+// `raiz` es el hash vacío; `no-encontrada` es todo lo que no se pudo interpretar. Ninguna es una de las trece.
 export type Ruta = { pantalla: Pantalla; id?: string } | { pantalla: 'raiz' | 'no-encontrada' };
 
 export const TITULOS: Record<Pantalla | 'no-encontrada', string> = {
@@ -34,6 +35,7 @@ export const TITULOS: Record<Pantalla | 'no-encontrada', string> = {
   'otro-modulo': 'Consulta de otro módulo',
   'detalle-tecnico': 'Detalle técnico',
   'm6-simulado': 'M6 simulado',
+  demostracion: 'Demostración',
   'no-encontrada': 'Pantalla no encontrada',
 };
 
@@ -51,6 +53,7 @@ const ID_DE_RUTA: Record<Pantalla, 'ninguno' | 'opcional' | 'obligatorio'> = {
   'otro-modulo': 'ninguno',
   'detalle-tecnico': 'ninguno',
   'm6-simulado': 'ninguno',
+  demostracion: 'ninguno',
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

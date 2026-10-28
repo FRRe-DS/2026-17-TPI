@@ -248,10 +248,10 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   const bd = compose.services?.['bd'];
 
   it('declara m2 y bd, y los dos del panel (spec 071) solo bajo el perfil panel', () => {
-    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'm2', 'm6', 'panel']);
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'm2', 'm6', 'panel']);
     expect(m2?.profiles).toBeUndefined();
     expect(bd?.profiles).toBeUndefined();
-    for (const nombre of ['m6', 'panel']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    for (const nombre of ['m6', 'panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
   });
 
   it('las imágenes tienen versión exacta, nunca latest', () => {
@@ -318,15 +318,15 @@ describe('panel/Dockerfile (spec 071, RNF-04.6)', () => {
     .filter((linea) => /^FROM\s/i.test(linea))
     .map(imagenDe);
 
-  it('parte de la misma imagen con versión exacta que M2, y las otras dos etapas parten de la de producción', () => {
+  it('parte de la misma imagen con versión exacta que M2, y las otras tres etapas parten de la de producción', () => {
     const externas = etapas.map(imagenDe).filter((imagen) => !['produccion'].includes(imagen));
     expect(externas).toHaveLength(2);
     expect(externas.filter((imagen) => !imagenExacta(imagen))).toEqual([]);
     expect(new Set([...externas, ...delDockerfileDeM2]).size).toBe(1);
   });
 
-  it('tiene los destinos m6-simulado y panel', () => {
-    expect(etapas.filter((linea) => /\sAS\s+(m6-simulado|panel)$/i.test(linea))).toHaveLength(2);
+  it('tiene los destinos m6-simulado, panel y puente-bd (spec 072)', () => {
+    expect(etapas.filter((linea) => /\sAS\s+(m6-simulado|panel|puente-bd)$/i.test(linea))).toHaveLength(3);
   });
 
   it('instala con npm ci y la etapa de producción solo lo de producción y sin scripts', () => {
@@ -341,6 +341,7 @@ describe('panel/Dockerfile (spec 071, RNF-04.6)', () => {
     expect(dockerfile.filter((linea) => /^CMD\s/i.test(linea))).toEqual([
       'CMD ["node", "panel/dist/m6-simulado/main.js"]',
       'CMD ["node", "panel/dist/servidor/main.js"]',
+      'CMD ["node", "panel/dist/puente-bd/main.js"]',
     ]);
   });
 
@@ -354,6 +355,13 @@ describe('panel/Dockerfile (spec 071, RNF-04.6)', () => {
     expect(delDestino('m6-simulado')).toContain('panel/dist/m6-simulado/main.js');
     expect(delDestino('m6-simulado')).not.toContain('dist/cliente');
     expect(delDestino('panel')).toContain('/app/panel/dist/cliente');
+  });
+
+  it('la imagen del puente lleva su código compilado y no el cliente (spec 072)', () => {
+    const delDestino = dockerfile.join('\n').split(/^(?=FROM\s)/m).find((etapa) => /\sAS\s+puente-bd\s*\n/i.test(`${etapa}\n`)) ?? '';
+    expect(delDestino).toContain('panel/dist/puente-bd');
+    expect(delDestino).not.toContain('dist/cliente');
+    expect(delDestino).toMatch(/^FROM\s+produccion\s/m);
   });
 });
 
@@ -426,5 +434,61 @@ describe('docker-compose.yml: perfil panel (spec 071, RNF-04.6)', () => {
   it('el chequeo del M6 simulado mira el canal de control y no la API, que el modo caído cierra', () => {
     expect(codigoDelChequeo(m6)).not.toContain('M6_PUERTO\'');
     expect(codigoDelChequeo(m6)).not.toContain('/api/');
+  });
+});
+
+describe('docker-compose.yml: puente a la base y variables nuevas del panel (spec 072, RNF-04.8, RNF-06.5)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const puente = compose.services?.['bd-puente'];
+  const panel = compose.services?.['panel'];
+  const sinPerfil = Object.entries(compose.services ?? {}).filter(([, servicio]) => servicio?.profiles === undefined);
+
+  it('sin el perfil solo están m2 y bd, y no se publica ningún puerto de la base', () => {
+    expect(sinPerfil.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm2']);
+    expect(compose.services?.['bd']?.ports).toBeUndefined();
+    expect(compose.services?.['m2']?.ports).toEqual(['${M2_PUERTO:-8082}:${M2_PUERTO:-8082}']);
+  });
+
+  it('m2 y bd no cambian: su configuración no menciona el puente ni las variables del panel', () => {
+    for (const nombre of ['m2', 'bd']) {
+      const texto = JSON.stringify(compose.services?.[nombre]);
+      expect(texto, nombre).not.toMatch(/puente|PANEL_|5433/);
+    }
+  });
+
+  it('bd-puente se construye con el destino puente-bd, se publica solo en 127.0.0.1 y espera a una base sana', () => {
+    expect(puente?.build).toEqual({ context: '.', dockerfile: 'panel/Dockerfile', target: 'puente-bd' });
+    expect(puente?.image).toBe(`m2-puente-bd:${String(paquete['version'])}`);
+    expect(puente?.init).toBe(true);
+    expect(puente?.ports).toEqual(['127.0.0.1:${PANEL_PUERTO_BD:-5433}:5433']);
+    expect(puente?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
+  });
+
+  it('el chequeo del puente abre una conexión a su propio puerto, con Node y sin $ de compose', () => {
+    expect(puente?.healthcheck?.test?.slice(0, 2)).toEqual(['CMD', 'node']);
+    const codigo = (puente?.healthcheck?.test ?? []).slice(2).join(' ');
+    expect(codigo).toContain('connect(');
+    expect(codigo).toContain('5433');
+    expect(codigo).not.toContain('$');
+  });
+
+  // Compose interpola `${VARIABLE:-valor}` de su propio entorno y no del env_file: los valores por defecto se repiten en el
+  // compose y tienen que ser los de ejemplo.env, que es donde la persona los cambia (se cambian juntos).
+  const ejemplo = readFileSync(new URL('ejemplo.env', raiz), 'utf8').replaceAll('\r\n', '\n');
+  const deEjemplo = (variable: string) => new RegExp(`^${variable}=\\$\\{${variable}:-([^}]*)\\}$`, 'm').exec(ejemplo)?.[1];
+
+  it('el panel en el contenedor llega a la base por bd:5432 con las POSTGRES_* y no puede usar Docker', () => {
+    const entorno = panel?.environment ?? {};
+    expect(entorno['PANEL_DOCKER']).toBe('no');
+    expect(entorno['PANEL_URL_BD']).toMatch(
+      /^postgres:\/\/\$\{POSTGRES_USER:-[^}]+\}:\$\{POSTGRES_PASSWORD:-[^}]+\}@bd:5432\/\$\{POSTGRES_DB:-[^}]+\}$/,
+    );
+  });
+
+  it.each(['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB'])('el valor por defecto de %s en la URL del panel es el de ejemplo.env', (variable) => {
+    const enCompose = new RegExp(`\\$\\{${variable}:-([^}]*)\\}`).exec(panel?.environment?.['PANEL_URL_BD'] ?? '')?.[1];
+
+    expect(enCompose).toBeDefined();
+    expect(enCompose).toBe(deEjemplo(variable));
   });
 });

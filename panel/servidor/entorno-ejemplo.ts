@@ -6,7 +6,7 @@ import type { Entorno } from './config.js';
 // como proceso (`npm run panel`) se leen esos valores por defecto acá. Solo `ejemplo.env`, nunca `.env` (RNF-06.3).
 const LINEA = /^([A-Z][A-Z0-9_]*)=\$\{\1:-([^}]*)\}$/;
 
-// Lo único que el panel y el M6 simulado toman del ejemplo. La URL y la contraseña de la base quedan afuera: no las necesitan.
+// Lo único que el panel y el M6 simulado toman del ejemplo. M2_URL_BD y POSTGRES_PASSWORD quedan afuera: el panel solo usa PANEL_URL_BD.
 const VARIABLES_DE_TOKENS = [
   'M2_CLAVE_TOKENS',
   'M2_EMISOR_TOKENS',

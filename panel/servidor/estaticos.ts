@@ -19,6 +19,7 @@ export const RUTAS_DEL_CLIENTE = [
   'otro-modulo',
   'detalle-tecnico',
   'm6-simulado',
+  'demostracion',
 ] as const;
 
 // Todo sale del propio origen (RNF-19.3): ni scripts ni estilos en línea, ni de terceros, ni `eval`; el panel no se puede

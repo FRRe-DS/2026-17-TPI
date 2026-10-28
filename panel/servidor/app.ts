@@ -5,6 +5,7 @@ import type { Writable } from 'node:stream';
 import type { ConfigPanel } from './config.js';
 import { registrarEncabezadosDeSeguridad, registrarEstaticos } from './estaticos.js';
 import { ESPERA_CONTROL_MS, registrarControlM6 } from './m6-control.js';
+import { crearDependenciasDemo, registrarDemo, type DependenciasDemo } from './demo/rutas.js';
 import { crearRegistroDePedidos, registrarPedidos } from './pedidos.js';
 import { responderProblema } from './problemas.js';
 import { ESPERA_M2_MS, registrarReenvio } from './proxy.js';
@@ -20,6 +21,9 @@ export type OpcionesApp = {
   esperaControlMs?: number | undefined;
   // La carpeta con el cliente compilado (`panel/dist/cliente`). Sin ella, el panel no sirve archivos.
   directorioCliente?: string | undefined;
+  // La base de M2 y Docker de la vista de demostración. Sin ella, los de la configuración (PANEL_URL_BD, PANEL_DOCKER). Solo las
+  // pruebas la pasan.
+  demo?: DependenciasDemo | undefined;
 };
 
 // El mismo patrón que M2 (RNF-14.3): de 1 a 128 caracteres de letras, números, punto, guion bajo y guion.
@@ -40,12 +44,15 @@ function estadoDe(error: unknown): number {
 
 // La app del panel: seguridad de acceso, salud, logs, reenvío a M2, detalle técnico de sus pedidos y reenvío al canal de control del
 // M6 simulado y, si se le da la carpeta, los archivos del cliente. No escucha en ningún puerto; eso lo hace el arranque.
-export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente }: OpcionesApp): FastifyInstance {
+export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente, demo }: OpcionesApp): FastifyInstance {
   const app = Fastify({
     // El cuerpo se pasa tal cual a M2, que es quien lo valida; el límite de 1 MiB es el de M2 (RNF-03.2).
     bodyLimit: 1024 * 1024,
     exposeHeadRoutes: false,
     requestIdHeader: false,
+    // Los esquemas de las rutas /panel/demo/… rechazan lo que sobra y no convierten tipos: por defecto Fastify quita los campos de
+    // más y vuelve número un «10», y la vista tiene que poder decirle a la persona que su pedido no es válido.
+    ajv: { customOptions: { removeAdditional: false, coerceTypes: false, useDefaults: false } },
     genReqId: (req) => idDePedido(req.headers['x-request-id']),
     logger: { level: 'info', stream: flujoLog },
     // Fastify no escribe sus líneas por pedido: traen la URL con su query string. Las que se registran son las propias.
@@ -89,6 +96,10 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   registrarPedidos(app, pedidos, config.urlM2Publica);
   app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos });
   app.register(registrarControlM6, { config, esperaMs: esperaControlMs });
+  // Con las dependencias de la configuración, el pool de la base se cierra con la app; las que se pasan las cierra quien las creó.
+  const propias = demo === undefined ? crearDependenciasDemo(config) : undefined;
+  if (propias !== undefined) app.addHook('onClose', async () => propias.cerrar());
+  app.register(registrarDemo, { config, demo: demo ?? propias!, esperaM2Ms: esperaM2Ms === ESPERA_M2_MS ? undefined : esperaM2Ms });
   if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
 
   return app;

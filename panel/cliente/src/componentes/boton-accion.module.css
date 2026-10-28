@@ -73,6 +73,15 @@
   opacity: 0.85;
 }
 
+/* Deshabilitado sin esperar un pedido (otra acción en curso, falta Docker): se ve apagado y no gira. */
+.boton:disabled:not([aria-busy]) {
+  cursor: not-allowed;
+}
+
+.boton:disabled:not([aria-busy]) .contenido {
+  opacity: 0.55;
+}
+
 /* ---- Principal: relleno del acento con un brillo arriba y una sombra del mismo color que crece al acercarse. ---- */
 .principal {
   border-color: var(--acento);

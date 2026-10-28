@@ -1,0 +1,11 @@
+.demostracion {
+  display: grid;
+  gap: var(--e-5);
+  max-width: 72rem;
+  margin-top: var(--e-4);
+}
+
+.introduccion {
+  max-width: 64ch;
+  color: var(--tinta-suave);
+}

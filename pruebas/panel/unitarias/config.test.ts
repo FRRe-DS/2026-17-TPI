@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -26,6 +26,9 @@ describe('cargarConfigPanel (RNF-06.4)', () => {
         urlM2: 'http://localhost:8082',
         urlM2Publica: 'http://localhost:8082',
         urlM6Control: 'http://localhost:3007',
+        urlBd: undefined,
+        docker: true,
+        servicioBd: 'bd',
         claveTokens: CLAVE,
         emisorTokens: 'm1-identidad',
         audienciaTokens: 'm2-clientes',
@@ -113,6 +116,55 @@ describe('cargarConfigPanel (RNF-06.4)', () => {
       'M2_CLAVE_TOKENS',
       'M2_EMISOR_TOKENS',
       'PANEL_PUERTO',
+    ]);
+  });
+});
+
+describe('cargarConfigPanel: base y Docker de la vista de demostración (spec 072, RNF-06.5, RNF-19.4)', () => {
+  const URL_BD = 'postgres://m2:contrasena-secreta@127.0.0.1:5433/m2';
+
+  it('PANEL_URL_BD vacía o ausente deja las acciones de base sin configurar', () => {
+    expect(cargarConfigPanel(TOKENS).config?.urlBd).toBeUndefined();
+    expect(cargarConfigPanel({ ...TOKENS, PANEL_URL_BD: '' }).config?.urlBd).toBeUndefined();
+  });
+
+  it.each([URL_BD, 'postgresql://m2:x@bd:5432/m2'])('acepta PANEL_URL_BD=%s tal cual', (url) => {
+    expect(cargarConfigPanel({ ...TOKENS, PANEL_URL_BD: url }).config?.urlBd).toBe(url);
+  });
+
+  it.each(['m2:5432', 'mysql://m2:contrasena-secreta@bd/m2', 'http://m2:contrasena-secreta@bd', 'postgres://'])(
+    'rechaza PANEL_URL_BD=%j sin repetir el valor en el error',
+    (url) => {
+      const resultado = cargarConfigPanel({ ...TOKENS, PANEL_URL_BD: url });
+
+      expect(resultado.errores).toEqual([{ variable: 'PANEL_URL_BD', motivo: 'no es una URL postgres:// o postgresql://' }]);
+      expect(JSON.stringify(resultado)).not.toContain('contrasena-secreta');
+    },
+  );
+
+  it('PANEL_DOCKER es «si» por defecto y acepta «si» o «no»', () => {
+    expect(cargarConfigPanel(TOKENS).config?.docker).toBe(true);
+    expect(cargarConfigPanel({ ...TOKENS, PANEL_DOCKER: 'si' }).config?.docker).toBe(true);
+    expect(cargarConfigPanel({ ...TOKENS, PANEL_DOCKER: 'no' }).config?.docker).toBe(false);
+  });
+
+  it.each(['sí', 'true', 'NO', '1', ' no'])('rechaza PANEL_DOCKER=%j', (valor) => {
+    expect(cargarConfigPanel({ ...TOKENS, PANEL_DOCKER: valor }).errores).toEqual([
+      { variable: 'PANEL_DOCKER', motivo: 'no es «si» ni «no»' },
+    ]);
+  });
+
+  it('PANEL_SERVICIO_BD es «bd» por defecto y acepta nombres de servicio de compose', () => {
+    expect(cargarConfigPanel(TOKENS).config?.servicioBd).toBe('bd');
+    for (const nombre of ['base', 'bd-2', 'a', 'mi_bd', '0bd']) {
+      expect(cargarConfigPanel({ ...TOKENS, PANEL_SERVICIO_BD: nombre }).config?.servicioBd).toBe(nombre);
+    }
+  });
+
+  // El nombre llega como argumento de `docker compose stop`: nada que parezca una opción, una ruta o un comando (RNF-12.10).
+  it.each(['-v', '--all', 'bd;rm', 'bd bd', '../bd', 'BD', '_bd', `a${'b'.repeat(63)}`])('rechaza PANEL_SERVICIO_BD=%j', (nombre) => {
+    expect(cargarConfigPanel({ ...TOKENS, PANEL_SERVICIO_BD: nombre }).errores).toEqual([
+      { variable: 'PANEL_SERVICIO_BD', motivo: 'no es un nombre de servicio válido (letras minúsculas, dígitos, «-» y «_»)' },
     ]);
   });
 });
@@ -228,6 +280,19 @@ describe('entorno-ejemplo: valores por defecto de ejemplo.env sin pisar el entor
     expect(cargarConfigPanel(entorno).errores).toBeUndefined();
     expect(cargarConfigM6(entorno).errores).toBeUndefined();
     expect(cargarConfigPanel(entorno).config).toMatchObject({ puerto: 8083, urlM2: 'http://localhost:8082' });
+  });
+
+  it('con el ejemplo.env real, trae las variables de la vista de demostración, y el puente queda para compose (spec 072)', () => {
+    const valores = valoresDeEjemplo(readFileSync(EJEMPLO, 'utf8'));
+    const entorno = cargarEntornoEjemplo({}, EJEMPLO);
+
+    expect(valores).toMatchObject({ PANEL_DOCKER: 'si', PANEL_SERVICIO_BD: 'bd', PANEL_PUERTO_BD: '5433' });
+    expect(valores['PANEL_URL_BD']).toBe('postgres://m2:m2-contrasena-de-desarrollo@127.0.0.1:5433/m2');
+    expect(cargarConfigPanel(entorno).config).toMatchObject({
+      urlBd: valores['PANEL_URL_BD'],
+      docker: true,
+      servicioBd: 'bd',
+    });
   });
 
   it('con el ejemplo.env real, lo definido en el entorno manda', () => {

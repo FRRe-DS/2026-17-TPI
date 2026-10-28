@@ -25,6 +25,11 @@ export type ConfigPanel = ConfigTokens & {
   urlM2: string;
   urlM2Publica: string;
   urlM6Control: string;
+  // Vista de demostración (spec 072). Sin `urlBd`, las acciones de base se deshabilitan con su motivo; `docker` y `servicioBd`
+  // dicen si el panel puede apagar y encender la base, y cuál es el servicio de compose.
+  urlBd: string | undefined;
+  docker: boolean;
+  servicioBd: string;
 };
 
 export type ConfigM6 = ConfigTokens & {
@@ -83,6 +88,24 @@ const urlHttp: Regla<string> = {
   },
 };
 
+// postgres:// o postgresql:// con servidor. Lleva usuario y contraseña, a diferencia de `urlHttp`: es la conexión a la base. El error
+// nunca repite el valor (RNF-19.4).
+const urlPostgres: Regla<string> = {
+  motivo: 'no es una URL postgres:// o postgresql://',
+  convertir: (texto) => (/^postgres(ql)?:\/\//i.test(texto) && URL.canParse(texto) && new URL(texto).hostname !== '' ? texto : undefined),
+};
+
+const siONo: Regla<boolean> = {
+  motivo: 'no es «si» ni «no»',
+  convertir: (texto) => (texto === 'si' ? true : texto === 'no' ? false : undefined),
+};
+
+// Es un argumento de `docker compose stop` y `start`: tiene que ser un nombre de servicio y nada que parezca una opción (RNF-12.10).
+const nombreDeServicio: Regla<string> = {
+  motivo: 'no es un nombre de servicio válido (letras minúsculas, dígitos, «-» y «_»)',
+  convertir: (texto) => (/^[a-z0-9][a-z0-9_-]{0,62}$/.test(texto) ? texto : undefined),
+};
+
 const textoSinEspaciosAlBorde: Regla<string> = {
   motivo: 'está en blanco o tiene espacios al principio o al final',
   convertir: (texto) => (texto.trim() === texto && texto !== '' ? texto : undefined),
@@ -138,6 +161,9 @@ export function cargarConfigPanel(env: Entorno): ResultadoConfig<ConfigPanel> {
     urlM2: lector.opcional('PANEL_URL_M2', 'http://localhost:8082', urlHttp),
     urlM2Publica: lector.opcional('PANEL_URL_M2_PUBLICA', 'http://localhost:8082', urlHttp),
     urlM6Control: lector.opcional('PANEL_URL_M6_CONTROL', 'http://localhost:3007', urlHttp),
+    urlBd: lector.opcional<string | undefined>('PANEL_URL_BD', undefined, urlPostgres),
+    docker: lector.opcional('PANEL_DOCKER', true, siONo),
+    servicioBd: lector.opcional('PANEL_SERVICIO_BD', 'bd', nombreDeServicio),
     ...leerTokens(lector),
   });
 }

@@ -40,7 +40,7 @@ afterAll(async () => {
 type Recorrible = { nombre: string; rol?: Rol; hash: (d: DatosDeRecorrido) => string };
 const fijo = (nombre: string, rol?: Rol): Recorrible => ({ nombre, rol, hash: () => `#/${nombre}` });
 
-// Las doce pantallas (y las tres con id), cada una con el rol que la usa. `ingresar` va sin sesión. Los ids se resuelven al correr,
+// Las trece pantallas (y las tres con id), cada una con el rol que la usa. `ingresar` va sin sesión. Los ids se resuelven al correr,
 // cuando ya existen los datos.
 const PANTALLAS: Recorrible[] = [
   fijo('ingresar'),
@@ -55,6 +55,7 @@ const PANTALLAS: Recorrible[] = [
   fijo('estado-cuenta', 'CLIENTE'),
   fijo('detalle-tecnico', 'CLIENTE'),
   fijo('m6-simulado', 'CLIENTE'),
+  fijo('demostracion', 'CLIENTE'),
   fijo('operador', 'OPERADOR'),
   fijo('otro-modulo', 'SERVICIO'),
 ];

@@ -1,5 +1,6 @@
 import { useState, useSyncExternalStore } from 'react';
 import { crearApiM2, type Identidad } from './api/m2.js';
+import { crearPedirDeCasos } from './api/casos.js';
 import { crearApiPanel } from './api/panel.js';
 import { Marco } from './componentes/marco.js';
 import { PantallaPendiente } from './componentes/pantalla-pendiente.js';
@@ -7,11 +8,13 @@ import type { Sesion } from './fuentes/fuente-de-sesion.js';
 import { almacenamientoDelNavegador, crearSesionSimulada } from './fuentes/sesion-simulada.js';
 import { fuenteDeViajes } from './fuentes/viajes-simulados.js';
 import { usarRuta } from './hooks/usar-ruta.js';
+import type { EntornoDeCasos } from './logica/ejecutar-caso.js';
 import { crearRecordadosGuardados, type Ingreso } from './logica/ingresar.js';
 import { crearUltimoPedido } from './logica/ultimo-pedido.js';
 import { Calificaciones } from './pantallas/calificaciones.js';
 import { Calificar } from './pantallas/calificar.js';
 import { DetalleTecnico } from './pantallas/detalle-tecnico.js';
+import { Demostracion } from './pantallas/demostracion.js';
 import { Direcciones } from './pantallas/direcciones.js';
 import { EstadoDeCuenta } from './pantallas/estado-cuenta.js';
 import { Historial } from './pantallas/historial.js';
@@ -41,6 +44,9 @@ const api = crearApiM2({ identidad: () => fuenteDeSesion.actual(), alTerminar: u
 
 // Lo que el panel sabe de sus propios pedidos a M2 (el detalle técnico).
 const apiPanel = crearApiPanel();
+
+// Lo que usa la vista «Demostración» para ejecutar los casos: pedidos al panel con la identidad de cada paso y el M6 simulado.
+const entornoDeCasos: EntornoDeCasos = { pedir: crearPedirDeCasos({ alTerminar: ultimoPedido.publicar }), viajes: fuenteDeViajes };
 
 // Las dos fuentes simuladas, nombradas en el encabezado de toda vista (RNF-12.7).
 const ETIQUETAS = [
@@ -81,6 +87,7 @@ export function App() {
     if (nombre === 'otro-modulo' && sesion !== undefined) return <OtroModulo api={api} />;
     if (nombre === 'detalle-tecnico' && sesion !== undefined) return <DetalleTecnico apiPanel={apiPanel} />;
     if (nombre === 'm6-simulado' && sesion !== undefined) return <M6Simulado viajes={fuenteDeViajes} sesion={sesion} />;
+    if (nombre === 'demostracion' && sesion !== undefined) return <Demostracion entorno={entornoDeCasos} apiPanel={apiPanel} />;
     if (nombre === 'historial' && sesion !== undefined) return <Historial api={api} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };
