@@ -58,7 +58,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 
 ## Tramo D — Prueba en navegador y documentación
 
-- [ ] **T17. Prueba en navegador de la vista.** RNF-15.6, RNF-07.6, RNF-13.6
+- [x] **T17. Prueba en navegador de la vista.** RNF-15.6, RNF-07.6, RNF-13.6
   - Hecho cuando: `npm run panel:navegador` recorre `#/demostracion` a 360 y 1280 px en claro y oscuro sin desplazamiento horizontal, con controles de al menos 44×44 px, uso solo con teclado y sin violaciones de `axe-core`; «Ejecutar todo» llega al resumen; una prueba simultánea muestra su tabla; un doble clic lanza una sola ejecución; y con `PANEL_DOCKER=no` apagar y encender están deshabilitados con su motivo. El job `panel` de CI lo corre sin cambiar los nombres de los jobs que exige la protección de `main`.
 
 - [ ] **T18. Documentación.** RNF-20.3
