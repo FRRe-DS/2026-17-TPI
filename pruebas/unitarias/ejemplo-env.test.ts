@@ -34,13 +34,17 @@ const DEL_SERVICIO = [
   'M2_REINTENTAR_DESPUES_S',
 ];
 const DE_LA_BASE = ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB'];
-// Spec 071: las del panel y las del M6 simulado. Las lee panel/servidor/config.ts, no el servicio.
+// Specs 071 y 072: las del panel y las del M6 simulado. Las lee panel/servidor/config.ts, no el servicio (PANEL_PUERTO_BD, solo compose).
 const DEL_PANEL = [
   'PANEL_PUERTO',
   'PANEL_ESCUCHA',
   'PANEL_URL_M2',
   'PANEL_URL_M2_PUBLICA',
   'PANEL_URL_M6_CONTROL',
+  'PANEL_URL_BD',
+  'PANEL_PUERTO_BD',
+  'PANEL_DOCKER',
+  'PANEL_SERVICIO_BD',
   'M6_PUERTO',
   'M6_PUERTO_CONTROL',
   'M6_RETARDO_LENTO_MS',

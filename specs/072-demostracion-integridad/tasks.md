@@ -4,7 +4,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 
 ## Tramo A — Servidor del panel
 
-- [ ] **T1. Configuración nueva del panel.** RNF-06.5, RNF-19.4
+- [x] **T1. Configuración nueva del panel.** RNF-06.5, RNF-19.4
   - Hecho cuando: `pruebas/panel/unitarias/config.test.ts` comprueba que `servidor/config.ts` lee `PANEL_URL_BD` (opcional; vacía, sin acciones de base), `PANEL_DOCKER` (`si` o `no`, por defecto `si`) y `PANEL_SERVICIO_BD` (por defecto `bd`, rechaza lo que no cumpla `^[a-z0-9][a-z0-9_-]{0,62}$`), que un error nombra la variable sin repetir su valor (una URL con contraseña no aparece en el mensaje), y que `entorno-ejemplo.ts` toma las tres de `ejemplo.env`; `ejemplo.env` tiene las cuatro variables nuevas (también `PANEL_PUERTO_BD`), comentadas, y `pruebas/unitarias/ejemplo-env.test.ts` las acepta.
 
 - [ ] **T2. Acceso a la base: conteos y disponibilidad.** RNF-05.4, RNF-19.4
