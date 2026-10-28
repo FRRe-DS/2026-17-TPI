@@ -67,7 +67,7 @@ export function App() {
     setSesion(undefined);
   };
 
-  // Las pantallas construidas; las demás siguen mostrando su título (tramo D). Las que piden a M2 solo se dibujan con sesión.
+  // Las que piden a M2 solo se dibujan con sesión; sin ella (o en la raíz) se muestra solo el título.
   const pantalla = (destino: Ruta, tituloPendiente: string) => {
     const nombre = destino.pantalla;
     if (nombre === 'ingresar') return <Ingresar ingreso={ingreso} alEntrar={entrar} />;

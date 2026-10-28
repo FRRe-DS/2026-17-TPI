@@ -86,7 +86,7 @@ describe('vitest.config.ts: unitarias, integracion y navegador (RNF-07.1, RNF-07
     expect(existsSync(new URL('pruebas/ayudas/global.ts', raiz))).toBe(true);
   });
 
-  // `navegador` queda fuera: sus pruebas llegan en las últimas tareas de la spec 071 (corren con `npm run panel:navegador`, no con `npm test`).
+  // `navegador` queda fuera: sus pruebas (spec 071) corren con `npm run panel:navegador`, no con `npm test`.
   it('hay pruebas en unitarias y en integracion', () => {
     for (const proyecto of proyectos.filter((candidato) => candidato.test.name !== 'navegador')) {
       expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
