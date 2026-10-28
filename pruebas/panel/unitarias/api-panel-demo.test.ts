@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ErrorDeApi } from '../../../panel/cliente/src/api/errores.js';
-import { crearApiPanel, CORTE_DE_APAGAR_MS, CORTE_DE_ENCENDER_MS } from '../../../panel/cliente/src/api/panel.js';
+import { crearApiPanel, CORTE_DE_APAGAR_MS, CORTE_DE_ENCENDER_MS, CORTE_DE_INTEGRIDAD_MS } from '../../../panel/cliente/src/api/panel.js';
 
 // Las funciones de `api/panel.ts` para las rutas `/panel/demo/…` (spec 072, T13): una por ruta, con el corte de 10 s de la 071 y
 // 70 s para encender la base. Los errores son los mismos de siempre: `ErrorDeApi`. Los `POST` sin campos mandan `{}`: los esquemas
@@ -86,6 +86,31 @@ describe('los cortes de tiempo', () => {
   it('encender espera hasta 70 s y apagar hasta 40 s (el panel espera 60 s y 30 s a docker compose); el resto, el corte de siempre', () => {
     expect(CORTE_DE_ENCENDER_MS).toBe(70_000);
     expect(CORTE_DE_APAGAR_MS).toBe(40_000);
+  });
+
+  // El peor caso del servidor en las calificaciones simultáneas son unos 36,5 s (crear el cliente 10 s, tres pedidos al canal del M6
+  // de 3 s, cargar el ejemplo 3 s, los N pedidos 10 s y contar 4,5 s): el navegador espera más, para ver el resultado con su
+  // «sin respuesta» y no soltar el cerrojo con el servidor todavía trabajando.
+  it('las pruebas de integridad esperan 45 s, más que el peor caso del servidor', () => {
+    expect(CORTE_DE_INTEGRIDAD_MS).toBe(45_000);
+    expect(CORTE_DE_INTEGRIDAD_MS).toBeGreaterThan(36_500);
+  });
+
+  it.each([
+    ['lanzarAltasSimultaneas', (api: ReturnType<typeof crearApiPanel>) => api.lanzarAltasSimultaneas(10, 'misma-clave')],
+    ['lanzarCalificacionesSimultaneas', (api: ReturnType<typeof crearApiPanel>) => api.lanzarCalificacionesSimultaneas(10)],
+    ['probarRestriccionDelPuntaje', (api: ReturnType<typeof crearApiPanel>) => api.probarRestriccionDelPuntaje()],
+  ])('%s no se corta con el tiempo de las demás: usa el de integridad', async (_nombre, llamar) => {
+    let cortado = false;
+    const { falso } = panelDeMentira(async ({ init }) => {
+      init.signal?.addEventListener('abort', () => (cortado = true));
+      await new Promise((listo) => setTimeout(listo, 60));
+      return json({ clienteId: 'c-1' });
+    });
+
+    await llamar(crearApiPanel({ fetch: falso, tiempoMaximoMs: 20 }));
+
+    expect(cortado).toBe(false);
   });
 
   it('las demás rutas se cortan con el tiempo de la API (10 s por defecto)', async () => {

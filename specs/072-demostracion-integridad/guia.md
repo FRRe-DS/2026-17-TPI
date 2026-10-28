@@ -137,3 +137,12 @@
 - Cómo se conecta: no toca código ni pruebas. `git diff --stat origin/main -- src contrato migraciones` no muestra nada, como pide la tarea. Con esta entrada la guía tiene una por tarea, de T1 a T18.
 - Tests: ninguno nuevo (es solo documentación); se corrió `node scripts/spec-check.mjs` y el resto de las comprobaciones de la spec.
 - Para mirar con atención: la «Visión general» de esta guía (30-60 líneas, según la plantilla de la skill `sdd`) se escribe al validar (`072/V`), no acá. Lo que dicen README y `docs/probar-m2.md` sobre la lista de casos («los 37», «ocho áreas») hay que actualizarlo si se agregan casos.
+
+## Correcciones de la validación (`072/V`, 2026-10-28)
+La revisión independiente de la implementación encontró dos cosas que se corrigieron en esta rama, cada una con su commit, y dos que se dejan anotadas.
+
+### Corte propio para las pruebas de integridad · commit `072: corte de 45 s para las pruebas de integridad`
+- Qué cambió: `panel/cliente/src/api/panel.ts` suma `CORTE_DE_INTEGRIDAD_MS` (45 s) para `lanzarAltasSimultaneas`, `lanzarCalificacionesSimultaneas` y `probarRestriccionDelPuntaje`, que antes usaban el corte de 10 s de las demás rutas.
+- Por qué así: el servidor espera hasta 10 s por cada pedido a M2 y, además, crea el cliente, prepara el M6 simulado (tres pedidos de 3 s a su canal de control) y cuenta filas; el peor caso de las calificaciones suma unos 36,5 s. Con 10 s, una M2 lenta daba «M2 no responde» en la pantalla en vez del «sin respuesta» (código 0) que dice el plan, y la vista soltaba su cerrojo con el servidor todavía trabajando: se podía lanzar un caso de resiliencia, que pone el M6 en «caído», mientras las calificaciones simultáneas lo tenían en «normal». Es el mismo criterio que ya seguían `CORTE_DE_APAGAR_MS` y `CORTE_DE_ENCENDER_MS`: el navegador espera un poco más que el servidor.
+- Tests: `pruebas/panel/unitarias/api-panel-demo.test.ts` — el valor (45 s, mayor que el peor caso) y que cada una de las tres funciones no se corta con el tiempo corto de la API.
+- Para mirar con atención: si se agregan pasos a esas pruebas en el servidor (más pedidos, más conteos), hay que volver a sumar el peor caso y revisar este valor.

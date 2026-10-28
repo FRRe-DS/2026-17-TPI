@@ -49,6 +49,11 @@ export type SaludDeM2 = { estado: number | null; duracionMs: number };
 // encender y de apagar esperan un poco más, para que el corte que se vea sea el del panel, con su motivo.
 export const CORTE_DE_ENCENDER_MS = 70_000;
 export const CORTE_DE_APAGAR_MS = 40_000;
+// Las pruebas de integridad hacen mucho en el servidor: crear el cliente, preparar el M6 simulado, lanzar los N pedidos (hasta 10 s) y
+// contar filas. El peor caso suma unos 36,5 s. Si el navegador cortara antes, mostraría «M2 no responde» y soltaría el cerrojo de
+// la vista con el servidor todavía trabajando, y se podría lanzar otra cosa encima (las calificaciones ponen el M6 simulado en
+// «normal» y después lo reponen).
+export const CORTE_DE_INTEGRIDAD_MS = 45_000;
 
 // Un pedido a M2 tal como lo guarda el panel para el detalle técnico (RNF-14.9): con el `Authorization` ya enmascarado y el `curl`
 // que lo repite, con `$TOKEN` en lugar del token. El más nuevo viene primero y son 50 como mucho.
@@ -108,9 +113,9 @@ export function crearApiPanel({ fetch: pedirHttp = (...args) => globalThis.fetch
     // la restricción de la base y el control de la base con Docker.
     obtenerEstadoDemo: (senal?: AbortSignal) => pedir<EstadoDemo>('GET', '/panel/demo/estado', senal),
     lanzarAltasSimultaneas: (n: number, modo: ModoDeAltas, senal?: AbortSignal) =>
-      pedir<ResultadoSimultaneo>('POST', '/panel/demo/altas-simultaneas', senal, { n, modo }),
-    lanzarCalificacionesSimultaneas: (n: number, senal?: AbortSignal) => pedir<ResultadoSimultaneo>('POST', '/panel/demo/calificaciones-simultaneas', senal, { n }),
-    probarRestriccionDelPuntaje: (senal?: AbortSignal) => pedir<ResultadoRestriccion>('POST', '/panel/demo/restriccion-puntaje', senal, {}),
+      pedir<ResultadoSimultaneo>('POST', '/panel/demo/altas-simultaneas', senal, { n, modo }, CORTE_DE_INTEGRIDAD_MS),
+    lanzarCalificacionesSimultaneas: (n: number, senal?: AbortSignal) => pedir<ResultadoSimultaneo>('POST', '/panel/demo/calificaciones-simultaneas', senal, { n }, CORTE_DE_INTEGRIDAD_MS),
+    probarRestriccionDelPuntaje: (senal?: AbortSignal) => pedir<ResultadoRestriccion>('POST', '/panel/demo/restriccion-puntaje', senal, {}, CORTE_DE_INTEGRIDAD_MS),
     apagarBase: (senal?: AbortSignal) => pedir<{ ejecutado: true }>('POST', '/panel/demo/base/apagar', senal, {}, CORTE_DE_APAGAR_MS),
     encenderBase: (senal?: AbortSignal) => pedir<{ ejecutado: true }>('POST', '/panel/demo/base/encender', senal, {}, CORTE_DE_ENCENDER_MS),
     // El sondeo de la salud en vivo: no queda en el detalle técnico.
