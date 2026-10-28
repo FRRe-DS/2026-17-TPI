@@ -6,40 +6,6 @@
   min-width: 0;
 }
 
-.correcto,
-.incorrecto {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--e-1) var(--e-2);
-  padding: 10px var(--e-3);
-  border: 1px solid;
-  border-radius: var(--radio);
-  font-size: var(--t-menu);
-}
-
-.correcto {
-  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
-  background: var(--ok-fondo);
-  color: var(--ok);
-}
-
-.incorrecto {
-  border-color: color-mix(in srgb, var(--mal) 40%, transparent);
-  border-left: 3px solid var(--mal);
-  background: var(--mal-fondo);
-  color: var(--mal);
-}
-
-.marca {
-  font-weight: 700;
-}
-
-.motivo {
-  color: var(--tinta);
-  overflow-wrap: anywhere;
-}
-
 .bloques {
   display: grid;
   gap: var(--e-2);

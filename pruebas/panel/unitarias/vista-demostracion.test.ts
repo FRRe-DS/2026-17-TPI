@@ -15,7 +15,8 @@ const entorno = {
   pedir: async () => ({ estado: 200, encabezados: {} }),
   viajes: { estado: async () => ({ modo: 'normal' as const }), ponerModo: async () => undefined },
 };
-const dibujar = async () => renderToStaticMarkup(createElement(await cargar('pantallas/demostracion.tsx', 'Demostracion'), { entorno }));
+const apiPanel = {} as never;
+const dibujar = async () => renderToStaticMarkup(createElement(await cargar('pantallas/demostracion.tsx', 'Demostracion'), { entorno, apiPanel }));
 const botones = (html: string) => [...html.matchAll(/<button\b[^>]*>/g)].map((m) => m[0]);
 
 describe('la vista «Demostración» al abrirla', () => {
@@ -34,11 +35,11 @@ describe('la vista «Demostración» al abrirla', () => {
     expect(titulos).toEqual(AREAS.map((a) => a.titulo.replace(/&/g, '&amp;')));
   });
 
-  it('un botón «Ejecutar» por caso más «Ejecutar todo», todos habilitados al abrir', async () => {
+  it('un botón «Ejecutar» por caso más «Ejecutar todo» y los cuatro de «Integridad», todos habilitados al abrir', async () => {
     const html = await dibujar();
 
     const todos = botones(html);
-    expect(todos).toHaveLength(CASOS.length + 1);
+    expect(todos).toHaveLength(CASOS.length + 1 + 4);
     expect(todos.some((b) => /disabled/.test(b))).toBe(false);
     expect(html).toContain('Ejecutar todo');
   });
@@ -47,6 +48,19 @@ describe('la vista «Demostración» al abrirla', () => {
     const html = await dibujar();
 
     for (const caso of CASOS) expect(html, caso.id).toContain(`: ${caso.titulo.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#x27;')}</span>`);
+  });
+
+  it('la sección «Integridad»: el campo N en 10, con su ayuda, y las cuatro pruebas', async () => {
+    const html = await dibujar();
+
+    expect(html).toMatch(/<h2 id="demo-integridad"[^>]*>Integridad<\/h2>/);
+    expect(html).toContain('Cantidad de pedidos simultáneos (N)');
+    expect(html).toMatch(/<input[^>]*id="demo-n"[^>]*value="10"|<input[^>]*value="10"[^>]*id="demo-n"/);
+    expect(html).toContain('De 2 a 50. Por defecto 10.');
+    expect(html).not.toContain('aria-invalid');
+    for (const titulo of ['Altas simultáneas con la misma clave', 'Altas simultáneas con claves distintas', 'Calificaciones simultáneas del mismo viaje', 'Restricción del puntaje en la base']) {
+      expect(html, titulo).toContain(`>${titulo}</h3>`);
+    }
   });
 
   it('muestra el método y la ruta de cada caso', async () => {

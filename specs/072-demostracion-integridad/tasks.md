@@ -50,7 +50,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T14. Vista «Demostración»: ruta, menú y casos.** RNF-07.3, RNF-07.4, RNF-07.6, RNF-15.6
   - Hecho cuando: `rutas.ts` interpreta `#/demostracion` y `logica/menu.ts` la ofrece a los cuatro roles (`rutas.test.ts`, `menu.test.ts`); `pantallas/demostracion.tsx` muestra los casos por área con «Ejecutar» y `componentes/resultado-caso` (pedido, respuesta, esperado, ✔ «Correcto» o ✘ «No coincide»), y «Ejecutar todo» con el avance y el resumen; los botones se deshabilitan mientras esperan; mirada en Chrome a 360 y 1280 px.
 
-- [ ] **T15. Sección «Integridad».** RNF-08.2, RNF-08.3, RNF-08.4, RNF-05.5, RNF-15.6
+- [x] **T15. Sección «Integridad».** RNF-08.2, RNF-08.3, RNF-08.4, RNF-05.5, RNF-15.6
   - Hecho cuando: la vista muestra las tres pruebas simultáneas con el campo N (por defecto 10, error junto al campo si no es válido) y «Probar la restricción del puntaje», cada una con `componentes/prueba-integridad` (conteo por código en una tabla que se desplaza dentro de su caja a 360 px, filas, esperado y veredicto, y el mensaje de PostgreSQL como texto); `pruebas/panel/integracion/pantalla-demostracion.test.ts` recorre las cuatro contra M2 real y la base; mirada en Chrome.
 
 - [ ] **T16. Sección «Base de datos».** RNF-13.4, RNF-13.6, RNF-15.6

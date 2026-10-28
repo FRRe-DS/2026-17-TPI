@@ -1,0 +1,122 @@
+/* Una prueba de integridad: el título y el botón arriba y, debajo, el veredicto, la tabla y los datos. La tabla se desplaza dentro de
+   su caja a 360 px, nunca la página (RNF-15.6). */
+.prueba {
+  display: grid;
+  gap: var(--e-2);
+  min-width: 0;
+  padding: var(--e-3);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+  box-shadow: var(--sombra-hoja);
+}
+
+.cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+}
+
+.texto {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 18rem;
+}
+
+.titulo {
+  font-size: var(--t-cuerpo);
+  font-weight: 650;
+}
+
+.explicacion {
+  max-width: 64ch;
+  color: var(--tinta-suave);
+  font-size: var(--t-menu);
+}
+
+.resultado {
+  display: grid;
+  gap: var(--e-2);
+  min-width: 0;
+}
+
+.tabla {
+  overflow-x: auto;
+  border: 1px solid var(--regla);
+  border-radius: var(--radio);
+}
+
+.tabla table {
+  width: 100%;
+  min-width: 22rem;
+  border-collapse: collapse;
+  font-size: var(--t-menu);
+}
+
+.tabla th,
+.tabla td {
+  padding: 8px var(--e-3);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tabla thead th {
+  background: var(--papel);
+  color: var(--tinta-suave);
+  font-size: var(--t-chica);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tabla tbody tr + tr {
+  border-top: 1px solid var(--regla);
+}
+
+.tabla tbody th {
+  font: 600 var(--t-detalle) / 1.5 var(--mono);
+}
+
+.tabla td {
+  font-variant-numeric: tabular-nums;
+}
+
+.filaMala td,
+.filaMala th {
+  background: var(--mal-fondo);
+  color: var(--mal);
+}
+
+.datos {
+  display: grid;
+  gap: 2px;
+}
+
+.datos > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--e-2);
+}
+
+.datos dt {
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+}
+
+.datos dd {
+  margin: 0;
+  font: var(--t-detalle) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.motivo {
+  color: var(--mal);
+}
+
+.ayuda {
+  color: var(--tinta-suave);
+  font-family: var(--sans);
+}

@@ -1,6 +1,7 @@
 import type { Caso } from '../logica/casos.js';
 import type { ResultadoDeCaso } from '../logica/ejecutar-caso.js';
 import { lineaDelPedido, mostrarCuerpo, textoDeEsperado, textoDeIdentidad } from '../logica/demostracion.js';
+import { Veredicto } from './veredicto.js';
 import estilos from './resultado-caso.module.css';
 
 type Props = { caso: Pick<Caso, 'id' | 'titulo'>; resultado: ResultadoDeCaso };
@@ -16,13 +17,7 @@ export function ResultadoCaso({ caso, resultado }: Props) {
 
   return (
     <section className={estilos.resultado} aria-label={`Resultado: ${caso.titulo}`}>
-      <p className={veredicto.correcto ? estilos.correcto : estilos.incorrecto}>
-        <span className={estilos.marca} aria-hidden="true">
-          {veredicto.correcto ? '✔' : '✘'}
-        </span>
-        <strong>{veredicto.correcto ? 'Correcto' : 'No coincide'}</strong>
-        {!veredicto.correcto && <span className={estilos.motivo}>{veredicto.motivo}</span>}
-      </p>
+      <Veredicto correcto={veredicto.correcto} motivos={veredicto.correcto ? [] : [veredicto.motivo]} />
 
       <div className={estilos.bloques}>
         {pedido !== undefined && (

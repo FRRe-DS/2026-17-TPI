@@ -87,7 +87,7 @@ export function App() {
     if (nombre === 'otro-modulo' && sesion !== undefined) return <OtroModulo api={api} />;
     if (nombre === 'detalle-tecnico' && sesion !== undefined) return <DetalleTecnico apiPanel={apiPanel} />;
     if (nombre === 'm6-simulado' && sesion !== undefined) return <M6Simulado viajes={fuenteDeViajes} sesion={sesion} />;
-    if (nombre === 'demostracion' && sesion !== undefined) return <Demostracion entorno={entornoDeCasos} />;
+    if (nombre === 'demostracion' && sesion !== undefined) return <Demostracion entorno={entornoDeCasos} apiPanel={apiPanel} />;
     if (nombre === 'historial' && sesion !== undefined) return <Historial api={api} sesion={sesion} />;
     return <PantallaPendiente titulo={tituloPendiente} />;
   };

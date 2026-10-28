@@ -97,7 +97,8 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
   // El panel solo acepta su propio Host, con el puerto configurado: escucha en el mismo que tiene en la configuración.
   const puerto = await puertoLibre();
   const panel = crearAppPanel({
-    config: { puerto, urlM2: `http://127.0.0.1:${puertoM2}`, urlM6Control: `http://127.0.0.1:${puertoControlM6}` },
+    // La vista de demostración (spec 072) cuenta en la base de M2; Docker queda apagado: ninguna prueba toca los contenedores.
+    config: { puerto, urlM2: `http://127.0.0.1:${puertoM2}`, urlM6Control: `http://127.0.0.1:${puertoControlM6}`, urlBd: base.urlBd, docker: false },
     directorioCliente: opciones.directorioCliente,
   });
   await panel.listen({ port: puerto, host: '127.0.0.1' });
