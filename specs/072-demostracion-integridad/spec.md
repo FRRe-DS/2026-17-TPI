@@ -43,7 +43,7 @@ En esta spec «el sistema» es el panel y «M2» es el servicio. El panel sigue 
 - RNF-06.5: EL SISTEMA se configura por variables de entorno para la dirección de la base de M2 que usa el panel y para el nombre del servicio de Docker a apagar y encender, con valores por defecto de `ejemplo.env` adecuados a cada forma de levantarlo, y no guarda secretos en el repositorio.
 - RNF-04.8: CUANDO se levanta `docker compose --profile panel up -d --build --wait`, EL SISTEMA deja la base de M2 alcanzable por el panel también cuando este corre en la máquina, publicada solo en `127.0.0.1`; SI se levanta sin el perfil `panel`, ENTONCES EL SISTEMA no publica ningún puerto de la base ni cambia el arranque de M2.
 - RNF-19.4: EL SISTEMA no entrega al navegador ni escribe en sus logs ni en la pantalla la dirección completa de la base ni su contraseña, y muestra el `Authorization` de los pedidos de los casos enmascarado como en la 071.
-- RNF-15.6: EL SISTEMA muestra en la vista los estados de espera, éxito, rechazo y error de cada caso y de cada acción, usa controles táctiles de al menos 44×44 píxeles y se puede usar sin desplazamiento horizontal de 360 a 1440 píxeles.
+- RNF-15.6: EL SISTEMA muestra en la vista los estados de espera, éxito, rechazo y error de cada caso y de cada acción, deshabilita el botón que lanzó una ejecución mientras espera (un doble toque la lanza una sola vez), usa controles táctiles de al menos 44×44 píxeles y se puede usar sin desplazamiento horizontal de 360 a 1440 píxeles.
 - RNF-20.3: EL SISTEMA documenta en el README, en `docs/probar-m2.md` y en la guía de esta spec qué hace la vista, cómo se activan las acciones de Docker y qué comprueba cada prueba de integridad.
 
 ## Contrato y dependencias
@@ -77,7 +77,7 @@ En esta spec «el sistema» es el panel y «M2» es el servicio. El panel sigue 
 - Cambios en `src/`, `contrato/` o `migraciones/`.
 
 ## Criterios de finalización
-- Cada caso de las ocho áreas se ejecuta desde la vista y da ✔ contra M2 y el M6 simulado levantados, y «Ejecutar todo» informa el resumen.
+- Cada caso de las ocho áreas se ejecuta desde la vista, solo o con «Ejecutar todo», y da ✔ contra M2 y el M6 simulado levantados, y «Ejecutar todo» informa el resumen.
 - Las tres pruebas de integridad muestran lo esperado: altas con la misma clave (N×`201`, 1 fila), con claves distintas (1×`201`, N−1×`409`, 1 fila), calificaciones del mismo viaje (1×`201`, N−1×`409`, 1 fila), y la restricción `calificaciones_puntaje_valido` con la cantidad de filas sin cambios.
 - «Apagar la base» da `503` en la salud de M2 y «Encender la base» la devuelve a `200` en la máquina; en el contenedor esas dos acciones están deshabilitadas con su explicación y el resto funciona.
 - `git diff --stat origin/main` no muestra cambios en `src/`, `contrato/` ni `migraciones/`.
@@ -92,10 +92,12 @@ En esta spec «el sistema» es el panel y «M2» es el servicio. El panel sigue 
 - «Ejecutar todo» no apaga la base: es una acción destructiva para quien esté usando M2 y requiere Docker, que no siempre está disponible. Se pulsa por separado.
 - Las pruebas de integridad cuentan las filas del cliente de esa corrida y no el total de la tabla, para que el resultado no dependa de los datos que ya hubiera en la base.
 - Los ID siguen la numeración que la spec 071 dejó reservada para este issue (RNF-05.4, 05.5, 07.3, 07.4, 08.2 a 08.4, 13.4 y 13.6); los demás (RNF-04.8, 06.5, 07.6, 12.10, 15.6, 19.4, 20.3) son derivados de los RNF que precisan, en el orden siguiente al último de cada uno.
+- Pueden abrir la vista todos los roles con sesión en el panel (aclarado el 2026-10-28, por delegación de @sandobaitt): la vista firma sus propios tokens de cliente, operador y servicio para cada caso y no usa el de la sesión, así que sirve igual a quien evalúa que a quien entró como cliente. Alternativa descartada: limitarla a un rol, que obligaría a cambiar de sesión para usarla.
+- Cada corrida crea datos nuevos (un cliente de prueba con UUID nuevo por área, como `scripts/demo.mjs`) y no reutiliza al cliente de la sesión (aclarado el 2026-10-28, por delegación de @sandobaitt): se puede repetir sin limpiar la base ni chocar con datos previos. Cada caso prepara lo que necesita (su cliente y, si hace falta, sus viajes en el M6 simulado), de modo que se puede ejecutar solo y no depende del orden. Alternativa descartada: reutilizar al cliente de la sesión, que mezcla la demostración con datos de uso real y rompe la segunda corrida.
+- La base se publica en `127.0.0.1` con un servicio propio del perfil `panel` que reenvía a `bd:5432` (aclarado el 2026-10-28, por delegación de @sandobaitt): evita cambiar el servicio `bd`, que usa quien no levanta el panel (RNF-04.8). El plan fija el servicio y el puerto. Alternativa descartada: publicar el puerto en `bd`, que cambia el arranque de M2 para todos.
+- El panel usa el mismo usuario de la base que M2, sin crear otro (aclarado el 2026-10-28, por delegación de @sandobaitt): un usuario nuevo exige una migración, que esta spec no toca. La defensa es la lista fija de acciones (RNF-05.4) y que la inserción de RNF-05.5 nunca se confirma.
 - Etapa TP1: el issue #72 lo pide y la cátedra lo marca como foco de la primera entrega (integridad de datos y manejo de cliente).
 - El diseño visual de la vista sigue el estilo «Verde ciudad» de la 071; las decisiones de estilo van en el plan.
 
 ## Dudas abiertas
-- [NECESITA ACLARACIÓN] ¿Qué roles pueden abrir la vista «Demostración»? Recomendación: cualquiera con sesión en el panel, porque la vista firma sus propios tokens para cada caso (cliente, operador, servicio) y no usa el de la sesión; así sirve igual a quien evalúa que a quien entró como cliente.
-- [NECESITA ACLARACIÓN] ¿Los casos de «Ejecutar todo» crean datos nuevos en cada corrida (un cliente nuevo por área, como `scripts/demo.mjs`) o reutilizan al cliente de la sesión? Recomendación: crear uno nuevo por corrida, para poder repetirla sin limpiar la base ni chocar con datos previos.
-- [NECESITA ACLARACIÓN] ¿Cómo se publica la base solo en `127.0.0.1` bajo el perfil `panel` sin cambiar el servicio `bd` que usa quien no levanta el panel (RNF-04.8)? Recomendación: es una decisión de plan; un servicio propio del perfil `panel` que reenvía a `bd:5432` evita tocar `bd`. Se resuelve al planificar, sin cambiar los requisitos.
+Ninguna.
