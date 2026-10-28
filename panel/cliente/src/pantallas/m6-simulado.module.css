@@ -5,14 +5,28 @@
   margin-top: var(--e-4);
 }
 
-/* La etiqueta de lo simulado, a la vista como en el encabezado (RNF-12.7). */
+/* La etiqueta de lo simulado, en ámbar como la banda de prueba del encabezado (RNF-12.7). */
 .etiqueta {
   justify-self: start;
-  padding: 3px 10px;
-  border: 1px dashed var(--borde-campo);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--aviso) 22%, var(--aviso-fondo));
   border-radius: 999px;
-  color: var(--tinta-suave);
+  background: var(--aviso-fondo);
+  color: var(--aviso);
   font-size: var(--t-chica);
+  font-weight: 500;
+}
+
+.etiqueta::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .subtitulo {
@@ -87,6 +101,7 @@
   transition:
     border-color var(--rapido) ease,
     color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
     transform var(--rapido) var(--salida);
 }
 
@@ -109,5 +124,23 @@
 @media (min-width: 600px) {
   .escenario {
     padding-inline: var(--e-4);
+  }
+}
+
+/* Como el botón de contorno: se hunde al apretar y, con el ratón, sube un poco con la sombra más larga. */
+.enlace:active {
+  transform: scale(0.97);
+  box-shadow: none;
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .enlace:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
+  }
+
+  .enlace:hover:active {
+    transform: translateY(0) scale(0.97);
   }
 }

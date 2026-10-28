@@ -206,6 +206,11 @@
         "name": "medio",
         "value": "220ms",
         "purpose": "Avisos y cambios de estado de un botón."
+      },
+      {
+        "name": "barrido-peligro",
+        "value": "clip-path 260ms cubic-bezier(0.23, 1, 0.32, 1); salida 160ms",
+        "purpose": "Relleno rojo del botón de peligro al acercar el puntero."
       }
     ],
     "breakpoints": [
@@ -234,23 +239,23 @@
       "refersTo": "boton-principal",
       "description": "La acción principal de una tarjeta, como «Guardar cambios».",
       "html": "<button class=\"ds-btn-principal\">Guardar cambios</button>",
-      "css": ".ds-btn-principal{min-height:44px;padding:0 16px;border:1px solid var(--acento,#0f766e);border-radius:10px;background:var(--acento,#0f766e);color:var(--sobre-acento,#fff);font:600 0.875rem system-ui,sans-serif;box-shadow:inset 0 1px 0 rgb(255 255 255/.18),0 1px 2px rgb(15 118 110/.2),0 4px 10px -4px rgb(15 118 110/.4);cursor:pointer;transition:transform 160ms cubic-bezier(0.23,1,0.32,1)}.ds-btn-principal:hover{transform:translateY(-1px)}.ds-btn-principal:active{transform:scale(0.97)}.ds-btn-principal:focus-visible{outline:2px solid var(--foco,#0f766e);outline-offset:2px}"
+      "css": ".ds-btn-principal{min-height:44px;padding:0 16px;border:1px solid var(--acento,#0f766e);border-radius:10px;background:var(--acento,#0f766e);color:var(--sobre-acento,#fff);font:600 0.875rem system-ui,sans-serif;box-shadow:inset 0 1px 0 rgb(255 255 255/.18),0 1px 2px rgb(15 118 110/.2),0 4px 10px -4px rgb(15 118 110/.4);cursor:pointer;transition:transform 160ms cubic-bezier(0.23,1,0.32,1)}.ds-btn-principal:hover{transform:translateY(-1px)}.ds-btn-principal:active{transform:scale(0.97);box-shadow:inset 0 1px 0 rgb(255 255 255/.18),0 1px 1px rgb(15 118 110/.3);transition-duration:100ms}.ds-btn-principal:focus-visible{outline:2px solid var(--foco,#0f766e);outline-offset:2px}"
     },
     {
-      "name": "Etiqueta de lo simulado",
+      "name": "Banda de prueba",
       "kind": "chip",
-      "refersTo": "etiqueta-simulado",
-      "description": "Marca una fuente simulada en el encabezado de toda vista.",
-      "html": "<span class=\"ds-etiqueta\">Sesión: simulado, pendiente de M1</span>",
-      "css": ".ds-etiqueta{display:inline-block;padding:3px 10px;border:1px dashed var(--borde-campo,#7f8f8a);border-radius:999px;color:var(--tinta-suave,#4a5a55);font:500 0.75rem/1.4 system-ui,sans-serif}"
+      "refersTo": "banda-prueba",
+      "description": "Arriba de toda vista: avisa que la sesión y los viajes son simulados.",
+      "html": "<div class=\"ds-banda\"><b>Entorno de prueba.</b> Sesión: simulado, pendiente de M1 · Viajes: simulado, pendiente de M6</div>",
+      "css": ".ds-banda{display:flex;align-items:center;gap:10px;min-height:36px;padding:8px 40px;background:var(--aviso-fondo,#fffbeb);border-bottom:1px solid color-mix(in srgb,var(--aviso,#92400e) 22%,var(--aviso-fondo,#fffbeb));color:var(--aviso,#92400e);font:0.8125rem/1.45 system-ui,sans-serif}.ds-banda b{font-weight:650}"
     },
     {
       "name": "Menú lateral",
       "kind": "nav",
       "refersTo": "menu-elemento",
-      "description": "Menú por rol con el elemento actual como pestaña blanca.",
-      "html": "<nav class=\"ds-menu\"><p class=\"ds-menu-grupo\">Mi cuenta</p><a class=\"ds-menu-el\" aria-current=\"page\" href=\"#\">Mi perfil</a><a class=\"ds-menu-el\" href=\"#\">Direcciones frecuentes</a></nav>",
-      "css": ".ds-menu{width:248px;padding:8px 16px;background:var(--lateral,#eaf1ee)}.ds-menu-grupo{margin:0;padding:16px 12px 6px;color:var(--lateral-suave,#4f625c);font:650 0.6875rem system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}.ds-menu-el{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;color:var(--lateral-texto,#0f2a24);font:500 0.875rem system-ui,sans-serif;text-decoration:none}.ds-menu-el:hover{background:var(--lateral-hover,#dde8e4)}.ds-menu-el[aria-current=page]{background:var(--hoja,#fff);color:var(--acento,#0f766e);font-weight:600;box-shadow:0 1px 2px rgb(16 24 40/.08),0 0 0 1px var(--lateral-regla,#d5e0dc)}.ds-menu-el:focus-visible{outline:2px solid var(--lateral-texto,#0f2a24);outline-offset:2px}"
+      "description": "Marca solo texto («M2 | Clientes») y menú por rol con el elemento actual como pestaña blanca.",
+      "html": "<nav class=\"ds-menu\"><p class=\"ds-marca\"><span class=\"ds-m2\">M2</span><span class=\"ds-nombre\">Clientes</span></p><p class=\"ds-menu-grupo\">Mi cuenta</p><a class=\"ds-menu-el\" aria-current=\"page\" href=\"#\">Mi perfil</a><a class=\"ds-menu-el\" href=\"#\">Direcciones frecuentes</a></nav>",
+      "css": ".ds-menu{width:248px;padding:8px 16px;background:var(--lateral,#eaf1ee)}.ds-menu-grupo{margin:0;padding:16px 12px 6px;color:var(--lateral-suave,#4f625c);font:650 0.6875rem system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}.ds-menu-el{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;color:var(--lateral-texto,#0f2a24);font:500 0.875rem system-ui,sans-serif;text-decoration:none}.ds-menu-el:hover{background:var(--lateral-hover,#dde8e4)}.ds-menu-el[aria-current=page]{background:var(--hoja,#fff);color:var(--acento,#0f766e);font-weight:600;box-shadow:0 1px 2px rgb(16 24 40/.08),0 0 0 1px var(--lateral-regla,#d5e0dc)}.ds-menu-el:focus-visible{outline:2px solid var(--lateral-texto,#0f2a24);outline-offset:2px}.ds-marca{display:flex;align-items:center;gap:10px;margin:8px 12px 12px;font:1rem/1 system-ui,sans-serif;color:var(--lateral-texto,#0f2a24)}.ds-m2{color:var(--acento,#0f766e);font-weight:800}.ds-nombre{display:flex;align-items:center;gap:10px;font-weight:650}.ds-nombre::before{content:\"\";width:1px;height:18px;background:var(--lateral-regla,#d5e0dc)}"
     },
     {
       "name": "Franja técnica",
@@ -267,14 +272,14 @@
     "keyCharacteristics": [
       "Fondo verde casi gris, tarjetas blancas con sombra suave, tinta casi negra con un dejo verde.",
       "Un solo acento, verde azulado, en la acción principal, el elemento actual del menú, lo elegido, los enlaces y el foco.",
-      "Lo simulado se marca con borde punteado gris; la monoespaciada va solo sobre datos reales de M2.",
+      "Lo simulado se avisa en ámbar con una banda de «Entorno de prueba»; la monoespaciada va solo sobre datos reales de M2.",
       "Esquinas redondeadas y generosas: 10 px en controles, 18 px en tarjetas.",
       "De noche: fondo casi negro verdoso, tarjetas un paso más claras y el acento en turquesa claro."
     ],
     "rules": [
       {
         "name": "The Un Solo Acento Rule",
-        "body": "El verde azulado es el único color de marca y marca lo que se toca o lo que está elegido. Verde, rojo y ámbar significan estado y no se usan para decorar. Las etiquetas de lo simulado van en gris.",
+        "body": "El verde azulado es el único color de marca y marca lo que se toca o lo que está elegido. Verde, rojo y ámbar significan estado y no se usan para decorar. Lo simulado es un aviso y va en ámbar.",
         "section": "colors"
       },
       {
@@ -290,7 +295,7 @@
     ],
     "dos": [
       "**Do** usar solo las variables de `variables.css`; un valor nuevo se agrega en claro y oscuro y se clasifica en `contraste.test.ts`.",
-      "**Do** marcar con borde punteado todo lo que sale de una fuente simulada.",
+      "**Do** avisar en ámbar todo lo que sale de una fuente simulada.",
       "**Do** mostrar en monoespaciada solo los valores reales de M2 (UUID, método, ruta, código, folio, estados literales).",
       "**Do** mantener controles de 44×44 px, foco visible y el uso completo con teclado de 360 a 1440 px.",
       "**Do** limitar el movimiento a respuesta: presión, paso del puntero, aparición del menú y de los avisos."
@@ -298,7 +303,7 @@
     "donts": [
       "**Don't** usar estilos en línea (`style`): la política de seguridad del panel los bloquea y el lint lo prohíbe.",
       "**Don't** cargar fuentes, imágenes ni scripts de terceros, ni usar `data:`.",
-      "**Don't** usar el acento para decorar ni para etiquetas que solo avisan (lo simulado va en gris).",
+      "**Don't** usar el acento para decorar ni para lo simulado (va en ámbar).",
       "**Don't** usar franjas de color gruesas al costado de tarjetas o cajas, degradados de texto ni reflejos animados.",
       "**Don't** armar las pantallas con filas de tarjetas de cifras ni poner etiquetas sobre los títulos."
     ]

@@ -1,40 +1,56 @@
 .encabezado {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--e-2) var(--e-3);
-  min-height: var(--encabezado-alto);
-  padding: var(--e-2) var(--e-3);
   border-bottom: 1px solid var(--regla);
   background: color-mix(in srgb, var(--papel) 82%, transparent);
   backdrop-filter: saturate(1.4) blur(10px);
 }
 
-.etiquetas {
+/* La banda de entorno de prueba: ámbar, el color de aviso, porque avisa que lo que se ve no es todo real. Fina y opaca. */
+.banda {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--e-2);
-  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: var(--banda-alto);
+  padding: 8px var(--e-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--aviso) 22%, var(--aviso-fondo));
+  background: var(--aviso-fondo);
+  color: var(--aviso);
+  font-size: var(--t-detalle);
+  line-height: 1.45;
 }
 
-/* Lo simulado se marca con borde punteado: es provisorio, no un estado, y no compite con el acento. */
+.icono {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.texto b {
+  font-weight: 650;
+}
+
+.etiquetas,
 .etiqueta {
-  padding: 3px 10px;
-  border: 1px dashed var(--borde-campo);
-  border-radius: 999px;
-  color: var(--tinta-suave);
-  font-size: var(--t-chica);
-  font-weight: 500;
-  line-height: 1.4;
+  display: inline;
+}
+
+.etiqueta + .etiqueta::before {
+  content: ' · ';
 }
 
 .sesion {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--e-3);
   min-width: 0;
-  margin-left: auto;
+  min-height: var(--encabezado-alto);
+  padding: var(--e-2) var(--e-3);
   font-size: var(--t-menu);
 }
 
@@ -74,6 +90,7 @@
   transition:
     border-color var(--rapido) ease,
     color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
     transform var(--rapido) var(--salida);
 }
 
@@ -84,14 +101,14 @@
   }
 }
 
-.cerrar:active {
-  transform: scale(0.97);
-  transition-duration: 100ms;
-}
-
 @media (min-width: 600px) {
-  .encabezado {
-    padding: var(--e-2) var(--e-5);
+  .banda,
+  .sesion {
+    padding-inline: var(--e-5);
+  }
+
+  .banda {
+    align-items: center;
   }
 }
 
@@ -101,10 +118,32 @@
     position: sticky;
     top: 0;
     z-index: 2;
-    padding: var(--e-2) var(--e-6);
+  }
+
+  .banda,
+  .sesion {
+    padding-inline: var(--e-6);
   }
 
   .sub {
     max-width: 38ch;
+  }
+}
+
+/* Como el botón de contorno: se hunde al apretar y, con el ratón, sube un poco con la sombra más larga. */
+.cerrar:active {
+  transform: scale(0.97);
+  box-shadow: none;
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cerrar:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
+  }
+
+  .cerrar:hover:active {
+    transform: translateY(0) scale(0.97);
   }
 }

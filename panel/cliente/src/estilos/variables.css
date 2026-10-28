@@ -58,6 +58,7 @@
   --control: 44px;
   --lateral-ancho: 248px;
   --encabezado-alto: 64px;
+  --banda-alto: 36px;
   --franja-alto: 56px;
 
   /* Sombras en capas: una línea de contacto y una difusa. Las tarjetas apenas se separan del fondo; lo que flota, bastante. */

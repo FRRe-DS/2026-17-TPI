@@ -33,11 +33,17 @@ export function BotonAccion({ esperando, variante = 'principal', tipo = 'button'
       aria-busy={modelo.esperando || undefined}
       onClick={onClick}
     >
-      {/* La clave cambia con la espera: el contenido nuevo entra con su fundido en vez de reemplazar al viejo de golpe. */}
-      <span key={modelo.esperando ? 'esperando' : 'listo'} className={cambio.current ? `${estilos.contenido} ${estilos.entra}` : estilos.contenido}>
+      {/* La clave cambia con la espera: el contenido nuevo entra con su fundido en vez de reemplazar al viejo de golpe. La espera
+          entra desde abajo y el texto vuelve desde arriba, como una rueda que gira hacia adelante y regresa. */}
+      <span
+        key={modelo.esperando ? 'esperando' : 'listo'}
+        className={cambio.current ? `${estilos.contenido} ${modelo.esperando ? estilos.entra : estilos.vuelve}` : estilos.contenido}
+      >
         {modelo.esperando ? (
           <>
-            <span className={estilos.giro} aria-hidden="true" />
+            <svg className={estilos.giro} viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.5" />
+            </svg>
             {modelo.etiqueta}
           </>
         ) : (

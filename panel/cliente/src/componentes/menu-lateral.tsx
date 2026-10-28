@@ -23,7 +23,7 @@ export function MenuLateral({ rol, ruta }: Props) {
     <aside className={estilos.lateral}>
       <div className={estilos.barra}>
         <p className={estilos.marca}>
-          M2 · Clientes<span className={estilos.grupo}>Grupo 17 · TPI 2026</span>
+          <span className={estilos.modulo}>M2</span> <span className={estilos.nombre}>Clientes</span>
         </p>
         <button
           ref={boton}
@@ -61,6 +61,7 @@ export function MenuLateral({ rol, ruta }: Props) {
             </ul>
           </section>
         ))}
+        <p className={estilos.pie}>TPI 2026 · Grupo 17</p>
       </nav>
     </aside>
   );

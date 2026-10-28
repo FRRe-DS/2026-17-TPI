@@ -92,6 +92,7 @@
   transition:
     border-color var(--rapido) ease,
     color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
     transform var(--rapido) var(--salida);
 }
 
@@ -133,6 +134,7 @@
   transition:
     border-color var(--rapido) ease,
     color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
     transform var(--rapido) var(--salida);
 }
 
@@ -140,5 +142,26 @@
   .viaje,
   .vacia {
     padding-inline: var(--e-4);
+  }
+}
+
+/* Como el botón de contorno: se hunde al apretar y, con el ratón, sube un poco con la sombra más larga. */
+.calificar:active,
+.volver:active {
+  transform: scale(0.97);
+  box-shadow: none;
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .calificar:hover,
+  .volver:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
+  }
+
+  .calificar:hover:active,
+  .volver:hover:active {
+    transform: translateY(0) scale(0.97);
   }
 }

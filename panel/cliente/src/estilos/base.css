@@ -33,10 +33,10 @@ html {
   scroll-padding-bottom: calc(var(--franja-alto) + var(--e-3));
 }
 
-/* En la notebook el encabezado queda fijo arriba: lo que recibe el foco tampoco puede quedar debajo de él. */
+/* En la notebook el encabezado (banda de prueba y sesión) queda fijo arriba: lo que recibe el foco tampoco puede quedar debajo. */
 @media (min-width: 960px) {
   html {
-    scroll-padding-top: calc(var(--encabezado-alto) + var(--e-3));
+    scroll-padding-top: calc(var(--banda-alto) + var(--encabezado-alto) + var(--e-3));
   }
 }
 

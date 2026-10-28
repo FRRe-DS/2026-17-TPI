@@ -13,39 +13,43 @@
   padding: var(--e-2) var(--e-3);
 }
 
-/* La marca: un sello del color del acento con «M2» y el nombre al lado. */
+/* La marca, solo texto: «M2» en el acento, una línea fina y «Clientes». El grupo y el año van al pie del menú. */
 .marca {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 10px;
+  display: flex;
   align-items: center;
+  gap: 10px;
   font-size: 1rem;
-  font-weight: 700;
-  line-height: 1.2;
+  line-height: 1;
   letter-spacing: -0.01em;
 }
 
-.marca::before {
-  content: 'M2';
-  grid-row: span 2;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--acento) 78%, white), var(--acento));
-  box-shadow: var(--brillo), var(--sombra-acento);
-  color: var(--sobre-acento);
-  font-size: 0.8125rem;
+.modulo {
+  color: var(--acento);
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
 }
 
-.grupo {
-  display: block;
+.nombre {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+}
+
+.nombre::before {
+  content: '';
+  width: 1px;
+  height: 18px;
+  background: var(--lateral-regla);
+}
+
+/* El pie del menú: quién lo hizo y para qué materia, sin competir con la marca. */
+.pie {
+  margin-top: var(--e-3);
+  padding: 12px 12px 0;
+  border-top: 1px solid var(--lateral-regla);
   color: var(--lateral-suave);
   font-size: var(--t-chica);
-  font-weight: 500;
 }
 
 .alternar {
@@ -166,6 +170,8 @@
     top: 0;
     height: 100dvh;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     border-right: 1px solid var(--lateral-regla);
     border-bottom: 0;
     scrollbar-color: var(--lateral-regla) var(--lateral);
@@ -182,9 +188,20 @@
     display: none;
   }
 
+  /* En la notebook el pie queda abajo de todo, aunque el menú sea corto. */
   .menu {
-    display: block;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
     padding: var(--e-1) var(--e-3) var(--e-4);
     border-top: 0;
+  }
+
+  .seccion:last-of-type {
+    margin-bottom: var(--e-3);
+  }
+
+  .pie {
+    margin-top: auto;
   }
 }

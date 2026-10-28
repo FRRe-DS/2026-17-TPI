@@ -1,6 +1,6 @@
 /* El botón del panel (RNF-15.2). El movimiento responde a la persona y nada más: baja al apretarlo, sube un poco con el puntero
-   encima (solo con ratón: en el teléfono el hover queda pegado), y al pasar a «esperando» el texto cambia con un fundido corto
-   y un desenfoque leve, sin saltos. Solo se animan `transform`, `opacity`, `filter`, sombras y colores. */
+   encima (solo con ratón: en el teléfono el hover queda pegado), y al pasar a «esperando» la espera entra desde abajo y al
+   terminar el texto vuelve desde arriba, con un fundido y un desenfoque cortos. Solo se animan `transform`, `opacity`, `filter`, sombras y colores. */
 .boton {
   position: relative;
   isolation: isolate;
@@ -40,14 +40,26 @@
 }
 
 .entra {
-  animation: aparecer var(--medio) var(--salida);
+  animation: entra 240ms var(--salida);
 }
 
-@keyframes aparecer {
+.vuelve {
+  animation: vuelve 240ms var(--salida);
+}
+
+@keyframes entra {
   from {
     opacity: 0;
-    filter: blur(3px);
-    transform: translateY(2px);
+    filter: blur(4px);
+    transform: translateY(8px);
+  }
+}
+
+@keyframes vuelve {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(-8px);
   }
 }
 
@@ -69,6 +81,11 @@
   box-shadow: var(--brillo), var(--sombra-acento);
 }
 
+/* Apretado, la sombra se pega a la superficie, como una tecla. */
+.principal:active:not(:disabled) {
+  box-shadow: var(--brillo), 0 1px 1px color-mix(in srgb, var(--acento) 30%, transparent);
+}
+
 /* ---- Contorno: lo secundario, una tecla blanca con borde fino. ---- */
 .contorno {
   border-color: var(--regla);
@@ -77,18 +94,37 @@
   box-shadow: var(--sombra-boton);
 }
 
-/* ---- Peligro: lo que no se deshace queda contorneado en rojo y se llena recién con el foco o el puntero encima. ---- */
+.contorno:active:not(:disabled) {
+  box-shadow: none;
+}
+
+/* ---- Peligro: lo que no se deshace queda contorneado en rojo; el relleno entra barriendo desde la izquierda con el puntero
+   encima (o de una vez con el foco del teclado) y se va rápido al alejarse. ---- */
 .peligro {
   border-color: color-mix(in srgb, var(--mal) 45%, transparent);
   background: var(--hoja);
   color: var(--mal);
 }
 
+.peligro::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--mal);
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path var(--rapido) var(--salida);
+}
+
 .peligro:focus-visible {
   outline-color: var(--mal);
   border-color: var(--mal);
-  background: var(--mal);
   color: var(--hoja);
+}
+
+.peligro:focus-visible::before {
+  clip-path: inset(0 0 0 0);
+  transition: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -111,9 +147,13 @@
 
   .peligro:hover:not(:disabled) {
     border-color: var(--mal);
-    background: var(--mal);
     color: var(--hoja);
     box-shadow: var(--sombra-peligro);
+  }
+
+  .peligro:hover:not(:disabled)::before {
+    clip-path: inset(0 0 0 0);
+    transition-duration: 260ms;
   }
 
   /* Apretado con el puntero encima: baja de la elevación al hundido. */
@@ -123,18 +163,38 @@
 }
 
 /* El giro entra creciendo desde un tamaño visible, nunca desde cero. */
+/* La rueda de espera: un arco fino que gira rápido, para que la espera se sienta corta. */
 .giro {
   flex: none;
   width: 14px;
   height: 14px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: girar 600ms linear infinite;
+  animation: girar 650ms linear infinite;
+}
+
+.giro circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 26 40;
 }
 
 @keyframes girar {
   to {
     transform: rotate(1turn);
+  }
+}
+
+/* Con «reducir movimiento» el contenido solo se funde, sin desplazarse ni desenfocarse. */
+@media (prefers-reduced-motion: reduce) {
+  .entra,
+  .vuelve {
+    animation-name: fundido;
+  }
+
+  @keyframes fundido {
+    from {
+      opacity: 0;
+    }
   }
 }
