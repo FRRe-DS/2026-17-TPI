@@ -42,6 +42,15 @@ export const lineaDelPedido = (pedido: Pick<PedidoDelCaso, 'metodo' | 'ruta'>): 
 export const textoDeIdentidad = (pedido: Pick<PedidoDelCaso, 'identidad'>): string =>
   pedido.identidad === null ? 'sin token' : `${pedido.identidad.rol} (${pedido.identidad.sub})`;
 
+// El `Authorization` de un caso, enmascarado como en el detalle técnico de la 071 (RNF-19.4). El navegador no arma el token: manda
+// el rol y el `sub` y el servidor del panel lo firma, así que lo único que se puede mostrar de él es que va y que está tapado. Es el
+// mismo texto que `TOKEN_ENMASCARADO` de `panel/servidor/pedidos.ts`; una prueba comprueba que no se separen.
+export const AUTORIZACION_ENMASCARADA = 'Bearer ••••';
+
+// `undefined` si el caso va sin token: no hay encabezado que mostrar.
+export const textoDeAutorizacion = (pedido: Pick<PedidoDelCaso, 'identidad'>): string | undefined =>
+  pedido.identidad === null ? undefined : AUTORIZACION_ENMASCARADA;
+
 // Lo más que se muestra de un cuerpo: una lista de 20 calificaciones no tiene que empujar el resto de la vista.
 export const LIMITE_DE_CUERPO = 2000;
 

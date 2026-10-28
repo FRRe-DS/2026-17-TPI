@@ -47,7 +47,7 @@ export type RegistroDePedidos = ReturnType<typeof crearRegistroDePedidos>;
 // Entre comillas simples, que no expanden nada en un shell; una comilla simple dentro se cierra, se escapa y se vuelve a abrir.
 const entreComillas = (texto: string) => `'${texto.replaceAll("'", `'\\''`)}'`;
 
-const TOKEN_ENMASCARADO = 'Bearer ••••';
+export const TOKEN_ENMASCARADO = 'Bearer ••••';
 
 // El `curl` que repite el pedido contra la dirección pública de M2, con `$TOKEN` en lugar del token: quien lo copia pone el
 // suyo (por ejemplo, el que genera `npm run tokens`). Todo lo que sale del pedido va entre comillas simples, para que pegarlo

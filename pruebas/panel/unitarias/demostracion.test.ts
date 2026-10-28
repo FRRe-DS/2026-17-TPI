@@ -1,3 +1,4 @@
+import { TOKEN_ENMASCARADO } from '../../../panel/servidor/pedidos.js';
 import { describe, expect, it } from 'vitest';
 import { AREAS, CASOS, type Caso, type Esperado } from '../../../panel/cliente/src/logica/casos.js';
 import type { PedidoDelCaso, ResultadoDeCaso, ResumenDeEjecucion } from '../../../panel/cliente/src/logica/ejecutar-caso.js';
@@ -10,6 +11,8 @@ import {
   textoDeEsperado,
   textoDelResumen,
   textoDeIdentidad,
+  textoDeAutorizacion,
+  AUTORIZACION_ENMASCARADA,
 } from '../../../panel/cliente/src/logica/demostracion.js';
 
 // Lo que muestra la sección «Casos» de la vista de demostración (spec 072, T14), sin React.
@@ -109,6 +112,20 @@ describe('lineaDelPedido y textoDeIdentidad', () => {
   it('la identidad: el rol y el sub, o «sin token»', () => {
     expect(textoDeIdentidad(pedido())).toBe('CLIENTE (c-1)');
     expect(textoDeIdentidad(pedido({ identidad: null }))).toBe('sin token');
+  });
+});
+
+describe('textoDeAutorizacion: el Authorization enmascarado, como en el detalle técnico (RNF-19.4)', () => {
+  it('con identidad: «Bearer ••••», nunca el token', () => {
+    expect(textoDeAutorizacion(pedido())).toBe('Bearer ••••');
+  });
+
+  it('sin token no hay encabezado que mostrar', () => {
+    expect(textoDeAutorizacion(pedido({ identidad: null }))).toBeUndefined();
+  });
+
+  it('es el mismo texto con el que el servidor enmascara los pedidos de la 071', () => {
+    expect(AUTORIZACION_ENMASCARADA).toBe(TOKEN_ENMASCARADO);
   });
 });
 

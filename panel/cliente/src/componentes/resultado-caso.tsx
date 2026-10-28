@@ -1,6 +1,6 @@
 import type { Caso } from '../logica/casos.js';
 import type { ResultadoDeCaso } from '../logica/ejecutar-caso.js';
-import { lineaDelPedido, mostrarCuerpo, textoDeEsperado, textoDeIdentidad } from '../logica/demostracion.js';
+import { lineaDelPedido, mostrarCuerpo, textoDeAutorizacion, textoDeEsperado, textoDeIdentidad } from '../logica/demostracion.js';
 import { Veredicto } from './veredicto.js';
 import estilos from './resultado-caso.module.css';
 
@@ -29,6 +29,12 @@ export function ResultadoCaso({ caso, resultado }: Props) {
                 <dt>Quién</dt>
                 <dd>{textoDeIdentidad(pedido)}</dd>
               </div>
+              {textoDeAutorizacion(pedido) !== undefined && (
+                <div>
+                  <dt>Authorization</dt>
+                  <dd>{textoDeAutorizacion(pedido)}</dd>
+                </div>
+              )}
               {pedido.clave !== undefined && (
                 <div>
                   <dt>Idempotency-Key</dt>

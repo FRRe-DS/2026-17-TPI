@@ -99,6 +99,19 @@ describe('ResultadoCaso', () => {
     expect(html).not.toContain('Pedido');
   });
 
+  it('el pedido muestra el Authorization enmascarado, y el token ni nada parecido (RNF-19.4)', async () => {
+    const html = await dibujar(CORRECTO);
+
+    expect(html).toMatch(/<dt>Authorization<\/dt><dd>Bearer ••••<\/dd>/);
+    expect(html).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}/);
+  });
+
+  it('sin token no hay Authorization que mostrar', async () => {
+    const html = await dibujar({ ...CORRECTO, pedido: { ...CORRECTO.pedido!, identidad: null } });
+
+    expect(html).not.toContain('Authorization');
+  });
+
   it('el pedido sin token lo dice', async () => {
     const html = await dibujar({ ...CORRECTO, pedido: { ...CORRECTO.pedido!, identidad: null } });
 
