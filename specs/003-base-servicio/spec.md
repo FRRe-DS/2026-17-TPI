@@ -1,6 +1,6 @@
 # Spec 003 — Base del servicio
 
-Estado: implementada
+Estado: aprobada
 Issue: #3
 Etapa: TP1
 Responsable: @sandobaitt (con @Colomufa y @garciamorenaa)
@@ -140,7 +140,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - RNF-14.3: CUANDO llega una solicitud, EL SISTEMA usa como identificador de correlación el valor del encabezado configurado (`X-Request-Id` por defecto) si tiene de 1 a 128 caracteres de letras, números, `.`, `_` y `-`; si no viene o no cumple, genera un UUID nuevo.
 - RNF-14.4: EL SISTEMA devuelve el identificador de correlación en el mismo encabezado de cada respuesta, también en las de error.
 - RNF-14.5: EL SISTEMA escribe sus logs en JSON, en la salida estándar, una línea por evento.
-- RNF-14.6: CUANDO termina una solicitud, EL SISTEMA registra una línea con el identificador de correlación, el método, la ruta sin query string, el código de respuesta y la duración en milisegundos.
+- RNF-14.6: CUANDO termina una solicitud, EL SISTEMA registra una línea con el identificador de correlación, el método, la ruta, el código de respuesta y la duración en milisegundos; la ruta es la plantilla de la operación del contrato que atendió la solicitud (por ejemplo `/api/v1/clientes/:clienteId/direcciones`), sin los valores de los identificadores ni la query string, y SI ninguna operación la atendió, es la URL pedida sin query string.
 - RNF-14.7: CUANDO el servicio llama a otro módulo, EL SISTEMA envía el identificador de correlación de la solicitud en curso, en el mismo encabezado.
 - RNF-14.8: SI una solicitud recibe 503 porque la base de datos u otro módulo no está disponible, ENTONCES EL SISTEMA registra la causa (qué falló al consultar la base, o en el último intento al otro módulo) en una línea con el identificador de correlación de esa solicitud, sin lo que prohíbe RNF-19.1.
 
@@ -166,7 +166,7 @@ Las URLs de otros módulos se suman con la spec que los use por primera vez.
 - **Token firmado con otro algoritmo o sin firma (`alg: none`):** 401.
 - **`GET /health` con un token, válido o no:** 200; el token se ignora.
 - **Ruta registrada sin declarar si es pública y qué roles admite** (un olvido al programarla): nunca queda abierta. El servicio no arranca con una ruta así, y si alguna escapa a ese control, pide token con cualquier rol conocido, como una operación cuyo contrato no nombra roles (RNF-12.1 y RNF-12.3).
-- **Ruta inexistente:** 404 en problem+json, con o sin token.
+- **Ruta inexistente:** 404 en problem+json, con o sin token. Como ninguna operación la atiende, su línea de log lleva la URL pedida sin query string: puede traer lo que quien llamó escribió en ella.
 - **Método que la ruta no tiene** (`POST /health`, `OPTIONS /health`, `TRACE /health` o cualquier otro que Node reconozca): 405 en problem+json con `Allow: GET`, con o sin token.
 - **`HEAD` a una ruta que no lo tiene:** 405 con `Allow`, sin cuerpo.
 - **`CONNECT`:** Node cierra la conexión sin responder.
@@ -242,6 +242,7 @@ Se tomaron al clarificar, el 2026-10-15: el responsable delegó la resolución, 
 - **405 con `Allow` para un método que la ruta no tiene, y 404 solo para la ruta que no existe**, `HEAD` y `OPTIONS` incluidos (2026-10-18; antes era 404 para todo). La prueba de contrato espera 405 por defecto, RFC 9110 lo pide, y AGENTS.md prohíbe desactivar un chequeo para que pase CI. No expone nada nuevo: los métodos de cada ruta ya están en el contrato.
 - **Orden de los errores** (404 o 405, 401, 403, cuerpo, datos): un cuerpo nunca se procesa sin autenticar.
 - **Logs sin datos personales:** sin cuerpos ni query strings, y `instance` también va sin query string. Ante un error interno, el log guarda el detalle completo menos los secretos (manda RNF-19.1).
+- **La ruta del log es la plantilla del contrato, no la URL pedida:** los valores de la URL son identificadores de clientes, direcciones, bloqueos y calificaciones, y no van al log (RNF-19). Lo decidió el responsable el 2026-10-26 al implementar la spec #8 (008/T8); cambia el log de todas las operaciones. `instance` de los problemas sigue con la URL pedida, porque va en la respuesta y no en el log.
 - **La base también tiene tiempo máximo en las operaciones** (2 s, como la salud), porque la constitución 5 lo pide para toda llamada externa.
 - **Migraciones al arrancar**, antes de aceptar solicitudes. Si la base no responde o una migración falla, el servicio no arranca: es más fácil de diagnosticar que un servicio a medias.
 - **Cliente para otros módulos:**
