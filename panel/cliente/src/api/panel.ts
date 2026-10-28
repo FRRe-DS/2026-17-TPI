@@ -45,8 +45,10 @@ export type ResultadoRestriccion = {
 // La salud de M2: `estado` es el código de `GET /health`, o `null` si no respondió.
 export type SaludDeM2 = { estado: number | null; duracionMs: number };
 
-// `docker compose start` espera hasta 60 s (spec 072, RNF-13.4): el pedido de encender espera un poco más.
+// El panel espera hasta 60 s a `docker compose start` y hasta 30 s a `docker compose stop` (spec 072, RNF-13.4): los pedidos de
+// encender y de apagar esperan un poco más, para que el corte que se vea sea el del panel, con su motivo.
 export const CORTE_DE_ENCENDER_MS = 70_000;
+export const CORTE_DE_APAGAR_MS = 40_000;
 
 // Un pedido a M2 tal como lo guarda el panel para el detalle técnico (RNF-14.9): con el `Authorization` ya enmascarado y el `curl`
 // que lo repite, con `$TOKEN` en lugar del token. El más nuevo viene primero y son 50 como mucho.
@@ -109,7 +111,7 @@ export function crearApiPanel({ fetch: pedirHttp = (...args) => globalThis.fetch
       pedir<ResultadoSimultaneo>('POST', '/panel/demo/altas-simultaneas', senal, { n, modo }),
     lanzarCalificacionesSimultaneas: (n: number, senal?: AbortSignal) => pedir<ResultadoSimultaneo>('POST', '/panel/demo/calificaciones-simultaneas', senal, { n }),
     probarRestriccionDelPuntaje: (senal?: AbortSignal) => pedir<ResultadoRestriccion>('POST', '/panel/demo/restriccion-puntaje', senal, {}),
-    apagarBase: (senal?: AbortSignal) => pedir<{ ejecutado: true }>('POST', '/panel/demo/base/apagar', senal, {}),
+    apagarBase: (senal?: AbortSignal) => pedir<{ ejecutado: true }>('POST', '/panel/demo/base/apagar', senal, {}, CORTE_DE_APAGAR_MS),
     encenderBase: (senal?: AbortSignal) => pedir<{ ejecutado: true }>('POST', '/panel/demo/base/encender', senal, {}, CORTE_DE_ENCENDER_MS),
     // El sondeo de la salud en vivo: no queda en el detalle técnico.
     consultarSaludDeM2: (senal?: AbortSignal) => pedir<SaludDeM2>('GET', '/panel/demo/salud', senal),

@@ -1,4 +1,5 @@
 import type { ApiPanel } from '../api/panel.js';
+import { SeccionBase } from '../componentes/seccion-base.js';
 import { SeccionCasos } from '../componentes/seccion-casos.js';
 import { SeccionIntegridad } from '../componentes/seccion-integridad.js';
 import { Titulo } from '../componentes/titulo.js';
@@ -11,7 +12,7 @@ import estilos from './demostracion.module.css';
 type Props = { entorno: EntornoDeCasos; apiPanel: ApiPanel; casos?: readonly Caso[] };
 
 // La vista «Demostración» (spec 072, RNF-07.3, RNF-07.4, RNF-07.6, RNF-08.2 a RNF-08.4, RNF-05.5): los casos de la API de M2, las
-// pruebas de integridad y, más abajo (T16), el control de la base de datos. Las secciones comparten un cerrojo: mientras una prueba
+// pruebas de integridad y el control de la base de datos (RNF-13.4, RNF-13.6). Las secciones comparten un cerrojo: mientras una prueba
 // corre, ninguna otra arranca, porque comparten M2 y el M6 simulado.
 export function Demostracion({ entorno, apiPanel, casos = CASOS }: Props) {
   const { cerrojo, activa } = usarCerrojo();
@@ -26,6 +27,7 @@ export function Demostracion({ entorno, apiPanel, casos = CASOS }: Props) {
         </p>
         <SeccionCasos entorno={entorno} casos={casos} cerrojo={cerrojo} activa={activa} />
         <SeccionIntegridad apiPanel={apiPanel} cerrojo={cerrojo} activa={activa} />
+        <SeccionBase apiPanel={apiPanel} cerrojo={cerrojo} activa={activa} />
       </div>
     </>
   );

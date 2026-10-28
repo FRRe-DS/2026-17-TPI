@@ -1,0 +1,77 @@
+/* La sección «Base de datos»: los dos botones arriba y, debajo, la salud de M2 en una franja con el color de cómo está, o el motivo
+   por el que no se puede usar Docker. El color acompaña al texto, que ya dice el código (RNF-15.3 de la 071). */
+.control {
+  display: grid;
+  gap: var(--e-3);
+  min-width: 0;
+  padding: var(--e-3);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+  box-shadow: var(--sombra-hoja);
+}
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2) var(--e-3);
+}
+
+.neutro,
+.bien,
+.mal,
+.sinDocker {
+  display: grid;
+  gap: var(--e-1);
+  padding: 10px var(--e-3);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio);
+  font-size: var(--t-menu);
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease;
+}
+
+.neutro {
+  color: var(--tinta-suave);
+}
+
+.bien {
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: var(--ok-fondo);
+  color: var(--ok);
+}
+
+.mal {
+  border-color: color-mix(in srgb, var(--mal) 40%, transparent);
+  border-left: 3px solid var(--mal);
+  background: var(--mal-fondo);
+  color: var(--mal);
+}
+
+.sinDocker {
+  border-color: color-mix(in srgb, var(--aviso) 35%, transparent);
+  border-left: 3px solid var(--aviso);
+  background: var(--aviso-fondo);
+  color: var(--aviso);
+}
+
+.texto {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.comoActivar {
+  color: var(--tinta);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neutro,
+  .bien,
+  .mal,
+  .sinDocker {
+    transition: none;
+  }
+}

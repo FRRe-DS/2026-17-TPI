@@ -9,6 +9,8 @@ import { crearApiPanel, type ApiPanel } from '../../../panel/cliente/src/api/pan
 import type { UltimoPedido } from '../../../panel/cliente/src/logica/ultimo-pedido.js';
 import { crearViajesSimulados, type FuenteDeViajes } from '../../../panel/cliente/src/fuentes/viajes-simulados.js';
 import { construirAppControl } from '../../../panel/m6-simulado/app-control.js';
+import { crearBaseDemo } from '../../../panel/servidor/demo/base.js';
+import { ComandoDockerFallido } from '../../../panel/servidor/demo/docker.js';
 import { construirAppM6 } from '../../../panel/m6-simulado/app-m6.js';
 import { crearEstadoM6 } from '../../../panel/m6-simulado/estado.js';
 import { crearPuertoApi } from '../../../panel/m6-simulado/puerto-api.js';
@@ -16,6 +18,7 @@ import { CONFIG } from '../../ayudas/app.js';
 import { puertoLibre } from '../../ayudas/arranque.js';
 import { crearBaseDePrueba } from '../../ayudas/bd.js';
 import { descartarLogs } from '../../ayudas/logs.js';
+import { crearProxy, type ProxyDeBase } from '../../ayudas/proxy.js';
 import { escuchar } from '../../ayudas/socket.js';
 import { CONFIG_PANEL, crearAppPanel } from './app.js';
 import { CONFIG_M6 } from './m6.js';
@@ -28,6 +31,19 @@ export const REINTENTAR_DESPUES_S = 7;
 // El panel de verdad para las pruebas de cada pantalla: PostgreSQL real, M2 con el contrato y los manejadores del servicio, y el
 // servidor del panel escuchando en un puerto. `api` es el `crearApiM2` del navegador, que pide al panel como lo haría Chrome (con
 // `Origin` en lo que no es consulta); `pool` sirve para ver o preparar la base.
+// Docker de mentira para la sección «Base de datos» (spec 072, T16): la base de M2 está detrás de un proxy TCP; «apagar» lo cierra
+// (M2 pierde la base y su salud da 503) y «encender» lo reabre, sin tocar el contenedor que comparten todas las pruebas.
+export type DockerDeMentira = {
+  // Lo que pidió el panel, en orden: 'apagar' o 'encender'.
+  llamadas: string[];
+  // El próximo «encender» no reabre el proxy: M2 no vuelve a tener base («no volvió»).
+  noVolver: () => void;
+  // El próximo comando falla con este mensaje, como cuando Docker lo rechaza.
+  fallar: (mensaje: string) => void;
+  // La base de M2 otra vez a mano, sin llamadas anotadas y sin fallas pendientes. Va después de cada prueba.
+  reponer: () => Promise<void>;
+};
+
 export type PanelConM2 = {
   pool: PoolBd;
   // El M6 simulado de punta a punta (API y canal de control), con la fuente de viajes que usa el navegador.
@@ -53,14 +69,60 @@ export type PanelConM2 = {
   // Detiene M2 y lo vuelve a levantar en el mismo puerto, con la misma base: «M2 no responde» y la recuperación (RNF-15.4).
   detenerM2: () => Promise<void>;
   arrancarM2: () => Promise<void>;
+  // Con `dockerDeMentira`, el Docker que ve el panel; sin la opción, el panel no tiene Docker (como en su contenedor).
+  docker: DockerDeMentira;
   cerrar: () => Promise<void>;
 };
 
+function crearDockerDeMentira(proxy: ProxyDeBase | undefined) {
+  const llamadas: string[] = [];
+  let volver = true;
+  let falla: string | undefined;
+  const disponible = { disponible: true };
+
+  const comando = async (nombre: 'apagar' | 'encender', hacer: () => Promise<void>) => {
+    llamadas.push(nombre);
+    if (falla !== undefined) {
+      const mensaje = falla;
+      falla = undefined;
+      throw new ComandoDockerFallido(mensaje);
+    }
+    await hacer();
+  };
+
+  const docker: DockerDeMentira = {
+    llamadas,
+    noVolver: () => void (volver = false),
+    fallar: (mensaje) => void (falla = mensaje),
+    async reponer() {
+      llamadas.length = 0;
+      volver = true;
+      falla = undefined;
+      await proxy?.reabrir();
+    },
+  };
+  const control = {
+    disponibilidad: async () => disponible,
+    apagar: () => comando('apagar', async () => proxy?.cerrar()),
+    encender: () =>
+      comando('encender', async () => {
+        if (volver) await proxy?.reabrir();
+      }),
+  };
+  return { docker, control };
+}
+
 // `directorioCliente`: la carpeta del cliente compilado, para que el panel también sirva las pantallas (prueba en navegador).
-export async function levantarPanelConM2(opciones: { directorioCliente?: string } = {}): Promise<PanelConM2> {
+// `dockerDeMentira`: el panel tiene Docker y la base de M2 se puede apagar y encender (T16).
+export async function levantarPanelConM2(opciones: { directorioCliente?: string; dockerDeMentira?: boolean } = {}): Promise<PanelConM2> {
   const base = await crearBaseDePrueba();
   await migrar({ urlBd: base.urlBd, tiempoBdMs: 2000 });
   const pool = crearPool({ urlBd: base.urlBd, tiempoBdMs: 2000 });
+  // Con Docker de mentira, M2 llega a la base por el proxy; `pool` (el de la prueba) y el panel, directo.
+  const proxy = opciones.dockerDeMentira === true ? await crearProxy(base.urlBd) : undefined;
+  const poolM2 = proxy === undefined ? pool : crearPool({ urlBd: proxy.urlBd, tiempoBdMs: 2000 });
+  const mentira = crearDockerDeMentira(proxy);
+  const baseDemo = proxy === undefined ? undefined : crearBaseDemo(base.urlBd);
 
   const estadoM6 = crearEstadoM6();
   const puertoApiM6 = await puertoLibre();
@@ -90,7 +152,7 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
     reintentarDespuesS: REINTENTAR_DESPUES_S,
   };
   const contrato = cargarContrato();
-  const construir = () => construirM2({ config: configM2, pool, contrato, manejadores, flujoLog: descartarLogs });
+  const construir = () => construirM2({ config: configM2, pool: poolM2, contrato, manejadores, flujoLog: descartarLogs });
   let m2: ReturnType<typeof construirM2> | undefined = construir();
   const puertoM2 = await escuchar(m2);
 
@@ -100,6 +162,7 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
     // La vista de demostración (spec 072) cuenta en la base de M2; Docker queda apagado: ninguna prueba toca los contenedores.
     config: { puerto, urlM2: `http://127.0.0.1:${puertoM2}`, urlM6Control: `http://127.0.0.1:${puertoControlM6}`, urlBd: base.urlBd, docker: false },
     directorioCliente: opciones.directorioCliente,
+    demo: baseDemo === undefined ? undefined : { base: baseDemo, docker: mentira.control },
   });
   await panel.listen({ port: puerto, host: '127.0.0.1' });
   const origen = `http://127.0.0.1:${puerto}`;
@@ -138,11 +201,15 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
       m2 = construir();
       await m2.listen({ port: puertoM2, host: '127.0.0.1' });
     },
+    docker: mentira.docker,
     async cerrar() {
       await panel.close();
       await m2?.close();
       await controlM6.close();
       await apiM6.cerrar();
+      await baseDemo?.cerrar();
+      if (poolM2 !== pool) await poolM2.end();
+      await proxy?.terminar();
       await pool.end();
       await base.borrar();
     },

@@ -1,3 +1,5 @@
+import type { Disponibilidad } from '../api/panel.js';
+
 // La salud de M2 en vivo al apagar y encender la base (spec 072, T13, RNF-13.4). Un reductor puro: el temporizador es
 // `hooks/usar-sondeo` y el pedido es `consultarSaludDeM2`. La secuencia:
 //   quieto → apagando → observando(último estado) → encendiendo(desde) → recuperada | no-volvio
@@ -76,9 +78,51 @@ export function textoDeSalud(estado: EstadoSalud): string {
     case 'encendiendo':
       if (estado.ultimo === undefined) return `Encendiendo la base. Esperando a que M2 vuelva a responder 200 (hasta ${SEGUNDOS} s)…`;
       return `Encendiendo la base. ${estado.ultimo === null ? 'M2 no responde' : `M2 responde ${estado.ultimo}`}; esperando el 200 (hasta ${SEGUNDOS} s)…`;
-    case 'recuperada':
-      return estado.tardoMs < 1000 ? 'M2 volvió a responder 200 en menos de 1 s.' : `M2 volvió a responder 200 a los ${Math.round(estado.tardoMs / 1000)} s.`;
+    case 'recuperada': {
+      if (estado.tardoMs < 1000) return 'M2 volvió a responder 200 en menos de 1 s.';
+      const segundos = Math.round(estado.tardoMs / 1000);
+      return segundos === 1 ? 'M2 volvió a responder 200 al segundo.' : `M2 volvió a responder 200 a los ${segundos} s.`;
+    }
     case 'no-volvio':
       return `M2 no volvió a responder 200 en ${SEGUNDOS} s (último estado: ${comoDijo(estado.ultimo)}).`;
   }
+}
+
+type Boton = { esperando: boolean; deshabilitado: boolean };
+export type ModeloControlBase = {
+  apagar: Boton;
+  encender: Boton;
+  // Por qué no se pueden usar los dos botones, o que todavía se está averiguando. Sin aviso, se usan.
+  aviso?: { texto: string; comoActivar?: string };
+  // Cómo está M2: `bien` si respondió 200, `mal` si respondió otra cosa o nada, `neutro` si todavía no se sabe.
+  tono: 'neutro' | 'bien' | 'mal';
+};
+
+function tonoDe(estado: EstadoSalud): ModeloControlBase['tono'] {
+  if (estado.fase === 'recuperada') return 'bien';
+  if (estado.fase === 'no-volvio') return 'mal';
+  if (estado.fase !== 'observando' && estado.fase !== 'encendiendo') return 'neutro';
+  if (estado.ultimo === undefined) return 'neutro';
+  return estado.ultimo === 200 ? 'bien' : 'mal';
+}
+
+// Los botones de la sección «Base de datos» (spec 072, T16, RNF-13.4, RNF-13.6, RNF-15.6). `docker` es `undefined` mientras se
+// consulta; `activa` es la clave del cerrojo de la vista. «Apagar» espera mientras se apaga y «Encender», hasta que M2 vuelve o se
+// cumplen los 60 s, también después de que el comando terminó. Otra ejecución de la vista los deshabilita sin espera.
+export function modeloControlBase(docker: Disponibilidad | undefined, salud: EstadoSalud, activa: string | undefined): ModeloControlBase {
+  const tono = tonoDe(salud);
+  const quietos = { esperando: false, deshabilitado: true };
+  if (docker === undefined) return { apagar: quietos, encender: quietos, aviso: { texto: 'Consultando si el panel puede usar Docker…' }, tono };
+  if (!docker.disponible) {
+    const texto = `Apagar y encender la base no están disponibles${docker.motivo === undefined ? '' : `: ${docker.motivo}`}.`;
+    return { apagar: quietos, encender: quietos, aviso: docker.comoActivar === undefined ? { texto } : { texto, comoActivar: docker.comoActivar }, tono };
+  }
+  const apagando = activa === 'base:apagar' || salud.fase === 'apagando';
+  const encendiendo = activa === 'base:encender' || salud.fase === 'encendiendo';
+  const ocupada = activa !== undefined || apagando || encendiendo;
+  return {
+    apagar: { esperando: apagando, deshabilitado: ocupada },
+    encender: { esperando: encendiendo, deshabilitado: ocupada },
+    tono,
+  };
 }

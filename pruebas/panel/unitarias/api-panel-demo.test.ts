@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ErrorDeApi } from '../../../panel/cliente/src/api/errores.js';
-import { crearApiPanel, CORTE_DE_ENCENDER_MS } from '../../../panel/cliente/src/api/panel.js';
+import { crearApiPanel, CORTE_DE_APAGAR_MS, CORTE_DE_ENCENDER_MS } from '../../../panel/cliente/src/api/panel.js';
 
 // Las funciones de `api/panel.ts` para las rutas `/panel/demo/…` (spec 072, T13): una por ruta, con el corte de 10 s de la 071 y
 // 70 s para encender la base. Los errores son los mismos de siempre: `ErrorDeApi`. Los `POST` sin campos mandan `{}`: los esquemas
@@ -83,8 +83,9 @@ describe('los errores del panel', () => {
 describe('los cortes de tiempo', () => {
   const colgado = ({ init }: Llamada) => new Promise<Response>((_listo, rechazar) => init.signal?.addEventListener('abort', () => rechazar(new DOMException('abortado', 'AbortError'))));
 
-  it('encender espera hasta 70 s, y el resto el corte de siempre', () => {
+  it('encender espera hasta 70 s y apagar hasta 40 s (el panel espera 60 s y 30 s a docker compose); el resto, el corte de siempre', () => {
     expect(CORTE_DE_ENCENDER_MS).toBe(70_000);
+    expect(CORTE_DE_APAGAR_MS).toBe(40_000);
   });
 
   it('las demás rutas se cortan con el tiempo de la API (10 s por defecto)', async () => {
@@ -93,7 +94,10 @@ describe('los cortes de tiempo', () => {
     await expect(crearApiPanel({ fetch: falso, tiempoMaximoMs: 20 }).consultarSaludDeM2()).rejects.toMatchObject({ sinRespuesta: true });
   });
 
-  it('encender no se corta con el tiempo de las demás: usa el suyo', async () => {
+  it.each([
+    ['encender', (api: ReturnType<typeof crearApiPanel>) => api.encenderBase()],
+    ['apagar', (api: ReturnType<typeof crearApiPanel>) => api.apagarBase()],
+  ])('%s no se corta con el tiempo de las demás: usa el suyo', async (_nombre, llamar) => {
     let cortado = false;
     const { falso } = panelDeMentira(async ({ init }) => {
       init.signal?.addEventListener('abort', () => (cortado = true));
@@ -101,7 +105,7 @@ describe('los cortes de tiempo', () => {
       return json({ ejecutado: true });
     });
 
-    const resultado = await crearApiPanel({ fetch: falso, tiempoMaximoMs: 20 }).encenderBase();
+    const resultado = await llamar(crearApiPanel({ fetch: falso, tiempoMaximoMs: 20 }));
 
     expect(resultado).toEqual({ ejecutado: true });
     expect(cortado).toBe(false);

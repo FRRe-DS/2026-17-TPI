@@ -4,6 +4,7 @@ import {
   ESPERA_MAXIMA_MS,
   estadoInicial,
   INTERVALO_DE_SONDEO_MS,
+  modeloControlBase,
   reducir,
   textoDeSalud,
   type EstadoSalud,
@@ -160,9 +161,90 @@ describe('textoDeSalud: lo que dice la vista', () => {
     [{ fase: 'encendiendo', desde: T0, ultimo: null }, 'Encendiendo la base. M2 no responde; esperando el 200 (hasta 60 s)…'],
     [{ fase: 'recuperada', tardoMs: 6200 }, 'M2 volvió a responder 200 a los 6 s.'],
     [{ fase: 'recuperada', tardoMs: 400 }, 'M2 volvió a responder 200 en menos de 1 s.'],
+    [{ fase: 'recuperada', tardoMs: 1300 }, 'M2 volvió a responder 200 al segundo.'],
     [{ fase: 'no-volvio', ultimo: 503 }, 'M2 no volvió a responder 200 en 60 s (último estado: 503).'],
     [{ fase: 'no-volvio', ultimo: null }, 'M2 no volvió a responder 200 en 60 s (último estado: sin respuesta).'],
   ] as [EstadoSalud, string][])('%j', (estado, texto) => {
     expect(textoDeSalud(estado)).toBe(texto);
+  });
+});
+
+describe('modeloControlBase: los botones de la sección «Base de datos» (T16, RNF-13.4, RNF-13.6, RNF-15.6)', () => {
+  const DISPONIBLE = { disponible: true };
+  const QUIETO: EstadoSalud = { fase: 'quieto' };
+  const listo = { esperando: false, deshabilitado: false };
+  const apagado = { esperando: false, deshabilitado: true };
+
+  it('mientras se consulta si hay Docker, los dos deshabilitados y lo dice', () => {
+    const modelo = modeloControlBase(undefined, QUIETO, undefined);
+
+    expect(modelo.apagar).toEqual(apagado);
+    expect(modelo.encender).toEqual(apagado);
+    expect(modelo.aviso).toEqual({ texto: 'Consultando si el panel puede usar Docker…' });
+  });
+
+  it('sin Docker, los dos deshabilitados con el motivo y cómo activarlos (RNF-13.6)', () => {
+    const modelo = modeloControlBase({ disponible: false, motivo: 'el panel corre en un contenedor', comoActivar: 'Levantá el panel en la máquina.' }, QUIETO, undefined);
+
+    expect(modelo.apagar).toEqual(apagado);
+    expect(modelo.encender).toEqual(apagado);
+    expect(modelo.aviso).toEqual({ texto: 'Apagar y encender la base no están disponibles: el panel corre en un contenedor.', comoActivar: 'Levantá el panel en la máquina.' });
+  });
+
+  it('sin Docker y sin motivo, igual lo explica', () => {
+    expect(modeloControlBase({ disponible: false }, QUIETO, undefined).aviso?.texto).toBe('Apagar y encender la base no están disponibles.');
+  });
+
+  it('con Docker y nada corriendo, los dos habilitados y sin aviso', () => {
+    const modelo = modeloControlBase(DISPONIBLE, QUIETO, undefined);
+
+    expect(modelo).toEqual({ apagar: listo, encender: listo, tono: 'neutro' });
+  });
+
+  it('apagando: «Apagar» espera y «Encender» queda deshabilitado', () => {
+    for (const [salud, activa] of [
+      [{ fase: 'apagando' }, 'base:apagar'],
+      [{ fase: 'apagando' }, undefined],
+    ] as [EstadoSalud, string | undefined][]) {
+      const modelo = modeloControlBase(DISPONIBLE, salud, activa);
+      expect(modelo.apagar).toEqual({ esperando: true, deshabilitado: true });
+      expect(modelo.encender).toEqual(apagado);
+    }
+  });
+
+  it('encendiendo: «Encender» espera hasta la respuesta de M2 (también después del comando) y «Apagar» queda deshabilitado', () => {
+    for (const activa of ['base:encender', undefined]) {
+      const modelo = modeloControlBase(DISPONIBLE, { fase: 'encendiendo', desde: T0, ultimo: 503 }, activa);
+      expect(modelo.encender).toEqual({ esperando: true, deshabilitado: true });
+      expect(modelo.apagar).toEqual(apagado);
+    }
+  });
+
+  it('otra ejecución de la vista en curso: los dos deshabilitados sin esperar (el cerrojo es de la vista)', () => {
+    const modelo = modeloControlBase(DISPONIBLE, QUIETO, 'caso:alta-201');
+
+    expect(modelo.apagar).toEqual(apagado);
+    expect(modelo.encender).toEqual(apagado);
+  });
+
+  it('con la base apagada se puede encender y también volver a apagar (no es un error, spec: casos límite)', () => {
+    const modelo = modeloControlBase(DISPONIBLE, { fase: 'observando', ultimo: 503 }, undefined);
+
+    expect(modelo.apagar).toEqual(listo);
+    expect(modelo.encender).toEqual(listo);
+  });
+
+  it.each([
+    [{ fase: 'quieto' }, 'neutro'],
+    [{ fase: 'apagando' }, 'neutro'],
+    [{ fase: 'observando', ultimo: undefined }, 'neutro'],
+    [{ fase: 'observando', ultimo: 503 }, 'mal'],
+    [{ fase: 'observando', ultimo: null }, 'mal'],
+    [{ fase: 'observando', ultimo: 200 }, 'bien'],
+    [{ fase: 'encendiendo', desde: T0, ultimo: 503 }, 'mal'],
+    [{ fase: 'recuperada', tardoMs: 1 }, 'bien'],
+    [{ fase: 'no-volvio', ultimo: 503 }, 'mal'],
+  ] as [EstadoSalud, string][])('el tono de la salud %j → %s', (salud, tono) => {
+    expect(modeloControlBase(DISPONIBLE, salud, undefined).tono).toBe(tono);
   });
 });

@@ -18,6 +18,8 @@ const entorno = {
 const apiPanel = {} as never;
 const dibujar = async () => renderToStaticMarkup(createElement(await cargar('pantallas/demostracion.tsx', 'Demostracion'), { entorno, apiPanel }));
 const botones = (html: string) => [...html.matchAll(/<button\b[^>]*>/g)].map((m) => m[0]);
+// El diálogo de «Apagar la base» está en la página aunque esté cerrado: sus botones no son de la vista.
+const fueraDelDialogo = (html: string) => html.replace(/<dialog\b[\s\S]*?<\/dialog>/g, '');
 
 describe('la vista «Demostración» al abrirla', () => {
   it('un solo <h1> «Demostración» y la sección «Casos»', async () => {
@@ -36,12 +38,31 @@ describe('la vista «Demostración» al abrirla', () => {
   });
 
   it('un botón «Ejecutar» por caso más «Ejecutar todo» y los cuatro de «Integridad», todos habilitados al abrir', async () => {
-    const html = await dibujar();
+    const html = fueraDelDialogo(await dibujar());
 
     const todos = botones(html);
-    expect(todos).toHaveLength(CASOS.length + 1 + 4);
-    expect(todos.some((b) => /disabled/.test(b))).toBe(false);
+    expect(todos).toHaveLength(CASOS.length + 1 + 4 + 2);
+    expect(todos.slice(0, -2).some((b) => /disabled/.test(b))).toBe(false);
     expect(html).toContain('Ejecutar todo');
+  });
+
+  it('la sección «Base de datos» al final: «Apagar» y «Encender» deshabilitados hasta saber si hay Docker (T16, RNF-13.6)', async () => {
+    const html = fueraDelDialogo(await dibujar());
+
+    expect(html).toMatch(/<h2 id="demo-base"[^>]*>Base de datos<\/h2>/);
+    expect(html.indexOf('id="demo-base"')).toBeGreaterThan(html.indexOf('id="demo-integridad"'));
+    const [apagar, encender] = botones(html).slice(-2);
+    expect(apagar).toMatch(/disabled/);
+    expect(encender).toMatch(/disabled/);
+    expect(html).toContain('Consultando si el panel puede usar Docker…');
+  });
+
+  it('«Apagar la base» pide confirmación en un diálogo cerrado al abrir la vista, que empieza en «Cancelar» (RNF-15.6)', async () => {
+    const html = await dibujar();
+
+    expect(html).toMatch(/<dialog\b(?![^>]*\bopen\b)[^>]*>/);
+    expect(html).toContain('>Apagar la base de M2</h2>');
+    expect(html).toMatch(/<button[^>]*autofocus=""[^>]*>Cancelar<\/button>/);
   });
 
   it('cada «Ejecutar» dice de qué caso es, para quien lee con lector de pantalla', async () => {

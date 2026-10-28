@@ -53,7 +53,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T15. Sección «Integridad».** RNF-08.2, RNF-08.3, RNF-08.4, RNF-05.5, RNF-15.6
   - Hecho cuando: la vista muestra las tres pruebas simultáneas con el campo N (por defecto 10, error junto al campo si no es válido) y «Probar la restricción del puntaje», cada una con `componentes/prueba-integridad` (conteo por código en una tabla que se desplaza dentro de su caja a 360 px, filas, esperado y veredicto, y el mensaje de PostgreSQL como texto); `pruebas/panel/integracion/pantalla-demostracion.test.ts` recorre las cuatro contra M2 real y la base; mirada en Chrome.
 
-- [ ] **T16. Sección «Base de datos».** RNF-13.4, RNF-13.6, RNF-15.6
+- [x] **T16. Sección «Base de datos».** RNF-13.4, RNF-13.6, RNF-15.6
   - Hecho cuando: `componentes/control-base` muestra «Apagar la base» (con confirmación de `dialogo-confirmar`; «Cancelar» no llama a nada) y «Encender la base» con la salud en vivo, o, sin Docker, los dos deshabilitados con el motivo y cómo activarlos y el resto de la vista utilizable; una prueba contra el panel con un Docker de mentira recorre apagar (se ve el `503`), encender (vuelve a `200`) y el caso «no volvió»; y se comprueba a mano con el panel en la máquina que apagar y encender la base real funcionan, con la evidencia en `guia.md`.
 
 ## Tramo D — Prueba en navegador y documentación
