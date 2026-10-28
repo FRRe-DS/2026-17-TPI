@@ -2,7 +2,44 @@
 
 ## Visión general
 
-(Se escribe al validar, en `072/V`.)
+**Qué se construyó.** Una vista más del panel, «Demostración» (`#/demostracion`), para que quien evalúa M2 vea en vivo lo que antes solo mostraban las pruebas: 37 casos de la API con su ✔ o ✘ contra el contrato, tres pruebas de que M2 no duplica datos cuando llegan muchos pedidos a la vez, la prueba de que la base rechaza un puntaje inválido por sí sola, y un control para apagar y encender la base mirando cómo responde M2. M2 no cambió: todo es del panel.
+
+**Recorrido de una prueba simultánea** (el camino más largo):
+1. `componentes/seccion-integridad.tsx:lanzar` valida N con `logica/integridad.ts:validarN` y toma el cerrojo de la vista (`logica/cerrojo.ts`).
+2. `api/panel.ts:lanzarAltasSimultaneas` hace `POST /panel/demo/altas-simultaneas` con el corte de 45 s.
+3. El hook de seguridad de la 071 (`panel/servidor/seguridad.ts`) rechaza `Host` u `Origin` ajenos; el esquema de `servidor/demo/rutas.ts` rechaza campos de más y N fuera de 2 a 50.
+4. `servidor/demo/concurrencia.ts:altasSimultaneas` lanza los N pedidos a la vez con `Promise.all` (`servidor/demo/m2-directo.ts`, 10 s cada uno, sin reintento) y después cuenta las filas con `servidor/demo/base.ts:contarClientes`.
+5. Vuelve el resultado; `logica/integridad.ts:armarConteo` y `veredictoSimultaneo` arman la tabla y el veredicto, y `componentes/prueba-integridad.tsx` lo dibuja.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisito |
+|---|---|---|
+| `logica/casos.ts`, `ejecutar-caso.ts`, `resultado.ts` | el catálogo de 37 casos, cómo se ejecuta cada uno y cómo se compara con lo esperado | RNF-07.3, 07.4, 07.6 |
+| `componentes/seccion-casos.tsx`, `resultado-caso.tsx` | la sección «Casos», «Ejecutar todo» y el resultado de cada uno | RNF-07.3, 07.4, 07.6, 19.4 |
+| `servidor/demo/concurrencia.ts`, `m2-directo.ts` | los pedidos simultáneos y su conteo | RNF-08.2, 08.3, 08.4 |
+| `servidor/demo/base.ts`, `restriccion.ts` | las acciones fijas contra la base de M2 | RNF-05.4, 05.5, 19.4 |
+| `servidor/demo/docker.ts`, `rutas.ts` | apagar y encender con Docker; las rutas `/panel/demo/…` | RNF-13.4, 13.6, 12.10 |
+| `logica/salud-en-vivo.ts`, `hooks/usar-sondeo.ts`, `componentes/seccion-base.tsx`, `control-base.tsx` | la salud de M2 cada 2 s y los botones de la base | RNF-13.4, 13.6, 15.6 |
+| `docker-compose.yml` (`bd-puente`), `ejemplo.env`, `servidor/config.ts` | el puente a la base solo en `127.0.0.1` con el perfil `panel` y las variables | RNF-04.8, 06.5 |
+
+**Decisiones clave** (el porqué está en `spec.md` y en `docs/adr/072-panel-base-y-docker.md`): el panel se conecta a la base con una lista fija de acciones y no ejecuta `psql` dentro del contenedor (alternativa descartada: no funcionaría con el panel en contenedor); apagar y encender solo andan con el panel en la máquina, porque dar el socket de Docker al contenedor sería darle control de toda la máquina; «Ejecutar todo» no apaga la base; cada corrida crea sus propios datos, así que se puede repetir.
+
+**Conceptos que conviene entender.** *Idempotencia*: repetir una alta con la misma `Idempotency-Key` devuelve la misma respuesta y no crea otra fila. *Restricción única*: aunque dos altas con claves distintas lleguen juntas, la base deja pasar una sola (por eso un `201` y el resto `409`). *Restricción `CHECK`*: la base misma rechaza un puntaje fuera de 1 a 5. *Cerrojo*: mientras algo corre en la vista, ningún otro botón arranca, porque todo comparte M2 y el M6 simulado. *Salud*: `GET /health` de M2 da `200` con la base y `503` sin ella.
+
+**Cómo probarlo.** `docker compose up -d --build --wait && docker compose --profile panel up -d --build --wait m6 bd-puente`, después `npm run panel` y abrir <http://localhost:8083/#/demostracion>. Sin la interfaz:
+```bash
+P=http://127.0.0.1:8083
+curl -s $P/panel/demo/estado
+curl -s -X POST -H 'content-type: application/json' -H "origin: $P" -d '{"n":10,"modo":"claves-distintas"}' $P/panel/demo/altas-simultaneas
+```
+La segunda debe dar un `201`, nueve `409` y `"filas": 1`. Sin el `Origin` el panel responde `403`. Al terminar: `docker compose --profile panel down`.
+
+**Para comprobar que se entendió.**
+1. ¿Por qué las pruebas simultáneas salen del servidor del panel y no del navegador?
+2. Con claves distintas hay un solo `201`: ¿qué lo garantiza, el código de M2 o la base?
+3. ¿Qué pasa con la transacción de «Probar la restricción» si el panel se cae a mitad?
+4. ¿Por qué «Apagar la base» no anda con el panel en su contenedor y qué dice la vista en ese caso?
+5. ¿Para qué sirve el cerrojo compartido y qué podría pasar sin él?
 
 ## Tareas
 
