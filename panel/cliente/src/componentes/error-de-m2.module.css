@@ -1,0 +1,77 @@
+/* El rechazo entra con un temblor corto, una vez: se distingue de un aviso de lo hecho sin tener que leerlo. */
+.error {
+  padding: var(--e-3);
+  border: 1px solid color-mix(in srgb, var(--mal) 40%, transparent);
+  border-left: 3px solid var(--mal);
+  border-radius: var(--radio);
+  background: var(--mal-fondo);
+  color: var(--tinta);
+  font-size: var(--t-menu);
+  animation: temblar 360ms var(--salida);
+}
+
+@keyframes temblar {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translateX(-5px);
+  }
+  45% {
+    transform: translateX(4px);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.titulo {
+  color: var(--mal);
+  font-weight: 650;
+}
+
+.explicacion {
+  margin-top: var(--e-1);
+}
+
+.filas {
+  display: grid;
+  gap: var(--e-1);
+  margin-top: var(--e-2);
+}
+
+/* El nombre arriba en el teléfono, al costado desde 600 px. El valor es dato de M2: monoespaciada y cortable (un detalle puede
+   ser largo y un `type` es una ruta sin espacios). */
+.fila {
+  display: grid;
+  align-items: baseline;
+  gap: 0 var(--e-3);
+}
+
+.fila dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: var(--t-detalle) / 1.45 var(--mono);
+}
+
+.acciones {
+  margin-top: var(--e-3);
+}
+
+@media (min-width: 600px) {
+  .fila {
+    grid-template-columns: 8rem minmax(0, 1fr);
+  }
+}
+
+/* La frase de la pantalla va primero y más grande que el título de M2: es lo que la persona lee; lo de M2 es para quien busca. */
+.mensaje {
+  margin-bottom: var(--e-1);
+  font-size: var(--t-cuerpo);
+  font-weight: 650;
+}

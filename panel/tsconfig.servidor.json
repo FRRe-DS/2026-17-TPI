@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/servidor.tsbuildinfo"
+  },
+  "include": ["servidor", "m6-simulado"]
+}

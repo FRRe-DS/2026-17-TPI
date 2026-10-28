@@ -1,0 +1,207 @@
+.lateral {
+  border-bottom: 1px solid var(--lateral-regla);
+  background: var(--lateral);
+  color: var(--lateral-texto);
+}
+
+.barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-3);
+  min-height: var(--encabezado-alto);
+  padding: var(--e-2) var(--e-3);
+}
+
+/* La marca, solo texto: «M2» en el acento, una línea fina y «Clientes». El grupo y el año van al pie del menú. */
+.marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.modulo {
+  color: var(--acento);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.nombre {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 650;
+}
+
+.nombre::before {
+  content: '';
+  width: 1px;
+  height: 18px;
+  background: var(--lateral-regla);
+}
+
+/* El pie del menú: quién lo hizo y para qué materia, sin competir con la marca. */
+.pie {
+  margin-top: var(--e-3);
+  padding: 12px 12px 0;
+  border-top: 1px solid var(--lateral-regla);
+  color: var(--lateral-suave);
+  font-size: var(--t-chica);
+}
+
+.alternar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--e-2);
+  min-width: var(--control);
+  min-height: var(--control);
+  padding: 0 var(--e-3) 0 var(--e-2);
+  border: 1px solid var(--lateral-regla);
+  border-radius: var(--radio);
+  background: var(--hoja);
+  color: var(--lateral-texto);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  box-shadow: var(--sombra-boton);
+  cursor: pointer;
+  transition:
+    background-color var(--rapido) ease,
+    transform var(--rapido) var(--salida);
+}
+
+.alternar:active {
+  transform: scale(0.97);
+  transition-duration: 100ms;
+}
+
+.icono {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+
+.lateral :focus-visible {
+  outline-color: var(--lateral-texto);
+}
+
+/* En el teléfono el menú está cerrado y se abre debajo de la barra, empujando la pantalla (no la tapa). */
+.menu {
+  display: none;
+  padding: 0 var(--e-3) var(--e-3);
+  border-top: 1px solid var(--lateral-regla);
+}
+
+.menu.abierto {
+  display: block;
+  transition:
+    opacity 200ms var(--salida),
+    transform 200ms var(--salida);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.seccion + .seccion {
+  margin-top: var(--e-2);
+}
+
+.titulo {
+  padding: var(--e-3) 12px 6px;
+  color: var(--lateral-suave);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.seccion ul {
+  display: grid;
+  gap: 2px;
+}
+
+.elemento {
+  display: flex;
+  align-items: center;
+  min-height: var(--control);
+  padding: 0 12px;
+  border-radius: var(--radio);
+  color: var(--lateral-texto);
+  font-size: var(--t-menu);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color var(--rapido) ease,
+    color var(--rapido) ease,
+    transform var(--rapido) var(--salida);
+}
+
+.elemento:active {
+  transform: scale(0.98);
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .alternar:hover,
+  .elemento:hover {
+    background: var(--lateral-hover);
+  }
+}
+
+/* La pantalla actual: una pestaña del color de las tarjetas, con el texto en el acento, como si saliera del menú hacia la
+   pantalla. */
+.elemento[aria-current='page'] {
+  background: var(--hoja);
+  color: var(--acento);
+  font-weight: 600;
+  box-shadow: var(--sombra-boton), 0 0 0 1px var(--lateral-regla);
+}
+
+@media (min-width: 960px) {
+  .lateral {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--lateral-regla);
+    border-bottom: 0;
+    scrollbar-color: var(--lateral-regla) var(--lateral);
+  }
+
+  .barra {
+    display: block;
+    min-height: 0;
+    margin: 0 var(--e-3);
+    padding: var(--e-4) 12px var(--e-3);
+  }
+
+  .alternar {
+    display: none;
+  }
+
+  /* En la notebook el pie queda abajo de todo, aunque el menú sea corto. */
+  .menu {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    padding: var(--e-1) var(--e-3) var(--e-4);
+    border-top: 0;
+  }
+
+  .seccion:last-of-type {
+    margin-bottom: var(--e-3);
+  }
+
+  .pie {
+    margin-top: auto;
+  }
+}

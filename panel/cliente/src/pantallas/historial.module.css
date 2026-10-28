@@ -1,0 +1,167 @@
+/* La hoja de viajes comparte la gramática de la de direcciones: filas separadas por una regla, el dato en monoespaciada. */
+.hoja {
+  max-width: 72rem;
+  margin-top: var(--e-4);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.lista {
+  display: grid;
+}
+
+.viaje {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  padding: var(--e-3);
+}
+
+.viaje + .viaje {
+  border-top: 1px solid var(--regla);
+}
+
+.contenido {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.nombre {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--e-2);
+  font-weight: 600;
+}
+
+.completado,
+.otro,
+.calificado,
+.sinCalificar {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--t-chica);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.completado,
+.calificado {
+  background: var(--acento-tenue);
+  color: var(--acento);
+}
+
+.otro,
+.sinCalificar {
+  border: 1px solid var(--regla);
+  color: var(--tinta-suave);
+}
+
+.trayecto {
+  overflow-wrap: anywhere;
+}
+
+.dato {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--e-3);
+  color: var(--tinta-suave);
+  font: var(--t-detalle) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.calificar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--regla);
+  background: var(--hoja);
+  border-radius: var(--radio);
+  color: var(--tinta);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .calificar:hover {
+    border-color: color-mix(in srgb, var(--acento) 40%, var(--regla));
+    color: var(--acento);
+  }
+}
+
+/* Para el lector de pantalla: «Calificar el viaje …»; a la vista alcanza con «Calificar» en la fila del viaje. */
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.vacia {
+  display: grid;
+  justify-items: start;
+  gap: var(--e-3);
+  padding: var(--e-3);
+}
+
+.volver {
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio);
+  background: var(--hoja);
+  color: var(--tinta);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+@media (min-width: 600px) {
+  .viaje,
+  .vacia {
+    padding-inline: var(--e-4);
+  }
+}
+
+/* Como el botón de contorno: se hunde al apretar y, con el ratón, sube un poco con la sombra más larga. */
+.calificar:active,
+.volver:active {
+  transform: scale(0.97);
+  box-shadow: none;
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .calificar:hover,
+  .volver:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
+  }
+
+  .calificar:hover:active,
+  .volver:hover:active {
+    transform: translateY(0) scale(0.97);
+  }
+}

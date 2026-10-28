@@ -1,0 +1,76 @@
+/* Lo hecho entra deslizándose apenas y la tilde se dibuja trazo a trazo: se nota que pasó algo sin interrumpir. */
+.hecho {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px var(--e-3);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+  border-radius: var(--radio);
+  background: var(--ok-fondo);
+  color: var(--ok);
+  font-size: var(--t-menu);
+  font-weight: 550;
+  animation: entrar var(--medio) var(--salida);
+}
+
+@keyframes entrar {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.99);
+  }
+}
+
+.hecho:empty {
+  display: none;
+}
+
+.icono {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  border-radius: 50%;
+  background: var(--ok);
+  fill: none;
+  stroke: var(--ok-fondo);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: entrar-icono 260ms var(--salida);
+}
+
+.icono path {
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+  animation: trazar 280ms 120ms var(--salida) forwards;
+}
+
+@keyframes entrar-icono {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+@keyframes trazar {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Sin movimiento, la tilde ya está dibujada. */
+@media (prefers-reduced-motion: reduce) {
+  .icono path {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Se lee pero no se ve. */
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

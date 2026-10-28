@@ -34,10 +34,21 @@ const DEL_SERVICIO = [
   'M2_REINTENTAR_DESPUES_S',
 ];
 const DE_LA_BASE = ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB'];
+// Spec 071: las del panel y las del M6 simulado. Las lee panel/servidor/config.ts, no el servicio.
+const DEL_PANEL = [
+  'PANEL_PUERTO',
+  'PANEL_ESCUCHA',
+  'PANEL_URL_M2',
+  'PANEL_URL_M2_PUBLICA',
+  'PANEL_URL_M6_CONTROL',
+  'M6_PUERTO',
+  'M6_PUERTO_CONTROL',
+  'M6_RETARDO_LENTO_MS',
+];
 
 describe('ejemplo.env (RNF-06.3)', () => {
-  it('trae todas las variables del servicio y de la base, y ninguna más', () => {
-    expect(entradas.map((entrada) => entrada.variable).sort()).toEqual([...DEL_SERVICIO, ...DE_LA_BASE].sort());
+  it('trae todas las variables del servicio, de la base y del panel, y ninguna más', () => {
+    expect(entradas.map((entrada) => entrada.variable).sort()).toEqual([...DEL_SERVICIO, ...DE_LA_BASE, ...DEL_PANEL].sort());
   });
 
   it('toda línea que no es comentario ni está vacía tiene la forma VARIABLE=${VARIABLE:-valor}', () => {

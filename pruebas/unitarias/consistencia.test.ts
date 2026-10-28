@@ -60,7 +60,7 @@ describe('engines.node (RNF-01.1)', () => {
   });
 });
 
-// Los dos proyectos de Vitest (RNF-07.1), tal como los declara vitest.config.ts: `include` dice qué pruebas son de cada uno
+// Los proyectos de Vitest (RNF-07.1, RNF-07.5), tal como los declara vitest.config.ts: `include` dice qué pruebas son de cada uno
 // y `globalSetup`, qué corre antes de ellas.
 type Proyecto = { test: { name: string; include: string[]; globalSetup?: string[] } };
 
@@ -73,9 +73,9 @@ const conBarras = (ruta: string) => ruta.replaceAll('\\', '/');
 const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco }).map(conBarras);
 const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
-describe('vitest.config.ts: unitarias e integracion (RNF-07.1)', () => {
-  it('declara los dos proyectos, en ese orden', () => {
-    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion']);
+describe('vitest.config.ts: unitarias, integracion y navegador (RNF-07.1, RNF-07.5)', () => {
+  it('declara los tres proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador']);
   });
 
   // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
@@ -86,28 +86,34 @@ describe('vitest.config.ts: unitarias e integracion (RNF-07.1)', () => {
     expect(existsSync(new URL('pruebas/ayudas/global.ts', raiz))).toBe(true);
   });
 
-  it('hay pruebas en los dos proyectos', () => {
-    for (const proyecto of proyectos) expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
+  // `navegador` queda fuera: sus pruebas (spec 071) corren con `npm run panel:navegador`, no con `npm test`.
+  it('hay pruebas en unitarias y en integracion', () => {
+    for (const proyecto of proyectos.filter((candidato) => candidato.test.name !== 'navegador')) {
+      expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
+    }
   });
 
-  // Un archivo fuera de los dos `include` no correría nunca y la suite seguiría en verde.
+  // Un archivo fuera de los `include` no correría nunca y la suite seguiría en verde.
   it('toda prueba de pruebas/ cae en un proyecto', () => {
     const cubiertas = new Set(proyectos.flatMap(archivosDe));
     expect(todasLasPruebas.filter((archivo) => !cubiertas.has(archivo))).toEqual([]);
   });
 
-  it('ninguna prueba cae en los dos proyectos', () => {
+  it('ninguna prueba cae en dos proyectos', () => {
     const repetidas = proyectos.flatMap(archivosDe).filter((archivo, i, todas) => todas.indexOf(archivo) !== i);
     expect(repetidas).toEqual([]);
   });
 
-  it('las de pruebas/integracion/ son de integracion, y las demás, de unitarias', () => {
-    const [unitarias, integracion] = proyectos;
-    const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
+  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, y las demás, de unitarias', () => {
+    const [unitarias, integracion, navegador] = proyectos;
     const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
-    const alReves = todasLasPruebas.filter((archivo) =>
-      archivo.startsWith('pruebas/integracion/') ? !deIntegracion.has(archivo) : !deUnitarias.has(archivo),
-    );
+    const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
+    const deNavegador = new Set(navegador ? archivosDe(navegador) : []);
+    const alReves = todasLasPruebas.filter((archivo) => {
+      if (/^pruebas\/(panel\/)?integracion\//.test(archivo)) return !deIntegracion.has(archivo);
+      if (archivo.startsWith('pruebas/panel/navegador/')) return !deNavegador.has(archivo);
+      return !deUnitarias.has(archivo);
+    });
     expect(alReves).toEqual([]);
   });
 });
@@ -223,7 +229,9 @@ describe('.dockerignore (RNF-04.2)', () => {
 });
 
 type ServicioCompose = {
-  build?: string;
+  build?: string | { context?: string; dockerfile?: string; target?: string };
+  profiles?: string[];
+  environment?: Record<string, string>;
   image?: string;
   env_file?: string | string[];
   init?: boolean;
@@ -239,8 +247,11 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   const m2 = compose.services?.['m2'];
   const bd = compose.services?.['bd'];
 
-  it('declara solo los servicios m2 y bd', () => {
-    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'm2']);
+  it('declara m2 y bd, y los dos del panel (spec 071) solo bajo el perfil panel', () => {
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'm2', 'm6', 'panel']);
+    expect(m2?.profiles).toBeUndefined();
+    expect(bd?.profiles).toBeUndefined();
+    for (const nombre of ['m6', 'panel']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
   });
 
   it('las imágenes tienen versión exacta, nunca latest', () => {
@@ -296,5 +307,124 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
     expect(prueba).toContain('$$POSTGRES_USER');
     expect(prueba).toContain('$$POSTGRES_DB');
     expect(bd?.healthcheck).toMatchObject({ interval: '2s', timeout: '2s', retries: 20 });
+  });
+});
+
+describe('panel/Dockerfile (spec 071, RNF-04.6)', () => {
+  const dockerfile = instruccionesDe(readFileSync(new URL('panel/Dockerfile', raiz), 'utf8'));
+  const etapas = dockerfile.filter((linea) => /^FROM\s/i.test(linea));
+  const imagenDe = (linea: string) => linea.split(/\s+/).slice(1).find((parte) => !parte.startsWith('--')) ?? '';
+  const delDockerfileDeM2 = instruccionesDe(readFileSync(new URL('Dockerfile', raiz), 'utf8'))
+    .filter((linea) => /^FROM\s/i.test(linea))
+    .map(imagenDe);
+
+  it('parte de la misma imagen con versión exacta que M2, y las otras dos etapas parten de la de producción', () => {
+    const externas = etapas.map(imagenDe).filter((imagen) => !['produccion'].includes(imagen));
+    expect(externas).toHaveLength(2);
+    expect(externas.filter((imagen) => !imagenExacta(imagen))).toEqual([]);
+    expect(new Set([...externas, ...delDockerfileDeM2]).size).toBe(1);
+  });
+
+  it('tiene los destinos m6-simulado y panel', () => {
+    expect(etapas.filter((linea) => /\sAS\s+(m6-simulado|panel)$/i.test(linea))).toHaveLength(2);
+  });
+
+  it('instala con npm ci y la etapa de producción solo lo de producción y sin scripts', () => {
+    const instalaciones = dockerfile.filter((linea) => /^RUN\s.*\bnpm\s+(ci|install|i|add)\b/i.test(linea));
+    expect(instalaciones).toHaveLength(2);
+    expect(instalaciones.filter((linea) => !/\bnpm\s+ci\b/.test(linea))).toEqual([]);
+    expect(instalaciones.filter((linea) => /--omit=dev\b/.test(linea) && /--ignore-scripts\b/.test(linea))).toHaveLength(1);
+  });
+
+  it('corre con el usuario node y arranca cada destino con node en forma exec', () => {
+    expect(dockerfile.filter((linea) => /^USER\s/i.test(linea))).toEqual(['USER node']);
+    expect(dockerfile.filter((linea) => /^CMD\s/i.test(linea))).toEqual([
+      'CMD ["node", "panel/dist/m6-simulado/main.js"]',
+      'CMD ["node", "panel/dist/servidor/main.js"]',
+    ]);
+  });
+
+  it('la imagen del M6 simulado no lleva el cliente compilado y la del panel sí', () => {
+    // Las instrucciones de la etapa llamada `nombre`, hasta el siguiente FROM.
+    const delDestino = (nombre: string) =>
+      dockerfile
+        .join('\n')
+        .split(/^(?=FROM\s)/m)
+        .find((etapa) => new RegExp(`^FROM\\s.*\\sAS\\s+${nombre}\\s*\\n`, 'i').test(`${etapa}\n`)) ?? '';
+    expect(delDestino('m6-simulado')).toContain('panel/dist/m6-simulado/main.js');
+    expect(delDestino('m6-simulado')).not.toContain('dist/cliente');
+    expect(delDestino('panel')).toContain('/app/panel/dist/cliente');
+  });
+});
+
+describe('panel/Dockerfile.dockerignore (spec 071, RNF-04.2)', () => {
+  const ignorados = readFileSync(new URL('panel/Dockerfile.dockerignore', raiz), 'utf8')
+    .split('\n')
+    .map((linea) => linea.trim())
+    .filter((linea) => linea !== '' && !linea.startsWith('#'));
+
+  it.each(['node_modules', 'panel/dist', '.git', 'ejemplo.env', '.env', 'pruebas', 'EN-CURSO.local.md'])('deja afuera %s', (ruta) => {
+    expect(ignorados).toContain(ruta);
+  });
+
+  it.each(['panel', 'contrato', 'package.json', 'package-lock.json', 'tsconfig.json'])('no deja afuera %s', (ruta) => {
+    expect(ignorados.filter((linea) => linea === ruta || linea === `${ruta}/` || linea === '*')).toEqual([]);
+  });
+});
+
+describe('docker-compose.yml: perfil panel (spec 071, RNF-04.6)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const panel = compose.services?.['panel'];
+  const m6 = compose.services?.['m6'];
+  const codigoDelChequeo = (servicio: typeof panel) => (servicio?.healthcheck?.test ?? []).slice(2).join(' ');
+
+  it('las imágenes llevan la versión de package.json', () => {
+    expect(panel?.image).toBe(`m2-panel:${String(paquete['version'])}`);
+    expect(m6?.image).toBe(`m2-m6-simulado:${String(paquete['version'])}`);
+  });
+
+  it('se construyen con panel/Dockerfile desde la raíz, cada uno con su destino, y leen ejemplo.env', () => {
+    expect(panel?.build).toEqual({ context: '.', dockerfile: 'panel/Dockerfile', target: 'panel' });
+    expect(m6?.build).toEqual({ context: '.', dockerfile: 'panel/Dockerfile', target: 'm6-simulado' });
+    expect([panel?.env_file].flat()).toEqual(['ejemplo.env']);
+    expect([m6?.env_file].flat()).toEqual(['ejemplo.env']);
+    expect(panel?.init).toBe(true);
+    expect(m6?.init).toBe(true);
+  });
+
+  it('el panel y el canal de control se publican solo en 127.0.0.1, y la API de M6 no se publica', () => {
+    expect(panel?.ports).toEqual(['127.0.0.1:${PANEL_PUERTO:-8083}:${PANEL_PUERTO:-8083}']);
+    expect(m6?.ports).toEqual(['127.0.0.1:${M6_PUERTO_CONTROL:-3007}:${M6_PUERTO_CONTROL:-3007}']);
+  });
+
+  it('dentro del contenedor el panel escucha en todas las interfaces y llama a M2 y al canal por el nombre del servicio', () => {
+    expect(panel?.environment).toMatchObject({
+      PANEL_ESCUCHA: '0.0.0.0',
+      PANEL_URL_M2: 'http://m2:${M2_PUERTO:-8082}',
+      PANEL_URL_M6_CONTROL: 'http://m6:${M6_PUERTO_CONTROL:-3007}',
+    });
+  });
+
+  it('el panel espera a que M2 y el M6 simulado estén sanos', () => {
+    expect(panel?.depends_on).toEqual({ m2: { condition: 'service_healthy' }, m6: { condition: 'service_healthy' } });
+  });
+
+  it('los chequeos son un GET con Node, sin $ de compose, en el puerto del contenedor', () => {
+    for (const [servicio, ruta, variable] of [
+      [panel, '/salud-panel', 'process.env.PANEL_PUERTO'],
+      [m6, '/control/estado', 'process.env.M6_PUERTO_CONTROL'],
+    ] as const) {
+      expect(servicio?.healthcheck?.test?.slice(0, 2)).toEqual(['CMD', 'node']);
+      const codigo = codigoDelChequeo(servicio);
+      expect(codigo).toContain('fetch(');
+      expect(codigo).toContain(ruta);
+      expect(codigo).toContain(variable);
+      expect(codigo).not.toContain('$');
+    }
+  });
+
+  it('el chequeo del M6 simulado mira el canal de control y no la API, que el modo caído cierra', () => {
+    expect(codigoDelChequeo(m6)).not.toContain('M6_PUERTO\'');
+    expect(codigoDelChequeo(m6)).not.toContain('/api/');
   });
 });

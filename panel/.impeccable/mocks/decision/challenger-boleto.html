@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Billetera de pasajes</title>
+<style>
+:root{--cupon:#FBF7EF;--fondo:#EFE4D2;--marron:#4E3424;--tinta:#2A2018;--void:#A8322A;--carbon:#4B3A6B;--regla:#D9C9B0;--suave:#6E6052;--ok:#2F6B3A;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,"Noto Sans",sans-serif;--mono:ui-monospace,"SF Mono","Ubuntu Mono",Menlo,Consolas,monospace}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:var(--fondo);color:var(--tinta);font:15px/1.5 var(--sans)}
+header{height:64px;background:var(--marron);color:var(--cupon);display:flex;align-items:center;gap:28px;padding:0 40px}
+.marca{font-weight:800;font-size:17px;letter-spacing:.04em;text-transform:uppercase}
+nav{display:flex;gap:4px}
+nav a{color:#E9DCC6;text-decoration:none;padding:10px 12px;font-size:14px;border-bottom:2px solid transparent}
+nav a.on{color:#fff;border-color:#E9DCC6}
+.der{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:13px}
+.etq{border:1px dashed #E9DCC6;border-radius:999px;padding:3px 10px}
+main{padding:32px 40px;display:grid;grid-template-columns:1fr 380px;gap:32px}
+h1{font-size:28px;letter-spacing:-.01em}
+.sub{color:var(--suave);font-size:14px;margin:4px 0 20px}
+.cupon{display:grid;grid-template-columns:1fr 200px;background:var(--cupon);border:1px solid var(--regla);border-radius:8px;margin-bottom:16px;position:relative}
+.cupon .cuerpo{padding:18px 22px;border-right:2px dashed var(--regla)}
+.cab{display:flex;gap:12px;align-items:center;font:600 11px var(--mono);letter-spacing:.12em;color:var(--suave)}
+.ruta{font-size:20px;font-weight:700;margin:8px 0 4px}
+.datos{display:flex;gap:28px;font-size:13px;color:var(--suave)}
+.datos b{display:block;font:600 15px var(--mono);color:var(--carbon)}
+.talon{padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-start}
+.sello{font:700 13px var(--mono);letter-spacing:.14em;padding:5px 10px;border:2px solid;border-radius:4px;transform:rotate(-4deg)}
+.sello.ok{color:var(--ok)}.sello.en{color:var(--carbon)}.sello.void{color:var(--void)}
+.btn{font:600 14px var(--sans);border-radius:6px;padding:10px 16px;min-height:44px;border:1px solid var(--marron);background:var(--marron);color:var(--cupon)}
+.btn.sec{background:transparent;color:var(--marron)}
+.panel{background:var(--cupon);border:1px solid var(--regla);border-radius:8px;padding:20px}
+.panel h2{font:600 12px var(--mono);letter-spacing:.12em;color:var(--suave);margin-bottom:12px}
+.fila{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--regla);font-size:14px}
+.fila span:last-child{font:13px var(--mono)}
+footer{position:absolute;bottom:0;left:0;right:0;height:52px;background:var(--tinta);color:#E9DCC6;display:flex;align-items:center;gap:20px;padding:0 40px;font:13px var(--mono)}
+</style></head><body>
+<header>
+  <span class="marca">M2 · Clientes</span>
+  <nav><a href="#">Perfil</a><a href="#">Direcciones</a><a href="#">Preferencias</a><a class="on" href="#">Historial</a><a href="#">Calificaciones</a><a href="#">Cuenta</a><a href="#">Técnico</a></nav>
+  <div class="der"><span class="etq">simulado, pendiente de M1</span><span class="etq">simulado, pendiente de M6</span><b>CLIENTE · Ana Pérez</b></div>
+</header>
+<main>
+  <section>
+    <h1>Historial de viajes</h1>
+    <p class="sub">2 viajes · página 1 de 1 · datos del M6 simulado</p>
+    <article class="cupon"><div class="cuerpo"><div class="cab">CUPÓN 01 · VIAJE 7d44…1c10</div><p class="ruta">Av. Sarmiento 1234 → Terminal de Ómnibus</p><div class="datos"><span>Fecha<b>14/10 18:20</b></span><span>Conductor<b>0b1c…3d4e</b></span><span>Estado<b>COMPLETED</b></span></div></div>
+      <div class="talon"><span class="sello ok">CALIFICADO</span><button class="btn sec">Ver calificación</button></div></article>
+    <article class="cupon"><div class="cuerpo"><div class="cab">CUPÓN 02 · VIAJE 9a1e…77b2</div><p class="ruta">Plaza 25 de Mayo → UTN Facultad Regional</p><div class="datos"><span>Fecha<b>27/10 12:05</b></span><span>Conductor<b>0b1c…3d4e</b></span><span>Estado<b>IN_PROGRESS</b></span></div></div>
+      <div class="talon"><span class="sello en">EN CURSO</span><button class="btn" disabled>Calificar</button></div></article>
+  </section>
+  <aside class="panel"><h2>ESTADO DE CUENTA</h2><div class="fila"><span>Estado</span><span>ACTIVO</span></div><div class="fila"><span>Bloqueo 2a9f…</span><span class="sello void">LEVANTADO</span></div><div class="fila"><span>Levantado por</span><span>operador-1</span></div></aside>
+</main>
+<footer>GET /api/v1/clientes/3f2b…5a6b/viajes · 200 · 112 ms · X-Request-Id panel-7c20e1</footer>
+</body></html>

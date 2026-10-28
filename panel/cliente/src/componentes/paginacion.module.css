@@ -1,0 +1,75 @@
+.paginacion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--e-2) var(--e-3);
+  padding: var(--e-3);
+  border-top: 1px solid var(--regla);
+}
+
+.texto {
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+  line-height: 1.4;
+}
+
+.botones {
+  display: flex;
+  gap: var(--e-2);
+}
+
+.boton {
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio);
+  background: var(--hoja);
+  color: var(--tinta);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+.boton:disabled {
+  border-color: var(--regla);
+  color: var(--tinta-suave);
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .boton:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--acento) 40%, var(--regla));
+    color: var(--acento);
+  }
+}
+
+@media (min-width: 600px) {
+  .paginacion {
+    padding-inline: var(--e-4);
+  }
+}
+
+/* Como el botón de contorno: se hunde al apretar y, con el ratón, sube un poco con la sombra más larga. */
+.boton:not(:disabled):active {
+  transform: scale(0.97);
+  box-shadow: none;
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .boton:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
+  }
+
+  .boton:not(:disabled):hover:active {
+    transform: translateY(0) scale(0.97);
+  }
+}

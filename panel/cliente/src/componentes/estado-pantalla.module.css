@@ -1,0 +1,30 @@
+.cargando {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  min-height: var(--control);
+  color: var(--tinta-suave);
+}
+
+.giro {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--regla);
+  border-top-color: var(--acento);
+  border-radius: 50%;
+  animation: girar 700ms linear infinite;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Un vacío conserva su lugar: la hoja sigue ahí, con una frase de qué falta y por qué. */
+.vacio {
+  padding: var(--e-4);
+  border: 1px dashed var(--regla);
+  border-radius: var(--radio-hoja);
+  color: var(--tinta-suave);
+}

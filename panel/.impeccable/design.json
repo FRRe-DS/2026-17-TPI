@@ -1,0 +1,311 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-28T03:21:47+00:00",
+  "title": "Design System: M2 · Clientes",
+  "extensions": {
+    "colorMeta": {
+      "papel": {
+        "role": "neutral",
+        "displayName": "Papel verdoso",
+        "canonical": "#f3f6f4",
+        "tonalRamp": [
+          "oklch(15% 0.006 157.2)",
+          "oklch(25% 0.007 157.2)",
+          "oklch(35% 0.008 157.2)",
+          "oklch(45% 0.008 157.2)",
+          "oklch(60% 0.008 157.2)",
+          "oklch(75% 0.007 157.2)",
+          "oklch(87% 0.006 157.2)",
+          "oklch(95% 0.006 157.2)"
+        ]
+      },
+      "hoja": {
+        "role": "neutral",
+        "displayName": "Hoja",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.004 89.9)",
+          "oklch(25% 0.004 89.9)",
+          "oklch(35% 0.004 89.9)",
+          "oklch(45% 0.004 89.9)",
+          "oklch(60% 0.004 89.9)",
+          "oklch(75% 0.004 89.9)",
+          "oklch(87% 0.004 89.9)",
+          "oklch(95% 0.004 89.9)"
+        ]
+      },
+      "tinta": {
+        "role": "neutral",
+        "displayName": "Tinta",
+        "canonical": "#0f1f1a",
+        "tonalRamp": [
+          "oklch(15% 0.013 172.1)",
+          "oklch(25% 0.017 172.1)",
+          "oklch(35% 0.020 172.1)",
+          "oklch(45% 0.023 172.1)",
+          "oklch(60% 0.024 172.1)",
+          "oklch(75% 0.019 172.1)",
+          "oklch(87% 0.014 172.1)",
+          "oklch(95% 0.011 172.1)"
+        ]
+      },
+      "acento": {
+        "role": "primary",
+        "displayName": "Verde ciudad",
+        "canonical": "#0f766e",
+        "tonalRamp": [
+          "oklch(15% 0.047 186.4)",
+          "oklch(25% 0.060 186.4)",
+          "oklch(35% 0.073 186.4)",
+          "oklch(45% 0.082 186.4)",
+          "oklch(60% 0.086 186.4)",
+          "oklch(75% 0.069 186.4)",
+          "oklch(87% 0.052 186.4)",
+          "oklch(95% 0.039 186.4)"
+        ]
+      },
+      "lateral": {
+        "role": "neutral",
+        "displayName": "Menú lateral",
+        "canonical": "#eaf1ee",
+        "tonalRamp": [
+          "oklch(15% 0.009 168.7)",
+          "oklch(25% 0.010 168.7)",
+          "oklch(35% 0.011 168.7)",
+          "oklch(45% 0.012 168.7)",
+          "oklch(60% 0.012 168.7)",
+          "oklch(75% 0.011 168.7)",
+          "oklch(87% 0.009 168.7)",
+          "oklch(95% 0.008 168.7)"
+        ]
+      },
+      "franja": {
+        "role": "neutral",
+        "displayName": "Franja técnica",
+        "canonical": "#0c1a17",
+        "tonalRamp": [
+          "oklch(15% 0.011 179.0)",
+          "oklch(25% 0.014 179.0)",
+          "oklch(35% 0.017 179.0)",
+          "oklch(45% 0.020 179.0)",
+          "oklch(60% 0.021 179.0)",
+          "oklch(75% 0.016 179.0)",
+          "oklch(87% 0.012 179.0)",
+          "oklch(95% 0.009 179.0)"
+        ]
+      },
+      "ok": {
+        "role": "semantic",
+        "displayName": "Bien",
+        "canonical": "#15803d",
+        "tonalRamp": [
+          "oklch(15% 0.075 150.1)",
+          "oklch(25% 0.096 150.1)",
+          "oklch(35% 0.117 150.1)",
+          "oklch(45% 0.130 150.1)",
+          "oklch(60% 0.137 150.1)",
+          "oklch(75% 0.110 150.1)",
+          "oklch(87% 0.082 150.1)",
+          "oklch(95% 0.062 150.1)"
+        ]
+      },
+      "mal": {
+        "role": "semantic",
+        "displayName": "Mal",
+        "canonical": "#b42318",
+        "tonalRamp": [
+          "oklch(15% 0.100 29.5)",
+          "oklch(25% 0.127 29.5)",
+          "oklch(35% 0.155 29.5)",
+          "oklch(45% 0.173 29.5)",
+          "oklch(60% 0.182 29.5)",
+          "oklch(75% 0.146 29.5)",
+          "oklch(87% 0.109 29.5)",
+          "oklch(95% 0.082 29.5)"
+        ]
+      },
+      "aviso": {
+        "role": "semantic",
+        "displayName": "Aviso",
+        "canonical": "#92400e",
+        "tonalRamp": [
+          "oklch(15% 0.069 46.2)",
+          "oklch(25% 0.087 46.2)",
+          "oklch(35% 0.106 46.2)",
+          "oklch(45% 0.118 46.2)",
+          "oklch(60% 0.125 46.2)",
+          "oklch(75% 0.100 46.2)",
+          "oklch(87% 0.075 46.2)",
+          "oklch(95% 0.056 46.2)"
+        ]
+      },
+      "regla": {
+        "role": "neutral",
+        "displayName": "Regla",
+        "canonical": "#dfe7e4",
+        "tonalRamp": [
+          "oklch(15% 0.009 171.8)",
+          "oklch(25% 0.011 171.8)",
+          "oklch(35% 0.012 171.8)",
+          "oklch(45% 0.013 171.8)",
+          "oklch(60% 0.013 171.8)",
+          "oklch(75% 0.012 171.8)",
+          "oklch(87% 0.010 171.8)",
+          "oklch(95% 0.008 171.8)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Título de pantalla",
+        "purpose": "El h1 de cada vista."
+      },
+      "data": {
+        "displayName": "Dato",
+        "purpose": "Valores reales de M2: identificadores, método, ruta, código, folio."
+      },
+      "title": {
+        "displayName": "Título de tarjeta",
+        "purpose": "El h2 de cada tarjeta o sección."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sombra-hoja",
+        "value": "0 1px 2px rgb(16 24 40 / 0.04), 0 2px 8px rgb(16 24 40 / 0.04)",
+        "purpose": "Tarjetas en reposo."
+      },
+      {
+        "name": "sombra-boton",
+        "value": "0 1px 2px rgb(16 24 40 / 0.08)",
+        "purpose": "Botones de contorno, campos y la pestaña actual del menú."
+      },
+      {
+        "name": "sombra-acento",
+        "value": "0 1px 2px rgb(15 118 110 / 0.2), 0 4px 10px -4px rgb(15 118 110 / 0.4)",
+        "purpose": "Botón principal."
+      },
+      {
+        "name": "sombra-flotante",
+        "value": "0 24px 48px -12px rgb(16 24 40 / 0.25), 0 2px 6px rgb(16 24 40 / 0.06)",
+        "purpose": "Diálogo de confirmación."
+      }
+    ],
+    "motion": [
+      {
+        "name": "salida",
+        "value": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "purpose": "Respuesta a presión, paso del puntero y aparición del menú."
+      },
+      {
+        "name": "rapido",
+        "value": "160ms",
+        "purpose": "Duración de la respuesta de controles."
+      },
+      {
+        "name": "medio",
+        "value": "220ms",
+        "purpose": "Avisos y cambios de estado de un botón."
+      },
+      {
+        "name": "barrido-peligro",
+        "value": "clip-path 260ms cubic-bezier(0.23, 1, 0.32, 1); salida 160ms",
+        "purpose": "Relleno rojo del botón de peligro al acercar el puntero."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "tableta",
+        "value": "600px"
+      },
+      {
+        "name": "notebook",
+        "value": "960px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón de contorno",
+      "kind": "button",
+      "refersTo": "boton-contorno",
+      "description": "Acción secundaria, como «Restablecer» o «Editar».",
+      "html": "<button class=\"ds-btn-contorno\">Restablecer</button>",
+      "css": ".ds-btn-contorno{min-height:44px;padding:0 16px;border:1px solid var(--regla,#dfe7e4);border-radius:10px;background:var(--hoja,#fff);color:var(--tinta,#0f1f1a);font:600 0.875rem system-ui,sans-serif;box-shadow:0 1px 2px rgb(16 24 40/.08);cursor:pointer;transition:border-color 160ms ease,color 160ms ease,transform 160ms cubic-bezier(0.23,1,0.32,1)}.ds-btn-contorno:hover{border-color:color-mix(in srgb,var(--acento,#0f766e) 40%,var(--regla,#dfe7e4));color:var(--acento,#0f766e);transform:translateY(-1px)}.ds-btn-contorno:active{transform:scale(0.97)}.ds-btn-contorno:focus-visible{outline:2px solid var(--foco,#0f766e);outline-offset:2px}"
+    },
+    {
+      "name": "Botón principal",
+      "kind": "button",
+      "refersTo": "boton-principal",
+      "description": "La acción principal de una tarjeta, como «Guardar cambios».",
+      "html": "<button class=\"ds-btn-principal\">Guardar cambios</button>",
+      "css": ".ds-btn-principal{min-height:44px;padding:0 16px;border:1px solid var(--acento,#0f766e);border-radius:10px;background:var(--acento,#0f766e);color:var(--sobre-acento,#fff);font:600 0.875rem system-ui,sans-serif;box-shadow:inset 0 1px 0 rgb(255 255 255/.18),0 1px 2px rgb(15 118 110/.2),0 4px 10px -4px rgb(15 118 110/.4);cursor:pointer;transition:transform 160ms cubic-bezier(0.23,1,0.32,1)}.ds-btn-principal:hover{transform:translateY(-1px)}.ds-btn-principal:active{transform:scale(0.97);box-shadow:inset 0 1px 0 rgb(255 255 255/.18),0 1px 1px rgb(15 118 110/.3);transition-duration:100ms}.ds-btn-principal:focus-visible{outline:2px solid var(--foco,#0f766e);outline-offset:2px}"
+    },
+    {
+      "name": "Banda de prueba",
+      "kind": "chip",
+      "refersTo": "banda-prueba",
+      "description": "Arriba de toda vista: avisa que la sesión y los viajes son simulados.",
+      "html": "<div class=\"ds-banda\"><b>Entorno de prueba.</b> Sesión: simulado, pendiente de M1 · Viajes: simulado, pendiente de M6</div>",
+      "css": ".ds-banda{display:flex;align-items:center;gap:10px;min-height:36px;padding:8px 40px;background:var(--aviso-fondo,#fffbeb);border-bottom:1px solid color-mix(in srgb,var(--aviso,#92400e) 22%,var(--aviso-fondo,#fffbeb));color:var(--aviso,#92400e);font:0.8125rem/1.45 system-ui,sans-serif}.ds-banda b{font-weight:650}"
+    },
+    {
+      "name": "Menú lateral",
+      "kind": "nav",
+      "refersTo": "menu-elemento",
+      "description": "Marca solo texto («M2 | Clientes») y menú por rol con el elemento actual como pestaña blanca.",
+      "html": "<nav class=\"ds-menu\"><p class=\"ds-marca\"><span class=\"ds-m2\">M2</span><span class=\"ds-nombre\">Clientes</span></p><p class=\"ds-menu-grupo\">Mi cuenta</p><a class=\"ds-menu-el\" aria-current=\"page\" href=\"#\">Mi perfil</a><a class=\"ds-menu-el\" href=\"#\">Direcciones frecuentes</a></nav>",
+      "css": ".ds-menu{width:248px;padding:8px 16px;background:var(--lateral,#eaf1ee)}.ds-menu-grupo{margin:0;padding:16px 12px 6px;color:var(--lateral-suave,#4f625c);font:650 0.6875rem system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}.ds-menu-el{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:10px;color:var(--lateral-texto,#0f2a24);font:500 0.875rem system-ui,sans-serif;text-decoration:none}.ds-menu-el:hover{background:var(--lateral-hover,#dde8e4)}.ds-menu-el[aria-current=page]{background:var(--hoja,#fff);color:var(--acento,#0f766e);font-weight:600;box-shadow:0 1px 2px rgb(16 24 40/.08),0 0 0 1px var(--lateral-regla,#d5e0dc)}.ds-menu-el:focus-visible{outline:2px solid var(--lateral-texto,#0f2a24);outline-offset:2px}.ds-marca{display:flex;align-items:center;gap:10px;margin:8px 12px 12px;font:1rem/1 system-ui,sans-serif;color:var(--lateral-texto,#0f2a24)}.ds-m2{color:var(--acento,#0f766e);font-weight:800}.ds-nombre{display:flex;align-items:center;gap:10px;font-weight:650}.ds-nombre::before{content:\"\";width:1px;height:18px;background:var(--lateral-regla,#d5e0dc)}"
+    },
+    {
+      "name": "Franja técnica",
+      "kind": "custom",
+      "refersTo": "franja-tecnica",
+      "description": "El último pedido a M2, fijo al pie, con la duración a escala.",
+      "html": "<footer class=\"ds-franja\"><b class=\"ds-m\">PATCH</b><span>/api/v1/clientes/3f2b…5a6b</span><b class=\"ds-ok\">200</b><svg class=\"ds-barra\" viewBox=\"0 0 120 6\"><rect width=\"120\" height=\"6\" rx=\"3\" fill=\"#24352f\"/><rect width=\"10\" height=\"6\" rx=\"3\" fill=\"#5eead4\"/></svg><span>84 ms</span></footer>",
+      "css": ".ds-franja{display:flex;align-items:center;gap:24px;min-height:56px;padding:4px 40px;background:var(--franja,#0c1a17);color:var(--franja-texto,#d5e3de);font:0.8125rem/1.4 ui-monospace,monospace}.ds-m{color:var(--franja-metodo,#5eead4)}.ds-ok{color:var(--franja-ok,#6ee7a0)}.ds-barra{width:120px;height:6px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Verde ciudad",
+    "overview": "El panel es una herramienta de una app de movilidad: tarjetas blancas donde se trabaja, sobre un fondo y un menú con un tinte verde muy leve, y un solo color de marca, el verde azulado de las apps de transporte. Tres planos lo arman: el menú lateral claro, las tarjetas de cada pantalla y la franja técnica oscura al pie, que muestra el último pedido a M2 y su folio.\n\nEs una herramienta (modo Operate): densidad de notebook a 1280 px, lectura rápida y nada que compita con los datos. La marca está en los detalles precisos, no en decoración. Lautaro eligió este estilo el 2026-10-28 entre cinco opciones; reemplaza al «formulario con folio» en papel marrón.",
+    "keyCharacteristics": [
+      "Fondo verde casi gris, tarjetas blancas con sombra suave, tinta casi negra con un dejo verde.",
+      "Un solo acento, verde azulado, en la acción principal, el elemento actual del menú, lo elegido, los enlaces y el foco.",
+      "Lo simulado se avisa en ámbar con una banda de «Entorno de prueba»; la monoespaciada va solo sobre datos reales de M2.",
+      "Esquinas redondeadas y generosas: 10 px en controles, 18 px en tarjetas.",
+      "De noche: fondo casi negro verdoso, tarjetas un paso más claras y el acento en turquesa claro."
+    ],
+    "rules": [
+      {
+        "name": "The Un Solo Acento Rule",
+        "body": "El verde azulado es el único color de marca y marca lo que se toca o lo que está elegido. Verde, rojo y ámbar significan estado y no se usan para decorar. Lo simulado es un aviso y va en ámbar.",
+        "section": "colors"
+      },
+      {
+        "name": "The Clasificado Rule",
+        "body": "Todo color nuevo se agrega en los dos modos y se clasifica en `contraste.test.ts` como texto (4,5:1), componente (3:1) o decorativo; si no, la prueba falla.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Es Dato Rule",
+        "body": "La monoespaciada va solo sobre valores que existen tal cual en M2 o en un log. Las etiquetas de estado escritas para la persona y la paginación van en la letra del cuerpo.",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "**Do** usar solo las variables de `variables.css`; un valor nuevo se agrega en claro y oscuro y se clasifica en `contraste.test.ts`.",
+      "**Do** avisar en ámbar todo lo que sale de una fuente simulada.",
+      "**Do** mostrar en monoespaciada solo los valores reales de M2 (UUID, método, ruta, código, folio, estados literales).",
+      "**Do** mantener controles de 44×44 px, foco visible y el uso completo con teclado de 360 a 1440 px.",
+      "**Do** limitar el movimiento a respuesta: presión, paso del puntero, aparición del menú y de los avisos."
+    ],
+    "donts": [
+      "**Don't** usar estilos en línea (`style`): la política de seguridad del panel los bloquea y el lint lo prohíbe.",
+      "**Don't** cargar fuentes, imágenes ni scripts de terceros, ni usar `data:`.",
+      "**Don't** usar el acento para decorar ni para lo simulado (va en ámbar).",
+      "**Don't** usar franjas de color gruesas al costado de tarjetas o cajas, degradados de texto ni reflejos animados.",
+      "**Don't** armar las pantallas con filas de tarjetas de cifras ni poner etiquetas sobre los títulos."
+    ]
+  }
+}

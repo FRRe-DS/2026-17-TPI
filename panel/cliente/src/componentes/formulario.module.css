@@ -1,0 +1,249 @@
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+  box-shadow: var(--sombra-hoja);
+}
+
+.cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--e-1) var(--e-3);
+  padding: 20px var(--e-3) var(--e-2);
+}
+
+.folio {
+  color: var(--tinta-suave);
+  font: var(--t-chica) / 1.4 var(--mono);
+}
+
+.folio b {
+  color: var(--acento);
+  font-weight: 600;
+}
+
+/* Los casilleros: una columna en el teléfono, dos desde 600 px, separados por aire y no por reglas. */
+.campos {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--e-1);
+  padding-block: 0 var(--e-2);
+}
+
+select.control {
+  cursor: pointer;
+}
+
+.campo {
+  min-width: 0;
+  padding: var(--e-2) var(--e-3);
+}
+
+.etiqueta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  color: var(--tinta);
+  font-size: var(--t-detalle);
+  font-weight: 500;
+}
+
+/* El número de casillero era del formulario impreso; la etiqueta ya alcanza. */
+.numero {
+  display: none;
+}
+
+.control {
+  display: block;
+  width: 100%;
+  min-height: var(--control);
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--borde-campo);
+  border-radius: var(--radio);
+  background: var(--campo);
+  color: var(--tinta);
+  font-size: var(--t-campo);
+  line-height: 1.4;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    box-shadow var(--rapido) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .control:hover:not(:focus) {
+    border-color: var(--tinta-suave);
+  }
+}
+
+/* Al enfocar, con ratón o teclado: borde del acento y un halo suave. El contorno de `:focus-visible` se suma con el teclado. */
+.control:focus {
+  border-color: var(--acento);
+  box-shadow: var(--anillo);
+  outline: none;
+}
+
+textarea.control {
+  min-height: 7.5rem;
+  resize: vertical;
+}
+
+.control:focus-visible {
+  outline: 2px solid var(--foco);
+  outline-offset: 1px;
+}
+
+.control[aria-invalid='true'] {
+  border-color: var(--mal);
+}
+
+.control[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mal) 18%, transparent);
+}
+
+.ayuda,
+.mensajeDeError {
+  margin-top: var(--e-2);
+  font-size: var(--t-detalle);
+  overflow-wrap: anywhere;
+}
+
+.ayuda {
+  color: var(--tinta-suave);
+}
+
+.mensajeDeError {
+  color: var(--mal);
+  font-weight: 500;
+}
+
+.error {
+  padding: var(--e-3) var(--e-3) 0;
+}
+
+.pie {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--e-2) var(--e-3);
+  margin-top: var(--e-2);
+  padding: var(--e-3);
+  border-top: 1px solid var(--regla);
+  border-radius: 0 0 var(--radio-hoja) var(--radio-hoja);
+  background: color-mix(in srgb, var(--papel) 55%, var(--hoja));
+}
+
+@media (min-width: 600px) {
+  .cabecera,
+  .campo,
+  .pie {
+    padding-inline: var(--e-4);
+  }
+
+  .error {
+    padding: var(--e-3) var(--e-4) 0;
+  }
+
+  .campos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--e-1);
+  }
+
+  .completo {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---- Grupo de casillas: un `fieldset` que se ve como un casillero más. ---- */
+
+.grupo {
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+
+/* Flotando, la leyenda deja de ir sobre el borde del `fieldset` y respeta su relleno, como la etiqueta de un casillero. */
+.leyenda {
+  float: left;
+  display: flex;
+  align-items: baseline;
+  gap: var(--e-2);
+  width: 100%;
+  padding: 0;
+  color: var(--tinta);
+  font-size: var(--t-detalle);
+  font-weight: 500;
+}
+
+.opciones {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--e-2);
+  margin-top: var(--e-2);
+}
+
+.opcion {
+  display: flex;
+  align-items: center;
+  gap: var(--e-2);
+  min-height: var(--control);
+  padding: 10px 12px;
+  border: 1px solid var(--borde-campo);
+  border-radius: var(--radio);
+  background: var(--campo);
+  cursor: pointer;
+  transition:
+    transform var(--rapido) var(--salida),
+    border-color var(--rapido) ease,
+    background-color var(--rapido) ease,
+    box-shadow var(--rapido) ease;
+}
+
+.opcion:active {
+  transform: scale(0.98);
+  transition-duration: 100ms;
+}
+
+.opcion:has(input:checked) {
+  border-color: var(--acento);
+  background: var(--acento-tenue);
+  box-shadow: inset 0 0 0 1px var(--acento);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .opcion:hover:not(:has(input:checked)) {
+    border-color: var(--tinta-suave);
+  }
+}
+
+.opcion:has(input:focus-visible) {
+  outline: 2px solid var(--foco);
+  outline-offset: 2px;
+}
+
+.opcion input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+
+.opcion input:focus-visible {
+  outline: none;
+}
+
+/* Una sola elección entre pocas, cortas (el puntaje): una fila de casillas que no se parte, incluso a 360 px. */
+.enFila {
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--e-1);
+}
+
+.enFila .opcion {
+  justify-content: center;
+  gap: 6px;
+  padding-inline: 4px;
+}

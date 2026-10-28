@@ -1,0 +1,149 @@
+.encabezado {
+  border-bottom: 1px solid var(--regla);
+  background: color-mix(in srgb, var(--papel) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+}
+
+/* La banda de entorno de prueba: ámbar, el color de aviso, porque avisa que lo que se ve no es todo real. Fina y opaca. */
+.banda {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: var(--banda-alto);
+  padding: 8px var(--e-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--aviso) 22%, var(--aviso-fondo));
+  background: var(--aviso-fondo);
+  color: var(--aviso);
+  font-size: var(--t-detalle);
+  line-height: 1.45;
+}
+
+.icono {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.texto b {
+  font-weight: 650;
+}
+
+.etiquetas,
+.etiqueta {
+  display: inline;
+}
+
+.etiqueta + .etiqueta::before {
+  content: ' · ';
+}
+
+.sesion {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--e-3);
+  min-width: 0;
+  min-height: var(--encabezado-alto);
+  padding: var(--e-2) var(--e-3);
+  font-size: var(--t-menu);
+}
+
+.rol {
+  flex: none;
+  padding: var(--e-1) var(--e-2);
+  border-radius: 999px;
+  background: var(--acento-tenue);
+  color: var(--acento);
+  font: 600 0.6875rem / 1.2 var(--mono);
+  letter-spacing: 0.08em;
+}
+
+/* El identificador puede ser un UUID o un texto de 128 caracteres: se corta con puntos suspensivos y el título lo muestra entero. */
+.sub {
+  min-width: 0;
+  max-width: 22ch;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--t-detalle);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cerrar {
+  flex: none;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio);
+  background: var(--hoja);
+  color: var(--tinta);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  box-shadow: var(--sombra-boton);
+  cursor: pointer;
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cerrar:hover {
+    border-color: color-mix(in srgb, var(--mal) 45%, var(--regla));
+    color: var(--mal);
+  }
+}
+
+@media (min-width: 600px) {
+  .banda,
+  .sesion {
+    padding-inline: var(--e-5);
+  }
+
+  .banda {
+    align-items: center;
+  }
+}
+
+@media (min-width: 960px) {
+  /* En la notebook queda arriba mientras se desplaza la pantalla, translúcido. */
+  .encabezado {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .banda,
+  .sesion {
+    padding-inline: var(--e-6);
+  }
+
+  .sub {
+    max-width: 38ch;
+  }
+}
+
+/* Como el botón de contorno: se hunde al apretar y, con el ratón, sube un poco con la sombra más larga. */
+.cerrar:active {
+  transform: scale(0.97);
+  box-shadow: none;
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cerrar:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
+  }
+
+  .cerrar:hover:active {
+    transform: translateY(0) scale(0.97);
+  }
+}

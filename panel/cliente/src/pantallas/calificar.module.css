@@ -1,0 +1,99 @@
+.calificar {
+  display: grid;
+  gap: var(--e-3);
+  max-width: 72rem;
+  margin-top: var(--e-4);
+}
+
+.viaje {
+  color: var(--tinta-suave);
+}
+
+.dato {
+  font: var(--t-detalle) / 1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* La calificación guardada: la misma hoja de datos que el perfil. */
+.hoja {
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+}
+
+.filas {
+  display: grid;
+}
+
+.fila {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--e-3);
+}
+
+.fila + .fila {
+  border-top: 1px solid var(--regla);
+}
+
+.fila dt {
+  color: var(--tinta-suave);
+  font-size: var(--t-detalle);
+}
+
+.fila dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.siguientes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--e-2);
+}
+
+.enlace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control);
+  padding: 0 var(--e-3);
+  border: 1px solid var(--regla);
+  background: var(--hoja);
+  border-radius: var(--radio);
+  color: var(--tinta);
+  font-size: var(--t-menu);
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: var(--sombra-boton);
+  transition:
+    border-color var(--rapido) ease,
+    color var(--rapido) ease,
+    box-shadow var(--medio) var(--salida),
+    transform var(--rapido) var(--salida);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .enlace:hover {
+    border-color: color-mix(in srgb, var(--acento) 40%, var(--regla));
+    color: var(--acento);
+  }
+}
+
+/* Como el botón de contorno: se hunde al apretar y, con el ratón, sube un poco con la sombra más larga. */
+.enlace:active {
+  transform: scale(0.97);
+  box-shadow: none;
+  transition-duration: 100ms;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .enlace:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sombra-boton), 0 6px 14px -6px rgb(16 24 40 / 0.18);
+  }
+
+  .enlace:hover:active {
+    transform: translateY(0) scale(0.97);
+  }
+}

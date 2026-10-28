@@ -1,0 +1,120 @@
+/* Fija al pie mientras se desplaza la pantalla: lo técnico está siempre, pero chico y en otro color (PRODUCT.md, principio 4). */
+.franja {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--e-2) var(--e-3);
+  min-height: var(--franja-alto);
+  padding: var(--e-1) var(--e-3) max(var(--e-1), env(safe-area-inset-bottom));
+  background: var(--franja);
+  color: var(--franja-texto);
+  font: var(--t-detalle) / 1.4 var(--mono);
+}
+
+.vacia {
+  color: var(--franja-texto);
+}
+
+.metodo {
+  flex: none;
+  color: var(--franja-metodo);
+  font-weight: 600;
+}
+
+/* La ruta cede su ancho antes que el resto. */
+.ruta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ok,
+.mal {
+  flex: none;
+  font-weight: 600;
+}
+
+.ok {
+  color: var(--franja-ok);
+}
+
+.mal {
+  color: var(--franja-mal);
+}
+
+.duracion {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: var(--e-2);
+}
+
+.barra {
+  width: 120px;
+  height: 6px;
+}
+
+.pista {
+  fill: var(--franja-pista);
+}
+
+.valor {
+  fill: var(--franja-metodo);
+}
+
+.folio {
+  display: none;
+  flex: none;
+}
+
+.folio b {
+  color: var(--franja-metodo);
+  font-weight: 600;
+}
+
+.ver {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control);
+  margin-left: auto;
+  color: var(--franja-texto);
+  font-family: var(--sans);
+  font-weight: 600;
+}
+
+.extra {
+  display: none;
+}
+
+.franja :focus-visible {
+  outline-color: var(--franja-texto);
+}
+
+@media (min-width: 600px) {
+  .franja {
+    padding-inline: var(--e-5);
+  }
+
+  .duracion {
+    display: inline-flex;
+  }
+
+  .extra {
+    display: inline;
+  }
+}
+
+@media (min-width: 960px) {
+  .franja {
+    gap: var(--e-4);
+    padding-inline: var(--e-6);
+  }
+
+  .folio {
+    display: inline;
+  }
+}

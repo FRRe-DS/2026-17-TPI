@@ -1,0 +1,9 @@
+.hoja {
+  max-width: 72ch;
+  margin-top: var(--e-4);
+  padding: var(--e-4);
+  border: 1px solid var(--regla);
+  border-radius: var(--radio-hoja);
+  background: var(--hoja);
+  color: var(--tinta-suave);
+}

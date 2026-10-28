@@ -132,3 +132,31 @@ Para entender una funcionalidad, el orden recomendado es: su `spec.md` (qué pid
 - Puerto 8082 ocupado: `M2_PUERTO=8090 docker compose up -d --build --wait` y `M2_PUERTO=8090 node scripts/demo.mjs`.
 - Una corrida de la demo cortada a la mitad puede dejar el contenedor `m6-simulado`: `docker rm -f m6-simulado`.
 - En Windows, después de clonar, ver la «Trampa de Windows» de `AGENTS.md` (finales de línea).
+
+## 7. El panel (interfaz web)
+
+Es la forma de probar todo desde el navegador (spec 071). Dos maneras de levantarlo:
+
+```bash
+docker compose --profile panel up -d --build --wait     # todo en contenedores
+# o, para desarrollar el panel: M2 y el M6 simulado en compose, el panel en la máquina
+docker compose up -d --build --wait && docker compose --profile panel up -d --build --wait m6
+npm run panel
+```
+
+Se abre <http://localhost:8083>. Sin sesión solo está «Ingresar»: se entra como cliente nuevo (el panel lo crea en M2 con un `Idempotency-Key`), como un cliente recordado de este navegador o con otro rol (CLIENTE, OPERADOR, SERVICIO, CONDUCTOR). Qué hace cada vista:
+
+| Vista | Para qué |
+|---|---|
+| Mi perfil | Ver y editar el perfil (solo se manda lo que cambió) y «Cargar ejemplo»: direcciones, preferencias y dos viajes en el M6 simulado |
+| Direcciones frecuentes, Preferencias | Alta, edición y baja (con confirmación) de direcciones; preferencias de viaje |
+| Historial de viajes, Calificar, Mis calificaciones | El historial que arma M6, calificar un viaje completado (doble clic = un solo envío) y ver lo calificado |
+| Estado de cuenta | El estado y los bloqueos vigentes del cliente |
+| Bloqueos de clientes (OPERADOR) | Buscar un cliente, bloquear y levantar bloqueos |
+| Consultar estado de cuenta (SERVICIO) | Lo que consultan M5 y M9 |
+| Detalle técnico | Cada pedido a M2: método, ruta, encabezados, cuerpo, respuesta y el `curl` equivalente |
+| M6 simulado | Cambiar el modo (normal, lento, caído) y ver qué contesta M2 en cada escenario |
+
+Si M2 no responde en 10 segundos, la vista dice «M2 no responde» con «Reintentar». Las pruebas: `npm test` cubre la lógica y cada vista contra M2 real; `npm run panel:navegador` abre Chrome a 360 y a 1280 px (claro y oscuro) y comprueba tamaños, teclado, accesibilidad, estados y valores máximos.
+
+Simulado en el panel: la sesión (pendiente de M1, el panel firma tokens de desarrollo en su servidor y la clave nunca llega al navegador) y los viajes (M6 simulado en contenedor propio). Cuando existan M1 y M6 se cambian en `panel/cliente/src/fuentes/`.
