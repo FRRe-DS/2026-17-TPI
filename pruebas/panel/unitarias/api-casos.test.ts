@@ -75,6 +75,29 @@ describe('crearPedirDeCasos: la respuesta', () => {
   });
 });
 
+describe('crearPedirDeCasos: la franja del pie (RNF-14.9)', () => {
+  it('informa cada pedido a M2 con su código, su duración y su X-Request-Id', async () => {
+    const { falso } = fetchDeMentira(() => new Response('{}', { status: 409, headers: { 'x-request-id': 'panel-9' } }));
+    const informados: unknown[] = [];
+
+    await crearPedirDeCasos({ fetch: falso, alTerminar: (pedido) => informados.push(pedido) })(pedido({ metodo: 'POST' }));
+
+    expect(informados).toEqual([{ metodo: 'POST', ruta: '/api/v1/clientes/c-1', estado: 409, ms: expect.any(Number), requestId: 'panel-9' }]);
+  });
+
+  it('no informa los del canal de control del M6 simulado ni los que no tuvieron respuesta', async () => {
+    const informados: unknown[] = [];
+    const { falso } = fetchDeMentira(() => new Response('{}'));
+    await crearPedirDeCasos({ fetch: falso, alTerminar: (p) => informados.push(p) })(pedido({ ruta: '/panel/m6/modo' }));
+    const { falso: roto } = fetchDeMentira(() => {
+      throw new TypeError('fetch failed');
+    });
+    await crearPedirDeCasos({ fetch: roto, alTerminar: (p) => informados.push(p) })(pedido()).catch(() => undefined);
+
+    expect(informados).toEqual([]);
+  });
+});
+
 describe('crearPedirDeCasos: sin respuesta', () => {
   it('si la conexión falla, lanza un mensaje corto sin la dirección', async () => {
     const { falso } = fetchDeMentira(() => {

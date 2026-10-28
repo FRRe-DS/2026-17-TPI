@@ -1,4 +1,5 @@
 import type { PedidoDelCaso, RespuestaDelCaso } from '../logica/ejecutar-caso.js';
+import type { UltimoPedido } from '../logica/ultimo-pedido.js';
 import { TIEMPO_MAXIMO_MS } from './m2.js';
 
 // El `pedir` de los casos de la vista «Demostración» (spec 072, T12): manda cada pedido al panel, que lo reenvía a M2 con un token
@@ -7,12 +8,15 @@ import { TIEMPO_MAXIMO_MS } from './m2.js';
 // mensaje corto, sin direcciones ni nada que la vista no deba mostrar.
 
 export type OpcionesPedirDeCasos = {
+  // Se llama al terminar cada pedido a M2 (`/api/…`) que tuvo respuesta, con lo que muestra la franja del pie (RNF-14.9). Los del
+  // canal de control del M6 simulado no son pedidos a M2 y no se informan.
+  alTerminar?: (pedido: UltimoPedido) => void;
   // Solo para las pruebas.
   fetch?: typeof fetch;
   tiempoMaximoMs?: number;
 };
 
-export function crearPedirDeCasos({ fetch: pedirHttp = (...args) => globalThis.fetch(...args), tiempoMaximoMs = TIEMPO_MAXIMO_MS }: OpcionesPedirDeCasos = {}) {
+export function crearPedirDeCasos({ alTerminar, fetch: pedirHttp = (...args) => globalThis.fetch(...args), tiempoMaximoMs = TIEMPO_MAXIMO_MS }: OpcionesPedirDeCasos = {}) {
   return async function pedir(pedido: PedidoDelCaso): Promise<RespuestaDelCaso> {
     const encabezados: Record<string, string> = { Accept: 'application/json' };
     if (pedido.identidad !== null) {
@@ -25,6 +29,7 @@ export function crearPedirDeCasos({ fetch: pedirHttp = (...args) => globalThis.f
     // El tiempo máximo cuenta hasta tener el cuerpo entero, no solo hasta las cabeceras.
     const tiempo = new AbortController();
     const temporizador = setTimeout(() => tiempo.abort(), tiempoMaximoMs);
+    const inicio = performance.now();
     try {
       const respuesta = await pedirHttp(pedido.ruta, {
         method: pedido.metodo,
@@ -37,6 +42,7 @@ export function crearPedirDeCasos({ fetch: pedirHttp = (...args) => globalThis.f
       respuesta.headers.forEach((valor, nombre) => {
         nombres[nombre.toLowerCase()] = valor;
       });
+      if (pedido.ruta.startsWith('/api/')) alTerminar?.({ metodo: pedido.metodo, ruta: pedido.ruta, estado: respuesta.status, ms: Math.round(performance.now() - inicio), requestId: nombres['x-request-id'] });
       return { estado: respuesta.status, encabezados: nombres, ...(texto === '' ? {} : { cuerpo: leerJson(texto) }) };
     } catch {
       throw new Error(tiempo.signal.aborted ? `no respondió en ${Math.round(tiempoMaximoMs / 1000)} s` : 'no se pudo conectar');

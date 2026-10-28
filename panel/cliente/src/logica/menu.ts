@@ -7,7 +7,7 @@ export type GrupoDeMenu = { titulo: string; elementos: ElementoDeMenu[] };
 
 const elemento = (pantalla: Pantalla, etiqueta = TITULOS[pantalla]): ElementoDeMenu => ({ pantalla, etiqueta });
 
-const HERRAMIENTAS: GrupoDeMenu = { titulo: 'Herramientas', elementos: [elemento('detalle-tecnico'), elemento('m6-simulado')] };
+const HERRAMIENTAS: GrupoDeMenu = { titulo: 'Herramientas', elementos: [elemento('detalle-tecnico'), elemento('m6-simulado'), elemento('demostracion')] };
 
 const PROPIO: Record<Rol, GrupoDeMenu> = {
   CLIENTE: {

@@ -9,13 +9,17 @@ type Props = {
   variante?: 'principal' | 'contorno' | 'peligro';
   tipo?: 'button' | 'submit';
   textoEsperando?: string;
+  // Deshabilitado sin estar esperando: por ejemplo, otra acción de la pantalla está en curso o falta Docker. Quien lo usa dice por qué
+  // en la pantalla (RNF-15.4).
+  deshabilitado?: boolean;
   onClick?: () => void;
   children: ReactNode;
 };
 
 // El botón que envía un pedido a M2 (RNF-15.2): mientras espera queda deshabilitado, con `aria-busy` y el texto de espera, así un
-// doble clic manda un solo pedido (RF-2.5.15). Fuera de la espera nunca está deshabilitado (RNF-15.4).
-export function BotonAccion({ esperando, variante = 'principal', tipo = 'button', textoEsperando, onClick, children }: Props) {
+// doble clic manda un solo pedido (RF-2.5.15). Fuera de la espera nunca está deshabilitado (RNF-15.4), salvo que la pantalla lo pida con
+// `deshabilitado` y diga por qué.
+export function BotonAccion({ esperando, variante = 'principal', tipo = 'button', textoEsperando, deshabilitado = false, onClick, children }: Props) {
   const modelo = modeloBoton(esperando, '', textoEsperando);
   // El fundido es para el cambio de estado, no para la primera vez que se dibuja: al abrir una pantalla los botones ya están.
   const previo = useRef(modelo.esperando);
@@ -29,7 +33,7 @@ export function BotonAccion({ esperando, variante = 'principal', tipo = 'button'
     <button
       type={tipo}
       className={`${estilos.boton} ${estilos[variante]}`}
-      disabled={modelo.deshabilitado}
+      disabled={modelo.deshabilitado || deshabilitado}
       aria-busy={modelo.esperando || undefined}
       onClick={onClick}
     >

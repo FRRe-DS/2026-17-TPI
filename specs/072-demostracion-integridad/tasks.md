@@ -47,7 +47,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T13. Lógica de integridad, salud en vivo y API del cliente.** RNF-13.4, RNF-08.2, RNF-08.3, RNF-08.4
   - Hecho cuando: `pruebas/panel/unitarias/integridad.test.ts` y `salud-en-vivo.test.ts` comprueban que `logica/integridad.ts` acepta N entero de 2 a 50 y da el motivo si no, y arma la tabla de conteo y el veredicto desde `ResultadoSimultaneo`; que el reductor de `logica/salud-en-vivo.ts` va de quieto a apagando, observando, encendiendo y recuperada al primer `200`, o no-volvio a los 60 s; que `hooks/usar-sondeo.ts` pide cada 2 s y para al desmontarse (con temporizadores falsos); y que `api/panel.ts` tiene una función por ruta `/panel/demo/…` con el corte de 10 s de la 071 (o 70 s para encender).
 
-- [ ] **T14. Vista «Demostración»: ruta, menú y casos.** RNF-07.3, RNF-07.4, RNF-07.6, RNF-15.6
+- [x] **T14. Vista «Demostración»: ruta, menú y casos.** RNF-07.3, RNF-07.4, RNF-07.6, RNF-15.6
   - Hecho cuando: `rutas.ts` interpreta `#/demostracion` y `logica/menu.ts` la ofrece a los cuatro roles (`rutas.test.ts`, `menu.test.ts`); `pantallas/demostracion.tsx` muestra los casos por área con «Ejecutar» y `componentes/resultado-caso` (pedido, respuesta, esperado, ✔ «Correcto» o ✘ «No coincide»), y «Ejecutar todo» con el avance y el resumen; los botones se deshabilitan mientras esperan; mirada en Chrome a 360 y 1280 px.
 
 - [ ] **T15. Sección «Integridad».** RNF-08.2, RNF-08.3, RNF-08.4, RNF-05.5, RNF-15.6
