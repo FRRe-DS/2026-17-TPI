@@ -22,7 +22,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T6. Calificaciones simultáneas.** RNF-08.4
   - Hecho cuando: la misma prueba de integración comprueba que `calificacionesSimultaneas` con N = 10 y con N = 50 da `{ 201: 1, 409: N−1 }` y 1 fila en `calificaciones` con el M6 simulado, que deja el modo del M6 como estaba (también si estaba en `caido` antes de empezar y si un paso falla), y anota en `guia.md` qué códigos dio N = 50 (si aparece algún `503` por capacidad de M2, se registra como hallazgo y la prueba de N = 50 se queda en lo que comprueba la integridad: 1 fila).
 
-- [ ] **T7. Control de Docker.** RNF-13.4, RNF-13.6, RNF-12.10
+- [x] **T7. Control de Docker.** RNF-13.4, RNF-13.6, RNF-12.10
   - Hecho cuando: `pruebas/panel/unitarias/docker.test.ts`, con un `ejecutar` de mentira, comprueba que `servidor/demo/docker.ts` llama a `docker` con exactamente `["compose", "stop", "bd"]`, `["compose", "start", "bd"]` y `["compose", "ps", "--format", "json", "bd"]`, sin shell, con la raíz del repositorio como `cwd` y cortes de 30, 60 y 5 s; que informa no disponible con su motivo y `comoActivar` para `PANEL_DOCKER=no`, `ENOENT`, «permission denied» y servicio ausente, sin rutas ni variables en el texto; que guarda la disponibilidad 10 s; y que sin Docker disponible `apagar` y `encender` no ejecutan nada.
 
 - [ ] **T8. Rutas de la vista en el servidor.** RNF-12.10, RNF-13.4, RNF-13.6, RNF-19.4, RNF-05.4
