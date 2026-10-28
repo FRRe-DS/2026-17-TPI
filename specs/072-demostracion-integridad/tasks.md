@@ -30,7 +30,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 
 ## Tramo B — Empaquetado
 
-- [ ] **T9. Puente a la base, perfil `panel` y humo.** RNF-04.8, RNF-06.5, RNF-13.6
+- [x] **T9. Puente a la base, perfil `panel` y humo.** RNF-04.8, RNF-06.5, RNF-13.6
   - Hecho cuando: `panel/puente-bd/main.ts` une cada conexión de su puerto con `bd:5432` (prueba HTTP con un servidor TCP de eco); `panel/Dockerfile` tiene el destino `puente-bd`; `docker compose --profile panel up -d --build --wait` deja sano `bd-puente` publicado solo en `127.0.0.1:5433` y el panel con `PANEL_URL_BD` y `PANEL_DOCKER=no`; `docker compose up -d --build --wait` sin el perfil no publica ningún puerto nuevo y no cambia `m2` ni `bd` (`pruebas/unitarias/consistencia.test.ts`); y `scripts/panel-humo.mjs` comprueba que `GET /panel/demo/estado` da base disponible y Docker no disponible con su motivo, contra el perfil y contra `npm run panel` en la máquina.
 
 ## Tramo C — Cliente

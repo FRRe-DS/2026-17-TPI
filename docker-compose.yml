@@ -1,6 +1,6 @@
 # El servicio M2 y su base de datos (RNF-04.1, RNF-04.3, RNF-04.4). Desde un clon limpio, sin crear ni editar archivos:
 #   docker compose up -d --build --wait
-# Con el perfil `panel` suma el panel y el M6 simulado (spec 071); sin él, no se crean:
+# Con el perfil `panel` suma el panel, el M6 simulado (spec 071) y el puente a la base (spec 072); sin él, no se crean:
 #   docker compose --profile panel up -d --build --wait
 # La configuración sale de ejemplo.env; una variable definida en el entorno manda sobre el ejemplo (RNF-06.3).
 services:
@@ -80,6 +80,11 @@ services:
     init: true
     environment:
       PANEL_ESCUCHA: 0.0.0.0
+      # Dentro del contenedor el panel llega a la base por la red de compose, sin pasar por el puente. Compose interpola estas
+      # variables de su propio entorno, no de ejemplo.env: los valores por defecto se repiten acá y se cambian juntos.
+      PANEL_URL_BD: postgres://${POSTGRES_USER:-m2}:${POSTGRES_PASSWORD:-m2-contrasena-de-desarrollo}@bd:5432/${POSTGRES_DB:-m2}
+      # Sin Docker dentro del contenedor: apagar y encender la base solo funcionan con el panel en la máquina (npm run panel).
+      PANEL_DOCKER: "no"
       PANEL_URL_M2: http://m2:${M2_PUERTO:-8082}
       PANEL_URL_M2_PUBLICA: ${PANEL_URL_M2_PUBLICA:-http://localhost:${M2_PUERTO:-8082}}
       PANEL_URL_M6_CONTROL: http://m6:${M6_PUERTO_CONTROL:-3007}
@@ -100,6 +105,35 @@ services:
       timeout: 3s
       retries: 6
       start_period: 10s
+
+  # El puente a la base (spec 072, RNF-04.8): solo con `--profile panel`. Publica la base en 127.0.0.1 para que el panel, cuando corre
+  # en la máquina (`npm run panel`), cuente filas y pruebe la restricción del puntaje. Sin el perfil no se publica ningún puerto de
+  # la base. La contraseña es la de desarrollo de ejemplo.env: el riesgo es el de M2, que ya está publicado, acotado a la máquina.
+  bd-puente:
+    profiles: [panel]
+    build:
+      context: .
+      dockerfile: panel/Dockerfile
+      target: puente-bd
+    image: m2-puente-bd:0.1.0
+    init: true
+    ports:
+      - "127.0.0.1:${PANEL_PUERTO_BD:-5433}:5433"
+    depends_on:
+      bd:
+        condition: service_healthy
+    # Abre una conexión a su propio puerto, que el puente une con la base y se cierra enseguida (PostgreSQL deja una línea de
+    # «incomplete startup packet» en su log por cada chequeo: es el precio de comprobar el camino entero).
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('net').connect(5433, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
 
 volumes:
   datos-bd:

@@ -1,4 +1,4 @@
-# Imágenes del panel y del M6 simulado (spec 071, RNF-04.6). Se construyen desde la raíz del repositorio, con
+# Imágenes del panel, del M6 simulado (spec 071, RNF-04.6) y del puente a la base (spec 072, RNF-04.8). Se construyen desde la raíz del repositorio, con
 # `docker compose --profile panel up -d --build --wait`. Mismas reglas que el Dockerfile de M2 (RNF-04.1 a RNF-04.3): la misma
 # imagen base con versión exacta en todas las etapas, instalación según el lockfile y sin scripts, y el usuario `node`.
 FROM node:24.22.0-trixie-slim AS construccion
@@ -31,3 +31,9 @@ CMD ["node", "panel/dist/m6-simulado/main.js"]
 FROM produccion AS panel
 COPY --from=construccion /app/panel/dist/cliente ./panel/dist/cliente
 CMD ["node", "panel/dist/servidor/main.js"]
+
+# El puente a la base: un reenvío TCP de ~70 líneas sin dependencias. El perfil `panel` lo publica en 127.0.0.1 para que el panel,
+# cuando corre en la máquina, llegue a PostgreSQL sin publicar el puerto de `bd`. No necesita el servidor ni el cliente del panel.
+FROM produccion AS puente-bd
+COPY --from=construccion /app/panel/dist/puente-bd ./panel/dist/puente-bd
+CMD ["node", "panel/dist/puente-bd/main.js"]

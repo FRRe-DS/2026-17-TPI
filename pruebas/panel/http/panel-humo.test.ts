@@ -46,7 +46,18 @@ afterEach(async () => {
   m2.responderCon({ tipo: 'ok' });
 });
 
-async function levantarPanel(cambios: Record<string, string> = {}): Promise<{ url: string; panel: PanelAndando }> {
+// La base y Docker de mentira del panel: el script de humo mira lo que informa `GET /panel/demo/estado`, no la base de verdad.
+const BASE_DISPONIBLE = { pool: undefined, contarClientes: async () => ({ filas: 0 }), contarCalificaciones: async () => ({ filas: 0 }), disponibilidad: async () => ({ disponible: true }) };
+const DOCKER_DEL_CONTENEDOR = {
+  disponibilidad: async () => ({ disponible: false, motivo: 'el panel corre en un contenedor y no tiene acceso a Docker', comoActivar: 'npm run panel' }),
+  apagar: async () => undefined,
+  encender: async () => undefined,
+};
+
+async function levantarPanel(
+  cambios: Record<string, string> = {},
+  demo: Parameters<typeof arrancarPanel>[2] extends infer O ? (O extends { demo?: infer D } ? D : never) : never = { base: BASE_DISPONIBLE, docker: DOCKER_DEL_CONTENEDOR },
+): Promise<{ url: string; panel: PanelAndando }> {
   const puerto = await puertoLibre();
   const panel = await arrancarPanel(
     {
@@ -58,7 +69,7 @@ async function levantarPanel(cambios: Record<string, string> = {}): Promise<{ ur
       ...cambios,
     },
     () => undefined,
-    { flujoLog: descartarLogs },
+    { flujoLog: descartarLogs, demo },
   );
   abiertos.push(panel!);
   return { url: `http://127.0.0.1:${puerto}`, panel: panel! };
@@ -77,7 +88,7 @@ async function correr(url: string): Promise<{ codigo: number; salida: string }> 
 const estadoDelCanal = async () => (await (await fetch(`http://127.0.0.1:${puertoControl}/control/estado`)).json()) as { modo: string };
 
 describe('scripts/panel-humo.mjs (RNF-04.7, RNF-06.4)', () => {
-  it('con el panel, M2 y el M6 simulado sanos termina en verde y comprueba las cinco cosas', async () => {
+  it('con el panel, M2 y el M6 simulado sanos termina en verde y comprueba las seis cosas', async () => {
     m2.responderCon({ tipo: 'ok', cuerpo: { estado: 'ok' } });
     const { url } = await levantarPanel();
 
@@ -88,8 +99,49 @@ describe('scripts/panel-humo.mjs (RNF-04.7, RNF-06.4)', () => {
     expect(salida).toContain('✔ El M6 simulado responde');
     expect(salida).toContain('✔ Un Origin ajeno recibe 403');
     expect(salida).toContain('✔ Un Host ajeno recibe 403');
+    expect(salida).toContain('✔ La vista de demostración informa la base y Docker');
     expect(salida).not.toContain('✘');
     expect(codigo).toBe(0);
+  });
+
+  it('muestra qué dijo el panel de Docker, con su motivo cuando no está disponible (spec 072, RNF-13.6)', async () => {
+    m2.responderCon({ tipo: 'ok', cuerpo: { estado: 'ok' } });
+    const { url } = await levantarPanel();
+
+    const { salida } = await correr(url);
+
+    expect(salida).toContain('Docker no disponible: el panel corre en un contenedor y no tiene acceso a Docker');
+  });
+
+  it('con Docker disponible (el panel en la máquina) también termina en verde y lo dice', async () => {
+    m2.responderCon({ tipo: 'ok', cuerpo: { estado: 'ok' } });
+    const { url } = await levantarPanel({}, { base: BASE_DISPONIBLE, docker: { ...DOCKER_DEL_CONTENEDOR, disponibilidad: async () => ({ disponible: true }) } });
+
+    const { codigo, salida } = await correr(url);
+
+    expect(salida).toContain('Docker disponible');
+    expect(codigo).toBe(0);
+  });
+
+  it('sin base (PANEL_URL_BD vacía o la base apagada) marca la línea de la vista y las demás siguen en verde, con código 1', async () => {
+    m2.responderCon({ tipo: 'ok', cuerpo: { estado: 'ok' } });
+    const { url } = await levantarPanel({}, { base: { ...BASE_DISPONIBLE, disponibilidad: async () => ({ disponible: false, motivo: 'la base no responde (ECONNREFUSED)' }) }, docker: DOCKER_DEL_CONTENEDOR });
+
+    const { codigo, salida } = await correr(url);
+
+    expect(salida).toMatch(/✘ La vista de demostración informa la base y Docker.*la base no responde \(ECONNREFUSED\)/);
+    expect(salida).toContain('✔ El panel está sano');
+    expect(codigo).toBe(1);
+  });
+
+  it('un Docker no disponible sin motivo hace fallar la línea: la vista no podría explicarlo', async () => {
+    m2.responderCon({ tipo: 'ok', cuerpo: { estado: 'ok' } });
+    const { url } = await levantarPanel({}, { base: BASE_DISPONIBLE, docker: { ...DOCKER_DEL_CONTENEDOR, disponibilidad: async () => ({ disponible: false }) } });
+
+    const { codigo, salida } = await correr(url);
+
+    expect(salida).toMatch(/✘ La vista de demostración informa la base y Docker.*motivo/);
+    expect(codigo).toBe(1);
   });
 
   it('el pedido con Origin ajeno no cambia nada en el M6 simulado', async () => {

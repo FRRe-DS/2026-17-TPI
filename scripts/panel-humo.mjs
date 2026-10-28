@@ -1,11 +1,13 @@
-// Prueba de humo del panel (spec 071, T13): con el panel andando, comprueba que está sano, que llega a M2, que llega al canal del
-// M6 simulado y que rechaza lo que no viene de su propia página. Imprime una línea por comprobación (✔ o ✘) y termina con
+// Prueba de humo del panel (spec 071, T13; spec 072, T9): con el panel andando, comprueba que está sano, que llega a M2, que llega al
+// canal del M6 simulado, que la vista de demostración llega a la base y sabe decir si puede usar Docker, y que rechaza lo que no
+// viene de su propia página. Imprime una línea por comprobación (✔ o ✘) y termina con
 // código 1 si alguna falla o si el panel no escucha. No cambia nada: el pedido con Origin ajeno es justamente el que el panel
 // tiene que rechazar, y si no lo hiciera solo pediría el modo `normal`.
 //   El panel como proceso:  docker compose up -d --build --wait
 //                           docker compose --profile panel up -d --build --wait m6
 //                           npm run panel
 //   El perfil completo:     docker compose --profile panel up -d --build --wait
+//                           (el panel del contenedor informa Docker no disponible, con su motivo; con `npm run panel`, disponible)
 //   node scripts/panel-humo.mjs [--panel <url>]
 // Sin --panel usa http://localhost:$PANEL_PUERTO (por defecto, 8083), el puerto que publica docker-compose.yml.
 import { request } from 'node:http';
@@ -60,6 +62,11 @@ function pedirConHostAjeno(ruta) {
   });
 }
 
+// Lo que la vista de demostración informa de la base y de Docker (spec 072, RNF-13.6): la base tiene que estar disponible, y Docker
+// puede no estarlo (el panel en su contenedor) siempre que lo diga con su motivo, que es lo que la vista le muestra a la persona.
+// Lo que dijo de Docker queda en la línea de salida.
+let dockerInformado = '';
+
 const comprobaciones = [
   {
     nombre: 'El panel está sano',
@@ -80,6 +87,23 @@ const comprobaciones = [
     async correr() {
       const { estado, cuerpo } = await pedir('/panel/m6/estado');
       return estado === 200 && ['normal', 'lento', 'caido'].includes(cuerpo?.modo) ? undefined : `GET /panel/m6/estado respondió ${estado}`;
+    },
+  },
+  {
+    nombre: 'La vista de demostración informa la base y Docker',
+    async correr() {
+      const { estado, cuerpo } = await pedir('/panel/demo/estado');
+      if (estado !== 200) return `GET /panel/demo/estado respondió ${estado}`;
+      const { base, docker } = cuerpo ?? {};
+      if (base?.disponible !== true) return `la base no está disponible: ${base?.motivo ?? 'sin motivo'}`;
+      if (typeof docker?.disponible !== 'boolean') return 'no informó si Docker está disponible';
+      if (docker.disponible) {
+        dockerInformado = 'Docker disponible';
+        return undefined;
+      }
+      if (typeof docker.motivo !== 'string' || docker.motivo === '') return 'Docker no disponible y sin motivo';
+      dockerInformado = `Docker no disponible: ${docker.motivo}`;
+      return undefined;
     },
   },
   {
@@ -120,7 +144,7 @@ for (const { nombre, correr } of comprobaciones) {
     problema = `no hubo respuesta (${error?.cause?.code ?? error?.name ?? 'error'})`;
   }
   if (problema === undefined) {
-    console.log(`${verde('✔')} ${nombre}`);
+    console.log(`${verde('✔')} ${nombre}${dockerInformado !== '' && nombre.includes('Docker') ? ` ${gris(`— ${dockerInformado}`)}` : ''}`);
   } else {
     fallas++;
     console.log(`${rojo('✘')} ${nombre} ${gris(`— ${problema}`)}`);

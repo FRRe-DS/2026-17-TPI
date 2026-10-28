@@ -6,5 +6,5 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/servidor.tsbuildinfo"
   },
-  "include": ["servidor", "m6-simulado"]
+  "include": ["servidor", "m6-simulado", "puente-bd"]
 }

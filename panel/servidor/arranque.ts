@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { Writable } from 'node:stream';
 import { construirApp } from './app.js';
 import { cargarConfigPanel, type Entorno } from './config.js';
+import type { DependenciasDemo } from './demo/rutas.js';
 import { registrarErroresDeConfig, resumenDeError, type Salir } from './proceso.js';
 
 // El cliente compilado está al lado de este archivo compilado: `panel/dist/servidor/` y `panel/dist/cliente/`.
@@ -13,6 +14,8 @@ export type OpcionesArranquePanel = {
   flujoLog?: Writable;
   // La carpeta con el cliente compilado. Solo para las pruebas, que no compilan el de verdad.
   directorioCliente?: string;
+  // La base y Docker de la vista de demostración, para probar sin una base real. Sin ellos, los de la configuración.
+  demo?: DependenciasDemo;
 };
 
 // El panel andando: la app, que ya escucha, y `detener`, que la cierra y termina con `salir(0)`. Llamarla otra vez devuelve la
@@ -24,7 +27,7 @@ export type PanelAndando = { app: FastifyInstance; detener: () => Promise<void> 
 export async function arrancarPanel(
   env: Entorno,
   salir: Salir,
-  { flujoLog, directorioCliente = DIRECTORIO_DEL_CLIENTE }: OpcionesArranquePanel = {},
+  { flujoLog, directorioCliente = DIRECTORIO_DEL_CLIENTE, demo }: OpcionesArranquePanel = {},
 ): Promise<PanelAndando | undefined> {
   const { config, errores } = cargarConfigPanel(env);
   if (errores) {
@@ -33,7 +36,7 @@ export async function arrancarPanel(
     return undefined;
   }
 
-  const app = construirApp({ config, flujoLog, directorioCliente });
+  const app = construirApp({ config, flujoLog, directorioCliente, demo });
   try {
     await app.listen({ host: config.escucha, port: config.puerto });
   } catch (error) {
