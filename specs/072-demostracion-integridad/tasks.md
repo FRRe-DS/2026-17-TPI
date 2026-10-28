@@ -41,7 +41,7 @@ Orden de dependencia, en cuatro tramos. Cada tarea es un commit `072/Tn: …`, c
 - [x] **T11. Ejecutar un caso, comparar y ejecutar todo.** RNF-07.4, RNF-07.6
   - Hecho cuando: `pruebas/panel/unitarias/ejecutar-caso.test.ts`, con un `pedir` y un M6 de mentira, comprueba que `logica/ejecutar-caso.ts` prepara, ejecuta y devuelve pedido, respuesta, esperado y veredicto; que una preparación fallida da ✘ «no se pudo preparar»; que un caso de resiliencia repone el modo anterior del M6 aunque falle; que `ejecutarTodo` va uno tras otro, informa el avance, sigue tras un ✘ o una excepción y termina con `{ correctos, incorrectos }`; y que `logica/resultado.ts` decide por código, `type`, `Retry-After`, `Location` y `application/problem+json`, con el motivo en una línea.
 
-- [ ] **T12. Catálogo completo contra M2 real.** RNF-07.3, RNF-07.4
+- [x] **T12. Catálogo completo contra M2 real.** RNF-07.3, RNF-07.4
   - Hecho cuando: `pruebas/panel/integracion/demo-casos.test.ts`, con M2 real, la base de Testcontainers, el M6 simulado y el panel, ejecuta `ejecutarTodo` con todo el catálogo por el reenvío del panel y todos los casos dan ✔; si algún caso no da lo que dice el contrato, se corrige el caso (no M2) o se anota como hallazgo de M2 en `guia.md` y se avisa antes de seguir.
 
 - [ ] **T13. Lógica de integridad, salud en vivo y API del cliente.** RNF-13.4, RNF-08.2, RNF-08.3, RNF-08.4

@@ -43,6 +43,8 @@ export type PanelConM2 = {
   apiPanel: ApiPanel;
   // Donde escucha el panel (`http://127.0.0.1:{puerto}`): lo que abre Chrome en la prueba en navegador.
   origen: string;
+  // El `fetch` de la página del panel: los caminos relativos van al panel y lo que no es consulta lleva `Origin`.
+  fetchDelPanel: typeof fetch;
   // Donde escuchan M2 y el canal de control del M6 simulado, y la base de M2: lo que el servidor del panel usa sin pasar por el
   // reenvío (spec 072: pruebas simultáneas y acceso a la base).
   urlM2: string;
@@ -121,6 +123,7 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string 
     estadoM6,
     apiPanel: crearApiPanel({ fetch: porElPanel }),
     origen,
+    fetchDelPanel: porElPanel,
     urlM2: `http://127.0.0.1:${puertoM2}`,
     urlM6Control: `http://127.0.0.1:${puertoControlM6}`,
     urlBd: base.urlBd,
