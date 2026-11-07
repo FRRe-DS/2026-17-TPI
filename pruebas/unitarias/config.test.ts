@@ -52,6 +52,8 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       urlM6: 'http://m6:3006/api/v1',
       audienciaM6: 'm6-viajes',
       reintentarDespuesS: 5,
+      modoTokens: 'hs256',
+      urlJwks: undefined,
     });
   });
 
@@ -67,6 +69,8 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       M2_URL_M6: 'https://m6.interno:8443/api/v1',
       M2_AUDIENCIA_M6: 'm6-prueba',
       M2_REINTENTAR_DESPUES_S: '30',
+      M2_MODO_TOKENS: 'jwks',
+      M2_URL_JWKS: 'https://keycloak.interno:8443/realms/ds-2026-realm/protocol/openid-connect/certs',
     };
     expect(cargada(env)).toEqual({
       urlBd: OBLIGATORIAS.M2_URL_BD,
@@ -82,6 +86,8 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       urlM6: 'https://m6.interno:8443/api/v1',
       audienciaM6: 'm6-prueba',
       reintentarDespuesS: 30,
+      modoTokens: 'jwks',
+      urlJwks: 'https://keycloak.interno:8443/realms/ds-2026-realm/protocol/openid-connect/certs',
     });
   });
 
@@ -106,6 +112,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
     ['M2_AUDIENCIA_M6', 'https://m6.interno/viajes', 'audienciaM6', 'https://m6.interno/viajes'],
     ['M2_REINTENTAR_DESPUES_S', '1', 'reintentarDespuesS', 1],
     ['M2_REINTENTAR_DESPUES_S', '3600', 'reintentarDespuesS', 3600],
+    ['M2_MODO_TOKENS', 'hs256', 'modoTokens', 'hs256'],
+    ['M2_URL_JWKS', 'http://keycloak:8080/realms/r/protocol/openid-connect/certs', 'urlJwks', 'http://keycloak:8080/realms/r/protocol/openid-connect/certs'],
+    ['M2_URL_JWKS', 'HTTPS://keycloak.interno/certs/', 'urlJwks', 'HTTPS://keycloak.interno/certs'],
   ])('%s = %j es válida', (variable, valor, campo, esperado) => {
     expect(cargada({ ...OBLIGATORIAS, [variable]: valor })).toMatchObject({ [campo]: esperado });
   });
@@ -161,6 +170,16 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
     ['M2_REINTENTAR_DESPUES_S', '3601'],
     ['M2_REINTENTAR_DESPUES_S', '1.5'],
     ['M2_REINTENTAR_DESPUES_S', 'pronto'],
+    ['M2_MODO_TOKENS', 'rs256'],
+    ['M2_MODO_TOKENS', 'JWKS'],
+    ['M2_MODO_TOKENS', 'hs256 '],
+    ['M2_MODO_TOKENS', 'basico'],
+    ['M2_URL_JWKS', 'ftp://keycloak/certs'],
+    ['M2_URL_JWKS', 'keycloak:8080/certs'],
+    ['M2_URL_JWKS', 'http://keycloak:99999/certs'],
+    ['M2_URL_JWKS', 'esto no es una url'],
+    ['M2_URL_JWKS', 'http://usuario:clave@keycloak:8080/certs'],
+    ['M2_URL_JWKS', 'http://usuario@keycloak:8080/certs'],
   ])('%s = %j es inválida y se informa sola', (variable, valor) => {
     const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }));
     expect(nombres(errores)).toEqual([variable]);
@@ -207,6 +226,9 @@ describe('cargarConfig: valores inválidos (RNF-06.2)', () => {
     ['M2_URL_M6', `ftp://usuario:${CENTINELA}@m6/api`],
     ['M2_URL_M6', `http://usuario:${CENTINELA}@m6/api`],
     ['M2_REINTENTAR_DESPUES_S', CENTINELA],
+    ['M2_MODO_TOKENS', CENTINELA],
+    ['M2_URL_JWKS', `ftp://usuario:${CENTINELA}@keycloak/certs`],
+    ['M2_URL_JWKS', `http://usuario:${CENTINELA}@keycloak/certs`],
   ])('%s inválida: el error no repite el valor recibido', (variable, valor) => {
     const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }));
     expect(nombres(errores)).toEqual([variable]);
@@ -244,8 +266,77 @@ describe('cargarConfig: variables que faltan o están vacías (RNF-06.1, RNF-06.
       M2_ENCABEZADO_CORRELACION: '',
       M2_AUDIENCIA_M6: '',
       M2_REINTENTAR_DESPUES_S: '',
+      M2_MODO_TOKENS: '',
+      M2_URL_JWKS: '',
     };
     expect(cargada(vacias)).toEqual(cargada(OBLIGATORIAS));
+  });
+});
+
+// Dos modos de validar tokens, uno por vez (RNF-06.7). En `jwks` hace falta la URL de las claves (RNF-06.9); la clave de
+// `M2_CLAVE_TOKENS` sigue siendo obligatoria en los dos, porque con ella M2 firma el token que presenta ante M6 (ADR 080).
+describe('cargarConfig: modo de los tokens (RNF-06.7, RNF-06.9)', () => {
+  const URL_JWKS = 'http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/certs';
+
+  it('sin M2_MODO_TOKENS, el modo es hs256 y no pide la URL de las claves', () => {
+    expect(cargada(OBLIGATORIAS)).toMatchObject({ modoTokens: 'hs256', urlJwks: undefined });
+  });
+
+  it.each(['hs256', 'jwks'] as const)('acepta el modo %s', (modo) => {
+    expect(cargada({ ...OBLIGATORIAS, M2_MODO_TOKENS: modo, M2_URL_JWKS: URL_JWKS })).toMatchObject({ modoTokens: modo });
+  });
+
+  it('en modo hs256 guarda la URL si está, y no la pide si falta', () => {
+    expect(cargada({ ...OBLIGATORIAS, M2_MODO_TOKENS: 'hs256', M2_URL_JWKS: URL_JWKS })).toMatchObject({ urlJwks: URL_JWKS });
+    expect(cargada({ ...OBLIGATORIAS, M2_MODO_TOKENS: 'hs256' })).toMatchObject({ urlJwks: undefined });
+  });
+
+  it('en modo jwks usa la URL de las claves', () => {
+    expect(cargada({ ...OBLIGATORIAS, M2_MODO_TOKENS: 'jwks', M2_URL_JWKS: URL_JWKS })).toMatchObject({
+      modoTokens: 'jwks',
+      urlJwks: URL_JWKS,
+    });
+  });
+
+  it('en modo jwks, si falta M2_URL_JWKS, el error la nombra y es el único', () => {
+    expect(erroresDe(cargarConfig({ ...OBLIGATORIAS, M2_MODO_TOKENS: 'jwks' }))).toEqual([
+      { variable: 'M2_URL_JWKS', motivo: 'es obligatoria y no tiene valor' },
+    ]);
+  });
+
+  it('en modo jwks, una M2_URL_JWKS vacía cuenta como no definida', () => {
+    const vacia = erroresDe(cargarConfig({ ...OBLIGATORIAS, M2_MODO_TOKENS: 'jwks', M2_URL_JWKS: '' }));
+    const ausente = erroresDe(cargarConfig({ ...OBLIGATORIAS, M2_MODO_TOKENS: 'jwks' }));
+    expect(vacia).toEqual(ausente);
+  });
+
+  it('un modo que no es uno de los dos nombra M2_MODO_TOKENS, sin repetir el valor, y no pide la URL', () => {
+    const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, M2_MODO_TOKENS: 'rs256-secreto-7f3a' }));
+    expect(nombres(errores)).toEqual(['M2_MODO_TOKENS']);
+    expect(JSON.stringify(errores)).not.toContain('rs256-secreto-7f3a');
+  });
+
+  it.each(['hs256', 'jwks'])('en modo %s, M2_CLAVE_TOKENS sigue siendo obligatoria', (modo) => {
+    const env = { ...sin(OBLIGATORIAS, 'M2_CLAVE_TOKENS'), M2_MODO_TOKENS: modo, M2_URL_JWKS: URL_JWKS };
+    expect(nombres(erroresDe(cargarConfig(env)))).toEqual(['M2_CLAVE_TOKENS']);
+  });
+
+  it('una URL con usuario y contraseña se rechaza en los dos modos', () => {
+    for (const modo of ['hs256', 'jwks']) {
+      const env = { ...OBLIGATORIAS, M2_MODO_TOKENS: modo, M2_URL_JWKS: 'http://usuario:clave@keycloak/certs' };
+      expect(nombres(erroresDe(cargarConfig(env)))).toEqual(['M2_URL_JWKS']);
+    }
+  });
+
+  it('el comando de tokens no mira el modo ni la URL', () => {
+    const resultado = cargarConfigTokens({
+      M2_CLAVE_TOKENS: CLAVE,
+      M2_EMISOR_TOKENS: 'm1-identidad',
+      M2_AUDIENCIA_TOKENS: 'm2-clientes',
+      M2_MODO_TOKENS: 'no-existe',
+      M2_URL_JWKS: 'no-es-una-url',
+    });
+    expect(resultado.errores).toBeUndefined();
   });
 });
 

@@ -6,7 +6,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 
 ## Tramo A — M2, sin Keycloak real
 
-- [ ] **T1. Configuración del modo de tokens.** RNF-06.7, RNF-06.9
+- [x] **T1. Configuración del modo de tokens.** RNF-06.7, RNF-06.9
   - Hecho cuando: `pruebas/unitarias/config.test.ts` comprueba que sin variables el modo es `hs256`, que acepta `hs256` y `jwks`, que otro valor da un error que nombra `M2_MODO_TOKENS` sin repetir el valor, que en modo `jwks`, si falta `M2_URL_JWKS`, da un error que la nombra, que esa URL cumple la regla `urlHttp` (con usuario y contraseña se rechaza), y que `M2_CLAVE_TOKENS` sigue obligatoria en los dos modos; `ejemplo.env` tiene las dos variables, cada una con su comentario arriba y la forma `VARIABLE=${VARIABLE:-valor}`, y `pruebas/unitarias/ejemplo-env.test.ts` las acepta; `CONFIG` de `pruebas/ayudas/app.ts` usa `hs256`.
 
 - [ ] **T2. Validar tokens RS256 con un JWKS.** RNF-12.11, RNF-12.12, RNF-07.12

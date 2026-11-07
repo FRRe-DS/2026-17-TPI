@@ -32,6 +32,8 @@ const DEL_SERVICIO = [
   'M2_URL_M6',
   'M2_AUDIENCIA_M6',
   'M2_REINTENTAR_DESPUES_S',
+  'M2_MODO_TOKENS',
+  'M2_URL_JWKS',
 ];
 const DE_LA_BASE = ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB'];
 // Specs 071 y 072: las del panel y las del M6 simulado. Las lee panel/servidor/config.ts, no el servicio (PANEL_PUERTO_BD, solo compose).
@@ -86,6 +88,7 @@ describe('ejemplo.env (RNF-06.3)', () => {
       encabezadoCorrelacion: 'X-Request-Id',
       audienciaM6: 'm6-viajes',
       reintentarDespuesS: 5,
+      modoTokens: 'hs256',
     });
   });
 
