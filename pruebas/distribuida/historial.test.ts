@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { crearClienteEnM2 } from './ayudas/clientes.js';
 import { validarContraContrato } from './ayudas/contrato.js';
 import { describirRespuesta } from './ayudas/errores.js';
-import { pedirM2, pedirM6, tokenDeM2 } from './ayudas/pedir.js';
+import { pedirM2, pedirM6, tokenDeServicioDeM2 } from './ayudas/pedir.js';
 import { crearViaje } from './ayudas/viajes.js';
 
 // El historial de viajes de M2 contra el M6 real (RF-2.4, RNF-07.8). M2 consulta a M6 `GET /trips?clientId=…` con su token de
@@ -62,7 +62,7 @@ describe('el historial de viajes de M2 con el M6 real (RF-2.4, RNF-07.8)', () =>
 
   // El pedido que llega a M6 se ve con pedirM6: la misma consulta, con la página de M6 (desde 1), da los mismos viajes.
   it('lo que M2 muestra en cada página es lo que M6 devuelve para esa página, contada desde 1', async () => {
-    const servicio = await tokenDeM2('m2-clientes', ['SERVICIO']);
+    const servicio = await tokenDeServicioDeM2();
     for (const paginaM2 of [0, 1]) {
       const m2 = (await historial(`?page=${paginaM2}&size=2`)).cuerpo as Pagina;
       const m6 = await pedirM6('GET', `/trips?clientId=${clienteId}&page=${paginaM2 + 1}&pageSize=2`, { token: servicio });

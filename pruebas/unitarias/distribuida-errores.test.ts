@@ -18,6 +18,13 @@ describe('describirRespuesta (RNF-07.11)', () => {
     expect(texto).toContain('Token vencido');
   });
 
+  // El contrato de M6 (`Problem`) exige `message` y deja `detail` como opcional.
+  it('sin detail, trae el message', () => {
+    const texto = describirRespuesta(respuesta(401, { code: 'UNAUTHENTICATED', message: 'Token vencido' }));
+    expect(texto).toContain('code=UNAUTHENTICATED');
+    expect(texto).toContain('Token vencido');
+  });
+
   it('si el cuerpo no es un ErrorResponse, muestra el comienzo del texto', () => {
     const texto = describirRespuesta(respuesta(502, undefined, '<html>Bad gateway</html>'));
     expect(texto).toContain('HTTP 502');

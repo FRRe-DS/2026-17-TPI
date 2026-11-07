@@ -48,12 +48,14 @@ La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del cont
 | 2 | M6 no verifica la firma del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. Su README lo anota como pendiente, a la espera de M1. | `[NECESITA ACLARACIÓN]` qué `aud` e `iss` valida. | Sin cambio en M2: el token de servicio pasa. Cuando M6 verifique, M2 tendrá que firmar con lo que M6 acuerde. | Grupo 12 (issue A) |
 | 3 | M6 acepta el claim `roles` y `SERVICIO` como alias de `SYSTEM` (y `CLIENTE`, `CONDUCTOR`, `OPERADOR`). | Coincide: nombra `SYSTEM` / `SERVICIO`. El contrato actual solo nombra los roles en inglés. | Ninguna para M2. Pedir que el contrato documente los alias y el claim `roles`. | Grupo 12 (issue B) |
 | 4 | `GET /trips` con token `SYSTEM` exige `clientId` o `driverId`; sin ninguno, `400` con `code` `VALIDATION`. (Leído en su `openapi.yaml` y su código; M2 siempre manda `clientId`, no se ejerció.) | `SYSTEM` exige al menos un filtro entre `clientId`, `driverId` y `state`; el error es `FILTER_REQUIRED`. | Ninguna para M2. M6 coincide con el contrato actual; lo desactualizado es `m6.yml`: rama `contrato/079-…`. | Nosotros |
-| 5 | `GET /trips/{id}` con token `SYSTEM` devuelve el viaje de cualquier cliente. | El contrato no dice qué ve cada rol. | M2 compara el `clientId` del viaje con el del pedido y responde `404` (comprobado en T6). | Nadie: es una regla nuestra. |
-| 6 | Un `404` de M6 al listar el historial da `500` en M2, no `503`. | — | Es el diseño de M2 (RF-2.4.7: un `4xx` de otro módulo es un problema de acuerdo entre módulos, no del cliente). | Nadie. |
+| 5 | `GET /trips/{id}` con token `SYSTEM` devuelve el viaje de cualquier cliente. | Coincide: lo permite a un módulo de servicio, y dice que M2 verifica que el viaje «pertenezca al `clientId`». | M2 compara el `clientId` del viaje con el del pedido y responde `404` (comprobado en T6). | Nadie: no es una diferencia. |
+| 6 | Un `404` de M6 al listar el historial da `500` en M2, no `503`. | `GET /trips` no declara `404`. | Es el diseño de M2 (RF-2.4.7: un `4xx` de otro módulo es un problema de acuerdo entre módulos, no del cliente). | Nadie. |
 | 7 | M6 limita los pedidos por minuto y responde `429` con `Retry-After`. M2 lo trata como `4xx` y responde `500`. | No declara `429` (el contrato actual sí). | Propuesta de `sdd-change` de las specs 007 y 008: M2 responde `503` con `Retry-After` ante un `429`. `m6.yml` se actualiza en la rama `contrato/079-…`. | Nosotros |
 | 8 | M6 propaga `X-Correlation-Id`; M2 manda el encabezado de `M2_ENCABEZADO_CORRELACION` (por defecto `X-Request-Id`), así que M6 genera su propio id y las trazas de los dos no se unen. | No declara encabezado de correlación (el contrato actual declara `X-Correlation-Id`). | Propuesta de `sdd-change` de las specs 007 y 008: enviar también `X-Correlation-Id` a M6. `m6.yml` se actualiza en la rama `contrato/079-…`. | Nosotros |
 | 9 | El M8 de M6 es simulado: acepta cualquier `verificationToken` salvo unos pocos, y cada uno sirve una vez. | — | Solo afecta la preparación de viajes de la prueba. | Nadie. |
-| 10 | Con M6 detenido, M2 ve `ENOTFOUND` y responde `503` en ~300 ms; con M6 congelado, `TimeoutError` y `503` en ~4,2 s. | M2 promete 2 s por intento y un reintento. | Coincide. | Nadie. |
+| 10 | Con M6 detenido, M2 ve `ENOTFOUND` y responde `503` en ~300 ms; con M6 congelado, `TimeoutError` y `503` en ~4,2 s. | No trata este caso. | Coincide con lo que promete el contrato de M2: 2 s por intento y un reintento. | Nadie. |
+| 11 | Un viaje cancelado queda en `state` `CANCELLED`. | `TripState` declara `CANCELLED_BY_CLIENT` y `CANCELLED_BY_DRIVER`, y no `CANCELLED` (el contrato actual declara `CANCELLED`). | Ninguna en el código de M2: devuelve el estado sin traducir (RF-2.4.1) y solo compara con `COMPLETED`. Falta alinear `m6.yml` y el M6 simulado (`panel/m6-simulado/cuerpos.ts`, que usa los nombres viejos): rama `contrato/079-…`. | Nosotros |
+| 12 | Los errores de M6 son `application/problem+json` con `type`, `title`, `status`, `code`, `detail`, `message`, `timestamp`, `instance` y `correlationId` (visto en un `401`). | `ErrorResponse` exige solo `code`, `message` y `timestamp` (el contrato actual declara `Problem`, como M6). | Ninguna en el código de M2: de un error de M6 solo usa el código HTTP. Falta alinear `m6.yml`: rama `contrato/079-…`. | Nosotros |
 
 ## Tareas
 
@@ -64,7 +66,7 @@ La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del cont
 - Tests: `pruebas/unitarias/consistencia.test.ts` (servicios y variables nuevos aceptados, y que sin el perfil no se crea nada de M6), `pruebas/unitarias/ejemplo-env.test.ts` y `pruebas/panel/unitarias/config.test.ts` (el filtro de `M6_REAL_*`).
 - Para mirar con atención:
   - **La URL no lleva `/api/v1`.** El plan se escribió con `http://m6-real:3006/api/v1`, pero el M6 real sirve en `/trips`, igual que el contrato de la cátedra. El prefijo que usa M2 sale de `servers` de nuestro `contrato/dependencias/m6.yml`. Comprobado con M2: `M2_URL_M6=http://m6-real:3006` da `200` y con `/api/v1` da `500`. Se corrigieron `plan.md`, `tasks.md`, `docker-compose.yml` y `ejemplo.env`; la spec no cambia (RNF-06.6 sigue igual). Falta volver a extraer `m6.yml` del contrato actual de la cátedra (`35b3c4d`) y alinear el M6 simulado, que hoy sí usa el prefijo (por eso el valor por defecto de `M2_URL_M6` lo conserva): va en la rama `contrato/079-…`.
-  - **Commit fijo.** Se fijó `7d3d5af9138d9b220f109798e9f615ca853d2bda`, con el que se probó. El 2026-11-07 la punta de `m6/base-de-datos` del Grupo 12 es `107d63c7ed0e854334d0b0578a4f6124264d045c` (su PR #8, que solo toca el README y una prueba suya). Contra esa punta también pasan las 34 pruebas (`M6_REAL_COMMIT=107d63c… npm run integracion:m6`). El commit fijo no se subió, porque el cambio no toca el servicio.
+  - **Commit fijo.** Se fijó `7d3d5af9138d9b220f109798e9f615ca853d2bda`, con el que se probó. El 2026-11-07 la punta de `m6/base-de-datos` del Grupo 12 es `107d63c7ed0e854334d0b0578a4f6124264d045c` (su PR #8, que solo toca el README y una prueba suya). Contra esa punta también pasan las 35 pruebas (`M6_REAL_COMMIT=107d63c… npm run integracion:m6`). El commit fijo no se subió, porque el cambio no toca el servicio.
   - **Si M6 responde 404 al listar el historial, M2 contesta `500`, no `503`.** Es el comportamiento actual de M2 ante un código inesperado de M6; queda anotado para las tareas de errores de la 081.
 
 ### T2 — Arranque y parada de la prueba distribuida · commit `081/T2`
@@ -78,11 +80,11 @@ La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del cont
 - Qué cambió: `pruebas/distribuida/ayudas/viajes.ts:crearViaje(clienteId, estado)` deja un viaje `COMPLETED`, `CANCELLED` o `IN_PROGRESS` en el M6 real. `ayudas/errores.ts:describirRespuesta` arma el texto «HTTP 401 — code=…: detalle» con el que las fallas cuentan qué contestó un módulo.
 - Por qué así: RNF-07.11 y RNF-07.7. Rutas, cuerpos y roles salen de `openapi.yaml` de M6 en el commit fijado (`7d3d5af`), no de `m6.yml`. Cada llamada usa conductor, vehículo y solicitud nuevos, así que los escenarios no se pisan.
 - Cómo se conecta: usa `pedirM6` (suma al contador) con los atajos de demo de M6: `SYSTEM` para `createTrip`, `DRIVER:<id>` para llegada, inicio y fin, `CLIENT:<id>` para cancelar. Los tres recorridos son: `COMPLETED` = `createTrip` → `arrived` → `start` → `complete`; `IN_PROGRESS` = lo mismo sin `complete`; `CANCELLED` = `createTrip` → `cancel` del cliente con `CHANGE_OF_PLANS`, que M6 permite desde `PENDING_ARRIVAL`.
-- Tests: `pruebas/distribuida/viajes.test.ts` (cada estado llega a M6, con el cliente y el conductor correctos), `pruebas/distribuida/token-servicio.test.ts` (con el token de M2, `sub` `m2-clientes` y `roles` `["SERVICIO"]`, `GET /trips?clientId=…` y `GET /trips/{id}` dan `200`; sin token M6 da `401` con `code` `UNAUTHENTICATED` y el mensaje lo muestra) y `pruebas/unitarias/distribuida-errores.test.ts`.
-- Para mirar con atención (diferencias de M6 frente a lo que M2 supone, para el Grupo 12 en la T10):
+- Tests: `pruebas/distribuida/viajes.test.ts` (cada estado llega a M6, con el cliente y el conductor correctos), `pruebas/distribuida/token-servicio.test.ts` (con el token que M2 firma para M6, `GET /trips?clientId=…` y `GET /trips/{id}` dan `200`; sin token M6 da `401` con `code` `UNAUTHENTICATED` y el mensaje lo muestra) y `pruebas/unitarias/distribuida-errores.test.ts`. El token lo firma `ayudas/pedir.ts:tokenDeServicioDeM2`, con la misma función y configuración que usa M2; ver «Revisión independiente» al final.
+- Para mirar con atención (lo que se vio de M6 en esta tarea; a quién le toca cada cosa está en la tabla de diferencias):
   - M6 **no verifica la firma** del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. Por eso el token de M2 pasa, pero también pasaría uno firmado por cualquiera. Esto responde parte del `[NECESITA ACLARACIÓN]` de `m6.yml` sobre `aud` e `iss`.
   - M6 acepta `SERVICIO` como alias de `SYSTEM` (también `CLIENTE`, `CONDUCTOR`, `OPERADOR`). Su `openapi.yaml` solo nombra los roles en inglés.
-  - `listTrips` en M6 usa `page` desde 1 y `pageSize`, y devuelve `{ items, page, pageSize, total }`. Un `SYSTEM` sin `clientId` ni `driverId` recibe `400`.
+  - `listTrips` en M6 usa `page` desde 1 y `pageSize`, y devuelve `{ items, page, pageSize, total }`, como dice `m6.yml`. Un `SYSTEM` sin `clientId` ni `driverId` recibe `400`.
   - El M8 de M6 es simulado: acepta cualquier `verificationToken` salvo `invalid`, `expired`, `invalid_…`, `m8_timeout` y `simulate_503`, y cada código sirve una sola vez.
 
 ### T4 — Historial contra el M6 real · commit `081/T4`
@@ -147,13 +149,13 @@ La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del cont
 >
 > **Qué dice el contrato.** `bearerAuth` dice «Token emitido por M1 (Identidad y Acceso)», sin indicar qué `iss` y `aud` se esperan.
 >
-> **Qué pedimos.** Para cuando M6 empiece a verificar, que nos digan: (1) qué `iss` va a esperar; (2) qué `aud`; (3) con qué clave o JWKS va a verificar; y (4) en qué fecha aproximada. M2 hoy firma su token de servicio con su propia clave y nos interesa adaptarlo antes de que deje de pasar. Si todavía no está definido, nos alcanza con que nos avisen en este issue cuando lo esté.
+> **Qué pedimos.** Para cuando M6 empiece a verificar, que nos digan: (1) qué `iss` va a esperar; (2) qué `aud`; (3) con qué clave o JWKS va a verificar; y (4) en qué fecha aproximada. Hoy M2 se presenta con `iss` `m1-identidad`, `aud` `m6-viajes`, `sub` `m2-clientes` y `roles: ["SERVICIO"]`, firmado con su propia clave. Nos interesa adaptarlo antes de que deje de pasar. Si todavía no está definido, nos alcanza con que nos avisen en este issue cuando lo esté.
 
 **Issue B — Documentar en el contrato el claim `roles` y los alias de rol** (fila 3)
 
 > **Qué observamos.** Nuestro token de servicio lleva `roles: ["SERVICIO"]`. M6 lo acepta: `auth.middleware.ts` lee `role` o `roles`, y toma `SERVICIO` (y `SERVICE`) como `SYSTEM`, `CLIENTE` como `CLIENT`, `CONDUCTOR` como `DRIVER` y `OPERADOR` como `OPERATOR`. Lo probamos de punta a punta con el historial y la calificación de M2.
 >
-> **Qué dice el contrato.** El contrato de M6 (`contratos/m6_viajes/openapi.yml`, igual a su `openapi.yaml`) habla de «su rol» y solo nombra `CLIENT`, `DRIVER`, `OPERATOR` y `SYSTEM`. No menciona el claim `roles` ni los nombres en español.
+> **Qué dice el contrato.** El contrato de M6 (`contratos/m6_viajes/openapi.yml`, igual a su `openapi.yaml`) habla de «su rol» y solo nombra `CLIENT`, `DRIVER`, `OPERATOR` y `SYSTEM`. No menciona el claim `roles` ni los nombres en español. La versión anterior (`9e720a0`) sí los documentaba; la confirmada (`35b3c4d`) ya no.
 >
 > **Qué pedimos.** Que el contrato documente que se aceptan `roles` y esos alias. Así M2 y cualquier otro módulo que se presente con `SERVICIO` se apoya en algo acordado y no en un detalle del código que podría cambiar. No hace falta cambiar el comportamiento: solo que quede escrito.
 
@@ -169,3 +171,14 @@ La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del cont
 - Hoy: M2 manda su id de correlación en el encabezado de `M2_ENCABEZADO_CORRELACION` (por defecto `X-Request-Id`). M6 usa `X-Correlation-Id` y, si no viene, genera uno propio, así que el id de una solicitud de M2 no aparece en los logs de M6 (RNF-14).
 - Cambio: el cliente de módulos manda también `X-Correlation-Id`, con el mismo valor que `X-Request-Id` (decidido en `spec.md`, sección Decisiones).
 - Cómo se probaría: prueba unitaria del cliente de módulos (el encabezado sale en cada intento) y, en la distribuida, que un pedido a M2 deje el mismo id en los logs de M6 (`docker compose logs m6-real`).
+
+## Revisión independiente
+
+El revisor (2026-11-07) pidió estos cambios, ya aplicados:
+- **La prueba de RNF-07.11 no usaba el token real.** Tomaba el de `dist/herramientas/token.js`, el comando que hace de M1: `aud` `m2-clientes` y 1 hora de vida. M2 ante M6 usa `tokenDeServicio`: `aud` `m6-viajes` y 60 s (visto decodificando los dos en el contenedor). Hoy daría igual porque M6 no mira `aud`, pero el día que lo mire la prueba podía quedar en verde con el historial roto. Ahora `tokenDeServicioDeM2` corre esa función dentro del contenedor de M2, y una prueba nueva comprueba `sub`, `roles`, `aud` y vida. El defecto venía del plan (corregido).
+- **Tabla de diferencias.** La fila 5 decía algo falso sobre `m6.yml`; se sumaron las filas 11 y 12.
+- **`describirRespuesta`** leía solo `detail`, que el contrato de M6 deja como opcional: ahora también `message`.
+- **Vigilancia.** `consistencia.test.ts` ahora sí exige el comando exacto de `npm test` (la guía de la T2 lo daba por hecho y no existía) y que `docs/probar-m2.md` cite el commit que usa compose.
+- **Otros.** `resiliencia` pasa a 240 s por prueba, más que los 180 s que puede tardar `restablecerM6`. En `docs/probar-m2.md`, repetir un archivo lleva `M2_DEJAR_LEVANTADO=1`, y `down -v` avisa que borra la base de trabajo de M2.
+
+Queda sin tocar: RNF-13.8 dice que la calificación vuelve a `200`, y la prueba y el contrato dicen `201`. Manda el contrato; la spec se corrige en el próximo `sdd-change`.

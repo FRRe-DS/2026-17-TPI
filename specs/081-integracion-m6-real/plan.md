@@ -57,7 +57,7 @@ devuelve { viajeId, conductorId, estado }
 ```
 Los nombres exactos de rutas, cuerpos y roles salen de `openapi.yaml` del Grupo 12 en el commit fijado; T3 los lee ahí y no del supuesto de `m6.yml`.
 
-**Pedidos**. `pedirM2(token, método, ruta, cuerpo?)` y `pedirM6(...)`, con `fetch`, `AbortSignal.timeout(10 s)` y un contador de pedidos. El token de M2 sale del mismo comando que usa la demo (`docker compose exec m2 node dist/herramientas/token.js`), no de uno armado con claves de prueba: así M2 se presenta ante M6 con el token que firma de verdad. El token de servicio de la comprobación RNF-07.11 usa `sub` `m2-clientes` y `roles` `["SERVICIO"]`, como M2 (ADR 009).
+**Pedidos**. `pedirM2(token, método, ruta, cuerpo?)` y `pedirM6(...)`, con `fetch`, `AbortSignal.timeout(10 s)` y un contador de pedidos. El token de un cliente sale del mismo comando que usa la demo (`docker compose exec m2 node dist/herramientas/token.js`), no de uno armado con claves de prueba. El token de servicio de la comprobación RNF-07.11 sale de `tokenDeServicio`, corrida dentro del contenedor de M2 con su configuración: así M2 se presenta ante M6 con el token que firma de verdad (`sub` `m2-clientes`, `roles` `["SERVICIO"]`, `aud` de M6; ADR 009).
 
 **Límite de M6** (1200 por minuto). Un contador suma los pedidos de la prueba a M6 y, por cada pedido a M2 que consulta a M6, hasta `1 + M2_REINTENTOS_MODULOS`. Una prueba final comprueba que el total de la corrida no pasa de 600, la mitad del límite.
 

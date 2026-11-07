@@ -45,10 +45,30 @@ export function pedirM6(metodo: string, ruta: string, pedido: Pedido & { token?:
   return pedir(URL_M6, metodo, ruta, pedido.token, pedido);
 }
 
-// Un token que M2 acepta, firmado por el mismo M2 con su comando de desarrollo (el que usa la demo), y no uno armado con claves de
-// prueba: así M2 se presenta ante M6 con el token que firma de verdad.
+// Un token que M2 acepta (el de un cliente, por ejemplo), firmado con su comando de desarrollo, el que hace de M1 en la demo. No es
+// el token con el que M2 se presenta ante M6: para eso está `tokenDeServicioDeM2`.
 export async function tokenDeM2(sub: string, roles: string[]): Promise<string> {
   const salida = await compose(['exec', '-T', 'm2', 'node', 'dist/herramientas/token.js', '--sub', sub, '--roles', roles.join(',')], {
+    tiempoMs: 30_000,
+  });
+  return salida.trim();
+}
+
+// Corre dentro del contenedor de M2 la misma función, con la misma configuración, que usa M2 al llamar a M6 (`src/historial/m6.ts`).
+const FIRMAR_TOKEN_DE_SERVICIO = `
+import { tokenDeServicio } from './dist/auth/tokens.js';
+import { cargarConfig } from './dist/config.js';
+const { config, errores } = cargarConfig(process.env);
+if (config === undefined) {
+  console.error('Configuración no válida: ' + errores.map(({ variable }) => variable).join(', '));
+  process.exit(1);
+}
+console.log(await tokenDeServicio(config));
+`;
+
+// El token con el que M2 se presenta ante M6 de verdad. Vive 60 s: se pide justo antes de usarlo.
+export async function tokenDeServicioDeM2(): Promise<string> {
+  const salida = await compose(['exec', '-T', 'm2', 'node', '--input-type=module', '-e', FIRMAR_TOKEN_DE_SERVICIO], {
     tiempoMs: 30_000,
   });
   return salida.trim();

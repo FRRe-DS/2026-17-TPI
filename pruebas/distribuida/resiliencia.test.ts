@@ -15,7 +15,8 @@ import { crearViaje } from './ayudas/viajes.js';
 // Son dos averías distintas: `stop` deja a M6 sin contenedor, así que M2 falla enseguida; `pause` lo congela, así que la conexión
 // queda colgada y solo la corta el tiempo máximo de M2. Cada una corre en `conAveria`, que deja a M6 sano aunque un paso falle, y
 // la siguiente prueba arranca con M6 sano.
-const TIEMPO_PRUEBA_MS = 120_000;
+// Más que lo que puede tardar `restablecerM6` (hasta 180 s), para que Vitest no siga con M6 sin restablecer.
+const TIEMPO_PRUEBA_MS = 240_000;
 const TIEMPO_COMANDO_MS = 60_000;
 const CORTE_RESPUESTA_MS = 10_000;
 

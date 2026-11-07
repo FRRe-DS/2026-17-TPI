@@ -223,7 +223,7 @@ Crea cuatro servicios sanos: `m2`, `bd`, `m6-real` y `m6-real-bd`. Lo único que
 | Base de M6 | sin puerto publicado |
 | Credenciales de la base de M6 | `M6_REAL_BD_USUARIO`, `M6_REAL_BD_CLAVE`, `M6_REAL_BD_NOMBRE` (valores de desarrollo en `ejemplo.env`) |
 
-Se corta con `docker compose --profile m6-real down -v`.
+Se corta con `docker compose --profile m6-real down`. Con `-v` también borra los datos: los de M6 y la base de trabajo de M2.
 
 ### Recorrerlo a mano
 
@@ -268,7 +268,7 @@ npm ci
 npm run integracion:m6
 ```
 
-Levanta todo por su cuenta en un proyecto de compose aparte (`m2-distribuida`, con M2 en el puerto 18082 y M6 en el 13006, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. La primera vez construye M6 (unos minutos); con la imagen en caché tarda unos 30 s. Salida esperada: `Test Files  7 passed (7)` y `Tests  34 passed (34)`. Lo que prueba, por archivo (`pruebas/distribuida/`):
+Levanta todo por su cuenta en un proyecto de compose aparte (`m2-distribuida`, con M2 en el puerto 18082 y M6 en el 13006, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. La primera vez construye M6 (unos minutos); con la imagen en caché tarda unos 30 s. Salida esperada: `Test Files  7 passed (7)` y `Tests  35 passed (35)`. Lo que prueba, por archivo (`pruebas/distribuida/`):
 
 | Archivo | Qué comprueba | Requisito |
 |---|---|---|
@@ -279,6 +279,6 @@ Levanta todo por su cuenta en un proyecto de compose aparte (`m2-distribuida`, c
 | `rechazos.test.ts` | Viaje inexistente o ajeno (404), cancelado o en curso (422) | RNF-07.10 |
 | `resiliencia.test.ts` | M6 detenido y congelado: 503 con `Retry-After`, lo propio de M2 en 200, y recuperación sin reiniciar M2 | RNF-13.8 |
 
-Con `M2_DEJAR_LEVANTADO=1 npm run integracion:m6` el entorno queda levantado al terminar, para mirar los logs (`docker compose -p m2-distribuida --profile m6-real logs`) o repetir un archivo (`npx vitest run --project distribuida pruebas/distribuida/historial.test.ts`); se baja con `docker compose -p m2-distribuida --profile m6-real down -v`. Si algo falla al arrancar (Docker apagado, el build roto), la corrida termina en rojo con un mensaje que dice qué falló.
+Con `M2_DEJAR_LEVANTADO=1 npm run integracion:m6` el entorno queda levantado al terminar, para mirar los logs (`docker compose -p m2-distribuida --profile m6-real logs`) o repetir un archivo (`M2_DEJAR_LEVANTADO=1 npx vitest run --project distribuida pruebas/distribuida/historial.test.ts`; sin la variable, el entorno se baja al terminar); se baja con `docker compose -p m2-distribuida --profile m6-real down -v`. Si algo falla al arrancar (Docker apagado, el build roto), la corrida termina en rojo con un mensaje que dice qué falló.
 
 En CI corre aparte de los PR: `.github/workflows/integracion-m6.yml`, en cada push a `main` y a mano desde Actions.

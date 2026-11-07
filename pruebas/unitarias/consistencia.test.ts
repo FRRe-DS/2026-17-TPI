@@ -88,7 +88,11 @@ describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF
   });
 
   // `navegador` y `distribuida` quedan fuera: sus pruebas (specs 071 y 081) corren con `npm run panel:navegador` y
-  // `npm run integracion:m6`, no con `npm test`.
+  // `npm run integracion:m6`, no con `npm test`. Sin `--project`, Vitest correría los cuatro y un PR dependería del Grupo 12.
+  it('npm test corre solo unitarias e integracion', () => {
+    expect(paquete.scripts?.test).toBe('vitest run --project unitarias --project integracion');
+  });
+
   it('hay pruebas en unitarias y en integracion', () => {
     for (const proyecto of proyectos.filter((candidato) => !['navegador', 'distribuida'].includes(String(candidato.test.name)))) {
       expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
@@ -459,6 +463,12 @@ describe('docker-compose.yml: perfil m6-real con el M6 del Grupo 12 (spec 081, R
   it('se construye desde el repositorio del Grupo 12, con su Dockerfile y un commit completo por defecto', () => {
     expect(contexto()).toMatch(/^https:\/\/github\.com\/FRRe-DS\/2026-12-TPI\.git#\$\{M6_REAL_COMMIT:-[0-9a-f]{40}\}$/);
     expect(m6Real?.build).toMatchObject({ dockerfile: 'backend/Dockerfile' });
+  });
+
+  // La sección 8 de docs/probar-m2.md repite el hash como texto: tiene que decir el que compose usa (RNF-20.4).
+  it('docs/probar-m2.md cita el commit que usa compose', () => {
+    const commit = /M6_REAL_COMMIT:-([0-9a-f]{40})/.exec(contexto())?.[1] ?? 'sin commit';
+    expect(readFileSync(new URL('docs/probar-m2.md', raiz), 'utf8')).toContain(`\`${commit}\``);
   });
 
   it('M6 real publica su puerto solo en 127.0.0.1 y espera a que su base esté sana', () => {
