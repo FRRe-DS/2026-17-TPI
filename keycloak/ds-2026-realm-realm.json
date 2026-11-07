@@ -40,6 +40,22 @@
       {
         "name": "reservas-be",
         "description": "Rol para backend de M9: Reservas de Viajes"
+      },
+      {
+        "name": "CLIENTE",
+        "description": "M2 (spec 080): persona que usa la plataforma como pasajero"
+      },
+      {
+        "name": "OPERADOR",
+        "description": "M2 (spec 080): persona de la operación, que gestiona bloqueos"
+      },
+      {
+        "name": "SERVICIO",
+        "description": "M2 (spec 080): otro módulo que consulta a M2 con su cuenta de servicio"
+      },
+      {
+        "name": "CONDUCTOR",
+        "description": "M2 (spec 080): persona que conduce"
       }
     ]
   },
@@ -143,6 +159,52 @@
           }
         }
       ]
+    },
+    {
+      "name": "m2-token",
+      "description": "M2 (spec 080): audiencia m2-clientes, solo en el token de acceso, y roles de realm en el campo roles",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "audiencia m2-clientes",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "m2-clientes",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        },
+        {
+          "name": "roles de realm m2-token",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "clientes.estado:read",
+      "description": "M2 (spec 080): lectura del estado de cuenta de un cliente, para M5 y M9",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      }
     }
   ],
   "clients": [
@@ -206,7 +268,7 @@
     "directAccessGrantsEnabled": true,
     "serviceAccountsEnabled": true,
     "protocol": "openid-connect",
-    "defaultClientScopes": ["conductores:read", "conductores:write"],
+    "defaultClientScopes": ["conductores:read", "conductores:write", "m2-token", "clientes.estado:read"],
     "attributes": {
       "post.logout.redirect.uris": "*"
     }
@@ -266,7 +328,7 @@
     "directAccessGrantsEnabled": true,
     "serviceAccountsEnabled": true,
     "protocol": "openid-connect",
-    "defaultClientScopes": ["conductores:read", "conductores:write"],
+    "defaultClientScopes": ["conductores:read", "conductores:write", "m2-token", "clientes.estado:read"],
     "attributes": {
       "post.logout.redirect.uris": "*"
     }
@@ -281,7 +343,7 @@
     "directAccessGrantsEnabled": true,
     "serviceAccountsEnabled": true,
     "protocol": "openid-connect",
-    "defaultClientScopes": ["conductores:read", "conductores:write"],
+    "defaultClientScopes": ["conductores:read", "conductores:write", "m2-token", "clientes.estado:read"],
     "attributes": {
       "post.logout.redirect.uris": "*"
     }
@@ -341,7 +403,7 @@
     "directAccessGrantsEnabled": true,
     "serviceAccountsEnabled": true,
     "protocol": "openid-connect",
-    "defaultClientScopes": ["conductores:read", "conductores:write"],
+    "defaultClientScopes": ["conductores:read", "conductores:write", "m2-token", "clientes.estado:read"],
     "attributes": {
       "post.logout.redirect.uris": "*"
     }
@@ -422,7 +484,8 @@
       "enabled": true,
       "serviceAccountClientId": "grupo-04",
       "realmRoles": [
-        "solicitud-be"
+        "solicitud-be",
+        "SERVICIO"
       ]
     },
     {
@@ -454,7 +517,8 @@
       "enabled": true,
       "serviceAccountClientId": "grupo-08",
       "realmRoles": [
-        "reservas-be"
+        "reservas-be",
+        "SERVICIO"
       ]
     },
     {
@@ -462,7 +526,8 @@
       "enabled": true,
       "serviceAccountClientId": "grupo-09",
       "realmRoles": [
-        "reservas-be"
+        "reservas-be",
+        "SERVICIO"
       ]
     },
     {
@@ -494,7 +559,8 @@
       "enabled": true,
       "serviceAccountClientId": "grupo-13",
       "realmRoles": [
-        "solicitud-be"
+        "solicitud-be",
+        "SERVICIO"
       ]
     },
     {

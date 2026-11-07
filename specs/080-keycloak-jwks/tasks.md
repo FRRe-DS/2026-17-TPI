@@ -41,7 +41,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T11. M2 en modo `jwks` con un archivo de entorno.** RNF-06.7, RNF-06.8
   - Hecho cuando: `docker compose --env-file ejemplo-keycloak.env up -d --build --wait` levanta el perfil sin nombrarlo y deja a M2 en modo `jwks`; sin el archivo, M2 queda en `hs256`; `KEYCLOAK_PUERTO` cambia el puerto publicado y el emisor a la vez (`docker compose --env-file ejemplo-keycloak.env config` muestra el mismo valor en `M2_EMISOR_TOKENS` y en `KC_HOSTNAME`); y un token de `grupo-17` da `401` por audiencia y no por emisor, porque el realm todavía no tiene los agregados.
 
-- [ ] **T12. Realm: roles, scopes y cuentas de servicio.** RNF-12.17, RNF-06.8
+- [x] **T12. Realm: roles, scopes y cuentas de servicio.** RNF-12.17, RNF-06.8
   - Hecho cuando: el realm tiene los roles, `m2-token`, `clientes:read`, `clientes:write` y las cuentas de servicio de M5 y M9 del plan; `pruebas/unitarias/realm.test.ts` lo comprueba leyendo el JSON, incluido que todo scope declarado en el contrato exista en el realm y que la audiencia de `m2-token` no vaya al ID token; y, tras `down -v` y volver a levantar, un token de `grupo-13` trae `aud: m2-clientes`, `sub`, `roles` con `SERVICIO`, `scope: clientes:read` y el emisor de `M2_EMISOR_TOKENS`, y pedirle `clientes:write` da `invalid_scope`. Cualquier diferencia con lo comprobado al escribir el plan se anota en `guia.md`.
 
 - [ ] **T13. Realm: usuarios y cliente de desarrollo.** RNF-12.17, RNF-06.8
