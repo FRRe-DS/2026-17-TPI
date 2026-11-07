@@ -21,7 +21,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 - [x] **T5. Calificación y duplicado contra el M6 real.** RNF-07.9
   - Hecho cuando: `calificacion.test.ts` lleva un viaje a `COMPLETED` en M6 y comprueba que calificarlo da `201`, que el `conductorId` guardado es el que devuelve `getTrip` de M6 (no el que mande el cliente), que repetir con otra `Idempotency-Key` da `409` con `type: /errores/calificacion-duplicada`, que `listarCalificaciones` muestra una sola calificación, y que el cuerpo de cada respuesta valida contra el contrato.
 
-- [ ] **T6. Rechazos contra el M6 real.** RNF-07.10
+- [x] **T6. Rechazos contra el M6 real.** RNF-07.10
   - Hecho cuando: `rechazos.test.ts` comprueba que calificar un viaje inexistente en M6 da `404`, uno de otro cliente da `404`, uno `CANCELLED` o en curso da `422` con `type: /errores/viaje-no-completado`, y que en los tres casos `listarCalificaciones` sigue vacía; la prueba usa los viajes de T3 y deja anotado en `guia.md` cualquier diferencia de código o de `type` frente a lo que dice `m6.yml`.
 
 - [ ] **T7. Resiliencia contra el M6 real.** RNF-13.8

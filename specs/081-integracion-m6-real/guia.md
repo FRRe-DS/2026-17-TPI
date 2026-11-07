@@ -47,3 +47,10 @@ _Se escribe al validar la spec (`081/V`)._
 - Cómo se conecta: M2 llama a `GET /trips/{id}` de M6 con su token de servicio antes de guardar. El contrato no admite `conductorId` en el cuerpo (`additionalProperties: false`), así que mandarlo da `400` en vez de usarlo.
 - Tests: los seis casos del archivo; los cuerpos del `201`, del `409` (`Problema`), de la lista y de la lectura se validan con `validarContraContrato`.
 - Para mirar con atención: sin diferencias de contrato frente a `m6.yml` en esta tarea. Cada corrida crea su cliente y su viaje, así que se puede repetir sin limpiar nada.
+
+### T6 — Rechazos contra el M6 real · commit `081/T6`
+- Qué cambió: `pruebas/distribuida/rechazos.test.ts`.
+- Por qué así: RNF-07.10 (RF-2.5). Cuatro viajes que no se pueden calificar y, en los cuatro, M2 no guarda nada: inexistente en M6 → `404`; de otro cliente → `404`; `CANCELLED` y en curso (`IN_PROGRESS`) → `422` con `type` `/errores/viaje-no-completado`. Al final `listarCalificaciones` sigue vacía. Los cuerpos de error validan contra el esquema `Problema` del contrato.
+- Cómo se conecta: usa los viajes de la preparación de la T3 (`crearViaje`).
+- Tests: los cinco casos del archivo.
+- Para mirar con atención: **sin diferencias de código ni de `type` frente a `m6.yml`**. Un detalle de cómo se llega al `404` del viaje ajeno: M6 le muestra cualquier viaje a un token `SYSTEM` (no filtra por cliente), así que es M2 quien compara el `clientId` del viaje con el del pedido y responde `404`; M6 no lo rechaza. Un viaje inexistente sí lo informa M6 con `404` y `code` `TRIP_NOT_FOUND`.
