@@ -15,7 +15,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T3. `kid` desconocido.** RNF-12.16, RNF-12.19, RNF-07.12
   - Hecho cuando: `pruebas/unitarias/tokens-jwks.test.ts` comprueba que un `kid` desconocido pide las claves de nuevo y, si no aparece, da `401`, sin otro pedido dentro de los 30 s; que pasados los 30 s (con el reloj falso de Vitest) se vuelve a pedir; y que, si el JWKS publica una clave nueva, un token con ese `kid` se acepta sin reiniciar.
 
-- [ ] **T4. Keycloak caído, sin claves.** RNF-13.10, RNF-07.12
+- [x] **T4. Keycloak caído, sin claves.** RNF-13.10, RNF-07.12
   - Hecho cuando: `pruebas/unitarias/claves-jwks.test.ts` comprueba que un JWKS colgado corta en `tiempoModulosMs` por intento y hace `1 + reintentosModulos` intentos, con 200 ms de pausa solo entre intentos; que uno con `5xx` o con un documento inválido da `ModuloNoDisponible` con `Retry-After` y la causa; que diez solicitudes juntas sin claves hacen un solo pedido por intento; y que `precargar` nunca lanza y devuelve el motivo.
 
 - [ ] **T5. Keycloak caído, con claves guardadas.** RNF-13.10, RNF-13.11, RNF-13.13, RNF-07.12

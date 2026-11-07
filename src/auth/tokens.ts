@@ -125,7 +125,8 @@ export async function verificarToken(encabezado: string | undefined, config: Con
   return { sub: subDe(payload), roles: rolesConocidos(payload, config.campoRoles) };
 }
 
-export type ConfigVerificador = ConfigTokens & Pick<Config, 'modoTokens' | 'urlJwks'>;
+export type ConfigVerificador = ConfigTokens &
+  Pick<Config, 'modoTokens' | 'urlJwks' | 'tiempoModulosMs' | 'reintentosModulos' | 'reintentarDespuesS'>;
 
 // Valida el encabezado de una solicitud según el modo configurado (RNF-06.7).
 export type Verificador = { verificar: (encabezado: string | undefined) => Promise<Identidad> };
@@ -133,17 +134,18 @@ export type Verificador = { verificar: (encabezado: string | undefined) => Promi
 // `hs256` valida como siempre (RNF-12.15). `jwks` aplica las mismas reglas con RS256 y las claves de `urlJwks` (RNF-12.11,
 // RNF-12.12). jose revisa el algoritmo antes de pedir la clave: un `none` o un HS256 dan 401 sin llamar a Keycloak, y por eso
 // solo se acepta RS256, para que la clave compartida de M2 no valga como pública. Keycloak puede repetir un rol que venga del
-// realm y de un cliente, y acá no cuenta dos veces.
+// realm y de un cliente, y acá no cuenta dos veces. Si Keycloak no entrega las claves, `clave` lanza `ModuloNoDisponible`, que no
+// es un `JOSEError`: `validar` lo deja pasar y da 503, no 401 (RNF-13.10).
 export function crearVerificador(config: ConfigVerificador): Verificador {
   if (config.modoTokens === 'hs256') return { verificar: (encabezado) => verificarToken(encabezado, config) };
   if (config.urlJwks === undefined) throw new Error('El modo jwks necesita urlJwks');
 
-  const claves = crearClaves(config.urlJwks);
+  const { clave } = crearClaves({ ...config, urlJwks: config.urlJwks });
   return {
     async verificar(encabezado) {
       const token = tokenDe(encabezado);
       const payload = await validar(
-        () => jwtVerify(token, claves, { ...reglasDe(config), algorithms: ['RS256'] }),
+        () => jwtVerify(token, clave, { ...reglasDe(config), algorithms: ['RS256'] }),
         FIRMA_RS256,
       );
       return {

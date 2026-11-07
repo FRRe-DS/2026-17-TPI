@@ -35,3 +35,15 @@
   - El motivo no repite el `kid` del token (RNF-12.2): es un texto fijo.
   - Un `kid` inventado con Keycloak caído y con claves guardadas, y sin ellas (`503`), es de la T5; el tiempo máximo y los reintentos, de la T4.
 
+### T4 — Keycloak caído, sin claves · commit `080/T4`
+- Qué cambió: `src/auth/claves-jwks.ts:crearClaves` recibe la configuración y devuelve `{ clave, precargar }`. `clave` envuelve a `jose` con `timeoutDuration: tiempoModulosMs` y `1 + reintentosModulos` intentos. `precargar` hace lo mismo con `reload()`, nunca lanza y devuelve el motivo si no pudo. `ConfigVerificador` suma los tres campos de módulos. `src/modulos/cliente.ts` exporta `PAUSA_REINTENTO_MS` y `pausar`, para no repetirlos.
+- Por qué así: RNF-13.10. Un corte da `503` y no `401`, porque el token puede ser válido. Hacía falta el envoltorio porque `JWKSTimeout`, `JWKSInvalid` y los errores de estado son `JOSEError`, y `validar` los convertiría en `401`. `ModuloNoDisponible` no lo es: pasa de largo y da `503`.
+- Cómo se conecta: `crearVerificador` usa `clave`. `precargar` todavía no se usa: `crearVerificador` la expone en la T7, que es quien la llama al arrancar (plan, Lógica 3 y 5). El verificador sigue sin conectarse a la app hasta la T6.
+- Tests: `pruebas/unitarias/claves-jwks.test.ts`, contra `servidor-modulo.ts`. Cubren ocho formas de caída sin cuelgue (500, 503, 404, redirección, conexión cortada, no JSON, sin `keys`, `keys` que no es lista); el cuelgue sin responder y con el cuerpo demorado; `1 + reintentos` intentos; los 200 ms solo entre intentos; diez solicitudes juntas con un solo pedido por intento (5xx, colgado y andando); `precargar`, y el `503` visto desde `crearVerificador`. Se comprobó rompiendo el código, y en cada caso caen pruebas: sin `timeoutDuration`, sin pausa, con pausa también al final, reintentando un `kid` que no está, sin `Retry-After`, sin causa y `precargar` sin intentos.
+- Para mirar con atención:
+  - **Decisión mía donde el plan no decía:** `precargar` devuelve el motivo con un nivel de causa («fetch failed: other side closed»). `fetch` solo dice «fetch failed», y ese aviso es el camino común en compose, porque Keycloak suele tardar más que M2 en arrancar.
+  - **Decisión mía donde el plan no decía:** `precargar` no está en `Verificador` todavía; se suma en la T7, con su uso. El plan la lista en Lógica 3, pero T4 solo pide probarla en `claves-jwks.test.ts`.
+  - **Un JWKS con `keys: []` no es un corte:** las claves llegaron y el `kid` no está, así que da `401` con un solo pedido.
+  - Las pruebas de tiempos usan márgenes de 150 ms hacia arriba, con la pausa real. Si aparecen fallos intermitentes con la máquina cargada, mirar acá primero.
+  - `cacheMaxAge` sigue con el valor por defecto de `jose` hasta la T5: a los 10 minutos las claves vencen y un corte daría `503` también con la clave guardada.
+

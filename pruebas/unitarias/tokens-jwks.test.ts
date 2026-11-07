@@ -27,8 +27,11 @@ const SCOPE_INVALIDO = 'El campo scope del token no es un texto';
 
 const ahora = () => Math.floor(Date.now() / 1000);
 
+const MODULOS = { tiempoModulosMs: 2000, reintentosModulos: 1, reintentarDespuesS: 5 };
+
 const configJwks = (cambios: Partial<ConfigVerificador> = {}): ConfigVerificador => ({
   ...CONFIG_TOKENS,
+  ...MODULOS,
   modoTokens: 'jwks',
   urlJwks: `${servidor.url}/certs`,
   ...cambios,
@@ -323,7 +326,7 @@ describe('modo jwks: un kid desconocido (RNF-12.16, RNF-12.19)', () => {
 
 // Con `hs256` el verificador se comporta como `verificarToken`, sin scopes ni pedidos a nadie (RNF-12.15).
 describe('modo hs256: valida como siempre', () => {
-  const configHs256: ConfigVerificador = { ...CONFIG_TOKENS, modoTokens: 'hs256', urlJwks: undefined };
+  const configHs256: ConfigVerificador = { ...CONFIG_TOKENS, ...MODULOS, modoTokens: 'hs256', urlJwks: undefined };
 
   it('acepta un HS256 y su identidad no trae scopes, aunque el token traiga el campo', async () => {
     const token = armarToken({ claims: { scope: 'clientes:read' } });
