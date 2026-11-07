@@ -18,7 +18,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 - [x] **T4. Historial contra el M6 real.** RNF-07.8
   - Hecho cuando: `historial.test.ts` crea tres viajes de un cliente y uno de otro, califica uno de los tres, y comprueba que `GET /clientes/{id}/viajes` da `200` con exactamente los tres del cliente, `calificado: true` solo en el calificado, que `page=0&size=2` trae dos y `page=1&size=2` trae uno (M2 desde 0, M6 desde 1: el pedido que llega a M6 se ve con `pedirM6` y coincide), que un cliente sin viajes recibe una página vacía con `200`, y que el cuerpo valida contra `contrato/openapi.yml`.
 
-- [ ] **T5. Calificación y duplicado contra el M6 real.** RNF-07.9
+- [x] **T5. Calificación y duplicado contra el M6 real.** RNF-07.9
   - Hecho cuando: `calificacion.test.ts` lleva un viaje a `COMPLETED` en M6 y comprueba que calificarlo da `201`, que el `conductorId` guardado es el que devuelve `getTrip` de M6 (no el que mande el cliente), que repetir con otra `Idempotency-Key` da `409` con `type: /errores/calificacion-duplicada`, que `listarCalificaciones` muestra una sola calificación, y que el cuerpo de cada respuesta valida contra el contrato.
 
 - [ ] **T6. Rechazos contra el M6 real.** RNF-07.10

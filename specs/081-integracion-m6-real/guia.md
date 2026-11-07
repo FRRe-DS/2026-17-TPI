@@ -40,3 +40,10 @@ _Se escribe al validar la spec (`081/V`)._
 - Cómo se conecta: M2 llama a `GET /trips?clientId=…&page=…&pageSize=…` con su token de servicio; la marca `calificado` la pone M2 con lo que tiene en su base.
 - Tests: `historial.test.ts` (6 casos: los tres viajes y ninguno ajeno, `calificado` solo en uno, páginas 0 y 1 con `size=2`, coincidencia con M6, cliente sin viajes, cuerpos válidos contra el contrato) y `pruebas/unitarias/distribuida-contrato.test.ts` (la validación).
 - Para mirar con atención: el historial usa el orden de M6 (más reciente primero); la prueba no depende de él porque compara conjuntos y, entre M2 y M6, las mismas páginas. Sin diferencias de contrato frente a lo supuesto en `m6.yml` en esta tarea.
+
+### T5 — Calificación y duplicado contra el M6 real · commit `081/T5`
+- Qué cambió: `pruebas/distribuida/calificacion.test.ts`.
+- Por qué así: RNF-07.9 (RF-2.5). Un viaje `COMPLETED` en M6, calificado desde M2: `201`; el `conductorId` guardado es el `driverId` que M6 informa para ese viaje; un segundo intento con otra `Idempotency-Key` da `409` con `type` `/errores/calificacion-duplicada` (lo garantiza la restricción única de la base de M2, no el código); `listarCalificaciones` muestra una sola, la primera; `obtenerCalificacion` devuelve la misma por la `Location`.
+- Cómo se conecta: M2 llama a `GET /trips/{id}` de M6 con su token de servicio antes de guardar. El contrato no admite `conductorId` en el cuerpo (`additionalProperties: false`), así que mandarlo da `400` en vez de usarlo.
+- Tests: los seis casos del archivo; los cuerpos del `201`, del `409` (`Problema`), de la lista y de la lectura se validan con `validarContraContrato`.
+- Para mirar con atención: sin diferencias de contrato frente a `m6.yml` en esta tarea. Cada corrida crea su cliente y su viaje, así que se puede repetir sin limpiar nada.
