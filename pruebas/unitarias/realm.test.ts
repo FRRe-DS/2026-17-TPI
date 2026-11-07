@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { cargarContrato, type Contrato } from '../../src/contrato/cargar.js';
-import { CLIENTE_DE_DESARROLLO, SCOPES_DE_M2, USUARIOS_DE_EJEMPLO } from '../ayudas/realm.js';
+import { CLIENTE_DE_DESARROLLO, CLIENTE_DEL_FRONT, ORIGENES_DEL_FRONT, RETORNOS_DEL_FRONT, SCOPES_DE_M2, USUARIOS_DE_EJEMPLO } from '../ayudas/realm.js';
 
 // El realm de desarrollo (spec 080, RNF-12.17, RNF-06.8): copia del ds-2026-realm de la cátedra con lo que M2 necesita. Se lee el
 // JSON, sin Keycloak; lo que hace Keycloak con él lo comprueba la prueba con Keycloak real.
@@ -16,6 +16,9 @@ type Cliente = {
   implicitFlowEnabled?: boolean;
   directAccessGrantsEnabled?: boolean;
   serviceAccountsEnabled?: boolean;
+  redirectUris?: string[];
+  webOrigins?: string[];
+  attributes?: Record<string, string>;
   defaultClientScopes?: string[];
   optionalClientScopes?: string[];
 };
@@ -216,6 +219,46 @@ describe('realm de desarrollo: cliente de desarrollo y usuarios de ejemplo (RNF-
       expect(usuario(nombre)?.credentials, nombre).toEqual([{ type: 'password', value: contrasena, temporary: false }]);
       expect(contrasena, nombre).toContain('desarrollo');
     }
+  });
+});
+
+// RNF-12.20: el cliente con el que va a entrar el frontend (#83). Lo que Keycloak hace con él lo prueba pruebas/keycloak/pkce.test.ts.
+describe('realm de desarrollo: cliente público del frontend con PKCE (RNF-12.20)', () => {
+  const front = () => cliente(CLIENTE_DEL_FRONT);
+
+  it('m2-front es público, sin secreto, solo con código de autorización, sin usuario y contraseña directos ni cuenta de servicio', () => {
+    const c = front();
+    expect(c).toBeDefined();
+    expect(c?.publicClient).toBe(true);
+    expect(c?.secret).toBeUndefined();
+    expect(c?.standardFlowEnabled).toBe(true);
+    expect(c?.directAccessGrantsEnabled).toBe(false);
+    expect(c?.implicitFlowEnabled).toBe(false);
+    expect(c?.serviceAccountsEnabled).toBe(false);
+    expect(cuentaDeServicio(CLIENTE_DEL_FRONT)).toBeUndefined();
+  });
+
+  it('m2-front exige PKCE con S256', () => {
+    expect(front()?.attributes?.['pkce.code.challenge.method']).toBe('S256');
+  });
+
+  // Un comodín suelto o un host ajeno dejaría que un sitio cualquiera reciba el código de autorización.
+  it('m2-front vuelve solo a la máquina local, sin comodines sueltos, y acepta solo esos orígenes', () => {
+    expect([...(front()?.redirectUris ?? [])].sort()).toEqual([...RETORNOS_DEL_FRONT].sort());
+    expect([...(front()?.webOrigins ?? [])].sort()).toEqual([...ORIGENES_DEL_FRONT].sort());
+    const salida = (front()?.attributes?.['post.logout.redirect.uris'] ?? '').split('##');
+    expect([...salida].sort()).toEqual([...RETORNOS_DEL_FRONT].sort());
+    for (const uri of [...(front()?.redirectUris ?? []), ...salida]) {
+      expect(uri, uri).not.toBe('*');
+      expect(['localhost', '127.0.0.1'], uri).toContain(new URL(uri.replace(/\*$/, '')).hostname);
+    }
+  });
+
+  it('m2-front trae m2-token y basic por defecto, y los scopes de M2 solo como opcionales', () => {
+    const c = front();
+    expect(c?.defaultClientScopes).toEqual(expect.arrayContaining(['m2-token', 'basic']));
+    expect((c?.defaultClientScopes ?? []).filter((s) => esDeM2(s) || scope(s)?.attributes?.['include.in.token.scope'] !== 'false')).toEqual([]);
+    expect((c?.optionalClientScopes ?? []).filter((s) => esDeM2(s)).sort()).toEqual([...SCOPES_DE_M2].sort());
   });
 });
 

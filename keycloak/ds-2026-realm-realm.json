@@ -486,6 +486,25 @@
     "protocol": "openid-connect",
     "defaultClientScopes": ["m2-token", "basic"],
     "optionalClientScopes": ["clientes:read", "clientes:write", "clientes.estado:read"]
+  },
+  {
+    "clientId": "m2-front",
+    "name": "M2 (spec 080): frontend, solo código de autorización con PKCE S256",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": true,
+    "implicitFlowEnabled": false,
+    "directAccessGrantsEnabled": false,
+    "serviceAccountsEnabled": false,
+    "protocol": "openid-connect",
+    "redirectUris": ["http://localhost:8083/*", "http://127.0.0.1:8083/*"],
+    "webOrigins": ["http://localhost:8083", "http://127.0.0.1:8083"],
+    "attributes": {
+      "pkce.code.challenge.method": "S256",
+      "post.logout.redirect.uris": "http://localhost:8083/*##http://127.0.0.1:8083/*"
+    },
+    "defaultClientScopes": ["m2-token", "basic"],
+    "optionalClientScopes": ["clientes:read", "clientes:write", "clientes.estado:read"]
   }
   ],
   "users": [

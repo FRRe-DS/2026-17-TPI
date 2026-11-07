@@ -66,6 +66,6 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 
 ## Cambio del 2026-11-07 (respuesta del Grupo 1)
 
-- [ ] **T19. Realm: cliente público `m2-front` con PKCE.** RNF-12.20, RNF-07.13
+- [x] **T19. Realm: cliente público `m2-front` con PKCE.** RNF-12.20, RNF-07.13
   - Va después de T14: usa los usuarios de T13 y su prueba real entra en `npm run keycloak:test`, que nace en T14.
   - Hecho cuando: el realm tiene `m2-front` como dice el plan (pública, solo código de autorización, `S256`, retorno y orígenes solo en `localhost:8083` y `127.0.0.1:8083`, `m2-token` por defecto y los tres scopes de M2 opcionales); `pruebas/unitarias/realm.test.ts` lo comprueba, incluido que no tenga secreto, `directAccessGrantsEnabled`, `implicitFlowEnabled` ni `serviceAccountsEnabled`, y que ninguna dirección de retorno sea un comodín suelto (`*`) ni salga de la máquina; y, tras `down -v`, `npm run keycloak:test` recorre el flujo de código con `S256` sin navegador, obtiene un token de `cliente1` con `aud: m2-clientes`, su `sub` fijo, `roles: ["CLIENTE"]` y en `scope` solo lo pedido, lee con él su perfil en M2 (`200`), y comprueba que un pedido sin `code_challenge` o con `plain`, una dirección de retorno ajena, el canje sin `code_verifier`, usuario y contraseña directos y `client_credentials` se rechazan. Cualquier diferencia con lo comprobado al escribir el plan se anota en `guia.md`.
