@@ -29,7 +29,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 
 ## Tramo C — CI, documentación y comunicación
 
-- [ ] **T8. Job de CI aparte.** RNF-07.7
+- [x] **T8. Job de CI aparte.** RNF-07.7
   - Hecho cuando: `.github/workflows/integracion-m6.yml` corre `npm run integracion:m6` en `push` a `main` y en `workflow_dispatch`, imprime `docker compose logs` si falla, y no aparece en los checks de un PR; `ci.yml` no cambia; una ejecución manual del workflow en la rama termina en verde (o, si no se puede lanzar antes del merge, se anota en `guia.md` y se lanza en cuanto el PR esté en `main`).
 
 - [ ] **T9. Documentación.** RNF-20.4
