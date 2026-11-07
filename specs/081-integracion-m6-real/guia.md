@@ -2,7 +2,56 @@
 
 ## Visión general
 
-_Se escribe al validar la spec (`081/V`)._
+**Qué se construyó.** Una prueba que levanta M2, su base y el M6 real del Grupo 12 (con la suya) y comprueba, de punta a punta, lo que hasta ahora solo se había probado contra un M6 simulado: el historial de viajes, calificar al conductor y qué hace M2 cuando M6 se cae. No cambia M2: agrega un perfil de compose, un proyecto de pruebas y un job de CI. Lo que encontró (las diferencias entre el contrato que M2 suponía y el M6 real) está en la tabla de abajo.
+
+**Recorrido de una corrida** (`npm run integracion:m6`):
+1. `vitest.config.ts` (proyecto `distribuida`) corre `pruebas/distribuida/global.ts:levantarEntorno`, que ejecuta `docker compose -p m2-distribuida --profile m6-real up -d --build --wait` (`ayudas/entorno.ts:compose`) con `M2_URL_M6=http://m6-real:3006`, y espera el `/health` de los dos.
+2. Cada archivo de prueba crea lo suyo: `ayudas/clientes.ts:crearClienteEnM2` (un cliente y su token, firmado por el propio M2 con `docker compose exec`) y `ayudas/viajes.ts:crearViaje` (un viaje en el estado pedido, por las rutas de M6 con sus atajos de demo).
+3. El pedido va a M2 (`ayudas/pedir.ts:pedirM2`); M2 consulta a M6 por `src/modulos/cliente.ts` con su token de servicio, y la prueba compara con lo que M6 dice directo (`pedirM6`) y con el contrato (`ayudas/contrato.ts:validarContraContrato`).
+4. `resiliencia.test.ts` corre al final (`ayudas/orden.ts`), detiene y congela a M6 con `ayudas/averias.ts:conAveria`, que lo deja sano pase lo que pase.
+5. El teardown de `global.ts` baja todo con `down -v`.
+
+**Mapa.**
+| Archivo (`pruebas/distribuida/`) | Responsabilidad | Requisito |
+|---|---|---|
+| `global.ts`, `ayudas/entorno.ts` | levantar, esperar y bajar el entorno; comandos de compose | RNF-07.7, RNF-06.6 |
+| `ayudas/pedir.ts`, `contador.ts` | pedidos con corte de 10 s y cuenta de los que llegan a M6 (tope de 600) | RNF-07.7 |
+| `ayudas/viajes.ts`, `token-servicio.test.ts` | viajes en cada estado y el token de servicio de M2 ante M6 | RNF-07.11 |
+| `historial.test.ts` | los viajes del cliente, `calificado`, la paginación | RNF-07.8 |
+| `calificacion.test.ts` | calificar, conductor tomado de M6, duplicado | RNF-07.9 |
+| `rechazos.test.ts` | inexistente, ajeno, cancelado y en curso | RNF-07.10 |
+| `resiliencia.test.ts`, `ayudas/averias.ts`, `orden.ts` | M6 detenido y congelado, y la recuperación | RNF-13.8 |
+| `docker-compose.yml` (`m6-real`, `m6-real-bd`), `.github/workflows/integracion-m6.yml` | el M6 real con su base, y el job de CI | RNF-04.9, RNF-07.7 |
+
+**Decisiones clave** (el porqué está en `plan.md`): el commit de M6 va fijo en `docker-compose.yml` y no en un submódulo ni copiado; proyecto de compose aparte y puertos propios para no pisar el M2 de quien trabaja; `docker compose` por `child_process` y no Testcontainers, para no sumar dependencias; `pause` además de `stop`, porque «no responde» solo se ve con un servicio que acepta la conexión y no contesta.
+
+**Conceptos que conviene entender.** *Prueba distribuida*: dos módulos de grupos distintos, cada uno en su contenedor, hablándose por HTTP de verdad. *Token de servicio*: con lo que M2 se presenta ante M6 (`sub` `m2-clientes`, rol `SERVICIO`). *Atajos de demo de M6*: tokens como `SYSTEM` o `DRIVER:<id>` que M6 acepta con `ENABLE_DEMO_AUTH`, usados solo para preparar viajes. *`stop` y `pause`*: dos caídas distintas, una inmediata y otra que solo corta el tiempo máximo de M2. *`Retry-After`*: lo que M2 sugiere al cliente tras un `503`.
+
+**Cómo probarlo.** Los comandos, la salida esperada y el recorrido a mano con `curl` están en `docs/probar-m2.md`, sección 8.
+
+**Para comprobar que se entendió.**
+1. ¿Por qué la URL de M6 real no lleva `/api/v1` y la del M6 simulado sí?
+2. ¿Por qué `resiliencia.test.ts` corre al final, y qué en el repositorio avisa si alguien lo renombra?
+3. Con M6 detenido el `503` tarda unos 300 ms y con M6 congelado, unos 4 s. ¿Por qué?
+4. M6 le muestra cualquier viaje a un token `SYSTEM`. ¿Qué parte del código de M2 hace que calificar el viaje de otro cliente dé `404`?
+5. ¿Por qué el job de CI deja el entorno levantado y lo baja en un paso aparte?
+
+## Diferencias entre el contrato supuesto y el M6 real
+
+Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de issue para el Grupo 12 son de la T10.
+
+| # | Comportamiento observado | Lo que dice `m6.yml` | Resolución | Se consulta a |
+|---|---|---|---|---|
+| 1 | M6 sirve en `/trips`, sin `/api/v1` (con `/api/v1` M2 recibe un error). | `servers`: `http://localhost:3006/api/v1`. | El real se usa con `M2_URL_M6=http://m6-real:3006`. Falta quitar `/api/v1` de `servers` y alinear el M6 simulado: rama `contrato/079-…`. | Nosotros. El Grupo 12 coincide con el contrato de la cátedra. |
+| 2 | M6 no verifica la firma del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. | `[NECESITA ACLARACIÓN]` qué `aud` e `iss` valida. | Sin cambio en M2: el token de servicio pasa. Cuando M6 verifique, M2 tendrá que firmar con lo que M6 acuerde. | Grupo 12 |
+| 3 | M6 acepta `SERVICIO` como alias de `SYSTEM` (y `CLIENTE`, `CONDUCTOR`, `OPERADOR`). | Coincide: nombra `SYSTEM` / `SERVICIO`. Su `openapi.yaml` solo nombra los roles en inglés. | Ninguna para M2. Pedir que su `openapi.yaml` documente los alias. | Grupo 12 |
+| 4 | `GET /trips` con token `SYSTEM` exige `clientId` o `driverId`; sin ninguno, `400` con `code` `VALIDATION`. (Leído en su `openapi.yaml` y su código; M2 siempre manda `clientId`, no se ejerció.) | `SYSTEM` exige al menos un filtro entre `clientId`, `driverId` y `state`; el error es `FILTER_REQUIRED`. | Ninguna para M2. Alinear el contrato con lo que hace M6. | Grupo 12 |
+| 5 | `GET /trips/{id}` con token `SYSTEM` devuelve el viaje de cualquier cliente. | El contrato no dice qué ve cada rol. | M2 compara el `clientId` del viaje con el del pedido y responde `404` (comprobado en T6). | Nadie: es una regla nuestra. |
+| 6 | Un `404` de M6 al listar el historial da `500` en M2, no `503`. | — | Es el diseño de M2 (RF-2.4.7: un `4xx` de otro módulo es un problema de acuerdo entre módulos, no del cliente). | Nadie. |
+| 7 | M6 limita los pedidos por minuto y responde `429` con `Retry-After`. M2 lo trata como `4xx` y responde `500`. | No declara `429`. | Propuesta de `sdd-change` de las specs 007 y 008: M2 responde `503` con `Retry-After` ante un `429`. | Nosotros (y el Grupo 12 declara el `429`). |
+| 8 | M6 propaga `X-Correlation-Id`; M2 manda el encabezado de `M2_ENCABEZADO_CORRELACION` (por defecto `X-Request-Id`), así que M6 genera su propio id y las trazas de los dos no se unen. | No declara encabezado de correlación. | Propuesta de `sdd-change` de las specs 007 y 008: enviar `X-Correlation-Id` a M6. | Nosotros (y el Grupo 12 lo declara en el contrato). |
+| 9 | El M8 de M6 es simulado: acepta cualquier `verificationToken` salvo unos pocos, y cada uno sirve una vez. | — | Solo afecta la preparación de viajes de la prueba. | Nadie. |
+| 10 | Con M6 detenido, M2 ve `ENOTFOUND` y responde `503` en ~300 ms; con M6 congelado, `TimeoutError` y `503` en ~4,2 s. | M2 promete 2 s por intento y un reintento. | Coincide. | Nadie. |
 
 ## Tareas
 
@@ -73,3 +122,10 @@ _Se escribe al validar la spec (`081/V`)._
 - Cómo se conecta: el paso de la prueba lleva `M2_DEJAR_LEVANTADO=1` porque `global.ts` baja el entorno al terminar, también si falla; sin eso, el paso de logs no encontraría nada.
 - Tests: `pruebas/unitarias/workflow-integracion-m6.test.ts` (disparadores, comando, orden de logs y `down`, versiones iguales a las de `ci.yml`). Los tres pasos de compose se corrieron tal como están escritos, sin variables de entorno: 333 líneas de logs y, después de `down -v`, ningún proyecto ni volumen.
 - Para mirar con atención: **la ejecución manual en la rama no se pudo lanzar antes del merge.** GitHub solo deja disparar `workflow_dispatch` de un archivo que ya está en la rama por defecto. Falta lanzarlo en cuanto el PR esté en `main` (pestaña Actions o `gh workflow run integracion-m6.yml`); si da rojo por algo del runner (puertos, tiempos del primer build), se corrige con un `fix/`. El build sin caché de la imagen de M6 en el runner no se midió.
+
+### T9 — Documentación · commit `081/T9`
+- Qué cambió: `docs/probar-m2.md` tiene una sección 8 («M2 contra el M6 real del Grupo 12») con el comando para levantarlo, las variables y los puertos, el recorrido a mano con `curl`, `npm run integracion:m6` con su salida esperada, el commit de M6 usado y cómo cambiarlo. La sección 5 ya no dice que M6 no existe. `README.md` enlaza la sección. En esta guía: la visión general y la tabla de diferencias.
+- Por qué así: RNF-20.4. Los comandos de la sección 8 se extrajeron del archivo y se corrieron tal como están escritos: levantar (cuatro servicios sanos), el recorrido a mano (`201`, `arrived/start/complete 200`, historial `COMPLETED` con `calificado:false`, calificación `201`, `503` con `retry-after: 5`, y M6 de vuelta con `200`) y `npm run integracion:m6` (7 archivos, 34 pruebas). El único que no se corrió literalmente es el de `M6_REAL_COMMIT=<hash completo>`, que lleva un marcador.
+- Cómo se conecta: el hash de M6 está en `docker-compose.yml` (valor por defecto de `M6_REAL_COMMIT`) y se repite, solo como texto, en la sección 8; los dos se cambian juntos, como dice el comentario del compose.
+- Tests: ninguno nuevo; `npm test`, lint, build y spec-check en verde.
+- Para mirar con atención: la fila 4 de la tabla está leída en el `openapi.yaml` y el código de M6, no ejercitada. Las filas 7 y 8 son propuestas nuestras que todavía no tienen issue.

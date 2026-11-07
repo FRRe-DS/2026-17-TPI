@@ -120,7 +120,7 @@ Para entender una funcionalidad, el orden recomendado es: su `spec.md` (qué pid
 ## 5. Qué está simulado y qué no
 
 - **M1 (Identidad) no existe todavía.** Los tokens los firma el servicio con la clave, el emisor y la audiencia de `ejemplo.env`. Cuando exista M1, cambia quién firma, no el código que valida (ADR 009).
-- **M6 (Viajes) no existe todavía.** Historial y calificaciones se probaron contra un M6 simulado que cumple `contrato/dependencias/m6.yml` (lo verifica `pruebas/unitarias/m6-simulado.test.ts`). Falta contrastarlas con el M6 real; es el supuesto principal de las specs 007 y 008. El servicio le pide a M6 con un token de servicio firmado en cada intento.
+- **M6 (Viajes) tiene dos formas de probarse.** Por defecto, M2 se prueba contra un M6 simulado que cumple `contrato/dependencias/m6.yml` (lo verifica `pruebas/unitarias/m6-simulado.test.ts`). Contra el M6 real del Grupo 12, M2 se probó con la prueba distribuida de la spec 081: sección 8. Lo que difiere entre el contrato supuesto y el M6 real está en `specs/081-integracion-m6-real/guia.md`. El servicio le pide a M6 con un token de servicio firmado en cada intento.
 - **M5 y M9** consultan el estado de cuenta con el rol `SERVICIO`. M2 no los llama, y en la demo ese rol lo hace un token propio.
 - **Los datos de ejemplo:** el servicio arranca con la base vacía. No hay datos cargados de antemano.
 
@@ -195,3 +195,90 @@ Variables del panel para esta vista (valores por defecto en `ejemplo.env`): `PAN
 Las pruebas de esta vista: `npm test` las recorre contra M2 real y la base de Testcontainers, con un Docker de mentira para apagar y encender (la base de M2 detrás de un proxy TCP que se corta y se reabre); `npm run panel:navegador` abre Chrome y comprueba la vista a 360 y 1280 px, la confirmación, el doble clic, «Ejecutar todo» hasta el resumen y la salud en vivo. Apagar y encender la base de verdad no se prueba en CI: se comprobó a mano con el panel en la máquina (evidencia en la guía de la spec).
 
 Simulado en el panel: la sesión (pendiente de M1, el panel firma tokens de desarrollo en su servidor y la clave nunca llega al navegador) y los viajes (M6 simulado en contenedor propio). Cuando existan M1 y M6 se cambian en `panel/cliente/src/fuentes/`.
+
+## 8. M2 contra el M6 real del Grupo 12
+
+Spec 081. Levanta el M6 que construyó el Grupo 12 (con su propia base) junto a M2 y comprueba historial, calificación y qué pasa cuando M6 se cae. Hace falta lo mismo que antes (Node 24, Docker con compose v2 sin `sudo`) y acceso a internet la primera vez: compose construye M6 desde su repositorio, `github.com/FRRe-DS/2026-12-TPI`.
+
+**Qué versión de M6 se usa.** El commit `7d3d5af9138d9b220f109798e9f615ca853d2bda` de la rama `m6/base-de-datos` (5 de noviembre de 2026). Está escrito una sola vez, en `docker-compose.yml`, como valor por defecto de `M6_REAL_COMMIT`. Para probar otro sin editar nada:
+
+```bash
+M6_REAL_COMMIT=<hash completo> M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
+```
+
+Para cambiar el commit fijo: editá ese valor en `docker-compose.yml`, corré la prueba (más abajo), y anotá en la guía de la spec qué diferencias nuevas aparecen.
+
+### Levantarlo
+
+```bash
+M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
+```
+
+Crea cuatro servicios sanos: `m2`, `bd`, `m6-real` y `m6-real-bd`. Lo único que le dice a M2 dónde está M6 es `M2_URL_M6`; sin el perfil `m6-real` no se crea nada de M6, y `m2` no depende de `m6-real`: arranca aunque M6 no esté. La URL no lleva `/api/v1` porque M6 sirve en `/trips`.
+
+| Qué | Dónde |
+|---|---|
+| M2 | <http://localhost:8082> (o `M2_PUERTO`) |
+| M6 real | <http://127.0.0.1:3016> (o `M6_REAL_PUERTO`), solo desde tu máquina: trae atajos de demo |
+| Base de M6 | sin puerto publicado |
+| Credenciales de la base de M6 | `M6_REAL_BD_USUARIO`, `M6_REAL_BD_CLAVE`, `M6_REAL_BD_NOMBRE` (valores de desarrollo en `ejemplo.env`) |
+
+Se corta con `docker compose --profile m6-real down -v`.
+
+### Recorrerlo a mano
+
+M6 acepta tokens de atajo (`SYSTEM`, `DRIVER:<id>`, `CLIENT:<id>`) mientras corra con `ENABLE_DEMO_AUTH`, que es el caso de este perfil. Con ellos se arma un viaje completado para un cliente de M2 y se ve en su historial:
+
+```bash
+uuid() { node -e 'console.log(crypto.randomUUID())'; }
+CLIENTE=$(uuid); CONDUCTOR=$(uuid)
+TOKEN=$(docker compose exec -T m2 node dist/herramientas/token.js --sub $CLIENTE --roles CLIENTE)
+
+# 1. El perfil en M2 (201).
+curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuid)" -H 'Content-Type: application/json' \
+  -d '{"nombre":"Ana","apellido":"Gomez","telefono":"+5493624987654","fechaNacimiento":"1990-05-17"}' http://localhost:8082/api/v1/clientes
+
+# 2. Un viaje en M6, llevado hasta COMPLETED (200 en cada paso).
+VIAJE=$(curl -s -X POST -H 'Authorization: Bearer SYSTEM' -H 'Content-Type: application/json' \
+  -d "{\"requestId\":\"$(uuid)\",\"clientId\":\"$CLIENTE\",\"driverId\":\"$CONDUCTOR\",\"vehicleId\":\"$(uuid)\",\"vehicleType\":\"CAR\",\"originLatitude\":-27.45,\"originLongitude\":-58.98,\"destinationLatitude\":-27.47,\"destinationLongitude\":-58.83}" \
+  http://127.0.0.1:3016/trips | node -pe 'JSON.parse(require("fs").readFileSync(0)).id')
+curl -s -o /dev/null -w 'arrived %{http_code}\n' -X POST -H "Authorization: Bearer DRIVER:$CONDUCTOR" http://127.0.0.1:3016/trips/$VIAJE/arrived
+curl -s -o /dev/null -w 'start %{http_code}\n' -X POST -H "Authorization: Bearer DRIVER:$CONDUCTOR" -H 'Content-Type: application/json' -d "{\"verificationToken\":\"qr-$(uuid)\"}" http://127.0.0.1:3016/trips/$VIAJE/start
+curl -s -o /dev/null -w 'complete %{http_code}\n' -X POST -H "Authorization: Bearer DRIVER:$CONDUCTOR" -H 'Content-Type: application/json' -d '{"distanceKm":6.4}' http://127.0.0.1:3016/trips/$VIAJE/complete
+
+# 3. El historial en M2: un viaje COMPLETED con "calificado":false.
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/clientes/$CLIENTE/viajes
+
+# 4. Calificarlo (201). El conductorId sale de M6.
+curl -s -w ' [%{http_code}]\n' -X POST -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuid)" -H 'Content-Type: application/json' \
+  -d "{\"viajeId\":\"$VIAJE\",\"puntaje\":5}" http://localhost:8082/api/v1/clientes/$CLIENTE/calificaciones
+
+# 5. M6 caído: el historial da 503 con Retry-After.
+docker compose --profile m6-real stop m6-real
+curl -s -D - -o /dev/null -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/clientes/$CLIENTE/viajes | grep -iE '^HTTP|retry-after'
+docker compose --profile m6-real start m6-real
+```
+
+Salida esperada: `201`; `arrived 200`, `start 200`, `complete 200`; el historial con `"estado":"COMPLETED"` y `"calificado":false`; la calificación con `[201]`; y `HTTP/1.1 503 Service Unavailable` con `retry-after: 5`. Después del último `start` (el de `docker compose`), M6 tarda unos segundos en volver a estar sano.
+
+### Correr la prueba
+
+```bash
+npm ci
+npm run integracion:m6
+```
+
+Levanta todo por su cuenta en un proyecto de compose aparte (`m2-distribuida`, con M2 en el puerto 18082 y M6 en el 13006, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. La primera vez construye M6 (unos minutos); con la imagen en caché tarda unos 30 s. Salida esperada: `Test Files  7 passed (7)` y `Tests  34 passed (34)`. Lo que prueba, por archivo (`pruebas/distribuida/`):
+
+| Archivo | Qué comprueba | Requisito |
+|---|---|---|
+| `salud.test.ts` | M2 y M6 contestan `/health`; M2 guarda y devuelve un perfil | RNF-07.7 |
+| `viajes.test.ts`, `token-servicio.test.ts` | La preparación de viajes en M6, y que el token de servicio de M2 no es rechazado | RNF-07.11 |
+| `historial.test.ts` | Los viajes del cliente y solo esos, `calificado`, la paginación de M2 traducida a la de M6, página vacía | RNF-07.8 |
+| `calificacion.test.ts` | Calificar (201), conductor tomado de M6, duplicado (409) | RNF-07.9 |
+| `rechazos.test.ts` | Viaje inexistente o ajeno (404), cancelado o en curso (422) | RNF-07.10 |
+| `resiliencia.test.ts` | M6 detenido y congelado: 503 con `Retry-After`, lo propio de M2 en 200, y recuperación sin reiniciar M2 | RNF-13.8 |
+
+Con `M2_DEJAR_LEVANTADO=1 npm run integracion:m6` el entorno queda levantado al terminar, para mirar los logs (`docker compose -p m2-distribuida --profile m6-real logs`) o repetir un archivo (`npx vitest run --project distribuida pruebas/distribuida/historial.test.ts`); se baja con `docker compose -p m2-distribuida --profile m6-real down -v`. Si algo falla al arrancar (Docker apagado, el build roto), la corrida termina en rojo con un mensaje que dice qué falló.
+
+En CI corre aparte de los PR: `.github/workflows/integracion-m6.yml`, en cada push a `main` y a mano desde Actions.

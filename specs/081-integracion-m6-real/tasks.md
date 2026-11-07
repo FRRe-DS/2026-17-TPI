@@ -32,7 +32,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 - [x] **T8. Job de CI aparte.** RNF-07.7
   - Hecho cuando: `.github/workflows/integracion-m6.yml` corre `npm run integracion:m6` en `push` a `main` y en `workflow_dispatch`, imprime `docker compose logs` si falla, y no aparece en los checks de un PR; `ci.yml` no cambia; una ejecución manual del workflow en la rama termina en verde (o, si no se puede lanzar antes del merge, se anota en `guia.md` y se lanza en cuanto el PR esté en `main`).
 
-- [ ] **T9. Documentación.** RNF-20.4
+- [x] **T9. Documentación.** RNF-20.4
   - Hecho cuando: `docs/probar-m2.md` tiene una sección nueva que dice cómo levantar M2 con el M6 real (comando, variables, puertos), cómo correr `npm run integracion:m6`, qué commit del Grupo 12 se usa y cómo cambiarlo, y qué salida esperar, y todos esos comandos se corrieron tal como están escritos; `README.md` la enlaza; `guia.md` tiene la tabla de diferencias (comportamiento observado, lo que dice `m6.yml`, resolución y a quién se le consulta) con las de T3 a T7, y la visión general de la guía.
 
 - [ ] **T10. Diferencias para el Grupo 12 y propuestas de cambio.** RNF-20.4
