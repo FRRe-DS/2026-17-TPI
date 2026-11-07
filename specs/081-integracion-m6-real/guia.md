@@ -38,15 +38,15 @@
 
 ## Diferencias entre el contrato supuesto y el M6 real
 
-Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de issue para el Grupo 12 (A y B) y las propuestas de `sdd-change` están al final, en la T10, sin publicar.
+Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de los issues del Grupo 12 (A y B, publicados) y las propuestas de `sdd-change` (sin issue todavía) están al final, en la T10.
 
 La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del contrato de la cátedra en `9e720a0`. El contrato actual (`contratos/m6_viajes/openapi.yml`, `35b3c4d`, 2026-11-01, «Contrato confirmado por ambos grupos») es idéntico byte a byte al `openapi.yaml` de M6 en `107d63c`, así que varias diferencias no son de M6: lo desactualizado es `m6.yml`. Se vuelve a extraer en la rama `contrato/079-…`.
 
 | # | Comportamiento observado | Lo que dice `m6.yml` | Resolución | Se consulta a |
 |---|---|---|---|---|
 | 1 | M6 sirve en `/trips`, sin `/api/v1` (con `/api/v1` M2 recibe un error). | `servers`: `http://localhost:3006/api/v1`. | El real se usa con `M2_URL_M6=http://m6-real:3006`. Falta volver a extraer `m6.yml` del contrato actual y alinear el M6 simulado: rama `contrato/079-…`. | Nosotros. El Grupo 12 coincide con el contrato de la cátedra. |
-| 2 | M6 no verifica la firma del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. Su README lo anota como pendiente, a la espera de M1. | `[NECESITA ACLARACIÓN]` qué `aud` e `iss` valida. | Sin cambio en M2: el token de servicio pasa. Cuando M6 verifique, M2 tendrá que firmar con lo que M6 acuerde. | Grupo 12 (issue A) |
-| 3 | M6 acepta el claim `roles` y `SERVICIO` como alias de `SYSTEM` (y `CLIENTE`, `CONDUCTOR`, `OPERADOR`). | Coincide: nombra `SYSTEM` / `SERVICIO`. El contrato actual solo nombra los roles en inglés. | Ninguna para M2. Pedir que el contrato documente los alias y el claim `roles`. | Grupo 12 (issue B) |
+| 2 | M6 no verifica la firma del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. Su README lo anota como pendiente, a la espera de M1. | `[NECESITA ACLARACIÓN]` qué `aud` e `iss` valida. | Sin cambio en M2: el token de servicio pasa. Cuando M6 verifique, M2 tendrá que firmar con lo que M6 acuerde. | Grupo 12: [#9](https://github.com/FRRe-DS/2026-12-TPI/issues/9) |
+| 3 | M6 acepta el claim `roles` y `SERVICIO` como alias de `SYSTEM` (y `CLIENTE`, `CONDUCTOR`, `OPERADOR`). | Coincide: nombra `SYSTEM` / `SERVICIO`. El contrato actual solo nombra los roles en inglés. | Ninguna para M2. Pedir que el contrato documente los alias y el claim `roles`. | Grupo 12: [#10](https://github.com/FRRe-DS/2026-12-TPI/issues/10) |
 | 4 | `GET /trips` con token `SYSTEM` exige `clientId` o `driverId`; sin ninguno, `400` con `code` `VALIDATION`. (Leído en su `openapi.yaml` y su código; M2 siempre manda `clientId`, no se ejerció.) | `SYSTEM` exige al menos un filtro entre `clientId`, `driverId` y `state`; el error es `FILTER_REQUIRED`. | Ninguna para M2. M6 coincide con el contrato actual; lo desactualizado es `m6.yml`: rama `contrato/079-…`. | Nosotros |
 | 5 | `GET /trips/{id}` con token `SYSTEM` devuelve el viaje de cualquier cliente. | Coincide: lo permite a un módulo de servicio, y dice que M2 verifica que el viaje «pertenezca al `clientId`». | M2 compara el `clientId` del viaje con el del pedido y responde `404` (comprobado en T6). | Nadie: no es una diferencia. |
 | 6 | Un `404` de M6 al listar el historial da `500` en M2, no `503`. | `GET /trips` no declara `404`. | Es el diseño de M2 (RF-2.4.7: un `4xx` de otro módulo es un problema de acuerdo entre módulos, no del cliente). | Nadie. |
@@ -135,13 +135,13 @@ La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del cont
 - Para mirar con atención: la fila 4 de la tabla está leída en el `openapi.yaml` y el código de M6, no ejercitada. Las filas 7 y 8 son propuestas nuestras que todavía no tienen issue.
 
 ### T10 — Diferencias para el Grupo 12 y propuestas de cambio · commit `081/T10`
-- Qué cambió: solo esta guía. Los textos de abajo están redactados y **sin publicar**: falta la revisión de @sandobaitt y su OK explícito, y recién entonces se abren los issues en `FRRe-DS/2026-12-TPI` y se anotan sus enlaces en la columna «Se consulta a» de la tabla. Tampoco se abrieron los issues de las propuestas de `sdd-change`.
+- Qué cambió: solo esta guía. @sandobaitt revisó los textos de abajo y, con su OK, el 2026-11-07 se publicaron en `FRRe-DS/2026-12-TPI` como [#9](https://github.com/FRRe-DS/2026-12-TPI/issues/9) (A) y [#10](https://github.com/FRRe-DS/2026-12-TPI/issues/10) (B); los enlaces están en la columna «Se consulta a» de la tabla. Los issues de las propuestas de `sdd-change` todavía no se abrieron.
 - Por qué así: RNF-20.4. Un issue en el repositorio de otro grupo es un mensaje público y a nombre nuestro, y no se puede retirar del todo una vez publicado. Por eso la tarea queda con los textos listos, como permite su «Hecho cuando».
 - Cómo se conecta: salen de las filas 2 y 3 de la tabla (Grupo 12) y de las 7 y 8 (propuestas nuestras). Las filas 1, 4, 5, 6, 9 y 10 no necesitan nada del Grupo 12.
 - Tests: no aplica (documentación).
 - Para mirar con atención: los textos no llevan claves, tokens ni datos de nadie. Citan commits de su repositorio y rutas de archivos, que son públicos. Hubo un tercer borrador sobre los filtros de `GET /trips` (fila 4) y se descartó el 2026-11-07, antes de publicarlo: comparaba a M6 con nuestra extracción vieja, y M6 coincide con el contrato actual de la cátedra.
 
-#### Issues para el Grupo 12 (borradores)
+#### Issues para el Grupo 12 (publicados)
 
 **Issue A — ¿M6 va a verificar la firma, el emisor y la audiencia del JWT?** (fila 2)
 
