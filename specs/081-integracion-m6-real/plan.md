@@ -40,7 +40,7 @@ Sin tablas ni migraciones de M2. El M6 real trae su propia base (PostgreSQL), co
 
 El commit va escrito una sola vez, en `docker-compose.yml`, como valor por defecto de `${M6_REAL_COMMIT:-7d3d5af…}` (el hash completo, que T1 vuelve a comprobar contra la rama `m6/base-de-datos` del Grupo 12). Con la variable se prueba otro commit sin editar nada; para cambiar el fijo, se edita ese valor y la línea de `docs/probar-m2.md`.
 
-M2 apunta a M6 solo por `M2_URL_M6` (RNF-06.6): `M2_URL_M6=http://m6-real:3006/api/v1 docker compose --profile m6-real up -d --build --wait`. `m2` no depende de `m6-real` en `depends_on`: M2 tiene que arrancar y responder aunque M6 no esté (RNF-13).
+M2 apunta a M6 solo por `M2_URL_M6` (RNF-06.6): `M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait`. `m2` no depende de `m6-real` en `depends_on`: M2 tiene que arrancar y responder aunque M6 no esté (RNF-13).
 
 ## Lógica
 No hay lógica de M2 nueva. La prueba:
@@ -57,7 +57,7 @@ devuelve { viajeId, conductorId, estado }
 ```
 Los nombres exactos de rutas, cuerpos y roles salen de `openapi.yaml` del Grupo 12 en el commit fijado; T3 los lee ahí y no del supuesto de `m6.yml`.
 
-**Pedidos**. `pedirM2(token, método, ruta, cuerpo?)` y `pedirM6(...)`, con `fetch`, `AbortSignal.timeout(10 s)` y un contador de pedidos. El token de M2 sale del mismo comando que usa la demo (`docker compose exec m2 node dist/herramientas/token.js`), no de uno armado con claves de prueba: así M2 se presenta ante M6 con el token que firma de verdad. El token de servicio de la comprobación RNF-07.11 usa `sub` `m2-clientes` y `roles` `["SERVICIO"]`, como M2 (ADR 009).
+**Pedidos**. `pedirM2(token, método, ruta, cuerpo?)` y `pedirM6(...)`, con `fetch`, `AbortSignal.timeout(10 s)` y un contador de pedidos. El token de un cliente sale del mismo comando que usa la demo (`docker compose exec m2 node dist/herramientas/token.js`), no de uno armado con claves de prueba. El token de servicio de la comprobación RNF-07.11 sale de `tokenDeServicio`, corrida dentro del contenedor de M2 con su configuración: así M2 se presenta ante M6 con el token que firma de verdad (`sub` `m2-clientes`, `roles` `["SERVICIO"]`, `aud` de M6; ADR 009).
 
 **Límite de M6** (1200 por minuto). Un contador suma los pedidos de la prueba a M6 y, por cada pedido a M2 que consulta a M6, hasta `1 + M2_REINTENTOS_MODULOS`. Una prueba final comprueba que el total de la corrida no pasa de 600, la mitad del límite.
 
@@ -84,7 +84,7 @@ M2 → M6 no cambia: su cliente (`src/modulos/cliente.ts`) ya tiene el timeout (
 - **Proyecto de compose aparte (`-p m2-distribuida`) y puertos propios.** La prueba no puede pisar el M2 ni la base que la persona tenga levantados para trabajar. Alternativa descartada: usar el proyecto por defecto, que obliga a bajar todo antes de probar y pierde datos con `down -v`.
 - **Un proyecto de Vitest y no un script `.mjs`.** Las comprobaciones son muchas y con detalle (cuerpos, encabezados, conteos); Vitest da el mismo formato de salida que el resto y filtra por archivo. `scripts/contrato-test.mjs` se justifica porque lanza Schemathesis, que no es de Vitest.
 - **`docker compose` por `child_process`, no la API de Testcontainers.** No agrega dependencias (hay que preguntar antes) y es el mismo comando que documenta `probar-m2.md`, así que quien lo corre a mano ve lo mismo que la prueba.
-- **`pause` además de `stop`.** Detener el contenedor da «conexión rechazada» al instante; «no responde dentro del tiempo máximo» (RNF-13.8) solo se ve con un servicio que acepta la conexión y no contesta.
+- **`pause` además de `stop`.** Detener el contenedor da un error de nombre (`ENOTFOUND`) al instante, porque Docker quita el nombre de un contenedor detenido; «no responde dentro del tiempo máximo» (RNF-13.8) solo se ve con un servicio que acepta la conexión y no contesta.
 - **Sin ADR.** Nada de esto cambia el contrato ni la arquitectura de M2: es entorno de prueba. El ADR 057 ya registra que M6 sale del contrato de la cátedra.
 
 ## Cobertura de requisitos

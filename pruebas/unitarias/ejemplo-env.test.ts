@@ -51,10 +51,14 @@ const DEL_PANEL = [
   'M6_PUERTO_CONTROL',
   'M6_RETARDO_LENTO_MS',
 ];
+// Spec 081: las del perfil m6-real. Solo las lee compose, como PANEL_PUERTO_BD.
+const DEL_M6_REAL = ['M6_REAL_PUERTO', 'M6_REAL_BD_USUARIO', 'M6_REAL_BD_CLAVE', 'M6_REAL_BD_NOMBRE'];
 
 describe('ejemplo.env (RNF-06.3)', () => {
-  it('trae todas las variables del servicio, de la base y del panel, y ninguna más', () => {
-    expect(entradas.map((entrada) => entrada.variable).sort()).toEqual([...DEL_SERVICIO, ...DE_LA_BASE, ...DEL_PANEL].sort());
+  it('trae todas las variables del servicio, de la base, del panel y del M6 real, y ninguna más', () => {
+    expect(entradas.map((entrada) => entrada.variable).sort()).toEqual(
+      [...DEL_SERVICIO, ...DE_LA_BASE, ...DEL_PANEL, ...DEL_M6_REAL].sort(),
+    );
   });
 
   it('toda línea que no es comentario ni está vacía tiene la forma VARIABLE=${VARIABLE:-valor}', () => {

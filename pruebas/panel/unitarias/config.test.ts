@@ -262,6 +262,12 @@ describe('entorno-ejemplo: valores por defecto de ejemplo.env sin pisar el entor
     expect(traidas).not.toContain('POSTGRES_PASSWORD');
   });
 
+  it('no trae las del M6 real, ni siquiera su contraseña: son de compose, no del panel (spec 081)', () => {
+    const delM6Real = ['M6_REAL_PUERTO=${M6_REAL_PUERTO:-3016}', 'M6_REAL_BD_CLAVE=${M6_REAL_BD_CLAVE:-secreta}'].join('\n');
+
+    expect(valoresDeEjemplo(delM6Real)).toEqual({});
+  });
+
   it('una variable ya definida manda sobre el ejemplo, y una vacía no', () => {
     const completo = completarEntorno({ PANEL_PUERTO: '9090', M6_PUERTO: '' }, valoresDeEjemplo(texto));
 

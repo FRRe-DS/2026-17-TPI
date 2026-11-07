@@ -131,6 +131,8 @@ npm run contrato:test
 
 Opcionalmente, con `--contrato <ruta>` prueba otro archivo: `npm run contrato:test -- --contrato pruebas/ayudas/contrato-salud.yml`. Si el servicio no responde, lo dice y termina con error.
 
+La prueba distribuida (spec 081) levanta M2 con el M6 real del Grupo 12 y comprueba historial, calificación y qué pasa cuando M6 se cae. Es aparte de `npm test`, necesita Docker y acceso a internet la primera vez: `npm run integracion:m6`. Cómo levantar M2 con el M6 real, qué commit de M6 usa y qué salida esperar: [`docs/probar-m2.md`](docs/probar-m2.md), sección 8.
+
 Verificaciones del contrato y de las specs, las mismas que corre CI:
 
 ```bash
