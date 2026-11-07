@@ -73,9 +73,9 @@ const conBarras = (ruta: string) => ruta.replaceAll('\\', '/');
 const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco }).map(conBarras);
 const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
-describe('vitest.config.ts: unitarias, integracion y navegador (RNF-07.1, RNF-07.5)', () => {
-  it('declara los tres proyectos, en ese orden', () => {
-    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador']);
+describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF-07.1, RNF-07.5, RNF-07.7)', () => {
+  it('declara los cuatro proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida']);
   });
 
   // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
@@ -86,9 +86,10 @@ describe('vitest.config.ts: unitarias, integracion y navegador (RNF-07.1, RNF-07
     expect(existsSync(new URL('pruebas/ayudas/global.ts', raiz))).toBe(true);
   });
 
-  // `navegador` queda fuera: sus pruebas (spec 071) corren con `npm run panel:navegador`, no con `npm test`.
+  // `navegador` y `distribuida` quedan fuera: sus pruebas (specs 071 y 081) corren con `npm run panel:navegador` y
+  // `npm run integracion:m6`, no con `npm test`.
   it('hay pruebas en unitarias y en integracion', () => {
-    for (const proyecto of proyectos.filter((candidato) => candidato.test.name !== 'navegador')) {
+    for (const proyecto of proyectos.filter((candidato) => !['navegador', 'distribuida'].includes(String(candidato.test.name)))) {
       expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
     }
   });
@@ -104,14 +105,16 @@ describe('vitest.config.ts: unitarias, integracion y navegador (RNF-07.1, RNF-07
     expect(repetidas).toEqual([]);
   });
 
-  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, y las demás, de unitarias', () => {
-    const [unitarias, integracion, navegador] = proyectos;
+  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, las de distribuida/ de distribuida, y las demás, de unitarias', () => {
+    const [unitarias, integracion, navegador, distribuida] = proyectos;
     const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
     const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
     const deNavegador = new Set(navegador ? archivosDe(navegador) : []);
+    const deDistribuida = new Set(distribuida ? archivosDe(distribuida) : []);
     const alReves = todasLasPruebas.filter((archivo) => {
       if (/^pruebas\/(panel\/)?integracion\//.test(archivo)) return !deIntegracion.has(archivo);
       if (archivo.startsWith('pruebas/panel/navegador/')) return !deNavegador.has(archivo);
+      if (archivo.startsWith('pruebas/distribuida/')) return !deDistribuida.has(archivo);
       return !deUnitarias.has(archivo);
     });
     expect(alReves).toEqual([]);
