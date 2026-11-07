@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { crearVerificador, type ConfigVerificador } from '../../src/auth/tokens.js';
 import { NoAutenticado } from '../../src/errores.js';
 import { armarTokenRsa, crearClave, crearClaveDeCifrado, jwksDe, type OpcionesTokenRsa } from '../ayudas/jwks.js';
@@ -214,6 +214,110 @@ describe('modo jwks: los scopes salen del campo scope, partido por espacios', ()
   ])('un scope que es %s da 401', async (_caso, scope) => {
     const token = conClave({ claims: { scope } });
     await rechazo(verificar(token), SCOPE_INVALIDO, token);
+  });
+});
+
+// Un `kid` que M2 no tiene vuelve a pedir las claves, pero como mucho una vez cada 30 s desde la última obtención (RNF-12.16).
+// El reloj es el de Vitest, solo `Date`: es el que usa jose para contar los 30 s, y los temporizadores reales siguen andando
+// para el servidor de la prueba.
+describe('modo jwks: un kid desconocido (RNF-12.16, RNF-12.19)', () => {
+  const KID_DESCONOCIDO = 'El kid del token no está entre las claves del servicio de identidad';
+  const COOLDOWN_MS = 30_000;
+  const desconocida = crearClave('clave-que-no-esta');
+  const nueva = crearClave('clave-nueva');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('da 401 con el motivo del kid, sin repetirlo', async () => {
+    const token = armarTokenRsa(desconocida);
+    await rechazo(verificar(token), KID_DESCONOCIDO, token);
+    expect(KID_DESCONOCIDO).not.toContain(desconocida.kid);
+  });
+
+  it('un token sin kid, con varias claves, también da 401 por el kid y no pide más', async () => {
+    servidor.responderCon({ tipo: 'ok', cuerpo: jwksDe(clave, crearClave('otra-de-firma')) });
+    const token = armarTokenRsa(clave, { cabecera: { kid: undefined } });
+    await rechazo(verificar(token), KID_DESCONOCIDO, token);
+    expect(servidor.llamadas).toBe(1);
+  });
+
+  it('sin claves guardadas, el primer pedido trae las claves y el kid no aparece: un solo pedido', async () => {
+    await rechazo(verificar(armarTokenRsa(desconocida)), KID_DESCONOCIDO);
+    expect(servidor.llamadas).toBe(1);
+  });
+
+  it('con las claves recién obtenidas, otro kid da 401 sin pedir de nuevo', async () => {
+    const verificador = crearVerificador(configJwks());
+    await verificador.verificar(`Bearer ${conClave()}`);
+    expect(servidor.llamadas).toBe(1);
+
+    for (let i = 0; i < 3; i++) {
+      await rechazo(verificador.verificar(`Bearer ${armarTokenRsa(desconocida)}`), KID_DESCONOCIDO);
+    }
+    expect(servidor.llamadas).toBe(1);
+  });
+
+  it('pasados los 30 s vuelve a pedir, y si el kid no aparece da 401 sin otro pedido dentro de los 30 s siguientes', async () => {
+    const verificador = crearVerificador(configJwks());
+    await verificador.verificar(`Bearer ${conClave()}`);
+
+    vi.advanceTimersByTime(COOLDOWN_MS + 1);
+    await rechazo(verificador.verificar(`Bearer ${armarTokenRsa(desconocida)}`), KID_DESCONOCIDO);
+    expect(servidor.llamadas).toBe(2);
+
+    vi.advanceTimersByTime(COOLDOWN_MS - 1);
+    await rechazo(verificador.verificar(`Bearer ${armarTokenRsa(desconocida)}`), KID_DESCONOCIDO);
+    expect(servidor.llamadas).toBe(2);
+
+    vi.advanceTimersByTime(2);
+    await rechazo(verificador.verificar(`Bearer ${armarTokenRsa(desconocida)}`), KID_DESCONOCIDO);
+    expect(servidor.llamadas).toBe(3);
+  });
+
+  it('a los 30 s justos todavía no pide, y un instante después sí', async () => {
+    const verificador = crearVerificador(configJwks());
+    await verificador.verificar(`Bearer ${conClave()}`);
+
+    vi.advanceTimersByTime(COOLDOWN_MS - 1);
+    await rechazo(verificador.verificar(`Bearer ${armarTokenRsa(desconocida)}`), KID_DESCONOCIDO);
+    expect(servidor.llamadas).toBe(1);
+
+    vi.advanceTimersByTime(2);
+    await rechazo(verificador.verificar(`Bearer ${armarTokenRsa(desconocida)}`), KID_DESCONOCIDO);
+    expect(servidor.llamadas).toBe(2);
+  });
+
+  it('si Keycloak publica una clave nueva, un token con ese kid se acepta sin reiniciar', async () => {
+    const verificador = crearVerificador(configJwks());
+    await verificador.verificar(`Bearer ${conClave()}`);
+
+    servidor.responderCon({ tipo: 'ok', cuerpo: jwksDe(clave, nueva) });
+    vi.advanceTimersByTime(COOLDOWN_MS + 1);
+
+    await expect(verificador.verificar(`Bearer ${armarTokenRsa(nueva)}`)).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+    expect(servidor.llamadas).toBe(1);
+    // La clave vieja sigue valiendo: Keycloak rota con las dos publicadas un tiempo.
+    await expect(verificador.verificar(`Bearer ${conClave()}`)).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+    expect(servidor.llamadas).toBe(1);
+  });
+
+  it('con la clave nueva ya publicada, un token con ese kid dentro de los 30 s da 401 hasta que pase el plazo (caso límite)', async () => {
+    const verificador = crearVerificador(configJwks());
+    await verificador.verificar(`Bearer ${conClave()}`);
+
+    servidor.responderCon({ tipo: 'ok', cuerpo: jwksDe(clave, nueva) });
+    vi.advanceTimersByTime(COOLDOWN_MS - 1);
+    await rechazo(verificador.verificar(`Bearer ${armarTokenRsa(nueva)}`), KID_DESCONOCIDO);
+    expect(servidor.llamadas).toBe(0);
+
+    vi.advanceTimersByTime(2);
+    await expect(verificador.verificar(`Bearer ${armarTokenRsa(nueva)}`)).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
   });
 });
 

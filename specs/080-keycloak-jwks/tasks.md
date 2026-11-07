@@ -12,7 +12,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T2. Validar tokens RS256 con un JWKS.** RNF-12.11, RNF-12.12, RNF-07.12
   - Hecho cuando: `pruebas/unitarias/tokens-jwks.test.ts`, con una clave generada por la prueba y un JWKS servido por `servidor-modulo.ts`, comprueba que un token RS256 válido devuelve `sub`, roles y scopes; que un rol repetido no cambia nada; que el JWKS con una clave `enc` además de la de firma no molesta; que da `401` con el motivo de RNF-12.2 por vencido, por `nbf`, por emisor, por audiencia, por firma de otra clave y por `sub` inválido; que da `401` con alg `none` y con un HS256 firmado con `M2_CLAVE_TOKENS`, sin hacer ningún pedido al JWKS; y que `scope` vacío o ausente da una lista vacía y uno que no es texto da `401`.
 
-- [ ] **T3. `kid` desconocido.** RNF-12.16, RNF-12.19, RNF-07.12
+- [x] **T3. `kid` desconocido.** RNF-12.16, RNF-12.19, RNF-07.12
   - Hecho cuando: `pruebas/unitarias/tokens-jwks.test.ts` comprueba que un `kid` desconocido pide las claves de nuevo y, si no aparece, da `401`, sin otro pedido dentro de los 30 s; que pasados los 30 s (con el reloj falso de Vitest) se vuelve a pedir; y que, si el JWKS publica una clave nueva, un token con ese `kid` se acepta sin reiniciar.
 
 - [ ] **T4. Keycloak caído, sin claves.** RNF-13.10, RNF-07.12

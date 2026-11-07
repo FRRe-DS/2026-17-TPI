@@ -23,6 +23,7 @@ const SUB_INVALIDO = 'El sub del token falta, está vacío o no es texto';
 const NO_VALIDO = 'El token no es válido';
 const FIRMA_HS256 = 'El token no está firmado con HS256 y la clave del servicio';
 const FIRMA_RS256 = 'El token no está firmado con RS256 y una clave del servicio de identidad';
+const KID_DESCONOCIDO = 'El kid del token no está entre las claves del servicio de identidad';
 
 // La clave de la firma: el texto de la configuración en UTF-8, como lo hace cualquier biblioteca de JWT con un secreto.
 const claveDe = (config: ConfigTokens): Uint8Array => new TextEncoder().encode(config.claveTokens);
@@ -56,6 +57,8 @@ function motivoDe(error: errors.JOSEError, motivoFirma: string): string {
   if (error instanceof errors.JOSEAlgNotAllowed || error instanceof errors.JWSSignatureVerificationFailed) {
     return motivoFirma;
   }
+  // Sin kid y con varias claves de firma jose tampoco sabe cuál usar: para el token es lo mismo que un kid que no está.
+  if (error instanceof errors.JWKSNoMatchingKey || error instanceof errors.JWKSMultipleMatchingKeys) return KID_DESCONOCIDO;
   if (error instanceof errors.JWSInvalid || error instanceof errors.JWTInvalid) return MAL_FORMADO;
   return NO_VALIDO;
 }

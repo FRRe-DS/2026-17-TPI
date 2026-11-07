@@ -24,3 +24,14 @@
   - **Decisión mía donde el plan no decía:** en `jwks` los roles se deduplican con un `Set`, y en `hs256` no, para no cambiar lo que devuelve (RNF-12.15). Así «un rol repetido no cambia nada» vale también para la identidad, no solo para `autorizar`.
   - **Texto del motivo de firma, también mío:** «El token no está firmado con RS256 y una clave del servicio de identidad». El plan solo pide separarlo por modo.
   - `scope` se parte solo por el espacio, como dice RFC 6749: un tab queda dentro del nombre y no coincide con ningún scope, así que no abre de más.
+
+### T3 — `kid` desconocido · commit `080/T3`
+- Qué cambió: `src/auth/tokens.ts:motivoDe` suma el motivo «El kid del token no está entre las claves del servicio de identidad» para `JWKSNoMatchingKey` y `JWKSMultipleMatchingKeys`. `src/auth/claves-jwks.ts:crearClaves` pasa `cooldownDuration: 30000` a `createRemoteJWKSet`.
+- Por qué así: RNF-12.16 (un `kid` que M2 no tiene vuelve a pedir las claves, como mucho cada 30 s desde la última obtención) y RNF-12.19 (si sigue sin aparecer, o todavía no corresponde pedir, `401`). `jose` ya hace el reintento por `kid` y cuenta los 30 s desde la última obtención; se fija el valor para que no dependa del defecto de la biblioteca y quede escrito el porqué.
+- Cómo se conecta: igual que la T2, todavía no está conectado a la app (T6). El `401` sale por el mismo camino que los demás motivos, con `WWW-Authenticate: Bearer`.
+- Tests: `pruebas/unitarias/tokens-jwks.test.ts`, bloque «un kid desconocido», con `vi.useFakeTimers({ toFake: ['Date'] })` (jose cuenta con `Date.now()`; los temporizadores reales siguen andando para el servidor de la prueba). Cubre: el motivo sin repetir el `kid`; sin claves guardadas, un solo pedido; dentro de los 30 s, ningún pedido; el límite a 30 s menos 1 ms y a 30 s más 1 ms; los 30 s siguientes a un pedido que no encontró el `kid`; una clave nueva publicada se acepta sin reiniciar (y la vieja sigue valiendo); y el caso límite de la spec, un token con la clave nueva dentro de los 30 s da `401` hasta que pasa el plazo. Se comprobó rompiendo el código: con la espera en 0 caen 5 pruebas.
+- Para mirar con atención:
+  - **Decisión mía donde el plan no decía:** el texto del motivo, y que un token sin `kid` con varias claves de firma publicadas (`JWKSMultipleMatchingKeys`) use el mismo motivo. Para quien envía el token es lo mismo: no se sabe qué clave usar. Con una sola clave y sin `kid`, `jose` la usa y valida.
+  - El motivo no repite el `kid` del token (RNF-12.2): es un texto fijo.
+  - Un `kid` inventado con Keycloak caído y con claves guardadas, y sin ellas (`503`), es de la T5; el tiempo máximo y los reintentos, de la T4.
+
