@@ -94,6 +94,33 @@ jobs:
         if: always()
         run: docker compose --profile panel down
 
+  # Prueba con Keycloak real (spec 080, RNF-07.13): M2 en modo jwks y Keycloak levantados con compose en el proyecto `m2-keycloak`.
+  # Solo baja imágenes públicas, así que corre en cada PR; no es uno de los checks que exige la protección de `main` (RNF-17.2).
+  keycloak:
+    needs: build-test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: dependencias
+        run: npm ci
+      # global.ts baja el entorno al terminar, también si falla; con M2_DEJAR_LEVANTADO los logs todavía están al llegar al paso
+      # siguiente, y el último paso lo baja siempre.
+      - name: prueba con Keycloak real
+        env:
+          M2_DEJAR_LEVANTADO: "1"
+        run: npm run keycloak:test
+      - name: logs si falla
+        if: failure()
+        run: docker compose -p m2-keycloak --env-file ejemplo-keycloak.env logs
+      - name: bajar el entorno
+        if: always()
+        run: docker compose -p m2-keycloak --env-file ejemplo-keycloak.env down -v
+
   # Los nombres de los jobs no cambian: la regla «Protección de main» los exige como checks (RNF-17.2).
   contract-test:
     needs: build-test

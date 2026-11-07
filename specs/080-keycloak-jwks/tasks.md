@@ -53,7 +53,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T15. Prueba con Keycloak real: Keycloak caído.** RNF-07.13, RNF-13.9, RNF-13.10, RNF-13.11, RNF-13.12, RNF-13.13
   - Hecho cuando: `npm run keycloak:test` comprueba además, con un token pedido justo antes de detener Keycloak, porque dura 300 s: con `docker compose stop keycloak`, ese token sigue dando `200`; con `restart m2` y Keycloak detenido, M2 arranca, `/health` da `200` y el token da `503` con `Retry-After`; con `start keycloak`, ese mismo pedido vuelve a dar `200` sin reiniciar M2.
 
-- [ ] **T16. Job de CI.** RNF-07.13
+- [x] **T16. Job de CI.** RNF-07.13
   - Hecho cuando: el job `keycloak` de `ci.yml` corre `npm run keycloak:test` en cada PR, con los logs de compose si falla, y los nombres de los jobs que exige la protección de `main` no cambian.
 
 ## Tramo C — Documentación y scope real

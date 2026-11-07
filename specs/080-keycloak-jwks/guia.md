@@ -187,3 +187,13 @@
   - **Diferencia con `tasks.md`:** la tarea dice que `cliente1` lee su perfil con el token del frontend; la prueba usa `cliente2`. El perfil de `cliente1` lo crea `operaciones.test.ts`, que espera un `201`, y el orden entre los dos archivos no está fijo: si este lo creara antes, aquel fallaría. `cliente2` no tiene ese problema, porque los demás archivos lo crean aceptando `201` o `409`.
   - El formulario de inicio de sesión se lee del HTML de Keycloak (`action="…"`). Si una versión nueva de Keycloak cambia esa página, falla la ayuda con un mensaje propio, no la aserción.
   - `canjear el código con otro verificador` no estaba en la tarea; se suma porque es el ataque que PKCE tiene que frenar.
+
+### T16 — Job de CI con Keycloak real · commit `080/T16`
+- Qué cambió: `.github/workflows/ci.yml` suma el job `keycloak`, que corre `npm run keycloak:test` en cada PR. `pruebas/unitarias/workflow-keycloak.test.ts` (nuevo) lee el YAML y comprueba el job.
+- Por qué así: decisión del plan «La prueba real corre en un job de CI en cada PR, sin ser un check obligatorio» (RNF-07.13): solo baja imágenes públicas y la autenticación merece verse en cada cambio. Copia el patrón de `integracion-m6.yml`: `M2_DEJAR_LEVANTADO=1` deja el entorno arriba si falla para poder leer sus logs, y el último paso lo baja siempre con `down -v`.
+- Cómo se conecta: `needs: build-test`, como `panel` y `contract-test`, para no gastar minutos de Docker si el código ni compila. Los nombres de los jobs que exige la protección de `main` (`specs`, `contrato`, `build-test`, `contract-test`) no cambian; `keycloak` no se suma a esa lista (RNF-17.2).
+- Tests: `pruebas/unitarias/workflow-keycloak.test.ts`, 4 casos: el job existe y corre en cada PR; corre `npm run keycloak:test`; logs con `failure()` y bajada con `always()` después, ambos con `--env-file ejemplo-keycloak.env`; los cuatro jobs obligatorios siguen con su nombre. Sin el job en `ci.yml` caen 3 de 4 (el cuarto comprueba lo que no cambia).
+- Para mirar con atención:
+  - Los pasos de logs y de bajada llevan `-p m2-keycloak --env-file ejemplo-keycloak.env`: sin el archivo, compose no ve el perfil `keycloak` y no encuentra los contenedores. `docker compose … config -q` con esos argumentos da verde en local.
+  - **No se pudo correr en GitHub Actions desde acá:** el job se ve recién en el PR. Si en el runner la primera corrida pasa de los 30 minutos (`timeout-minutes`), hay que subirlo.
+  - Que `keycloak` no sea obligatorio es una decisión de la protección de `main`, que está en GitHub y no en el repo: si la persona integradora la tiene que cambiar, es un paso manual de ella.
