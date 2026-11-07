@@ -95,3 +95,18 @@
   - **Decisión mía donde el plan no decía:** el texto del `detail`, sin nombrar los scopes. El plan solo pide que hable del scope.
   - Hasta que #79 declare los scopes, `autorizacion-scopes.test.ts` es la única prueba de que esto anda: T18 la completa contra las 19 operaciones reales.
 
+### T10 — Perfil `keycloak` de compose · commit `080/T10`
+- Qué cambió: `docker-compose.yml` suma `keycloak-bd` (`postgres:18.6`, volumen `datos-keycloak-bd`, sin puertos) y `keycloak` (`quay.io/keycloak/keycloak:26.8.2`, `start --import-realm`, `./keycloak` montado solo lectura, publicado en `127.0.0.1:${KEYCLOAK_PUERTO:-8080}`), los dos solo con `--profile keycloak`. `keycloak/ds-2026-realm-realm.json` es una copia byte a byte del `ds-2026-realm.json` de la cátedra (FRRe-DS/2026-TPI, `keycloak/realm-config/` en `6dfdd40`, blob `6685b04`), solo renombrado. `.dockerignore` y `panel/Dockerfile.dockerignore` suman `ejemplo-keycloak.env` y `keycloak`.
+- Por qué así: RNF-04.10 (Keycloak con versión fija, base propia e importación del realm; sin el perfil, todo igual), RNF-05.6 (base y volumen propios) y RNF-06.8 (contraseñas de administración y de la base por variables de compose, con valores de desarrollo). Ninguno de los dos lee `ejemplo.env`, porque tomarían las `POSTGRES_*` de M2. Las variables van `${VARIABLE:-valor}`: con `:?` compose fallaría también sin el perfil.
+- Cómo se conecta: M2 sigue en `hs256` y no depende de Keycloak. La T11 suma `ejemplo-keycloak.env` para levantarlo en `jwks`, y las T12 y T13, los agregados al realm.
+- Tests: `pruebas/unitarias/consistencia.test.ts`: un bloque nuevo, «perfil keycloak» (imágenes, sin `env_file`, sin puertos en la base, variables, comando, montaje, puerto en 127.0.0.1, entorno de Keycloak con las mismas variables que su base, el chequeo, `m2` sin dependencia, ningún `${…:?}` y el nombre del realm); la lista de servicios y de volúmenes; los dos `.dockerignore`. Con Docker real, en un proyecto aparte (`-p m2-t10`) para no tocar volúmenes de nadie:
+  - `--profile keycloak up -d --build --wait`: las cuatro sanas en 41 s y el realm importado («Realm 'ds-2026-realm' imported»).
+  - Después de `down -v`, en el mismo comando que `up --wait`: el token de `grupo-17` da `200`, con `iss` `http://localhost:8080/realms/ds-2026-realm`. El chequeo no miente.
+  - El chequeo dentro del contenedor: contra `/health/nada` lee `HTTP/1.1 404` y sale con 1; contra `/health/ready`, `HTTP/1.1 200` y 0.
+  - Sin perfil: solo `bd` y `m2`, y un solo volumen. `docker compose config`, con y sin `--profile panel`, sale idéntico al de `main`.
+  - `KEYCLOAK_BD_CLAVE=otra … config` muestra `otra` en `KC_DB_PASSWORD` y en el `POSTGRES_PASSWORD` de `keycloak-bd`, y no en la base de M2. `KEYCLOAK_ADMIN_CLAVE` cambia `KC_BOOTSTRAP_ADMIN_PASSWORD`.
+- Para mirar con atención:
+  - **Secretos de la cátedra en el repo:** el realm trae el secreto de cada uno de los 16 clientes `grupo-NN` y la contraseña de `test-user`. Ya son públicos en el repo de la cátedra y es un realm de desarrollo, pero si la cátedra usara esos mismos valores en un Keycloak real, RNF-06.8 no se cumpliría. No es algo que podamos saber desde acá; vale preguntarlo cuando haya un Keycloak compartido.
+  - **Decisión mía donde el plan no decía:** el nombre de la base de Keycloak es fijo (`keycloak`), sin variable, y el chequeo de salud es bash puro (`read` y `[[ … ]]`), sin `grep` ni `head`, para no depender de lo que traiga la imagen. Tiempos del chequeo: cada 5 s, con 30 s de gracia y 24 reintentos (hasta 2,5 min).
+  - El token de `grupo-17` todavía no sirve para M2: sin audiencia ni roles, el realm es el de la cátedra hasta la T12.
+

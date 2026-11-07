@@ -35,7 +35,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 
 ## Tramo B — Keycloak real
 
-- [ ] **T10. Perfil `keycloak` de compose.** RNF-04.10, RNF-05.6, RNF-06.8
+- [x] **T10. Perfil `keycloak` de compose.** RNF-04.10, RNF-05.6, RNF-06.8
   - Hecho cuando: `docker compose --profile keycloak up -d --build --wait` deja sanos `m2`, `bd`, `keycloak` y `keycloak-bd`, con el realm importado desde `keycloak/ds-2026-realm-realm.json` (por ahora, copia de la cátedra sin agregados); pedir un token de `grupo-17` justo después de que compose termine no da `503`, o sea que el chequeo de salud no miente; `docker compose up -d --build --wait` no crea ningún servicio de Keycloak; `--profile panel` sigue igual; la base y el volumen de Keycloak son propios y `keycloak-bd` no publica puertos; `KEYCLOAK_BD_CLAVE=otra docker compose --profile keycloak config` muestra `otra` en `keycloak` y `keycloak-bd`, y `KEYCLOAK_ADMIN_CLAVE` hace lo mismo en `keycloak`; `pruebas/unitarias/consistencia.test.ts` acepta lo nuevo, con imágenes de versión exacta, y `ejemplo-keycloak.env` y `keycloak` figuran en los dos `.dockerignore` y en sus pruebas.
 
 - [ ] **T11. M2 en modo `jwks` con un archivo de entorno.** RNF-06.7, RNF-06.8

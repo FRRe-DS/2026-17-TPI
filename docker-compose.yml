@@ -2,6 +2,8 @@
 #   docker compose up -d --build --wait
 # Con el perfil `panel` suma el panel, el M6 simulado (spec 071) y el puente a la base (spec 072); sin él, no se crean:
 #   docker compose --profile panel up -d --build --wait
+# Con el perfil `keycloak` suma Keycloak y su base (spec 080); M2 sigue en modo hs256 salvo que se pida jwks:
+#   docker compose --profile keycloak up -d --build --wait
 # La configuración sale de ejemplo.env; una variable definida en el entorno manda sobre el ejemplo (RNF-06.3).
 services:
   m2:
@@ -135,5 +137,66 @@ services:
       retries: 6
       start_period: 5s
 
+  # Keycloak y su base (spec 080, RNF-04.10, RNF-05.6): solo con `--profile keycloak`. M2 no depende de ellos: en modo jwks
+  # pide las claves cuando las necesita (RNF-13.9). Ninguno lee ejemplo.env, que tiene las POSTGRES_* de M2. Las credenciales
+  # salen de variables de compose con un valor de desarrollo (RNF-06.8); se escriben `${VARIABLE:-valor}` porque `:?` haría
+  # fallar a compose también sin el perfil.
+  keycloak-bd:
+    profiles: [keycloak]
+    image: postgres:18.6
+    environment:
+      POSTGRES_USER: ${KEYCLOAK_BD_USUARIO:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_BD_CLAVE:-keycloak-contrasena-de-desarrollo}
+      POSTGRES_DB: keycloak
+    volumes:
+      - datos-keycloak-bd:/var/lib/postgresql
+    # Por TCP, como bd: el servidor temporal de la inicialización solo escucha por socket.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  # El realm se importa una sola vez, al crear la base: para aplicar un cambio de keycloak/ hace falta `down -v`. El archivo se
+  # llama <realm>-realm.json, porque Keycloak 26 no arranca con otro nombre.
+  keycloak:
+    profiles: [keycloak]
+    image: quay.io/keycloak/keycloak:26.8.2
+    command: start --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-bd:5432/keycloak
+      KC_DB_USERNAME: ${KEYCLOAK_BD_USUARIO:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_BD_CLAVE:-keycloak-contrasena-de-desarrollo}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USUARIO:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_CLAVE:-admin-contrasena-de-desarrollo}
+      # El emisor de los tokens es uno solo, el que ve la máquina; M2 baja las claves por la red de compose (keycloak:8080).
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PUERTO:-8080}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    # Quien prueba pide el token desde la máquina; solo en 127.0.0.1.
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PUERTO:-8080}:8080"
+    depends_on:
+      keycloak-bd:
+        condition: service_healthy
+    # La imagen no trae curl: bash con /dev/tcp contra el puerto de administración. Mira el código HTTP y no el texto, porque
+    # "UP" aparece en una comprobación interna mientras el estado general sigue DOWN y el primer token recibiría 503.
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r estado <&3 && [[ $$estado == 'HTTP/1.1 200'* ]]"
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      # El primer arranque crea las tablas e importa el realm: tarda más de medio minuto.
+      start_period: 30s
+
 volumes:
   datos-bd:
+  datos-keycloak-bd:
