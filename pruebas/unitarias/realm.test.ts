@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { cargarContrato, type Contrato } from '../../src/contrato/cargar.js';
+import { CLIENTE_DE_DESARROLLO, SCOPES_DE_M2, USUARIOS_DE_EJEMPLO } from '../ayudas/realm.js';
 
 // El realm de desarrollo (spec 080, RNF-12.17, RNF-06.8): copia del ds-2026-realm de la cátedra con lo que M2 necesita. Se lee el
 // JSON, sin Keycloak; lo que hace Keycloak con él lo comprueba la prueba con Keycloak real.
@@ -9,10 +10,29 @@ type Mapper = { name?: string; protocolMapper?: string; config?: Record<string, 
 type Scope = { name: string; attributes?: Record<string, string>; protocolMappers?: Mapper[] };
 type Cliente = {
   clientId: string;
+  publicClient?: boolean;
+  secret?: string;
+  standardFlowEnabled?: boolean;
+  implicitFlowEnabled?: boolean;
+  directAccessGrantsEnabled?: boolean;
+  serviceAccountsEnabled?: boolean;
   defaultClientScopes?: string[];
   optionalClientScopes?: string[];
 };
-type Usuario = { username: string; serviceAccountClientId?: string; realmRoles?: string[] };
+type Credencial = { type?: string; value?: string; temporary?: boolean };
+type Usuario = {
+  id?: string;
+  username: string;
+  enabled?: boolean;
+  emailVerified?: boolean;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  requiredActions?: string[];
+  credentials?: Credencial[];
+  serviceAccountClientId?: string;
+  realmRoles?: string[];
+};
 type Realm = {
   realm: string;
   roles?: { realm?: { name: string }[] };
@@ -33,7 +53,6 @@ const CAMPO_ROLES = porDefecto('M2_CAMPO_ROLES');
 
 const ROLES_DE_M2 = ['CLIENTE', 'OPERADOR', 'SERVICIO', 'CONDUCTOR'];
 const ROLES_DE_LA_CATEDRA = ['clientes-be', 'conductores-be', 'ubicacion-be', 'solicitud-be', 'viajes-be', 'tarifas-be', 'notificaciones-be', 'reservas-be'];
-const SCOPES_DE_M2 = ['clientes:read', 'clientes:write', 'clientes.estado:read'];
 // M5 (Solicitud y Despacho) y M9 (Reservas) de los dos consorcios: los únicos módulos que consultan a M2 (RNF-12.17).
 const CLIENTES_M5_M9 = ['grupo-04', 'grupo-13', 'grupo-08', 'grupo-09'];
 const GRUPOS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '17'].map((n) => `grupo-${n}`);
@@ -42,6 +61,9 @@ const scope = (nombre: string) => realm.clientScopes?.find((s) => s.name === nom
 const cliente = (id: string) => realm.clients?.find((c) => c.clientId === id);
 const cuentaDeServicio = (id: string) => realm.users?.find((u) => u.serviceAccountClientId === id);
 const scopesDe = (c: Cliente | undefined) => [...(c?.defaultClientScopes ?? []), ...(c?.optionalClientScopes ?? [])];
+const esDeM2 = (s: string) => (SCOPES_DE_M2 as readonly string[]).includes(s);
+const usuario = (nombre: string) => realm.users?.find((u) => u.username === nombre);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 // Los scopes que declara un contrato: los de los flujos de cada esquema oauth2 y los que piden los renglones de `security` de
 // esquemas oauth2 u openIdConnect, globales y por operación. Los de esquemas de roles (bearerAuth) no son scopes (T8).
@@ -108,7 +130,7 @@ describe('realm de desarrollo: roles, scopes y cuentas de servicio de M2 (RNF-12
   it('los clientes de M5 y M9 obtienen por defecto m2-token y clientes.estado:read, y ningún otro scope de M2', () => {
     for (const id of CLIENTES_M5_M9) {
       expect(cliente(id)?.defaultClientScopes, id).toEqual(expect.arrayContaining(['m2-token', 'clientes.estado:read']));
-      expect(scopesDe(cliente(id)).filter((s) => SCOPES_DE_M2.includes(s)), id).toEqual(['clientes.estado:read']);
+      expect(scopesDe(cliente(id)).filter((s) => esDeM2(s)), id).toEqual(['clientes.estado:read']);
     }
   });
 
@@ -121,10 +143,79 @@ describe('realm de desarrollo: roles, scopes y cuentas de servicio de M2 (RNF-12
   });
 
   it('entre los grupo-NN, solo los de M5 y M9 obtienen la audiencia, los roles o algún scope de M2', () => {
-    const conAlgo = GRUPOS.filter((id) => scopesDe(cliente(id)).some((s) => s === 'm2-token' || SCOPES_DE_M2.includes(s)));
+    const conAlgo = GRUPOS.filter((id) => scopesDe(cliente(id)).some((s) => s === 'm2-token' || esDeM2(s)));
     expect(conAlgo.sort()).toEqual([...CLIENTES_M5_M9].sort());
     const conServicio = GRUPOS.filter((id) => cuentaDeServicio(id)?.realmRoles?.includes('SERVICIO'));
     expect(conServicio.sort()).toEqual([...CLIENTES_M5_M9].sort());
+  });
+});
+
+describe('realm de desarrollo: cliente de desarrollo y usuarios de ejemplo (RNF-12.17, RNF-06.8)', () => {
+  it('m2-desarrollo es público y solo sirve para pedir tokens con usuario y contraseña', () => {
+    const c = cliente(CLIENTE_DE_DESARROLLO);
+    expect(c).toBeDefined();
+    expect(c?.publicClient).toBe(true);
+    expect(c?.secret).toBeUndefined();
+    expect(c?.directAccessGrantsEnabled).toBe(true);
+    expect(c?.standardFlowEnabled).toBe(false);
+    expect(c?.implicitFlowEnabled ?? false).toBe(false);
+    expect(c?.serviceAccountsEnabled ?? false).toBe(false);
+    expect(cuentaDeServicio(CLIENTE_DE_DESARROLLO)).toBeUndefined();
+  });
+
+  // El realm de la cátedra declara sus propios client scopes, así que Keycloak no crea los que trae por defecto: sin `basic`, un
+  // token de usuario sale sin `sub` y M2 lo rechaza (comprobado en T13). Las cuentas de servicio tienen `sub` igual.
+  it('el scope basic pone el sub en el token de acceso, fuera del campo scope, y m2-desarrollo lo trae por defecto', () => {
+    const basic = scope('basic');
+    expect(basic?.attributes?.['include.in.token.scope']).toBe('false');
+    const sub = basic?.protocolMappers?.filter((m) => m.protocolMapper === 'oidc-sub-mapper') ?? [];
+    expect(sub).toHaveLength(1);
+    expect(sub[0]?.config).toMatchObject({ 'access.token.claim': 'true' });
+    expect(cliente(CLIENTE_DE_DESARROLLO)?.defaultClientScopes).toContain('basic');
+  });
+
+  // Sin pedirlos, el token trae `scope: ""`: así se prueba el 403 de scope (T18).
+  it('m2-desarrollo trae m2-token por defecto y los scopes de M2 solo como opcionales', () => {
+    const c = cliente(CLIENTE_DE_DESARROLLO);
+    expect(c?.defaultClientScopes).toContain('m2-token');
+    expect((c?.defaultClientScopes ?? []).filter((s) => esDeM2(s) || scope(s)?.attributes?.['include.in.token.scope'] !== 'false')).toEqual([]);
+    expect((c?.optionalClientScopes ?? []).filter((s) => esDeM2(s)).sort()).toEqual([...SCOPES_DE_M2].sort());
+  });
+
+  it('cada usuario de ejemplo existe con su id fijo, un UUID distinto de los demás', () => {
+    for (const { usuario: nombre, id } of USUARIOS_DE_EJEMPLO) {
+      expect(usuario(nombre)?.id, nombre).toBe(id);
+      expect(id, nombre).toMatch(UUID);
+    }
+    const ids = (realm.users ?? []).map((u) => u.id).filter(Boolean);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  });
+
+  it('hay al menos un usuario por rol de persona, y cada uno tiene solo su rol', () => {
+    for (const rol of ['CLIENTE', 'OPERADOR', 'CONDUCTOR']) expect(USUARIOS_DE_EJEMPLO.some((u) => u.rol === rol), rol).toBe(true);
+    expect(USUARIOS_DE_EJEMPLO.filter((u) => u.rol === 'CLIENTE').length).toBeGreaterThanOrEqual(2);
+    for (const { usuario: nombre, rol } of USUARIOS_DE_EJEMPLO) expect(usuario(nombre)?.realmRoles, nombre).toEqual([rol]);
+  });
+
+  // Sin estos datos, el perfil de usuario de Keycloak 26 pide completarlos y el token con usuario y contraseña no sale.
+  it('cada usuario de ejemplo está listo para entrar: habilitado, con correo verificado, nombre y sin acciones pendientes', () => {
+    for (const { usuario: nombre } of USUARIOS_DE_EJEMPLO) {
+      const u = usuario(nombre);
+      expect(u?.enabled, nombre).toBe(true);
+      expect(u?.emailVerified, nombre).toBe(true);
+      expect(u?.email, nombre).toMatch(/^[a-z0-9]+@ejemplo\.test$/);
+      expect(u?.firstName, nombre).toBeTruthy();
+      expect(u?.lastName, nombre).toBeTruthy();
+      expect(u?.requiredActions ?? [], nombre).toEqual([]);
+      expect(u?.serviceAccountClientId, nombre).toBeUndefined();
+    }
+  });
+
+  it('cada usuario de ejemplo tiene una contraseña de desarrollo, no temporal, la misma que usan las pruebas', () => {
+    for (const { usuario: nombre, contrasena } of USUARIOS_DE_EJEMPLO) {
+      expect(usuario(nombre)?.credentials, nombre).toEqual([{ type: 'password', value: contrasena, temporary: false }]);
+      expect(contrasena, nombre).toContain('desarrollo');
+    }
   });
 });
 

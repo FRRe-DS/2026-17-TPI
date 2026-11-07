@@ -205,6 +205,27 @@
         "include.in.token.scope": "true",
         "display.on.consent.screen": "true"
       }
+    },
+    {
+      "name": "basic",
+      "description": "M2 (spec 080): el sub de los usuarios; Keycloak no lo crea porque el realm declara sus propios scopes",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "clients": [
@@ -452,6 +473,19 @@
     "attributes": {
       "post.logout.redirect.uris": "*"
     }
+  },
+  {
+    "clientId": "m2-desarrollo",
+    "name": "M2 (spec 080): tokens de persona con usuario y contraseña, solo para las pruebas",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": false,
+    "implicitFlowEnabled": false,
+    "directAccessGrantsEnabled": true,
+    "serviceAccountsEnabled": false,
+    "protocol": "openid-connect",
+    "defaultClientScopes": ["m2-token", "basic"],
+    "optionalClientScopes": ["clientes:read", "clientes:write", "clientes.estado:read"]
   }
   ],
   "users": [
@@ -614,6 +648,86 @@
       ],
       "notBefore": 0,
       "groups": []
+    },
+    {
+      "id": "c1e00000-0000-4000-8000-000000000001",
+      "username": "cliente1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Cliente",
+      "lastName": "Uno",
+      "email": "cliente1@ejemplo.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "cliente1-contrasena-de-desarrollo",
+          "temporary": false
+        }
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "CLIENTE"
+      ]
+    },
+    {
+      "id": "c1e00000-0000-4000-8000-000000000002",
+      "username": "cliente2",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Cliente",
+      "lastName": "Dos",
+      "email": "cliente2@ejemplo.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "cliente2-contrasena-de-desarrollo",
+          "temporary": false
+        }
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "CLIENTE"
+      ]
+    },
+    {
+      "id": "0be00000-0000-4000-8000-000000000001",
+      "username": "operador1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Operador",
+      "lastName": "Uno",
+      "email": "operador1@ejemplo.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "operador1-contrasena-de-desarrollo",
+          "temporary": false
+        }
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "OPERADOR"
+      ]
+    },
+    {
+      "id": "c0d00000-0000-4000-8000-000000000001",
+      "username": "conductor1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Conductor",
+      "lastName": "Uno",
+      "email": "conductor1@ejemplo.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "conductor1-contrasena-de-desarrollo",
+          "temporary": false
+        }
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "CONDUCTOR"
+      ]
     }
   ]
 }

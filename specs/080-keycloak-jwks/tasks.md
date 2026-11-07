@@ -44,7 +44,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T12. Realm: roles, scopes y cuentas de servicio.** RNF-12.17, RNF-06.8
   - Hecho cuando: el realm tiene los roles, `m2-token`, `clientes:read`, `clientes:write` y las cuentas de servicio de M5 y M9 del plan; `pruebas/unitarias/realm.test.ts` lo comprueba leyendo el JSON, incluido que todo scope declarado en el contrato exista en el realm y que la audiencia de `m2-token` no vaya al ID token; y, tras `down -v` y volver a levantar, un token de `grupo-13` trae `aud: m2-clientes`, `sub`, `roles` con `SERVICIO`, `scope: clientes:read` y el emisor de `M2_EMISOR_TOKENS`, y pedirle `clientes:write` da `invalid_scope`. Cualquier diferencia con lo comprobado al escribir el plan se anota en `guia.md`.
 
-- [ ] **T13. Realm: usuarios y cliente de desarrollo.** RNF-12.17, RNF-06.8
+- [x] **T13. Realm: usuarios y cliente de desarrollo.** RNF-12.17, RNF-06.8
   - Hecho cuando: el realm tiene `m2-desarrollo` y los usuarios con `id` fijo del plan; `pruebas/unitarias/realm.test.ts` los comprueba; y, tras `down -v`, un token de `cliente1` trae `aud: m2-clientes`, `sub` igual a su `id` fijo y `roles: ["CLIENTE"]`; sin pedir scopes trae `scope: ""` y pidiéndolos trae `clientes:read clientes:write`; y un ID token de `cliente1` no trae `m2-clientes` en `aud`.
 
 - [ ] **T14. Prueba con Keycloak real: operaciones.** RNF-07.13, RNF-12.14
