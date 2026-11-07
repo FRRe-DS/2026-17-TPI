@@ -38,7 +38,7 @@
 
 ## Diferencias entre el contrato supuesto y el M6 real
 
-Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de issue para el Grupo 12 son de la T10.
+Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de issue para el Grupo 12 (A, B y C) y las propuestas de `sdd-change` están al final, en la T10, sin publicar.
 
 | # | Comportamiento observado | Lo que dice `m6.yml` | Resolución | Se consulta a |
 |---|---|---|---|---|
@@ -129,3 +129,49 @@ Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca r
 - Cómo se conecta: el hash de M6 está en `docker-compose.yml` (valor por defecto de `M6_REAL_COMMIT`) y se repite, solo como texto, en la sección 8; los dos se cambian juntos, como dice el comentario del compose.
 - Tests: ninguno nuevo; `npm test`, lint, build y spec-check en verde.
 - Para mirar con atención: la fila 4 de la tabla está leída en el `openapi.yaml` y el código de M6, no ejercitada. Las filas 7 y 8 son propuestas nuestras que todavía no tienen issue.
+
+### T10 — Diferencias para el Grupo 12 y propuestas de cambio · commit `081/T10`
+- Qué cambió: solo esta guía. Los textos de abajo están redactados y **sin publicar**: falta la revisión de @sandobaitt y su OK explícito, y recién entonces se abren los issues en `FRRe-DS/2026-12-TPI` y se anotan sus enlaces en la columna «Se consulta a» de la tabla. Tampoco se abrieron los issues de las propuestas de `sdd-change`.
+- Por qué así: RNF-20.4. Un issue en el repositorio de otro grupo es un mensaje público y a nombre nuestro, y no se puede retirar del todo una vez publicado. Por eso la tarea queda con los textos listos, como permite su «Hecho cuando».
+- Cómo se conecta: salen de las filas 2, 3 y 4 de la tabla (Grupo 12) y de las 7 y 8 (propuestas nuestras). Las filas 1, 5, 6, 9 y 10 no necesitan nada del Grupo 12.
+- Tests: no aplica (documentación).
+- Para mirar con atención: los textos no llevan claves, tokens ni datos de nadie. Citan el commit `7d3d5af` de su repositorio y rutas de archivos, que son públicos. Antes de publicar conviene confirmar que el contrato de la cátedra (FRRe-DS/2026-TPI#9, `contratos/m6_viajes/openapi.yml`) sigue diciendo lo que cita la fila 4.
+
+#### Issues para el Grupo 12 (borradores)
+
+**Issue A — ¿M6 va a verificar la firma, el emisor y la audiencia del JWT?** (fila 2)
+
+> **Qué observamos.** Probamos M2 (Grupo 17) contra M6 en el commit `7d3d5af` de `m6/base-de-datos`. En `backend/src/middlewares/auth.middleware.ts`, `authenticateMiddleware` decodifica el payload del token y revisa `role`/`roles` y `exp`, pero no verifica la firma ni mira `aud` ni `iss`.
+>
+> **Qué dice el contrato.** `openapi.yaml` dice «Bearer JWT emitido por M1». Del lado de M2 todavía no sabemos con qué `aud` e `iss` tiene que presentarse M2 ante M6 (nuestra extracción del contrato lo deja como pendiente).
+>
+> **Qué pedimos.** Que nos digan (1) si está previsto que M6 verifique la firma cuando exista M1, y con qué clave o JWKS; (2) qué `iss` y `aud` va a esperar; y (3) con qué fecha, para que M2 firme el token de servicio con lo acordado y no se rompa el día que M6 empiece a verificar. Hoy nuestro token pasa, y no queremos que deje de pasar sin aviso.
+
+**Issue B — Documentar los alias de rol en `openapi.yaml`** (fila 3)
+
+> **Qué observamos.** M6 acepta `SERVICIO` como alias de `SYSTEM` (también `CLIENTE`, `CONDUCTOR` y `OPERADOR`, y `SERVICE`). Es lo que necesita M2: nuestro token de servicio lleva `roles: ["SERVICIO"]` y M6 lo acepta.
+>
+> **Qué dice el contrato.** El contrato que usamos como referencia nombra `SYSTEM` / `SERVICIO` como equivalentes, pero el `openapi.yaml` de M6 solo nombra los roles en inglés (`CLIENT`, `DRIVER`, `OPERATOR`, `SYSTEM`).
+>
+> **Qué pedimos.** Que el `openapi.yaml` de M6 documente los alias que aceptan, para que cualquier módulo que llame con roles en español sepa que está soportado y no depende de un detalle del código.
+
+**Issue C — `GET /trips` con rol `SYSTEM`: filtros y código de error** (fila 4)
+
+> **Qué observamos.** Leyendo `openapi.yaml` y `trip.service.ts` de M6 (`7d3d5af`): con rol `SYSTEM`, `GET /trips` exige `clientId` o `driverId`, y sin ninguno responde `400` con `code` `VALIDATION`. No lo provocamos en vivo, porque M2 siempre manda `clientId`.
+>
+> **Qué dice el contrato.** El contrato de la cátedra, tal como lo extrajimos (FRRe-DS/2026-TPI#9, commit `9e720a0`), dice que `SYSTEM` / `SERVICIO` debe indicar al menos un filtro entre `clientId`, `driverId` y `state`, y que sin filtros responde `400` con `code` `FILTER_REQUIRED`.
+>
+> **Qué pedimos.** Que acuerden con la cátedra cuál de las dos es la correcta (¿alcanza con `state` como único filtro? ¿el `code` es `VALIDATION` o `FILTER_REQUIRED`?) y que el contrato y M6 digan lo mismo. A M2 no le cambia nada hoy, pero otro módulo que llame con `state` solo recibiría un `400`.
+
+#### Propuestas de `sdd-change` (nuestras, sin issue todavía)
+
+**Propuesta 1 — Un `429` de M6 debe ser `503` con `Retry-After`** (fila 7; specs `007-historial` y `008-calificacion-conductor`).
+- Hoy: M6 limita los pedidos por minuto y responde `429` con `Retry-After`. `src/modulos/cliente.ts` devuelve cualquier `4xx` tal cual, sin reintento, y los servicios lo convierten en un `500` (RF-2.4.7: un `4xx` de otro módulo se trata como problema de acuerdo entre módulos). Para el cliente de M2 un límite de velocidad pasajero es indistinguible de un error de configuración.
+- Cambio: un `429` de un módulo es una indisponibilidad temporal: M2 responde `503` con `Retry-After` (el que informó el módulo, o `M2_REINTENTAR_DESPUES_S`) y sin reintentar de inmediato. Afecta los requisitos de error de las dos specs; el contrato público no cambia porque ya declara `503`.
+- Casos límite a escribir en la spec: `Retry-After` ausente o ilegible; `429` en el segundo intento; que no consuma el reintento.
+- Cómo se probaría: pruebas de `pruebas/modulos/` con el M6 simulado respondiendo `429`, y un caso más en la prueba distribuida si el Grupo 12 permite bajar `RATE_LIMIT_SERVICE_PER_MIN`.
+
+**Propuesta 2 — Enviar `X-Correlation-Id` a M6** (fila 8; las mismas dos specs).
+- Hoy: M2 manda su id de correlación en el encabezado de `M2_ENCABEZADO_CORRELACION` (por defecto `X-Request-Id`). M6 usa `X-Correlation-Id` y, si no viene, genera uno propio, así que el id de una solicitud de M2 no aparece en los logs de M6 (RNF-14).
+- Cambio: el cliente de módulos manda el id también como `X-Correlation-Id` (o el nombre se configura por módulo, porque M1 puede esperar otro). Decisión pendiente: si es un encabezado más o si reemplaza al actual.
+- Cómo se probaría: prueba unitaria del cliente de módulos (el encabezado sale en cada intento) y, en la distribuida, que un pedido a M2 deje el mismo id en los logs de M6 (`docker compose logs m6-real`).

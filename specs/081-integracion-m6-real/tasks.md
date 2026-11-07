@@ -35,5 +35,5 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 - [x] **T9. Documentación.** RNF-20.4
   - Hecho cuando: `docs/probar-m2.md` tiene una sección nueva que dice cómo levantar M2 con el M6 real (comando, variables, puertos), cómo correr `npm run integracion:m6`, qué commit del Grupo 12 se usa y cómo cambiarlo, y qué salida esperar, y todos esos comandos se corrieron tal como están escritos; `README.md` la enlaza; `guia.md` tiene la tabla de diferencias (comportamiento observado, lo que dice `m6.yml`, resolución y a quién se le consulta) con las de T3 a T7, y la visión general de la guía.
 
-- [ ] **T10. Diferencias para el Grupo 12 y propuestas de cambio.** RNF-20.4
+- [x] **T10. Diferencias para el Grupo 12 y propuestas de cambio.** RNF-20.4
   - Hecho cuando: por cada diferencia de la tabla que le toque al Grupo 12 hay un texto de issue redactado en `guia.md` (qué se observó, qué dice el contrato, qué se pide); @sandobaitt revisó los textos y, con su OK explícito, los issues están publicados en `FRRe-DS/2026-12-TPI` y sus enlaces figuran en la tabla (sin OK, la tarea queda con los textos listos y se anota que falta publicarlos); el `429` como `503` y el `X-Correlation-Id` están descritos en `guia.md` como propuestas de `sdd-change` de la 007 y la 008, para abrir sus issues con permiso.
