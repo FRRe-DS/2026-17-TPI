@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, LogController } from 
 import type { Socket } from 'node:net';
 import type { Writable } from 'node:stream';
 import { registrarPermisos } from './auth/permisos.js';
+import { crearVerificador } from './auth/tokens.js';
 import type { BaseDeDatos } from './bd/pool.js';
 import type { Config } from './config.js';
 import type { Contrato } from './contrato/cargar.js';
@@ -126,7 +127,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   });
   // Después del 404 y antes de leer el cuerpo: el 401 y el 403 van antes que cualquier error del cuerpo (RNF-03.5). Y antes de
   // registrar cualquier ruta: desde acá, una que no declara sus permisos no se registra (Lógica 4).
-  registrarPermisos(app, config);
+  registrarPermisos(app, config, crearVerificador(config));
   const registrarRutas405 = prepararRutas405(app);
   registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);
   // Al final, con todas las rutas ya registradas.

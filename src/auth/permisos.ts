@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ConfigTokens } from '../config.js';
 import { SinPermiso } from '../errores.js';
-import { esRolConocido, verificarToken, type Identidad } from './tokens.js';
+import { esRolConocido, verificarToken, type Identidad, type Verificador } from './tokens.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -25,8 +25,13 @@ export function autorizar(rolesDelToken: readonly string[], rolesDeLaOperacion: 
 // global: corre antes de leer el cuerpo, así que el 401 y el 403 van antes de cualquier error del cuerpo (RNF-03.5). Se
 // registra después del hook del 404, en el orden del plan (Lógica 8); el 405 no pide token porque las comodín se declaran
 // públicas (`prepararRutas405`). Toda ruta que se registre después tiene que declarar sus permisos, y una registrada antes
-// que no los declara pide token (Lógica 4).
-export function registrarPermisos(app: FastifyInstance, config: ConfigTokens): void {
+// que no los declara pide token (Lógica 4). `verificador` dice cómo se valida el token según el modo (RNF-06.7): `construirApp`
+// pasa el suyo, y sin él se valida HS256 con `config`, como antes (RNF-12.15).
+export function registrarPermisos(
+  app: FastifyInstance,
+  config: ConfigTokens,
+  verificador: Verificador = { verificar: (encabezado) => verificarToken(encabezado, config) },
+): void {
   // null y no un objeto: Fastify no admite un valor por referencia, que compartirían todas las solicitudes. Cada una recibe
   // el suyo en el hook.
   app.decorateRequest('identidad', null);
@@ -44,7 +49,7 @@ export function registrarPermisos(app: FastifyInstance, config: ConfigTokens): v
     // RNF-12.3). El 404 tampoco los declara, pero no llega acá: el hook anterior ya le respondió.
     if (permisos?.publica) return;
 
-    const identidad = await verificarToken(request.headers.authorization, config);
+    const identidad = await verificador.verificar(request.headers.authorization);
     autorizar(identidad.roles, permisos?.roles ?? []);
     request.identidad = identidad;
   });
