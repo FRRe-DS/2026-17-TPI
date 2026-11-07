@@ -38,31 +38,33 @@
 
 ## Diferencias entre el contrato supuesto y el M6 real
 
-Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de issue para el Grupo 12 (A, B y C) y las propuestas de `sdd-change` están al final, en la T10, sin publicar.
+Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de issue para el Grupo 12 (A y B) y las propuestas de `sdd-change` están al final, en la T10, sin publicar.
+
+La columna «Lo que dice `m6.yml`» habla de nuestra extracción, hecha del contrato de la cátedra en `9e720a0`. El contrato actual (`contratos/m6_viajes/openapi.yml`, `35b3c4d`, 2026-11-01, «Contrato confirmado por ambos grupos») es idéntico byte a byte al `openapi.yaml` de M6 en `107d63c`, así que varias diferencias no son de M6: lo desactualizado es `m6.yml`. Se vuelve a extraer en la rama `contrato/079-…`.
 
 | # | Comportamiento observado | Lo que dice `m6.yml` | Resolución | Se consulta a |
 |---|---|---|---|---|
-| 1 | M6 sirve en `/trips`, sin `/api/v1` (con `/api/v1` M2 recibe un error). | `servers`: `http://localhost:3006/api/v1`. | El real se usa con `M2_URL_M6=http://m6-real:3006`. Falta quitar `/api/v1` de `servers` y alinear el M6 simulado: rama `contrato/079-…`. | Nosotros. El Grupo 12 coincide con el contrato de la cátedra. |
-| 2 | M6 no verifica la firma del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. | `[NECESITA ACLARACIÓN]` qué `aud` e `iss` valida. | Sin cambio en M2: el token de servicio pasa. Cuando M6 verifique, M2 tendrá que firmar con lo que M6 acuerde. | Grupo 12 |
-| 3 | M6 acepta `SERVICIO` como alias de `SYSTEM` (y `CLIENTE`, `CONDUCTOR`, `OPERADOR`). | Coincide: nombra `SYSTEM` / `SERVICIO`. Su `openapi.yaml` solo nombra los roles en inglés. | Ninguna para M2. Pedir que su `openapi.yaml` documente los alias. | Grupo 12 |
-| 4 | `GET /trips` con token `SYSTEM` exige `clientId` o `driverId`; sin ninguno, `400` con `code` `VALIDATION`. (Leído en su `openapi.yaml` y su código; M2 siempre manda `clientId`, no se ejerció.) | `SYSTEM` exige al menos un filtro entre `clientId`, `driverId` y `state`; el error es `FILTER_REQUIRED`. | Ninguna para M2. Alinear el contrato con lo que hace M6. | Grupo 12 |
+| 1 | M6 sirve en `/trips`, sin `/api/v1` (con `/api/v1` M2 recibe un error). | `servers`: `http://localhost:3006/api/v1`. | El real se usa con `M2_URL_M6=http://m6-real:3006`. Falta volver a extraer `m6.yml` del contrato actual y alinear el M6 simulado: rama `contrato/079-…`. | Nosotros. El Grupo 12 coincide con el contrato de la cátedra. |
+| 2 | M6 no verifica la firma del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. Su README lo anota como pendiente, a la espera de M1. | `[NECESITA ACLARACIÓN]` qué `aud` e `iss` valida. | Sin cambio en M2: el token de servicio pasa. Cuando M6 verifique, M2 tendrá que firmar con lo que M6 acuerde. | Grupo 12 (issue A) |
+| 3 | M6 acepta el claim `roles` y `SERVICIO` como alias de `SYSTEM` (y `CLIENTE`, `CONDUCTOR`, `OPERADOR`). | Coincide: nombra `SYSTEM` / `SERVICIO`. El contrato actual solo nombra los roles en inglés. | Ninguna para M2. Pedir que el contrato documente los alias y el claim `roles`. | Grupo 12 (issue B) |
+| 4 | `GET /trips` con token `SYSTEM` exige `clientId` o `driverId`; sin ninguno, `400` con `code` `VALIDATION`. (Leído en su `openapi.yaml` y su código; M2 siempre manda `clientId`, no se ejerció.) | `SYSTEM` exige al menos un filtro entre `clientId`, `driverId` y `state`; el error es `FILTER_REQUIRED`. | Ninguna para M2. M6 coincide con el contrato actual; lo desactualizado es `m6.yml`: rama `contrato/079-…`. | Nosotros |
 | 5 | `GET /trips/{id}` con token `SYSTEM` devuelve el viaje de cualquier cliente. | El contrato no dice qué ve cada rol. | M2 compara el `clientId` del viaje con el del pedido y responde `404` (comprobado en T6). | Nadie: es una regla nuestra. |
 | 6 | Un `404` de M6 al listar el historial da `500` en M2, no `503`. | — | Es el diseño de M2 (RF-2.4.7: un `4xx` de otro módulo es un problema de acuerdo entre módulos, no del cliente). | Nadie. |
-| 7 | M6 limita los pedidos por minuto y responde `429` con `Retry-After`. M2 lo trata como `4xx` y responde `500`. | No declara `429`. | Propuesta de `sdd-change` de las specs 007 y 008: M2 responde `503` con `Retry-After` ante un `429`. | Nosotros (y el Grupo 12 declara el `429`). |
-| 8 | M6 propaga `X-Correlation-Id`; M2 manda el encabezado de `M2_ENCABEZADO_CORRELACION` (por defecto `X-Request-Id`), así que M6 genera su propio id y las trazas de los dos no se unen. | No declara encabezado de correlación. | Propuesta de `sdd-change` de las specs 007 y 008: enviar `X-Correlation-Id` a M6. | Nosotros (y el Grupo 12 lo declara en el contrato). |
+| 7 | M6 limita los pedidos por minuto y responde `429` con `Retry-After`. M2 lo trata como `4xx` y responde `500`. | No declara `429` (el contrato actual sí). | Propuesta de `sdd-change` de las specs 007 y 008: M2 responde `503` con `Retry-After` ante un `429`. `m6.yml` se actualiza en la rama `contrato/079-…`. | Nosotros |
+| 8 | M6 propaga `X-Correlation-Id`; M2 manda el encabezado de `M2_ENCABEZADO_CORRELACION` (por defecto `X-Request-Id`), así que M6 genera su propio id y las trazas de los dos no se unen. | No declara encabezado de correlación (el contrato actual declara `X-Correlation-Id`). | Propuesta de `sdd-change` de las specs 007 y 008: enviar también `X-Correlation-Id` a M6. `m6.yml` se actualiza en la rama `contrato/079-…`. | Nosotros |
 | 9 | El M8 de M6 es simulado: acepta cualquier `verificationToken` salvo unos pocos, y cada uno sirve una vez. | — | Solo afecta la preparación de viajes de la prueba. | Nadie. |
 | 10 | Con M6 detenido, M2 ve `ENOTFOUND` y responde `503` en ~300 ms; con M6 congelado, `TimeoutError` y `503` en ~4,2 s. | M2 promete 2 s por intento y un reintento. | Coincide. | Nadie. |
 
 ## Tareas
 
 ### T1 — Perfil `m6-real` de compose · commit `081/T1`
-- Qué cambió: `docker-compose.yml` suma `m6-real` (el M6 del Grupo 12, construido desde su repositorio al commit fijo) y `m6-real-bd` (su Postgres 16.15), los dos solo con `--profile m6-real`. `ejemplo.env` documenta `M6_REAL_PUERTO`, `M6_REAL_COMMIT` y las credenciales de la base de M6. `panel/servidor/entorno-ejemplo.ts` deja de tomar las variables `M6_REAL_*` como si fueran de M2.
+- Qué cambió: `docker-compose.yml` suma `m6-real` (el M6 del Grupo 12, construido desde su repositorio al commit fijo) y `m6-real-bd` (su Postgres 16.15), los dos solo con `--profile m6-real`. `ejemplo.env` documenta `M6_REAL_PUERTO` y las credenciales de la base de M6; `M6_REAL_COMMIT` no está ahí: su valor por defecto vive en `docker-compose.yml` y se cambia por variable de entorno al levantar. `panel/servidor/entorno-ejemplo.ts` deja de tomar las variables `M6_REAL_*` como si fueran de M2.
 - Por qué así: RNF-04.9 pide el entorno reproducible con un comando; RNF-06.6 pide que lo único que cambie en M2 sea `M2_URL_M6`. Por eso `m2` no tiene `depends_on` de `m6-real`: tiene que arrancar aunque M6 no esté (RNF-13). Puertos solo en `127.0.0.1`, porque M6 corre con sus atajos de demo.
 - Cómo se conecta: M2 ve a M6 por la red de compose como `http://m6-real:3006`. El M6 simulado del perfil `panel` sigue siendo otro servicio (`m6`) y no se mezcla.
 - Tests: `pruebas/unitarias/consistencia.test.ts` (servicios y variables nuevos aceptados, y que sin el perfil no se crea nada de M6), `pruebas/unitarias/ejemplo-env.test.ts` y `pruebas/panel/unitarias/config.test.ts` (el filtro de `M6_REAL_*`).
 - Para mirar con atención:
-  - **La URL no lleva `/api/v1`.** El plan se escribió con `http://m6-real:3006/api/v1`, pero el M6 real sirve en `/trips`, igual que el contrato de la cátedra. El prefijo que usa M2 sale de `servers` de nuestro `contrato/dependencias/m6.yml`. Comprobado con M2: `M2_URL_M6=http://m6-real:3006` da `200` y con `/api/v1` da `500`. Se corrigieron `plan.md`, `tasks.md`, `docker-compose.yml` y `ejemplo.env`; la spec no cambia (RNF-06.6 sigue igual). Falta quitar `/api/v1` de `servers` en `m6.yml` y alinear el M6 simulado, que hoy sí lo usa (por eso el valor por defecto de `M2_URL_M6` conserva el prefijo): va en la rama `contrato/079-…`.
-  - **Commit fijo.** Se fijó `7d3d5af9138d9b220f109798e9f615ca853d2bda`, con el que se probó. El 2026-11-07 la punta de `m6/base-de-datos` del Grupo 12 es `107d63c7ed0e854334d0b0578a4f6124264d045c`: no se adoptó sin probarla. Para probarla: `M6_REAL_COMMIT=107d63c… docker compose --profile m6-real up -d --build --wait`.
+  - **La URL no lleva `/api/v1`.** El plan se escribió con `http://m6-real:3006/api/v1`, pero el M6 real sirve en `/trips`, igual que el contrato de la cátedra. El prefijo que usa M2 sale de `servers` de nuestro `contrato/dependencias/m6.yml`. Comprobado con M2: `M2_URL_M6=http://m6-real:3006` da `200` y con `/api/v1` da `500`. Se corrigieron `plan.md`, `tasks.md`, `docker-compose.yml` y `ejemplo.env`; la spec no cambia (RNF-06.6 sigue igual). Falta volver a extraer `m6.yml` del contrato actual de la cátedra (`35b3c4d`) y alinear el M6 simulado, que hoy sí usa el prefijo (por eso el valor por defecto de `M2_URL_M6` lo conserva): va en la rama `contrato/079-…`.
+  - **Commit fijo.** Se fijó `7d3d5af9138d9b220f109798e9f615ca853d2bda`, con el que se probó. El 2026-11-07 la punta de `m6/base-de-datos` del Grupo 12 es `107d63c7ed0e854334d0b0578a4f6124264d045c` (su PR #8, que solo toca el README y una prueba suya). Contra esa punta también pasan las 34 pruebas (`M6_REAL_COMMIT=107d63c… npm run integracion:m6`). El commit fijo no se subió, porque el cambio no toca el servicio.
   - **Si M6 responde 404 al listar el historial, M2 contesta `500`, no `503`.** Es el comportamiento actual de M2 ante un código inesperado de M6; queda anotado para las tareas de errores de la 081.
 
 ### T2 — Arranque y parada de la prueba distribuida · commit `081/T2`
@@ -133,35 +135,27 @@ Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca r
 ### T10 — Diferencias para el Grupo 12 y propuestas de cambio · commit `081/T10`
 - Qué cambió: solo esta guía. Los textos de abajo están redactados y **sin publicar**: falta la revisión de @sandobaitt y su OK explícito, y recién entonces se abren los issues en `FRRe-DS/2026-12-TPI` y se anotan sus enlaces en la columna «Se consulta a» de la tabla. Tampoco se abrieron los issues de las propuestas de `sdd-change`.
 - Por qué así: RNF-20.4. Un issue en el repositorio de otro grupo es un mensaje público y a nombre nuestro, y no se puede retirar del todo una vez publicado. Por eso la tarea queda con los textos listos, como permite su «Hecho cuando».
-- Cómo se conecta: salen de las filas 2, 3 y 4 de la tabla (Grupo 12) y de las 7 y 8 (propuestas nuestras). Las filas 1, 5, 6, 9 y 10 no necesitan nada del Grupo 12.
+- Cómo se conecta: salen de las filas 2 y 3 de la tabla (Grupo 12) y de las 7 y 8 (propuestas nuestras). Las filas 1, 4, 5, 6, 9 y 10 no necesitan nada del Grupo 12.
 - Tests: no aplica (documentación).
-- Para mirar con atención: los textos no llevan claves, tokens ni datos de nadie. Citan el commit `7d3d5af` de su repositorio y rutas de archivos, que son públicos. Antes de publicar conviene confirmar que el contrato de la cátedra (FRRe-DS/2026-TPI#9, `contratos/m6_viajes/openapi.yml`) sigue diciendo lo que cita la fila 4.
+- Para mirar con atención: los textos no llevan claves, tokens ni datos de nadie. Citan commits de su repositorio y rutas de archivos, que son públicos. Hubo un tercer borrador sobre los filtros de `GET /trips` (fila 4) y se descartó el 2026-11-07, antes de publicarlo: comparaba a M6 con nuestra extracción vieja, y M6 coincide con el contrato actual de la cátedra.
 
 #### Issues para el Grupo 12 (borradores)
 
 **Issue A — ¿M6 va a verificar la firma, el emisor y la audiencia del JWT?** (fila 2)
 
-> **Qué observamos.** Probamos M2 (Grupo 17) contra M6 en el commit `7d3d5af` de `m6/base-de-datos`. En `backend/src/middlewares/auth.middleware.ts`, `authenticateMiddleware` decodifica el payload del token y revisa `role`/`roles` y `exp`, pero no verifica la firma ni mira `aud` ni `iss`.
+> **Qué observamos.** Probamos M2 (Clientes, Grupo 17) contra M6 en `m6/base-de-datos` (`7d3d5af` y `107d63c`), y funciona. Vimos en su README que la verificación de la firma del JWT está pendiente y depende de M1. Hoy `backend/src/middlewares/auth.middleware.ts` tampoco mira `iss` ni `aud`.
 >
-> **Qué dice el contrato.** `openapi.yaml` dice «Bearer JWT emitido por M1». Del lado de M2 todavía no sabemos con qué `aud` e `iss` tiene que presentarse M2 ante M6 (nuestra extracción del contrato lo deja como pendiente).
+> **Qué dice el contrato.** `bearerAuth` dice «Token emitido por M1 (Identidad y Acceso)», sin indicar qué `iss` y `aud` se esperan.
 >
-> **Qué pedimos.** Que nos digan (1) si está previsto que M6 verifique la firma cuando exista M1, y con qué clave o JWKS; (2) qué `iss` y `aud` va a esperar; y (3) con qué fecha, para que M2 firme el token de servicio con lo acordado y no se rompa el día que M6 empiece a verificar. Hoy nuestro token pasa, y no queremos que deje de pasar sin aviso.
+> **Qué pedimos.** Para cuando M6 empiece a verificar, que nos digan: (1) qué `iss` va a esperar; (2) qué `aud`; (3) con qué clave o JWKS va a verificar; y (4) en qué fecha aproximada. M2 hoy firma su token de servicio con su propia clave y nos interesa adaptarlo antes de que deje de pasar. Si todavía no está definido, nos alcanza con que nos avisen en este issue cuando lo esté.
 
-**Issue B — Documentar los alias de rol en `openapi.yaml`** (fila 3)
+**Issue B — Documentar en el contrato el claim `roles` y los alias de rol** (fila 3)
 
-> **Qué observamos.** M6 acepta `SERVICIO` como alias de `SYSTEM` (también `CLIENTE`, `CONDUCTOR` y `OPERADOR`, y `SERVICE`). Es lo que necesita M2: nuestro token de servicio lleva `roles: ["SERVICIO"]` y M6 lo acepta.
+> **Qué observamos.** Nuestro token de servicio lleva `roles: ["SERVICIO"]`. M6 lo acepta: `auth.middleware.ts` lee `role` o `roles`, y toma `SERVICIO` (y `SERVICE`) como `SYSTEM`, `CLIENTE` como `CLIENT`, `CONDUCTOR` como `DRIVER` y `OPERADOR` como `OPERATOR`. Lo probamos de punta a punta con el historial y la calificación de M2.
 >
-> **Qué dice el contrato.** El contrato que usamos como referencia nombra `SYSTEM` / `SERVICIO` como equivalentes, pero el `openapi.yaml` de M6 solo nombra los roles en inglés (`CLIENT`, `DRIVER`, `OPERATOR`, `SYSTEM`).
+> **Qué dice el contrato.** El contrato de M6 (`contratos/m6_viajes/openapi.yml`, igual a su `openapi.yaml`) habla de «su rol» y solo nombra `CLIENT`, `DRIVER`, `OPERATOR` y `SYSTEM`. No menciona el claim `roles` ni los nombres en español.
 >
-> **Qué pedimos.** Que el `openapi.yaml` de M6 documente los alias que aceptan, para que cualquier módulo que llame con roles en español sepa que está soportado y no depende de un detalle del código.
-
-**Issue C — `GET /trips` con rol `SYSTEM`: filtros y código de error** (fila 4)
-
-> **Qué observamos.** Leyendo `openapi.yaml` y `trip.service.ts` de M6 (`7d3d5af`): con rol `SYSTEM`, `GET /trips` exige `clientId` o `driverId`, y sin ninguno responde `400` con `code` `VALIDATION`. No lo provocamos en vivo, porque M2 siempre manda `clientId`.
->
-> **Qué dice el contrato.** El contrato de la cátedra, tal como lo extrajimos (FRRe-DS/2026-TPI#9, commit `9e720a0`), dice que `SYSTEM` / `SERVICIO` debe indicar al menos un filtro entre `clientId`, `driverId` y `state`, y que sin filtros responde `400` con `code` `FILTER_REQUIRED`.
->
-> **Qué pedimos.** Que acuerden con la cátedra cuál de las dos es la correcta (¿alcanza con `state` como único filtro? ¿el `code` es `VALIDATION` o `FILTER_REQUIRED`?) y que el contrato y M6 digan lo mismo. A M2 no le cambia nada hoy, pero otro módulo que llame con `state` solo recibiría un `400`.
+> **Qué pedimos.** Que el contrato documente que se aceptan `roles` y esos alias. Así M2 y cualquier otro módulo que se presente con `SERVICIO` se apoya en algo acordado y no en un detalle del código que podría cambiar. No hace falta cambiar el comportamiento: solo que quede escrito.
 
 #### Propuestas de `sdd-change` (nuestras, sin issue todavía)
 
@@ -173,5 +167,5 @@ Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca r
 
 **Propuesta 2 — Enviar `X-Correlation-Id` a M6** (fila 8; las mismas dos specs).
 - Hoy: M2 manda su id de correlación en el encabezado de `M2_ENCABEZADO_CORRELACION` (por defecto `X-Request-Id`). M6 usa `X-Correlation-Id` y, si no viene, genera uno propio, así que el id de una solicitud de M2 no aparece en los logs de M6 (RNF-14).
-- Cambio: el cliente de módulos manda el id también como `X-Correlation-Id` (o el nombre se configura por módulo, porque M1 puede esperar otro). Decisión pendiente: si es un encabezado más o si reemplaza al actual.
+- Cambio: el cliente de módulos manda también `X-Correlation-Id`, con el mismo valor que `X-Request-Id` (decidido en `spec.md`, sección Decisiones).
 - Cómo se probaría: prueba unitaria del cliente de módulos (el encabezado sale en cada intento) y, en la distribuida, que un pedido a M2 deje el mismo id en los logs de M6 (`docker compose logs m6-real`).

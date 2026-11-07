@@ -200,13 +200,13 @@ Simulado en el panel: la sesión (pendiente de M1, el panel firma tokens de desa
 
 Spec 081. Levanta el M6 que construyó el Grupo 12 (con su propia base) junto a M2 y comprueba historial, calificación y qué pasa cuando M6 se cae. Hace falta lo mismo que antes (Node 24, Docker con compose v2 sin `sudo`) y acceso a internet la primera vez: compose construye M6 desde su repositorio, `github.com/FRRe-DS/2026-12-TPI`.
 
-**Qué versión de M6 se usa.** El commit `7d3d5af9138d9b220f109798e9f615ca853d2bda` de la rama `m6/base-de-datos` (5 de noviembre de 2026). Está escrito una sola vez, en `docker-compose.yml`, como valor por defecto de `M6_REAL_COMMIT`. Para probar otro sin editar nada:
+**Qué versión de M6 se usa.** El commit `7d3d5af9138d9b220f109798e9f615ca853d2bda` de la rama `m6/base-de-datos` (6 de noviembre de 2026). Compose lo toma de `docker-compose.yml`, donde es el valor por defecto de `M6_REAL_COMMIT`; acá se repite solo como texto. Para probar otro sin editar nada:
 
 ```bash
 M6_REAL_COMMIT=<hash completo> M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
 ```
 
-Para cambiar el commit fijo: editá ese valor en `docker-compose.yml`, corré la prueba (más abajo), y anotá en la guía de la spec qué diferencias nuevas aparecen.
+Para cambiar el commit fijo: editá ese valor en `docker-compose.yml` y el hash de esta sección, corré la prueba (más abajo), y anotá en la guía de la spec qué diferencias nuevas aparecen.
 
 ### Levantarlo
 
