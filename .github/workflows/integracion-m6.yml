@@ -1,0 +1,37 @@
+name: Integración con M6 real
+
+# Prueba distribuida (spec 081, RNF-07.7): M2, su base y el M6 real del Grupo 12, levantados con compose. Es aparte de ci.yml porque
+# construye el M6 desde su repositorio y tarda: no corre en los PR y no es uno de los checks que exige la protección de `main`
+# (RNF-17.2). Corre en cada push a `main` y a mano desde la pestaña Actions.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integracion-m6:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: dependencias
+        run: npm ci
+      # global.ts baja el entorno al terminar, también si falla; con M2_DEJAR_LEVANTADO los logs todavía están al llegar al paso
+      # siguiente, y el último paso lo baja siempre.
+      - name: prueba distribuida
+        env:
+          M2_DEJAR_LEVANTADO: "1"
+        run: npm run integracion:m6
+      - name: logs si falla
+        if: failure()
+        run: docker compose -p m2-distribuida --profile m6-real logs
+      - name: bajar el entorno
+        if: always()
+        run: docker compose -p m2-distribuida --profile m6-real down -v

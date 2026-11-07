@@ -7,6 +7,7 @@ import type { Entorno } from './config.js';
 const LINEA = /^([A-Z][A-Z0-9_]*)=\$\{\1:-([^}]*)\}$/;
 
 // Lo único que el panel y el M6 simulado toman del ejemplo. M2_URL_BD y POSTGRES_PASSWORD quedan afuera: el panel solo usa PANEL_URL_BD.
+// Las M6_REAL_* también: son del perfil m6-real (spec 081) y solo las lee compose.
 const VARIABLES_DE_TOKENS = [
   'M2_CLAVE_TOKENS',
   'M2_EMISOR_TOKENS',
@@ -17,7 +18,9 @@ const VARIABLES_DE_TOKENS = [
 ];
 
 const esDelPanel = (variable: string) =>
-  variable.startsWith('PANEL_') || variable.startsWith('M6_') || VARIABLES_DE_TOKENS.includes(variable);
+  variable.startsWith('PANEL_') ||
+  (variable.startsWith('M6_') && !variable.startsWith('M6_REAL_')) ||
+  VARIABLES_DE_TOKENS.includes(variable);
 
 export function valoresDeEjemplo(texto: string): Record<string, string> {
   const valores: Record<string, string> = {};
