@@ -334,10 +334,32 @@ describe('modo hs256: valida como siempre', () => {
     expect(servidor.llamadas).toBe(0);
   });
 
+  it('precargar no hace nada: no hay claves que traer', async () => {
+    const verificador = crearVerificador({ ...configHs256, urlJwks: `${servidor.url}/certs` });
+    await expect(verificador.precargar()).resolves.toBeUndefined();
+    expect(servidor.llamadas).toBe(0);
+  });
+
   it('rechaza un RS256 con el motivo de hs256, aunque tenga una URL de claves configurada', async () => {
     const token = conClave();
     await rechazo(verificar(token, { ...configHs256, urlJwks: `${servidor.url}/certs` }), FIRMA_HS256, token);
     expect(servidor.llamadas).toBe(0);
+  });
+});
+
+describe('modo jwks: precargar', () => {
+  it('trae las claves, y el primer token ya no las pide', async () => {
+    const verificador = crearVerificador(configJwks());
+    await expect(verificador.precargar()).resolves.toBeUndefined();
+    expect(servidor.llamadas).toBe(1);
+    await verificador.verificar(`Bearer ${conClave()}`);
+    expect(servidor.llamadas).toBe(1);
+  });
+
+  it('si no puede, devuelve el motivo sin lanzar', async () => {
+    servidor.responderCon({ tipo: '5xx', estado: 500 });
+    const verificador = crearVerificador(configJwks({ reintentosModulos: 0 }));
+    await expect(verificador.precargar()).resolves.toEqual(expect.any(String));
   });
 });
 

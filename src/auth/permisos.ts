@@ -30,7 +30,7 @@ export function autorizar(rolesDelToken: readonly string[], rolesDeLaOperacion: 
 export function registrarPermisos(
   app: FastifyInstance,
   config: ConfigTokens,
-  verificador: Verificador = { verificar: (encabezado) => verificarToken(encabezado, config) },
+  verificador: Pick<Verificador, 'verificar'> = { verificar: (encabezado) => verificarToken(encabezado, config) },
 ): void {
   // null y no un objeto: Fastify no admite un valor por referencia, que compartirían todas las solicitudes. Cada una recibe
   // el suyo en el hook.

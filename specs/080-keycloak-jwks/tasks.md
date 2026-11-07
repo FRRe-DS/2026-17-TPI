@@ -24,7 +24,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T6. M2 usa el verificador según el modo.** RNF-12.11, RNF-12.15, RNF-12.18, RNF-07.12
   - Hecho cuando: `pruebas/http/autenticacion-jwks.test.ts` comprueba, con la app armada en modo `jwks`, que un token válido llega al manejador con su identidad; que sin token, o con uno inválido, responde `401` en `problem+json` con `WWW-Authenticate: Bearer`, sin repetir el token en el `detail`; que con el JWKS caído y sin claves responde `503` genérico (`type: about:blank`) con `Retry-After`; y que `GET /health` no pide token. `npm test` da en verde sin modificar `pruebas/http/autenticacion.test.ts`, `pruebas/unitarias/tokens.test.ts` ni `pruebas/unitarias/permisos.test.ts`, porque `registrarPermisos` sin tercer argumento sigue validando HS256.
 
-- [ ] **T7. Arranque con Keycloak caído.** RNF-13.9, RNF-13.12, RNF-07.12
+- [x] **T7. Arranque con Keycloak caído.** RNF-13.9, RNF-13.12, RNF-07.12
   - Hecho cuando: `pruebas/integracion/arranque.test.ts` comprueba que en modo `jwks` con el JWKS caído `arrancar` no llama a `salir`, deja un `warn`, y `GET /health` responde `200` sin esperar a que terminen los reintentos; que con el JWKS colgado `detener` termina sin esperar a la precarga; que con el JWKS andando las claves quedan cargadas sin haber recibido ningún token; y que en modo `hs256` no se hace ningún pedido.
 
 - [ ] **T8. Separar roles y scopes en el contrato.** RNF-12.13, RNF-07.12

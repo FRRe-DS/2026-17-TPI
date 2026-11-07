@@ -128,8 +128,12 @@ export async function verificarToken(encabezado: string | undefined, config: Con
 export type ConfigVerificador = ConfigTokens &
   Pick<Config, 'modoTokens' | 'urlJwks' | 'tiempoModulosMs' | 'reintentosModulos' | 'reintentarDespuesS'>;
 
-// Valida el encabezado de una solicitud según el modo configurado (RNF-06.7).
-export type Verificador = { verificar: (encabezado: string | undefined) => Promise<Identidad> };
+// Valida el encabezado de una solicitud según el modo configurado (RNF-06.7). `precargar` trae lo que haga falta para validar
+// antes del primer token: nunca lanza y, si no pudo, devuelve el motivo.
+export type Verificador = {
+  verificar: (encabezado: string | undefined) => Promise<Identidad>;
+  precargar: () => Promise<string | undefined>;
+};
 
 // `hs256` valida como siempre (RNF-12.15). `jwks` aplica las mismas reglas con RS256 y las claves de `urlJwks` (RNF-12.11,
 // RNF-12.12). jose revisa el algoritmo antes de pedir la clave: un `none` o un HS256 dan 401 sin llamar a Keycloak, y por eso
@@ -137,11 +141,14 @@ export type Verificador = { verificar: (encabezado: string | undefined) => Promi
 // realm y de un cliente, y acá no cuenta dos veces. Si Keycloak no entrega las claves, `clave` lanza `ModuloNoDisponible`, que no
 // es un `JOSEError`: `validar` lo deja pasar y da 503, no 401 (RNF-13.10).
 export function crearVerificador(config: ConfigVerificador): Verificador {
-  if (config.modoTokens === 'hs256') return { verificar: (encabezado) => verificarToken(encabezado, config) };
+  if (config.modoTokens === 'hs256') {
+    return { verificar: (encabezado) => verificarToken(encabezado, config), precargar: () => Promise.resolve(undefined) };
+  }
   if (config.urlJwks === undefined) throw new Error('El modo jwks necesita urlJwks');
 
-  const { clave } = crearClaves({ ...config, urlJwks: config.urlJwks });
+  const { clave, precargar } = crearClaves({ ...config, urlJwks: config.urlJwks });
   return {
+    precargar,
     async verificar(encabezado) {
       const token = tokenDe(encabezado);
       const payload = await validar(
