@@ -20,7 +20,8 @@
     "panel:build": "npm run panel:tipos && tsc -p panel/tsconfig.servidor.json && tsc -p panel/tsconfig.cliente.json && vite build --config panel/vite.config.ts",
     "panel": "npm run panel:build && node panel/dist/servidor/local.js",
     "panel:navegador": "npm run panel:build && vitest run --project navegador",
-    "integracion:m6": "vitest run --project distribuida"
+    "integracion:m6": "vitest run --project distribuida",
+    "keycloak:test": "vitest run --project keycloak"
   },
   "dependencies": {
     "ajv": "8.20.0",

@@ -74,9 +74,9 @@ const conBarras = (ruta: string) => ruta.replaceAll('\\', '/');
 const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco }).map(conBarras);
 const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
-describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF-07.1, RNF-07.5, RNF-07.7)', () => {
-  it('declara los cuatro proyectos, en ese orden', () => {
-    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida']);
+describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y keycloak (RNF-07.1, RNF-07.5, RNF-07.7, RNF-07.13)', () => {
+  it('declara los cinco proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida', 'keycloak']);
   });
 
   // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
@@ -87,14 +87,25 @@ describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF
     expect(existsSync(new URL('pruebas/ayudas/global.ts', raiz))).toBe(true);
   });
 
-  // `navegador` y `distribuida` quedan fuera: sus pruebas (specs 071 y 081) corren con `npm run panel:navegador` y
-  // `npm run integracion:m6`, no con `npm test`. Sin `--project`, Vitest correría los cuatro y un PR dependería del Grupo 12.
+  // `navegador`, `distribuida` y `keycloak` quedan fuera: sus pruebas (specs 071, 081 y 080) corren con `npm run panel:navegador`,
+  // `npm run integracion:m6` y `npm run keycloak:test`, no con `npm test`. Sin `--project`, Vitest correría los cinco y un PR
+  // dependería del Grupo 12 y de una imagen de Keycloak.
   it('npm test corre solo unitarias e integracion', () => {
     expect(paquete.scripts?.test).toBe('vitest run --project unitarias --project integracion');
   });
 
+  // La prueba con Keycloak real (spec 080, RNF-07.13): levanta su propio compose, con su proyecto y sus puertos.
+  it('npm run keycloak:test corre solo el proyecto keycloak, que levanta su entorno con pruebas/keycloak/global.ts', () => {
+    expect(paquete.scripts?.['keycloak:test']).toBe('vitest run --project keycloak');
+    const keycloak = proyectos.find((proyecto) => proyecto.test.name === 'keycloak');
+    expect(keycloak?.test.include).toEqual(['pruebas/keycloak/**/*.test.ts']);
+    expect(keycloak?.test.globalSetup).toEqual(['pruebas/keycloak/global.ts']);
+    expect(existsSync(new URL('pruebas/keycloak/global.ts', raiz))).toBe(true);
+    expect(archivosDe(keycloak ?? { test: { name: '', include: [] } }).length).toBeGreaterThan(0);
+  });
+
   it('hay pruebas en unitarias y en integracion', () => {
-    for (const proyecto of proyectos.filter((candidato) => !['navegador', 'distribuida'].includes(String(candidato.test.name)))) {
+    for (const proyecto of proyectos.filter((candidato) => !['navegador', 'distribuida', 'keycloak'].includes(String(candidato.test.name)))) {
       expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
     }
   });
@@ -116,16 +127,18 @@ describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF
     expect(repetidas).toEqual([]);
   });
 
-  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, las de distribuida/ de distribuida, y las demás, de unitarias', () => {
-    const [unitarias, integracion, navegador, distribuida] = proyectos;
+  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, las de distribuida/ de distribuida, las de keycloak/ de keycloak, y las demás, de unitarias', () => {
+    const [unitarias, integracion, navegador, distribuida, keycloak] = proyectos;
     const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
     const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
     const deNavegador = new Set(navegador ? archivosDe(navegador) : []);
     const deDistribuida = new Set(distribuida ? archivosDe(distribuida) : []);
+    const deKeycloak = new Set(keycloak ? archivosDe(keycloak) : []);
     const alReves = todasLasPruebas.filter((archivo) => {
       if (/^pruebas\/(panel\/)?integracion\//.test(archivo)) return !deIntegracion.has(archivo);
       if (archivo.startsWith('pruebas/panel/navegador/')) return !deNavegador.has(archivo);
       if (archivo.startsWith('pruebas/distribuida/')) return !deDistribuida.has(archivo);
+      if (archivo.startsWith('pruebas/keycloak/')) return !deKeycloak.has(archivo);
       return !deUnitarias.has(archivo);
     });
     expect(alReves).toEqual([]);

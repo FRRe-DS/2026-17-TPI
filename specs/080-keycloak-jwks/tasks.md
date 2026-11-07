@@ -47,7 +47,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T13. Realm: usuarios y cliente de desarrollo.** RNF-12.17, RNF-06.8
   - Hecho cuando: el realm tiene `m2-desarrollo` y los usuarios con `id` fijo del plan; `pruebas/unitarias/realm.test.ts` los comprueba; y, tras `down -v`, un token de `cliente1` trae `aud: m2-clientes`, `sub` igual a su `id` fijo y `roles: ["CLIENTE"]`; sin pedir scopes trae `scope: ""` y pidiéndolos trae `clientes:read clientes:write`; y un ID token de `cliente1` no trae `m2-clientes` en `aud`.
 
-- [ ] **T14. Prueba con Keycloak real: operaciones.** RNF-07.13, RNF-12.14
+- [x] **T14. Prueba con Keycloak real: operaciones.** RNF-07.13, RNF-12.14
   - Hecho cuando: `npm run keycloak:test` levanta el entorno (proyecto `m2-keycloak`, puertos propios) y comprueba con tokens pedidos a Keycloak, los de persona con `clientes:read clientes:write`: `cliente1` crea su perfil (`201`, con `clienteId` igual a su `sub`) y lo lee; `cliente1` no lee el de `cliente2` (`403`); `operador1` registra un bloqueo (`201`); `grupo-13` lee el estado de cuenta (`200`) y no el perfil (`403`); un token alterado, uno del comando de tokens de M2 (HS256) y un ID token de `cliente1` dan `401`. Sin Docker termina en rojo con el motivo. `npm test` no corre esta prueba, y `pruebas/unitarias/consistencia.test.ts` conoce el proyecto nuevo.
 
 - [ ] **T15. Prueba con Keycloak real: Keycloak caído.** RNF-07.13, RNF-13.9, RNF-13.10, RNF-13.11, RNF-13.12, RNF-13.13
