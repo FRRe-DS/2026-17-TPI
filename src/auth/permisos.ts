@@ -20,6 +20,15 @@ export function autorizar(rolesDelToken: readonly string[], rolesDeLaOperacion: 
   if (!permitido) throw new SinPermiso();
 }
 
+// Deja pasar si el token trae todos los scopes de la operación y, si no, lanza `SinPermiso` (403) con un `detail` que habla del
+// scope (RNF-12.13). Los nombres se comparan tal cual. No nombra ni el scope que falta ni los del token. Una operación sin
+// scopes no exige ninguno.
+export function exigirScope(scopesDelToken: readonly string[], scopesDeLaOperacion: readonly string[]): void {
+  if (!scopesDeLaOperacion.every((scope) => scopesDelToken.includes(scope))) {
+    throw new SinPermiso('El token no trae el scope que pide la operación');
+  }
+}
+
 // Exige el token y el rol que pide cada operación, según los permisos que su ruta guarda en la configuración
 // (`registrarOperaciones`), y deja en `request.identidad` quién llama (RNF-12.1, RNF-12.3, RNF-12.4). Es un `onRequest`
 // global: corre antes de leer el cuerpo, así que el 401 y el 403 van antes de cualquier error del cuerpo (RNF-03.5). Se
@@ -51,6 +60,9 @@ export function registrarPermisos(
 
     const identidad = await verificador.verificar(request.headers.authorization);
     autorizar(identidad.roles, permisos?.roles ?? []);
+    // Solo el modo `jwks` trae scopes: en `hs256` la identidad no los tiene y no se exige ninguno (RNF-12.15). La propiedad del
+    // recurso (sub = clienteId) la comprueban después los manejadores (RNF-12.14).
+    if (identidad.scopes !== undefined) exigirScope(identidad.scopes, permisos?.scopes ?? []);
     request.identidad = identidad;
   });
 }

@@ -30,7 +30,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T8. Separar roles y scopes en el contrato.** RNF-12.13, RNF-07.12
   - Hecho cuando: las pruebas comprueban, con `contratoCon`, que `permisosDe` trata como scopes los esquemas `oauth2` y `openIdConnect`, y como roles los demás y los no declarados; que un scope ya no se cuenta como rol, con rol y scope en el mismo renglón o en dos; que `[{ bearerAuth: [OPERADOR] }, { keycloak: [] }]` sigue pidiendo OPERADOR; que una lista vacía de roles sigue admitiendo cualquier rol conocido; y que `scopes` solo aparece si la operación declara alguno. `pruebas/http/operaciones.test.ts` pasa sin cambios.
 
-- [ ] **T9. Exigir el scope.** RNF-12.13, RNF-12.14, RNF-12.15, RNF-07.12
+- [x] **T9. Exigir el scope.** RNF-12.13, RNF-12.14, RNF-12.15, RNF-07.12
   - Hecho cuando: las pruebas comprueban, en modo `jwks`, que si falta el scope da `403` (`type: about:blank`, con un `detail` que habla del scope y no del rol) aunque el rol y el `sub` estén bien; que `clientes:write` no alcanza para una operación de `clientes:read`; que el rol equivocado da `403` aunque traiga el scope, y que un CLIENTE sobre otro `clienteId` da `403` aunque traiga el scope; que una operación sin scope declarado no exige ninguno; y que en modo `hs256` el scope no se mira. Con `contrato/openapi.yml` tal como está, ninguna operación real exige scope todavía.
 
 ## Tramo B — Keycloak real
