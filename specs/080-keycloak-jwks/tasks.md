@@ -9,7 +9,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T1. Configuración del modo de tokens.** RNF-06.7, RNF-06.9
   - Hecho cuando: `pruebas/unitarias/config.test.ts` comprueba que sin variables el modo es `hs256`, que acepta `hs256` y `jwks`, que otro valor da un error que nombra `M2_MODO_TOKENS` sin repetir el valor, que en modo `jwks`, si falta `M2_URL_JWKS`, da un error que la nombra, que esa URL cumple la regla `urlHttp` (con usuario y contraseña se rechaza), y que `M2_CLAVE_TOKENS` sigue obligatoria en los dos modos; `ejemplo.env` tiene las dos variables, cada una con su comentario arriba y la forma `VARIABLE=${VARIABLE:-valor}`, y `pruebas/unitarias/ejemplo-env.test.ts` las acepta; `CONFIG` de `pruebas/ayudas/app.ts` usa `hs256`.
 
-- [ ] **T2. Validar tokens RS256 con un JWKS.** RNF-12.11, RNF-12.12, RNF-07.12
+- [x] **T2. Validar tokens RS256 con un JWKS.** RNF-12.11, RNF-12.12, RNF-07.12
   - Hecho cuando: `pruebas/unitarias/tokens-jwks.test.ts`, con una clave generada por la prueba y un JWKS servido por `servidor-modulo.ts`, comprueba que un token RS256 válido devuelve `sub`, roles y scopes; que un rol repetido no cambia nada; que el JWKS con una clave `enc` además de la de firma no molesta; que da `401` con el motivo de RNF-12.2 por vencido, por `nbf`, por emisor, por audiencia, por firma de otra clave y por `sub` inválido; que da `401` con alg `none` y con un HS256 firmado con `M2_CLAVE_TOKENS`, sin hacer ningún pedido al JWKS; y que `scope` vacío o ausente da una lista vacía y uno que no es texto da `401`.
 
 - [ ] **T3. `kid` desconocido.** RNF-12.16, RNF-12.19, RNF-07.12

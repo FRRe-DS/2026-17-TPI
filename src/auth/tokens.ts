@@ -1,13 +1,14 @@
-import { errors, jwtVerify, SignJWT, type JWTPayload } from 'jose';
+import { errors, jwtVerify, SignJWT, type JWTPayload, type JWTVerifyResult } from 'jose';
 import type { Config, ConfigTokens } from '../config.js';
 import { NoAutenticado } from '../errores.js';
+import { crearClaves } from './claves-jwks.js';
 
 // Los roles que reconoce el servicio, escritos exactamente así: los demás se ignoran (RNF-12.3).
 export const ROLES_CONOCIDOS = ['CLIENTE', 'CONDUCTOR', 'OPERADOR', 'SERVICIO'] as const;
 export type Rol = (typeof ROLES_CONOCIDOS)[number];
 
-// Quién llama, según su token: el `sub` y sus roles conocidos (RNF-12.4).
-export type Identidad = { sub: string; roles: Rol[] };
+// Quién llama, según su token: el `sub` y sus roles conocidos (RNF-12.4). `scopes` está solo en el modo `jwks`.
+export type Identidad = { sub: string; roles: Rol[]; scopes?: string[] };
 
 export type DatosToken = { sub: string; roles: readonly string[]; venceEnSegundos?: number };
 
@@ -20,6 +21,8 @@ const ESQUEMA_BEARER = /^Bearer +(\S+)$/i;
 const MAL_FORMADO = 'El token está mal formado';
 const SUB_INVALIDO = 'El sub del token falta, está vacío o no es texto';
 const NO_VALIDO = 'El token no es válido';
+const FIRMA_HS256 = 'El token no está firmado con HS256 y la clave del servicio';
+const FIRMA_RS256 = 'El token no está firmado con RS256 y una clave del servicio de identidad';
 
 // La clave de la firma: el texto de la configuración en UTF-8, como lo hace cualquier biblioteca de JWT con un secreto.
 const claveDe = (config: ConfigTokens): Uint8Array => new TextEncoder().encode(config.claveTokens);
@@ -45,32 +48,35 @@ function motivoDelClaim({ claim, reason }: errors.JWTClaimValidationFailed): str
   }
 }
 
-// El motivo del 401 según el error de jose (plan, Lógica 3). Dice qué falló y nunca repite nada de lo que traía el token.
-function motivoDe(error: errors.JOSEError): string {
+// El motivo del 401 según el error de jose (plan, Lógica 3). Dice qué falló y nunca repite nada de lo que traía el token. El de
+// la firma depende del modo.
+function motivoDe(error: errors.JOSEError, motivoFirma: string): string {
   if (error instanceof errors.JWTExpired) return 'El token venció';
   if (error instanceof errors.JWTClaimValidationFailed) return motivoDelClaim(error);
   if (error instanceof errors.JOSEAlgNotAllowed || error instanceof errors.JWSSignatureVerificationFailed) {
-    return 'El token no está firmado con HS256 y la clave del servicio';
+    return motivoFirma;
   }
   if (error instanceof errors.JWSInvalid || error instanceof errors.JWTInvalid) return MAL_FORMADO;
   return NO_VALIDO;
 }
 
+// El emisor, la audiencia y las fechas se controlan igual en los dos modos (RNF-12.12).
+const reglasDe = (config: ConfigTokens) => ({
+  issuer: config.emisorTokens,
+  audience: config.audienciaTokens,
+  clockTolerance: TOLERANCIA_RELOJ_SEGUNDOS,
+  requiredClaims: ['exp', 'sub'],
+});
+
 // Comprueba la firma, el emisor, la audiencia y las fechas. jose controla la firma antes que los claims, así que un token
 // falso no revela qué más tenía mal. Un error que no es de jose (una clave que no sirve) no es culpa del token: sigue su
 // camino y da 500.
-async function validar(token: string, config: ConfigTokens): Promise<JWTPayload> {
+async function validar(comprobar: () => Promise<JWTVerifyResult>, motivoFirma: string): Promise<JWTPayload> {
   try {
-    const { payload } = await jwtVerify(token, claveDe(config), {
-      algorithms: ['HS256'],
-      issuer: config.emisorTokens,
-      audience: config.audienciaTokens,
-      clockTolerance: TOLERANCIA_RELOJ_SEGUNDOS,
-      requiredClaims: ['exp', 'sub'],
-    });
+    const { payload } = await comprobar();
     return payload;
   } catch (error) {
-    throw error instanceof errors.JOSEError ? new NoAutenticado(motivoDe(error)) : error;
+    throw error instanceof errors.JOSEError ? new NoAutenticado(motivoDe(error, motivoFirma)) : error;
   }
 }
 
@@ -85,19 +91,65 @@ function rolesConocidos(payload: JWTPayload, campo: string): Rol[] {
   return roles.filter(esRolConocido);
 }
 
+// El token del encabezado `Authorization: Bearer <token>`.
+function tokenDe(encabezado: string | undefined): string {
+  const token = typeof encabezado === 'string' ? ESQUEMA_BEARER.exec(encabezado)?.[1] : undefined;
+  if (token === undefined) throw new NoAutenticado('Falta el token');
+  return token;
+}
+
+// jose solo exige que el sub exista: que sea un texto con algo escrito se controla acá.
+function subDe({ sub }: JWTPayload): string {
+  if (typeof sub !== 'string' || sub.trim() === '') throw new NoAutenticado(SUB_INVALIDO);
+  return sub;
+}
+
+// El campo `scope` es un texto con los scopes separados por espacios (RFC 6749). Sin él, o vacío, no hay ninguno.
+function scopesDe({ scope }: JWTPayload): string[] {
+  if (scope === undefined) return [];
+  if (typeof scope !== 'string') throw new NoAutenticado('El campo scope del token no es un texto');
+  return scope.split(' ').filter((nombre) => nombre !== '');
+}
+
 // Valida el encabezado `Authorization: Bearer <token>` y dice quién llama (RNF-12.2, RNF-12.4). Si el token no sirve lanza
 // `NoAutenticado` (401) con el motivo, que no repite el token.
 export async function verificarToken(encabezado: string | undefined, config: ConfigTokens): Promise<Identidad> {
-  const token = typeof encabezado === 'string' ? ESQUEMA_BEARER.exec(encabezado)?.[1] : undefined;
-  if (token === undefined) throw new NoAutenticado('Falta el token');
+  const token = tokenDe(encabezado);
+  const payload = await validar(
+    () => jwtVerify(token, claveDe(config), { ...reglasDe(config), algorithms: ['HS256'] }),
+    FIRMA_HS256,
+  );
+  return { sub: subDe(payload), roles: rolesConocidos(payload, config.campoRoles) };
+}
 
-  const payload = await validar(token, config);
+export type ConfigVerificador = ConfigTokens & Pick<Config, 'modoTokens' | 'urlJwks'>;
 
-  // jose solo exige que el sub exista: que sea un texto con algo escrito se controla acá.
-  const { sub } = payload;
-  if (typeof sub !== 'string' || sub.trim() === '') throw new NoAutenticado(SUB_INVALIDO);
+// Valida el encabezado de una solicitud según el modo configurado (RNF-06.7).
+export type Verificador = { verificar: (encabezado: string | undefined) => Promise<Identidad> };
 
-  return { sub, roles: rolesConocidos(payload, config.campoRoles) };
+// `hs256` valida como siempre (RNF-12.15). `jwks` aplica las mismas reglas con RS256 y las claves de `urlJwks` (RNF-12.11,
+// RNF-12.12). jose revisa el algoritmo antes de pedir la clave: un `none` o un HS256 dan 401 sin llamar a Keycloak, y por eso
+// solo se acepta RS256, para que la clave compartida de M2 no valga como pública. Keycloak puede repetir un rol que venga del
+// realm y de un cliente, y acá no cuenta dos veces.
+export function crearVerificador(config: ConfigVerificador): Verificador {
+  if (config.modoTokens === 'hs256') return { verificar: (encabezado) => verificarToken(encabezado, config) };
+  if (config.urlJwks === undefined) throw new Error('El modo jwks necesita urlJwks');
+
+  const claves = crearClaves(config.urlJwks);
+  return {
+    async verificar(encabezado) {
+      const token = tokenDe(encabezado);
+      const payload = await validar(
+        () => jwtVerify(token, claves, { ...reglasDe(config), algorithms: ['RS256'] }),
+        FIRMA_RS256,
+      );
+      return {
+        sub: subDe(payload),
+        roles: [...new Set(rolesConocidos(payload, config.campoRoles))],
+        scopes: scopesDe(payload),
+      };
+    },
+  };
 }
 
 type ClaimsFirmados = { campoRoles: string; roles: readonly string[]; sub: string; audiencia: string; venceEnSegundos: number };
