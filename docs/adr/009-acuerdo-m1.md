@@ -1,6 +1,6 @@
 # ADR 009 — Acuerdo de consorcio sobre M1 (Identidad y Acceso)
 
-Fecha: 2026-10-20 · Estado: propuesta
+Fecha: 2026-10-20 · Estado: reemplazada por ADR 080 (el formato HS256 sigue valiendo como modo de desarrollo)
 Issue: #9
 
 ## Contexto
