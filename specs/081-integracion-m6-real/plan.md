@@ -40,7 +40,7 @@ Sin tablas ni migraciones de M2. El M6 real trae su propia base (PostgreSQL), co
 
 El commit va escrito una sola vez, en `docker-compose.yml`, como valor por defecto de `${M6_REAL_COMMIT:-7d3d5af…}` (el hash completo, que T1 vuelve a comprobar contra la rama `m6/base-de-datos` del Grupo 12). Con la variable se prueba otro commit sin editar nada; para cambiar el fijo, se edita ese valor y la línea de `docs/probar-m2.md`.
 
-M2 apunta a M6 solo por `M2_URL_M6` (RNF-06.6): `M2_URL_M6=http://m6-real:3006/api/v1 docker compose --profile m6-real up -d --build --wait`. `m2` no depende de `m6-real` en `depends_on`: M2 tiene que arrancar y responder aunque M6 no esté (RNF-13).
+M2 apunta a M6 solo por `M2_URL_M6` (RNF-06.6): `M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait`. `m2` no depende de `m6-real` en `depends_on`: M2 tiene que arrancar y responder aunque M6 no esté (RNF-13).
 
 ## Lógica
 No hay lógica de M2 nueva. La prueba:

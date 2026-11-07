@@ -247,11 +247,12 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   const m2 = compose.services?.['m2'];
   const bd = compose.services?.['bd'];
 
-  it('declara m2 y bd, y los dos del panel (spec 071) solo bajo el perfil panel', () => {
-    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'm2', 'm6', 'panel']);
+  it('declara m2 y bd, los del panel (specs 071 y 072) solo bajo el perfil panel y los del M6 real (spec 081) solo bajo m6-real', () => {
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel']);
     expect(m2?.profiles).toBeUndefined();
     expect(bd?.profiles).toBeUndefined();
     for (const nombre of ['m6', 'panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    for (const nombre of ['m6-real', 'm6-real-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['m6-real']);
   });
 
   it('las imágenes tienen versión exacta, nunca latest', () => {
@@ -282,7 +283,7 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   it('la base no publica ningún puerto y guarda sus datos en el volumen datos-bd', () => {
     expect(bd?.ports).toBeUndefined();
     expect(bd?.volumes).toEqual(['datos-bd:/var/lib/postgresql']);
-    expect(Object.keys(compose.volumes ?? {})).toEqual(['datos-bd']);
+    expect(Object.keys(compose.volumes ?? {})).toEqual(['datos-bd', 'datos-m6-real-bd']);
   });
 
   // La imagen de m2 no trae curl ni wget; el chequeo lo hace Node, con un GET (wget --spider manda HEAD y da 405).
@@ -434,6 +435,69 @@ describe('docker-compose.yml: perfil panel (spec 071, RNF-04.6)', () => {
   it('el chequeo del M6 simulado mira el canal de control y no la API, que el modo caído cierra', () => {
     expect(codigoDelChequeo(m6)).not.toContain('M6_PUERTO\'');
     expect(codigoDelChequeo(m6)).not.toContain('/api/');
+  });
+});
+
+describe('docker-compose.yml: perfil m6-real con el M6 del Grupo 12 (spec 081, RNF-04.9, RNF-06.6)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const m6Real = compose.services?.['m6-real'];
+  const baseM6 = compose.services?.['m6-real-bd'];
+  const ejemplo = readFileSync(new URL('ejemplo.env', raiz), 'utf8').replaceAll('\r\n', '\n');
+  const deEjemplo = (variable: string) => new RegExp(`^${variable}=\\$\\{${variable}:-([^}]*)\\}$`, 'm').exec(ejemplo)?.[1];
+  const contexto = () => (typeof m6Real?.build === 'object' ? (m6Real.build.context ?? '') : '');
+
+  it('se construye desde el repositorio del Grupo 12, con su Dockerfile y un commit completo por defecto', () => {
+    expect(contexto()).toMatch(/^https:\/\/github\.com\/FRRe-DS\/2026-12-TPI\.git#\$\{M6_REAL_COMMIT:-[0-9a-f]{40}\}$/);
+    expect(m6Real?.build).toMatchObject({ dockerfile: 'backend/Dockerfile' });
+  });
+
+  it('M6 real publica su puerto solo en 127.0.0.1 y espera a que su base esté sana', () => {
+    expect(m6Real?.init).toBe(true);
+    expect(m6Real?.ports).toEqual(['127.0.0.1:${M6_REAL_PUERTO:-3016}:3006']);
+    expect(m6Real?.depends_on).toEqual({ 'm6-real-bd': { condition: 'service_healthy' } });
+  });
+
+  it('M6 real recibe su base por DATABASE_URL, escucha en el 3006 y tiene los atajos de demo para preparar viajes', () => {
+    expect(m6Real?.environment).toEqual({
+      DATABASE_URL:
+        'postgresql://${M6_REAL_BD_USUARIO:-m6}:${M6_REAL_BD_CLAVE:-m6-contrasena-de-desarrollo}@m6-real-bd:5432/${M6_REAL_BD_NOMBRE:-m6}?schema=public',
+      PORT: '3006',
+      ENABLE_DEMO_AUTH: 'true',
+    });
+  });
+
+  it('la base de M6 usa PostgreSQL 16 en versión exacta, su propio volumen y no publica ningún puerto (RNF-05)', () => {
+    expect(baseM6?.image).toMatch(/^postgres:16\./);
+    expect(imagenExacta(baseM6?.image ?? '', 2)).toBe(true);
+    expect(baseM6?.ports).toBeUndefined();
+    expect(baseM6?.volumes).toEqual(['datos-m6-real-bd:/var/lib/postgresql/data']);
+  });
+
+  it('la base de M6 no lee ejemplo.env, porque tomaría las POSTGRES_* de M2', () => {
+    expect(baseM6?.env_file).toBeUndefined();
+    expect(baseM6?.environment).toEqual({
+      POSTGRES_USER: '${M6_REAL_BD_USUARIO:-m6}',
+      POSTGRES_PASSWORD: '${M6_REAL_BD_CLAVE:-m6-contrasena-de-desarrollo}',
+      POSTGRES_DB: '${M6_REAL_BD_NOMBRE:-m6}',
+    });
+  });
+
+  it('el chequeo de la base de M6 va por TCP, como el de bd', () => {
+    expect(baseM6?.healthcheck?.test).toEqual(compose.services?.['bd']?.healthcheck?.test);
+  });
+
+  it('m2 no depende de M6: tiene que arrancar y responder aunque M6 no esté (RNF-13)', () => {
+    expect(Object.keys(compose.services?.['m2']?.depends_on ?? {})).toEqual(['bd']);
+  });
+
+  it.each([
+    ['M6_REAL_PUERTO', '3016'],
+    ['M6_REAL_BD_USUARIO', 'm6'],
+    ['M6_REAL_BD_CLAVE', 'm6-contrasena-de-desarrollo'],
+    ['M6_REAL_BD_NOMBRE', 'm6'],
+  ])('el valor por defecto de %s en el compose es el de ejemplo.env', (variable, valor) => {
+    expect(deEjemplo(variable)).toBe(valor);
+    expect(JSON.stringify([m6Real, baseM6])).toContain(`\${${variable}:-${valor}}`);
   });
 });
 

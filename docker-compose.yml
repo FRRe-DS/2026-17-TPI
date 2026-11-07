@@ -2,6 +2,8 @@
 #   docker compose up -d --build --wait
 # Con el perfil `panel` suma el panel, el M6 simulado (spec 071) y el puente a la base (spec 072); sin él, no se crean:
 #   docker compose --profile panel up -d --build --wait
+# Con el perfil `m6-real` suma el M6 del Grupo 12 y su base (spec 081); M2 lo usa solo si se lo indica M2_URL_M6:
+#   M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
 # La configuración sale de ejemplo.env; una variable definida en el entorno manda sobre el ejemplo (RNF-06.3).
 services:
   m2:
@@ -135,5 +137,45 @@ services:
       retries: 6
       start_period: 5s
 
+  # El M6 real del Grupo 12 y su base (spec 081, RNF-04.9): solo con `--profile m6-real`. No copia su código: compose lo construye
+  # desde su repositorio. Para probar otro commit: M6_REAL_COMMIT=<hash>. El fijo se cambia acá y en docs/probar-m2.md. m2 no depende de
+  # este servicio porque tiene que arrancar y responder aunque M6 no esté (RNF-13). El M6 simulado del perfil panel no cambia.
+  # Compose interpola estas variables de su propio entorno, no de ejemplo.env: los valores por defecto se repiten y se cambian juntos.
+  m6-real:
+    profiles: [m6-real]
+    build:
+      context: https://github.com/FRRe-DS/2026-12-TPI.git#${M6_REAL_COMMIT:-7d3d5af9138d9b220f109798e9f615ca853d2bda}
+      dockerfile: backend/Dockerfile
+    # Su imagen arranca con `sh -c`, que no reenvía señales: sin init, cada parada esperaría los 10 s de Docker.
+    init: true
+    environment:
+      DATABASE_URL: postgresql://${M6_REAL_BD_USUARIO:-m6}:${M6_REAL_BD_CLAVE:-m6-contrasena-de-desarrollo}@m6-real-bd:5432/${M6_REAL_BD_NOMBRE:-m6}?schema=public
+      PORT: "3006"
+      # Sus atajos de demo: los usa solo la preparación de la prueba para crear viajes, nunca M2.
+      ENABLE_DEMO_AUTH: "true"
+    # Solo en 127.0.0.1: con los atajos de demo no es para exponerlo. M2 lo ve por la red de compose como m6-real:3006.
+    ports:
+      - "127.0.0.1:${M6_REAL_PUERTO:-3016}:3006"
+    depends_on:
+      m6-real-bd:
+        condition: service_healthy
+
+  # Sin env_file: ejemplo.env, porque tomaría las POSTGRES_* de M2. Es la versión 16 de su compose, con el parche fijo.
+  m6-real-bd:
+    profiles: [m6-real]
+    image: postgres:16.15
+    environment:
+      POSTGRES_USER: ${M6_REAL_BD_USUARIO:-m6}
+      POSTGRES_PASSWORD: ${M6_REAL_BD_CLAVE:-m6-contrasena-de-desarrollo}
+      POSTGRES_DB: ${M6_REAL_BD_NOMBRE:-m6}
+    volumes:
+      - datos-m6-real-bd:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
 volumes:
   datos-bd:
+  datos-m6-real-bd:
