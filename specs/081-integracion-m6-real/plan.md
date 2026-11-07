@@ -84,7 +84,7 @@ M2 → M6 no cambia: su cliente (`src/modulos/cliente.ts`) ya tiene el timeout (
 - **Proyecto de compose aparte (`-p m2-distribuida`) y puertos propios.** La prueba no puede pisar el M2 ni la base que la persona tenga levantados para trabajar. Alternativa descartada: usar el proyecto por defecto, que obliga a bajar todo antes de probar y pierde datos con `down -v`.
 - **Un proyecto de Vitest y no un script `.mjs`.** Las comprobaciones son muchas y con detalle (cuerpos, encabezados, conteos); Vitest da el mismo formato de salida que el resto y filtra por archivo. `scripts/contrato-test.mjs` se justifica porque lanza Schemathesis, que no es de Vitest.
 - **`docker compose` por `child_process`, no la API de Testcontainers.** No agrega dependencias (hay que preguntar antes) y es el mismo comando que documenta `probar-m2.md`, así que quien lo corre a mano ve lo mismo que la prueba.
-- **`pause` además de `stop`.** Detener el contenedor da «conexión rechazada» al instante; «no responde dentro del tiempo máximo» (RNF-13.8) solo se ve con un servicio que acepta la conexión y no contesta.
+- **`pause` además de `stop`.** Detener el contenedor da un error de nombre (`ENOTFOUND`) al instante, porque Docker quita el nombre de un contenedor detenido; «no responde dentro del tiempo máximo» (RNF-13.8) solo se ve con un servicio que acepta la conexión y no contesta.
 - **Sin ADR.** Nada de esto cambia el contrato ni la arquitectura de M2: es entorno de prueba. El ADR 057 ya registra que M6 sale del contrato de la cátedra.
 
 ## Cobertura de requisitos

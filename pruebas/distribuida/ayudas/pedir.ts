@@ -1,3 +1,4 @@
+import { inject } from 'vitest';
 import { compose, URL_M2, URL_M6 } from './entorno.js';
 import { crearContador } from './contador.js';
 
@@ -8,7 +9,8 @@ export type Respuesta = { estado: number; encabezados: Headers; texto: string; c
 
 export type Pedido = { cuerpo?: unknown; encabezados?: Record<string, string> };
 
-export const contador = crearContador({ reintentosM2: Number(process.env['M2_REINTENTOS_MODULOS'] ?? 1) });
+// El archivo lo crea `global.ts`: así la cuenta es la de toda la corrida, y no la de este archivo de prueba.
+export const contador = crearContador({ reintentosM2: Number(process.env['M2_REINTENTOS_MODULOS'] ?? 1), archivo: inject('archivoPedidos') });
 
 async function pedir(base: string, metodo: string, ruta: string, token: string | undefined, pedido: Pedido): Promise<Respuesta> {
   const encabezados: Record<string, string> = { ...pedido.encabezados };

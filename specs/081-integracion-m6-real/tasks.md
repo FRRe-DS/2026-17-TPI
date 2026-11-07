@@ -24,7 +24,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 - [x] **T6. Rechazos contra el M6 real.** RNF-07.10
   - Hecho cuando: `rechazos.test.ts` comprueba que calificar un viaje inexistente en M6 da `404`, uno de otro cliente da `404`, uno `CANCELLED` o en curso da `422` con `type: /errores/viaje-no-completado`, y que en los tres casos `listarCalificaciones` sigue vacía; la prueba usa los viajes de T3 y deja anotado en `guia.md` cualquier diferencia de código o de `type` frente a lo que dice `m6.yml`.
 
-- [ ] **T7. Resiliencia contra el M6 real.** RNF-13.8
+- [x] **T7. Resiliencia contra el M6 real.** RNF-13.8
   - Hecho cuando: `resiliencia.test.ts` corre al final y, con `docker compose stop m6-real`, el historial y la calificación dan `503` con `Retry-After` y el perfil y las direcciones dan `200`; con `start` y la salud de M6, historial y calificación vuelven a `200`/`201` sin reiniciar `m2` (el `StartedAt` del contenedor de `m2` no cambia); con `pause`, ambos dan `503` con `Retry-After` en menos de 10 s y lo propio de M2 sigue en `200`; un `finally` deja a M6 corriendo aunque un paso falle; una prueba final comprueba que el total de pedidos a M6 de la corrida no pasa de 600.
 
 ## Tramo C — CI, documentación y comunicación

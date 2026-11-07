@@ -4,6 +4,7 @@ import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { IMAGEN_POSTGRES } from '../ayudas/global.js';
 import configuracionDeVitest from '../../vitest.config.js';
+import { ARCHIVO_ULTIMO, OrdenDeArchivos } from '../distribuida/ayudas/orden.js';
 
 // Una versión exacta es X.Y.Z, con prelanzamiento o build opcionales. Todo lo demás es un rango o una etiqueta:
 // ^1.2.3, ~1.2.3, *, latest, >=1, 1.x, 1.2.3 - 2.0.0, 1.0.0 || 2.0.0, next.
@@ -98,6 +99,12 @@ describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF
   it('toda prueba de pruebas/ cae en un proyecto', () => {
     const cubiertas = new Set(proyectos.flatMap(archivosDe));
     expect(todasLasPruebas.filter((archivo) => !cubiertas.has(archivo))).toEqual([]);
+  });
+
+  // Si el archivo se renombrara, el orden dejaría de aplicarle sin que nada falle, y apagaría a M6 en medio de los demás.
+  it('el archivo que apaga a M6 existe y corre al final (spec 081)', () => {
+    expect(configuracionDeVitest.test?.sequence?.sequencer).toBe(OrdenDeArchivos);
+    expect(existsSync(new URL(ARCHIVO_ULTIMO, raiz))).toBe(true);
   });
 
   it('ninguna prueba cae en dos proyectos', () => {

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import { crearContador, LIMITE_PRUEBA_M6 } from '../distribuida/ayudas/contador.js';
 import { descripcionDeFalla } from '../distribuida/ayudas/entorno.js';
 
@@ -47,6 +50,38 @@ describe('el contador de pedidos a M6 de la prueba distribuida (RNF-07.7)', () =
     expect(contador.superaElLimite()).toBe(false);
     contador.pedidoAM6();
     expect(contador.superaElLimite()).toBe(true);
+  });
+});
+
+// Vitest aísla cada archivo de prueba: la cuenta de toda la corrida solo se puede sumar afuera, en un archivo (spec 081, T7).
+describe('el contador compartido entre archivos de prueba (RNF-07.7)', () => {
+  const carpeta = mkdtempSync(join(tmpdir(), 'm2-contador-'));
+  afterAll(() => {
+    rmSync(carpeta, { recursive: true, force: true });
+  });
+
+  it('sin pedidos y sin archivo todavía, el total es cero', () => {
+    expect(crearContador({ archivo: join(carpeta, 'vacio') }).totalM6()).toBe(0);
+  });
+
+  it('dos contadores con el mismo archivo ven la suma de los dos', () => {
+    const archivo = join(carpeta, 'suma');
+    const uno = crearContador({ reintentosM2: 1, archivo });
+    const otro = crearContador({ reintentosM2: 1, archivo });
+    uno.pedidoAM6();
+    otro.pedidoAM2QueConsultaM6();
+    expect(uno.totalM6()).toBe(3);
+    expect(otro.totalM6()).toBe(3);
+  });
+
+  it('el límite se mira contra el total compartido', () => {
+    const archivo = join(carpeta, 'limite');
+    const uno = crearContador({ archivo });
+    const otro = crearContador({ archivo });
+    for (let i = 0; i < LIMITE_PRUEBA_M6; i++) uno.pedidoAM6();
+    expect(otro.superaElLimite()).toBe(false);
+    uno.pedidoAM6();
+    expect(otro.superaElLimite()).toBe(true);
   });
 });
 
