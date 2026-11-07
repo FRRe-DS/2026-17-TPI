@@ -110,3 +110,16 @@
   - **Decisión mía donde el plan no decía:** el nombre de la base de Keycloak es fijo (`keycloak`), sin variable, y el chequeo de salud es bash puro (`read` y `[[ … ]]`), sin `grep` ni `head`, para no depender de lo que traiga la imagen. Tiempos del chequeo: cada 5 s, con 30 s de gracia y 24 reintentos (hasta 2,5 min).
   - El token de `grupo-17` todavía no sirve para M2: sin audiencia ni roles, el realm es el de la cátedra hasta la T12.
 
+
+### T11 — M2 en modo `jwks` con un archivo de entorno · commit `080/T11`
+- Qué cambió: `ejemplo-keycloak.env` (nuevo) trae tres variables: `COMPOSE_PROFILES=keycloak`, `M2_MODO_TOKENS=jwks` y `M2_EMISOR_TOKENS=http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm`. El comentario de cabecera de `docker-compose.yml` nombra el comando nuevo. Nada más del compose cambia.
+- Por qué así: RNF-06.7 (el modo sale de la configuración) y RNF-06.8 (el archivo no trae ninguna credencial). Un solo comando, `docker compose --env-file ejemplo-keycloak.env up -d --build --wait`, en vez de tres variables en la línea de comandos: el error más probable sería un emisor distinto del `KC_HOSTNAME`, que da `401` en todos los tokens (plan, Decisiones). Por eso el emisor y `KC_HOSTNAME` salen del mismo `KEYCLOAK_PUERTO`.
+- Cómo se conecta: compose carga el archivo como su propio entorno. `COMPOSE_PROFILES` activa el perfil sin nombrarlo, y `M2_MODO_TOKENS` y `M2_EMISOR_TOKENS` llegan a M2 porque `ejemplo.env` se interpola con ese entorno (`${M2_MODO_TOKENS:-hs256}`). La URL de las claves ya estaba en `ejemplo.env` (T1) y apunta a `keycloak:8080` por la red de compose. Una variable del entorno de quien corre compose manda sobre el archivo: `COMPOSE_PROFILES=keycloak,panel` suma el panel.
+- Tests: `pruebas/unitarias/ejemplo-env.test.ts`, bloque «ejemplo-keycloak.env»: exactamente esas tres variables, cada una con su comentario; las `M2_*` que cambia existen en `ejemplo.env`; el emisor es el `KC_HOSTNAME` del compose más el realm; el emisor y `M2_URL_JWKS` nombran el realm que se importa; y con esos valores sobre `ejemplo.env`, `cargarConfig` da `jwks` sin errores. Con Docker real, en un proyecto aparte (`-p m2-t11`, `M2_PUERTO=18083`, `KEYCLOAK_PUERTO=18080`), bajado con `down -v`:
+  - Las cuatro sanas sin nombrar el perfil; dentro de `m2`, `M2_MODO_TOKENS=jwks` y el emisor `http://localhost:18080/realms/ds-2026-realm`.
+  - El token de `grupo-17` trae ese mismo `iss` y ninguna `aud`; M2 responde `401` «La audiencia del token no es la esperada», no el del emisor.
+  - `docker compose --env-file ejemplo-keycloak.env config`: `8080` en el puerto publicado, en `KC_HOSTNAME` y en `M2_EMISOR_TOKENS`; con `KEYCLOAK_PUERTO=18080`, `18080` en los tres. Sin el archivo: `hs256`, `m1-identidad` y ningún servicio de Keycloak.
+- Para mirar con atención:
+  - `--env-file` reemplaza al `.env` que compose leería por defecto. Hoy el repo no tiene `.env`, así que no se pierde nada; si alguien usa uno propio, tiene que pasar los dos `--env-file`.
+  - El servicio `bd` también recibe las `M2_*`, porque lee `ejemplo.env` entero; ya era así y no las usa.
+  - Hasta la T12 el token de `grupo-17` no sirve para M2: le faltan la audiencia `m2-clientes` y los roles.

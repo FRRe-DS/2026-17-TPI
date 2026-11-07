@@ -2,8 +2,10 @@
 #   docker compose up -d --build --wait
 # Con el perfil `panel` suma el panel, el M6 simulado (spec 071) y el puente a la base (spec 072); sin él, no se crean:
 #   docker compose --profile panel up -d --build --wait
-# Con el perfil `keycloak` suma Keycloak y su base (spec 080); M2 sigue en modo hs256 salvo que se pida jwks:
+# Con el perfil `keycloak` suma Keycloak y su base (spec 080); M2 sigue en modo hs256:
 #   docker compose --profile keycloak up -d --build --wait
+# Con ejemplo-keycloak.env activa el mismo perfil y deja a M2 en modo jwks, con el emisor de Keycloak:
+#   docker compose --env-file ejemplo-keycloak.env up -d --build --wait
 # La configuración sale de ejemplo.env; una variable definida en el entorno manda sobre el ejemplo (RNF-06.3).
 services:
   m2:

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { cargarConfig } from '../../src/config.js';
 
@@ -100,6 +100,69 @@ describe('ejemplo.env (RNF-06.3)', () => {
     expect(url.pathname).toBe(`/${porDefecto['POSTGRES_DB']}`);
     expect(url.hostname).toBe('bd');
     expect(url.port).toBe('5432');
+  });
+});
+
+// ejemplo-keycloak.env (spec 080, RNF-06.7, RNF-06.8): lo que cambia para levantar M2 en modo jwks con un solo comando,
+// `docker compose --env-file ejemplo-keycloak.env up -d --build --wait`. Compose lo carga como su propio entorno, así que activa el
+// perfil y sus valores llegan a ejemplo.env por la interpolación.
+const URL_KEYCLOAK = new URL('../../ejemplo-keycloak.env', import.meta.url);
+const textoKeycloak = existsSync(URL_KEYCLOAK) ? readFileSync(URL_KEYCLOAK, 'utf8').replaceAll('\r\n', '\n') : '';
+const lineasKeycloak = textoKeycloak.split('\n');
+const DE_KEYCLOAK = /^([A-Z][A-Z0-9_]*)=(.*)$/;
+const valoresKeycloak = Object.fromEntries(
+  lineasKeycloak.flatMap((linea) => {
+    const coincide = DE_KEYCLOAK.exec(linea);
+    return coincide ? [[coincide[1] ?? '', coincide[2] ?? '']] : [];
+  }),
+);
+const textoComposeKeycloak = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+
+// Lo que haría compose con el puerto por defecto: resuelve ${KEYCLOAK_PUERTO:-8080}.
+function conPuerto(valor: string, puerto = '8080'): string {
+  return valor.replaceAll('${KEYCLOAK_PUERTO:-8080}', puerto);
+}
+
+describe('ejemplo-keycloak.env (spec 080, RNF-06.7, RNF-06.8)', () => {
+  it('existe y trae solo el perfil, el modo y el emisor', () => {
+    expect(existsSync(URL_KEYCLOAK)).toBe(true);
+    expect(valoresKeycloak).toEqual({
+      COMPOSE_PROFILES: 'keycloak',
+      M2_MODO_TOKENS: 'jwks',
+      M2_EMISOR_TOKENS: 'http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm',
+    });
+  });
+
+  it('toda línea es un comentario, está vacía o es VARIABLE=valor, y cada variable tiene un comentario justo arriba', () => {
+    expect(lineasKeycloak.filter((linea) => linea.trim() !== '' && !linea.startsWith('#') && !DE_KEYCLOAK.test(linea))).toEqual([]);
+    const sinComentario = lineasKeycloak.filter((linea, i) => DE_KEYCLOAK.test(linea) && !(lineasKeycloak[i - 1] ?? '').startsWith('#'));
+    expect(sinComentario).toEqual([]);
+  });
+
+  it('las variables de M2 que cambia están en ejemplo.env, para que la interpolación las lleve al servicio', () => {
+    for (const variable of Object.keys(valoresKeycloak).filter((nombre) => nombre.startsWith('M2_'))) {
+      expect(porDefecto, variable).toHaveProperty(variable);
+    }
+  });
+
+  // Un emisor distinto del KC_HOSTNAME daría 401 en todos los tokens (plan, Decisiones): los dos salen de KEYCLOAK_PUERTO.
+  it('el emisor es KC_HOSTNAME del compose más el realm, con el mismo KEYCLOAK_PUERTO', () => {
+    const hostname = /KC_HOSTNAME: (\S+)/.exec(textoComposeKeycloak)?.[1] ?? '';
+    expect(hostname).toBe('http://localhost:${KEYCLOAK_PUERTO:-8080}');
+    expect(valoresKeycloak['M2_EMISOR_TOKENS']).toBe(`${hostname}/realms/ds-2026-realm`);
+  });
+
+  it('el emisor y las claves de ejemplo.env nombran el mismo realm, el que se importa', () => {
+    const realm = (JSON.parse(readFileSync(new URL('../../keycloak/ds-2026-realm-realm.json', import.meta.url), 'utf8')) as { realm: string }).realm;
+    expect(new URL(conPuerto(valoresKeycloak['M2_EMISOR_TOKENS'] ?? '')).pathname).toBe(`/realms/${realm}`);
+    expect(new URL(porDefecto['M2_URL_JWKS'] ?? '').pathname).toBe(`/realms/${realm}/protocol/openid-connect/certs`);
+  });
+
+  it('con sus valores sobre los de ejemplo.env, el servicio arranca en modo jwks con el emisor de Keycloak', () => {
+    const env = { ...porDefecto, M2_MODO_TOKENS: valoresKeycloak['M2_MODO_TOKENS'] ?? '', M2_EMISOR_TOKENS: conPuerto(valoresKeycloak['M2_EMISOR_TOKENS'] ?? '') };
+    const { config, errores } = cargarConfig(env);
+    expect(errores).toBeUndefined();
+    expect(config).toMatchObject({ modoTokens: 'jwks', emisorTokens: 'http://localhost:8080/realms/ds-2026-realm', audienciaTokens: 'm2-clientes' });
   });
 });
 
