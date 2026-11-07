@@ -15,7 +15,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 - [x] **T3. Preparar viajes y el token de servicio.** RNF-07.11, RNF-07.7
   - Hecho cuando: `ayudas/viajes.ts` crea, con los atajos de demo de M6 y las rutas, cuerpos y roles leídos de `openapi.yaml` de M6 en el commit fijado, un viaje `COMPLETED`, uno `CANCELLED` (o anota en `guia.md` por qué M6 no permite llegar a ese estado) y uno en curso, para un cliente nuevo; `token-servicio.test.ts` comprueba que con el token de servicio de M2 (`sub` `m2-clientes`, `roles` `["SERVICIO"]`, firmado por M2) `GET /trips?clientId=…` y `GET /trips/{id}` contestan algo distinto de `401` y `403`, y que si M6 lo rechazara el mensaje de la falla trae el código HTTP y el `code` del `ErrorResponse` de M6 (comprobado con un pedido hecho a propósito sin token); las diferencias encontradas hasta acá están en `guia.md`.
 
-- [ ] **T4. Historial contra el M6 real.** RNF-07.8
+- [x] **T4. Historial contra el M6 real.** RNF-07.8
   - Hecho cuando: `historial.test.ts` crea tres viajes de un cliente y uno de otro, califica uno de los tres, y comprueba que `GET /clientes/{id}/viajes` da `200` con exactamente los tres del cliente, `calificado: true` solo en el calificado, que `page=0&size=2` trae dos y `page=1&size=2` trae uno (M2 desde 0, M6 desde 1: el pedido que llega a M6 se ve con `pedirM6` y coincide), que un cliente sin viajes recibe una página vacía con `200`, y que el cuerpo valida contra `contrato/openapi.yml`.
 
 - [ ] **T5. Calificación y duplicado contra el M6 real.** RNF-07.9

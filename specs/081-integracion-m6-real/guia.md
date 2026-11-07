@@ -33,3 +33,10 @@ _Se escribe al validar la spec (`081/V`)._
   - M6 acepta `SERVICIO` como alias de `SYSTEM` (también `CLIENTE`, `CONDUCTOR`, `OPERADOR`). Su `openapi.yaml` solo nombra los roles en inglés.
   - `listTrips` en M6 usa `page` desde 1 y `pageSize`, y devuelve `{ items, page, pageSize, total }`. Un `SYSTEM` sin `clientId` ni `driverId` recibe `400`.
   - El M8 de M6 es simulado: acepta cualquier `verificationToken` salvo `invalid`, `expired`, `invalid_…`, `m8_timeout` y `simulate_503`, y cada código sirve una sola vez.
+
+### T4 — Historial contra el M6 real · commit `081/T4`
+- Qué cambió: `pruebas/distribuida/historial.test.ts`, más `ayudas/clientes.ts:crearClienteEnM2` (un cliente nuevo con su token) y `ayudas/contrato.ts:validarContraContrato` (valida un cuerpo contra un esquema de `contrato/openapi.yml` con Ajv, igual que el servicio).
+- Por qué así: RNF-07.8 (RF-2.4). El cliente tiene tres viajes `COMPLETED`, otro cliente tiene uno, y uno de los tres está calificado desde M2. Se comprueba el resultado de punta a punta y, además, que la página de M2 coincide con la de M6 pedida directo con `pedirM6`: M2 cuenta desde 0 y M6 desde 1, y `size` en M2 es `pageSize` en M6.
+- Cómo se conecta: M2 llama a `GET /trips?clientId=…&page=…&pageSize=…` con su token de servicio; la marca `calificado` la pone M2 con lo que tiene en su base.
+- Tests: `historial.test.ts` (6 casos: los tres viajes y ninguno ajeno, `calificado` solo en uno, páginas 0 y 1 con `size=2`, coincidencia con M6, cliente sin viajes, cuerpos válidos contra el contrato) y `pruebas/unitarias/distribuida-contrato.test.ts` (la validación).
+- Para mirar con atención: el historial usa el orden de M6 (más reciente primero); la prueba no depende de él porque compara conjuntos y, entre M2 y M6, las mismas páginas. Sin diferencias de contrato frente a lo supuesto en `m6.yml` en esta tarea.
