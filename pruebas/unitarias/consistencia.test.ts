@@ -4,7 +4,7 @@ import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { IMAGEN_POSTGRES } from '../ayudas/global.js';
 import configuracionDeVitest from '../../vitest.config.js';
-import { ARCHIVO_ULTIMO, OrdenDeArchivos } from '../distribuida/ayudas/orden.js';
+import { ARCHIVO_ULTIMO, ARCHIVO_ULTIMO_KEYCLOAK, OrdenDeArchivos } from '../distribuida/ayudas/orden.js';
 
 // Una versión exacta es X.Y.Z, con prelanzamiento o build opcionales. Todo lo demás es un rango o una etiqueta:
 // ^1.2.3, ~1.2.3, *, latest, >=1, 1.x, 1.2.3 - 2.0.0, 1.0.0 || 2.0.0, next.
@@ -120,6 +120,8 @@ describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y key
   it('el archivo que apaga a M6 existe y corre al final (spec 081)', () => {
     expect(configuracionDeVitest.test?.sequence?.sequencer).toBe(OrdenDeArchivos);
     expect(existsSync(new URL(ARCHIVO_ULTIMO, raiz))).toBe(true);
+    // El de Keycloak caído (spec 080, T15) detiene Keycloak y reinicia M2: también al final.
+    expect(existsSync(new URL(ARCHIVO_ULTIMO_KEYCLOAK, raiz))).toBe(true);
   });
 
   it('ninguna prueba cae en dos proyectos', () => {

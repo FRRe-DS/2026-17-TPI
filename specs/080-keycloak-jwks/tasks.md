@@ -50,7 +50,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T14. Prueba con Keycloak real: operaciones.** RNF-07.13, RNF-12.14
   - Hecho cuando: `npm run keycloak:test` levanta el entorno (proyecto `m2-keycloak`, puertos propios) y comprueba con tokens pedidos a Keycloak, los de persona con `clientes:read clientes:write`: `cliente1` crea su perfil (`201`, con `clienteId` igual a su `sub`) y lo lee; `cliente1` no lee el de `cliente2` (`403`); `operador1` registra un bloqueo (`201`); `grupo-13` lee el estado de cuenta (`200`) y no el perfil (`403`); un token alterado, uno del comando de tokens de M2 (HS256) y un ID token de `cliente1` dan `401`. Sin Docker termina en rojo con el motivo. `npm test` no corre esta prueba, y `pruebas/unitarias/consistencia.test.ts` conoce el proyecto nuevo.
 
-- [ ] **T15. Prueba con Keycloak real: Keycloak caído.** RNF-07.13, RNF-13.9, RNF-13.10, RNF-13.11, RNF-13.12, RNF-13.13
+- [x] **T15. Prueba con Keycloak real: Keycloak caído.** RNF-07.13, RNF-13.9, RNF-13.10, RNF-13.11, RNF-13.12, RNF-13.13
   - Hecho cuando: `npm run keycloak:test` comprueba además, con un token pedido justo antes de detener Keycloak, porque dura 300 s: con `docker compose stop keycloak`, ese token sigue dando `200`; con `restart m2` y Keycloak detenido, M2 arranca, `/health` da `200` y el token da `503` con `Retry-After`; con `start keycloak`, ese mismo pedido vuelve a dar `200` sin reiniciar M2.
 
 - [ ] **T16. Job de CI.** RNF-07.13
