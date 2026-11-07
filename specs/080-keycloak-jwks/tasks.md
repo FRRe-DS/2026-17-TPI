@@ -18,7 +18,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T4. Keycloak caído, sin claves.** RNF-13.10, RNF-07.12
   - Hecho cuando: `pruebas/unitarias/claves-jwks.test.ts` comprueba que un JWKS colgado corta en `tiempoModulosMs` por intento y hace `1 + reintentosModulos` intentos, con 200 ms de pausa solo entre intentos; que uno con `5xx` o con un documento inválido da `ModuloNoDisponible` con `Retry-After` y la causa; que diez solicitudes juntas sin claves hacen un solo pedido por intento; y que `precargar` nunca lanza y devuelve el motivo.
 
-- [ ] **T5. Keycloak caído, con claves guardadas.** RNF-13.10, RNF-13.11, RNF-13.13, RNF-07.12
+- [x] **T5. Keycloak caído, con claves guardadas.** RNF-13.10, RNF-13.11, RNF-13.13, RNF-07.12
   - Hecho cuando: `pruebas/unitarias/claves-jwks.test.ts` comprueba que con la clave ya obtenida un JWKS caído no impide validar, también pasados los 10 minutos del valor por defecto de `jose` (con el reloj falso de Vitest); que cuando el JWKS vuelve se obtienen las claves faltantes; y que, con el JWKS caído, un `kid` inventado da `401` sin ningún pedido dentro de los 30 s de la última obtención, y `503` con `1 + reintentosModulos` pedidos pasado ese plazo.
 
 - [ ] **T6. M2 usa el verificador según el modo.** RNF-12.11, RNF-12.15, RNF-12.18, RNF-07.12

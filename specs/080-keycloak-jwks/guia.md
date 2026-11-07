@@ -47,3 +47,12 @@
   - Las pruebas de tiempos usan márgenes de 150 ms hacia arriba, con la pausa real. Si aparecen fallos intermitentes con la máquina cargada, mirar acá primero.
   - `cacheMaxAge` sigue con el valor por defecto de `jose` hasta la T5: a los 10 minutos las claves vencen y un corte daría `503` también con la clave guardada.
 
+### T5 — Keycloak caído, con claves guardadas · commit `080/T5`
+- Qué cambió: `src/auth/claves-jwks.ts:crearClaves` pasa `cacheMaxAge: Infinity` a `createRemoteJWKSet`. Es la única línea de código: el resto del comportamiento ya salía de `jose` y de la T4, y esta tarea lo deja probado.
+- Por qué así: RNF-13.11. Con el valor por defecto, 10 minutos, `jose` tira las claves guardadas y las pide de nuevo aunque no falte ninguna, así que con Keycloak caído M2 dejaría de atender tokens válidos. RNF-13.13: un pedido fallido no activa los 30 s, así que M2 obtiene lo que falta en cuanto Keycloak vuelve.
+- Cómo se conecta: igual que en la T4, el verificador se conecta a la app en la T6.
+- Tests: `pruebas/unitarias/claves-jwks.test.ts`, bloque «Keycloak caído, con claves guardadas», desde `crearVerificador` y con `vi.useFakeTimers({ toFake: ['Date'] })`. Cubren: validar sin pedidos con el JWKS caído (5xx, conexión cortada, colgado), también pasados los 10 minutos y un día; un `kid` inventado da `401` sin pedidos a 30 s menos 1 ms de la última obtención, y `503` con `Retry-After` y `1 + reintentos` pedidos pasado el plazo; un pedido fallido no reinicia los 30 s; la clave guardada sigue andando después de ese `503`; al volver Keycloak se obtiene la clave nueva, sin esperar otros 30 s; y si vuelve sin esa clave, el `kid` da `401`. En rojo antes del cambio cayeron justo las cuatro que dependen del vencimiento. Con la espera en 0, caen 3.
+- Para mirar con atención:
+  - **Costo de `cacheMaxAge: Infinity`, ya aceptado en la spec:** una clave que Keycloak retiró se sigue aceptando hasta ver un `kid` nuevo o reiniciar. Hay una prueba que lo deja a la vista. Con un `kid` nuevo, `jose` reemplaza el juego entero de claves.
+  - **`kid` inventado durante un corte:** pasados los 30 s, cada tanda hace `1 + reintentos` pedidos y da `503`. Lo prueba «un pedido fallido no reinicia los 30 s». Es el costo que la spec acepta para TP2 (Casos límite).
+

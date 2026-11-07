@@ -30,6 +30,10 @@ export function crearClaves({ urlJwks, tiempoModulosMs, reintentosModulos, reint
   const jwks = createRemoteJWKSet(new URL(urlJwks), {
     timeoutDuration: tiempoModulosMs,
     cooldownDuration: ESPERA_ENTRE_PEDIDOS_MS,
+    // Las claves guardadas no vencen. Con el valor por defecto, 10 minutos, se pedirían de nuevo aunque no falte ninguna y M2
+    // dejaría de atender con Keycloak caído (RNF-13.11). Una clave retirada se sigue aceptando hasta que se vea un `kid` nuevo o
+    // se reinicie: es el costo, anotado en la spec.
+    cacheMaxAge: Infinity,
   });
 
   // Como con los otros módulos: 200 ms de pausa solo entre intentos y, agotados, `ModuloNoDisponible` con lo que falló en el

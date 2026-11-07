@@ -1,5 +1,5 @@
 import { errors } from 'jose';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { crearClaves } from '../../src/auth/claves-jwks.js';
 import { crearVerificador } from '../../src/auth/tokens.js';
 import { ModuloNoDisponible, NoAutenticado, Problema } from '../../src/errores.js';
@@ -253,6 +253,124 @@ describe('verificador: Keycloak caído y sin claves', () => {
   it('un token con otro algoritmo da 401 y no 503: para rechazarlo no hace falta ninguna clave', async () => {
     servidor.responderCon({ tipo: '5xx', estado: 500 });
     await expect(verificador().verificar(`Bearer ${armarToken()}`)).rejects.toBeInstanceOf(NoAutenticado);
+    expect(servidor.llamadas).toBe(0);
+  });
+});
+
+// Con la clave ya obtenida, un corte de Keycloak no se nota (RNF-13.11) y al volver se obtiene lo que falte (RNF-13.13). El reloj
+// es el de Vitest, solo `Date`: jose cuenta con él los 30 s y el vencimiento, y las pausas y el servidor siguen en tiempo real.
+describe('verificador: Keycloak caído, con claves guardadas', () => {
+  const ESPERA_MS = 30_000;
+  const DIEZ_MINUTOS_MS = 10 * 60 * 1000;
+  const REINTENTOS = 1;
+  const CAIDA: Comportamiento = { tipo: '5xx', estado: 500 };
+  const inventada = crearClave('kid-inventado');
+  const nueva = crearClave('clave-nueva');
+
+  const bearer = (firmante = clave) => `Bearer ${armarTokenRsa(firmante)}`;
+
+  // Un verificador que ya obtuvo las claves. Queda el servidor en cero pedidos y con el comportamiento pedido.
+  async function conClaves(despues: Comportamiento = CAIDA) {
+    const unVerificador = verificador();
+    await unVerificador.verificar(bearer());
+    servidor.responderCon(despues);
+    return unVerificador;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each<[string, Comportamiento]>([
+    ['responde 500', CAIDA],
+    ['corta la conexión', { tipo: 'corta' }],
+    ['se cuelga', { tipo: 'cuelga' }],
+  ])('si %s, sigue validando sin pedir nada', async (_caso, caida) => {
+    const unVerificador = await conClaves(caida);
+    await expect(unVerificador.verificar(bearer())).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+    expect(servidor.llamadas).toBe(0);
+  });
+
+  it.each<[string, number]>([
+    ['pasados los 10 minutos del valor por defecto de jose', DIEZ_MINUTOS_MS + 1],
+    ['pasado un día', 24 * 60 * 60 * 1000],
+  ])('sigue validando %s, sin pedir nada', async (_caso, ms) => {
+    const unVerificador = await conClaves();
+    vi.advanceTimersByTime(ms);
+    await expect(unVerificador.verificar(bearer())).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+    expect(servidor.llamadas).toBe(0);
+  });
+
+  it('con Keycloak andando tampoco pide de nuevo por el paso del tiempo', async () => {
+    const unVerificador = await conClaves({ tipo: 'ok', cuerpo: JWKS });
+    vi.advanceTimersByTime(DIEZ_MINUTOS_MS + 1);
+    await expect(unVerificador.verificar(bearer())).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+    expect(servidor.llamadas).toBe(0);
+  });
+
+  it('un kid inventado da 401 sin ningún pedido dentro de los 30 s de la última obtención', async () => {
+    const unVerificador = await conClaves();
+    vi.advanceTimersByTime(ESPERA_MS - 1);
+    await expect(unVerificador.verificar(bearer(inventada))).rejects.toBeInstanceOf(NoAutenticado);
+    expect(servidor.llamadas).toBe(0);
+  });
+
+  it('un kid inventado da 503 con 1 + reintentos pedidos, pasado ese plazo', async () => {
+    const unVerificador = await conClaves();
+    vi.advanceTimersByTime(ESPERA_MS + 1);
+    const error = await fallaDe(unVerificador.verificar(bearer(inventada)));
+
+    expect(error).toBeInstanceOf(ModuloNoDisponible);
+    expect((error as ModuloNoDisponible).encabezados).toEqual({ 'Retry-After': String(RETRY_AFTER_S) });
+    expect(servidor.llamadas).toBe(1 + REINTENTOS);
+  });
+
+  it('un pedido fallido no reinicia los 30 s: la tanda siguiente vuelve a pedir (spec, Casos límite)', async () => {
+    const unVerificador = await conClaves();
+    vi.advanceTimersByTime(ESPERA_MS + 1);
+    await expect(unVerificador.verificar(bearer(inventada))).rejects.toBeInstanceOf(ModuloNoDisponible);
+    await expect(unVerificador.verificar(bearer(inventada))).rejects.toBeInstanceOf(ModuloNoDisponible);
+    expect(servidor.llamadas).toBe(2 * (1 + REINTENTOS));
+  });
+
+  it('durante el corte, la clave guardada sigue andando aunque un kid inventado acabe de dar 503', async () => {
+    const unVerificador = await conClaves();
+    vi.advanceTimersByTime(ESPERA_MS + 1);
+    await expect(unVerificador.verificar(bearer(inventada))).rejects.toBeInstanceOf(ModuloNoDisponible);
+    servidor.responderCon(CAIDA);
+
+    await expect(unVerificador.verificar(bearer())).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+    expect(servidor.llamadas).toBe(0);
+  });
+
+  it('cuando Keycloak vuelve, obtiene las claves que faltan sin reiniciar y sin esperar otros 30 s', async () => {
+    const unVerificador = await conClaves();
+    vi.advanceTimersByTime(ESPERA_MS + 1);
+    await expect(unVerificador.verificar(bearer(nueva))).rejects.toBeInstanceOf(ModuloNoDisponible);
+
+    servidor.responderCon({ tipo: 'ok', cuerpo: jwksDe(clave, nueva) });
+    await expect(unVerificador.verificar(bearer(nueva))).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
+    expect(servidor.llamadas).toBe(1);
+  });
+
+  it('cuando Keycloak vuelve sin esa clave, el kid da 401 y no 503', async () => {
+    const unVerificador = await conClaves();
+    vi.advanceTimersByTime(ESPERA_MS + 1);
+    await expect(unVerificador.verificar(bearer(inventada))).rejects.toBeInstanceOf(ModuloNoDisponible);
+
+    servidor.responderCon({ tipo: 'ok', cuerpo: JWKS });
+    await expect(unVerificador.verificar(bearer(inventada))).rejects.toBeInstanceOf(NoAutenticado);
+    expect(servidor.llamadas).toBe(1);
+  });
+
+  it('si Keycloak retiró una clave, se la sigue aceptando mientras no se vea otra (spec, Casos límite)', async () => {
+    const unVerificador = await conClaves({ tipo: 'ok', cuerpo: jwksDe(nueva) });
+    vi.advanceTimersByTime(DIEZ_MINUTOS_MS + 1);
+    await expect(unVerificador.verificar(bearer())).resolves.toMatchObject({ sub: SUB_DE_PRUEBA });
     expect(servidor.llamadas).toBe(0);
   });
 });
