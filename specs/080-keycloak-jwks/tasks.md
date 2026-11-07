@@ -27,7 +27,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 - [x] **T7. Arranque con Keycloak caído.** RNF-13.9, RNF-13.12, RNF-07.12
   - Hecho cuando: `pruebas/integracion/arranque.test.ts` comprueba que en modo `jwks` con el JWKS caído `arrancar` no llama a `salir`, deja un `warn`, y `GET /health` responde `200` sin esperar a que terminen los reintentos; que con el JWKS colgado `detener` termina sin esperar a la precarga; que con el JWKS andando las claves quedan cargadas sin haber recibido ningún token; y que en modo `hs256` no se hace ningún pedido.
 
-- [ ] **T8. Separar roles y scopes en el contrato.** RNF-12.13, RNF-07.12
+- [x] **T8. Separar roles y scopes en el contrato.** RNF-12.13, RNF-07.12
   - Hecho cuando: las pruebas comprueban, con `contratoCon`, que `permisosDe` trata como scopes los esquemas `oauth2` y `openIdConnect`, y como roles los demás y los no declarados; que un scope ya no se cuenta como rol, con rol y scope en el mismo renglón o en dos; que `[{ bearerAuth: [OPERADOR] }, { keycloak: [] }]` sigue pidiendo OPERADOR; que una lista vacía de roles sigue admitiendo cualquier rol conocido; y que `scopes` solo aparece si la operación declara alguno. `pruebas/http/operaciones.test.ts` pasa sin cambios.
 
 - [ ] **T9. Exigir el scope.** RNF-12.13, RNF-12.14, RNF-12.15, RNF-07.12
