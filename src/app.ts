@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, LogController } from 
 import type { Socket } from 'node:net';
 import type { Writable } from 'node:stream';
 import { registrarPermisos } from './auth/permisos.js';
+import { crearVerificador, type Verificador } from './auth/tokens.js';
 import type { BaseDeDatos } from './bd/pool.js';
 import type { Config } from './config.js';
 import type { Contrato } from './contrato/cargar.js';
@@ -32,6 +33,8 @@ declare module 'fastify' {
     // El cliente de M6 (Viajes) que usan el historial (`request.server.m6.listarViajes(…)`) y las calificaciones
     // (`request.server.m6.obtenerViaje(…)`). La app lo crea con la configuración.
     m6: M6;
+    // Valida los tokens según el modo. La app lo crea con la configuración, y `arrancar` le pide que traiga las claves.
+    verificador: Verificador;
   }
 }
 
@@ -103,6 +106,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   app.removeContentTypeParser('text/plain');
   app.decorate('pool', pool);
   app.decorate('m6', crearM6(config));
+  app.decorate('verificador', crearVerificador(config));
   app.setValidatorCompiler(crearCompilador(contrato));
   app.setErrorHandler(responderProblema);
   // Todas las respuestas pasan por onSend, también las de error y las que un hook onRequest responde, sin depender del orden
@@ -126,7 +130,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   });
   // Después del 404 y antes de leer el cuerpo: el 401 y el 403 van antes que cualquier error del cuerpo (RNF-03.5). Y antes de
   // registrar cualquier ruta: desde acá, una que no declara sus permisos no se registra (Lógica 4).
-  registrarPermisos(app, config);
+  registrarPermisos(app, config, app.verificador);
   const registrarRutas405 = prepararRutas405(app);
   registrarOperaciones(app, contrato, manejadores, config.encabezadoCorrelacion);
   // Al final, con todas las rutas ya registradas.

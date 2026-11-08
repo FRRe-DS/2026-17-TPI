@@ -9,7 +9,8 @@ export type Manejador = RouteHandlerMethod;
 export type Manejadores = Readonly<Record<string, Manejador>>;
 
 // publica: la operación no exige token. roles: los que admite; con la lista vacía, cualquiera de los conocidos (RNF-12.3).
-export type Permisos = { publica: boolean; roles: string[] };
+// scopes: los que exige; está solo si la operación declara alguno (RNF-12.13).
+export type Permisos = { publica: boolean; roles: string[]; scopes?: string[] };
 
 declare module 'fastify' {
   interface FastifyContextConfig {
@@ -173,16 +174,29 @@ function esquemaDelCuerpo(contrato: Contrato, camino: Camino): object | undefine
   return cuerpo.required === true ? esquema : { if: { type: 'null' }, then: true, else: esquema };
 }
 
-// Una alternativa de security: por cada esquema, la lista de roles que pide.
+// Una alternativa de security: por cada esquema, la lista de roles o de scopes que pide.
 type Alternativa = Record<string, string[]>;
 const esAlternativa = (valor: unknown): valor is Alternativa =>
   esObjeto(valor) &&
-  Object.values(valor).every((roles) => Array.isArray(roles) && roles.every((rol) => typeof rol === 'string'));
+  Object.values(valor).every((nombres) => Array.isArray(nombres) && nombres.every((nombre) => typeof nombre === 'string'));
+
+// Los tipos de esquema cuya lista en security son scopes, como dice OpenAPI 3.1. En los demás, este contrato pone roles.
+const TIPOS_CON_SCOPES = new Set<unknown>(['oauth2', 'openIdConnect']);
+
+// Un esquema no declarado cuenta como de roles: un scope que queda como rol da 403, no abre de más.
+function esEsquemaDeScopes(contrato: Contrato, esquema: string): boolean {
+  const camino = ['components', 'securitySchemes', esquema];
+  const { valor: declarado } = resolver(contrato, valorEn(contrato, camino), camino);
+  return esObjeto(declarado) && TIPOS_CON_SCOPES.has(declarado.type);
+}
 
 // security: [] la hace pública (RNF-12.1), y sin security en la operación vale la global. Cada elemento es una
-// alternativa: una vacía ({}) no pide nada, y una sin roles admite cualquier rol conocido (RNF-12.3). Sin security en
-// ningún lado, exige token con cualquier rol, porque RNF-12.1 pide token salvo en las que el contrato declara públicas.
-// Una security con otra forma hace fallar el registro: adivinar qué quiso decir podría abrir la operación de más.
+// alternativa: una vacía ({}) no pide nada, y una lista de roles vacía admite cualquier rol conocido (RNF-12.3). Una lista
+// de scopes vacía no pide nada: no cambia lo que piden los roles (RNF-12.13). Sin security en ningún lado, exige token con
+// cualquier rol, porque RNF-12.1 pide token salvo en las que el contrato declara públicas. Si hay más de un renglón, se
+// juntan los roles y los scopes de todos: M2 pide ambos, que no abre de más aunque OpenAPI los lea como alternativas (plan,
+// Scopes y #79). Una security con otra forma hace fallar el registro: adivinar qué quiso decir podría abrir la operación de
+// más.
 function permisosDe(contrato: Contrato, camino: Camino): Permisos {
   const seguridad = valorEn(contrato, [...camino, 'security']) ?? contrato.security;
   if (seguridad === undefined) return { publica: false, roles: [] };
@@ -192,9 +206,18 @@ function permisosDe(contrato: Contrato, camino: Camino): Permisos {
   if (seguridad.length === 0 || seguridad.some((alternativa) => Object.keys(alternativa).length === 0)) {
     return { publica: true, roles: [] };
   }
-  const listas = seguridad.flatMap((alternativa) => Object.values(alternativa));
-  if (listas.some((roles) => roles.length === 0)) return { publica: false, roles: [] };
-  return { publica: false, roles: [...new Set(listas.flat())] };
+  const listasDeRoles: string[][] = [];
+  const scopes = new Set<string>();
+  for (const [esquema, nombres] of seguridad.flatMap((alternativa) => Object.entries(alternativa))) {
+    if (!esEsquemaDeScopes(contrato, esquema)) listasDeRoles.push(nombres);
+    else for (const scope of nombres) scopes.add(scope);
+  }
+  const cualquierRol = listasDeRoles.some((roles) => roles.length === 0);
+  return {
+    publica: false,
+    roles: cualquierRol ? [] : [...new Set(listasDeRoles.flat())],
+    ...(scopes.size > 0 && { scopes: [...scopes] }),
+  };
 }
 
 // Registra en Fastify cada operación del contrato que tiene manejador, con los esquemas del contrato para validar y los

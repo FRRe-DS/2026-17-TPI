@@ -26,9 +26,9 @@ type OpcionesCliente = {
 };
 
 // La pausa entre un intento y el siguiente (plan, Integraciones).
-const PAUSA_REINTENTO_MS = 200;
+export const PAUSA_REINTENTO_MS = 200;
 
-const pausar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export const pausar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function crearClienteModulo({
   nombre,

@@ -133,6 +133,8 @@ Opcionalmente, con `--contrato <ruta>` prueba otro archivo: `npm run contrato:te
 
 La prueba distribuida (spec 081) levanta M2 con el M6 real del Grupo 12 y comprueba historial, calificación y qué pasa cuando M6 se cae. Es aparte de `npm test`, necesita Docker y acceso a internet la primera vez: `npm run integracion:m6`. Cómo levantar M2 con el M6 real, qué commit de M6 usa y qué salida esperar: [`docs/probar-m2.md`](docs/probar-m2.md), sección 8.
 
+La prueba con Keycloak real (spec 080) levanta M2 en modo `jwks` junto a Keycloak y comprueba con tokens RS256 pedidos al realm que cada rol ve lo suyo y que M2 sigue de pie si Keycloak se cae. Es aparte de `npm test`, necesita Docker: `npm run keycloak:test`. Cómo levantarlo, pedir un token de persona y uno de servicio, y probar una operación a mano: [`docs/probar-m2.md`](docs/probar-m2.md), sección 9.
+
 Verificaciones del contrato y de las specs, las mismas que corre CI:
 
 ```bash

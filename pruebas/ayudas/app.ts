@@ -23,6 +23,8 @@ export const CONFIG: Config = {
   urlM6: 'http://m6:3006/api/v1',
   audienciaM6: 'm6-viajes',
   reintentarDespuesS: 5,
+  modoTokens: 'hs256',
+  urlJwks: undefined,
 };
 
 // Un contrato armado en la prueba, para los casos que el contrato de prueba no tiene.

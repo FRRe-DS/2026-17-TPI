@@ -27,7 +27,13 @@ export type Config = ConfigTokens & {
   urlM6: string;
   audienciaM6: string;
   reintentarDespuesS: number;
+  // Cómo se validan los tokens que llegan (spec 080, RNF-06.7): `hs256`, con la clave compartida, o `jwks`, con las claves
+  // públicas que publica `urlJwks`. Esa URL es obligatoria en `jwks`; en `hs256` puede faltar.
+  modoTokens: ModoTokens;
+  urlJwks: string | undefined;
 };
+
+export type ModoTokens = 'hs256' | 'jwks';
 
 // Una regla convierte el texto de una variable en su valor, o devuelve undefined si no la cumple.
 type Regla<T> = { motivo: string; convertir: (texto: string) => T | undefined };
@@ -82,6 +88,12 @@ const urlHttp: Regla<string> = {
 const textoSinEspaciosAlBorde: Regla<string> = {
   motivo: 'está en blanco o tiene espacios al principio o al final',
   convertir: (texto) => (texto.trim() === texto && texto !== '' ? texto : undefined),
+};
+
+// Exactamente uno de los dos modos, en minúsculas: no se adivina qué quiso decir quien escribió otra cosa.
+const modoDeTokens: Regla<ModoTokens> = {
+  motivo: 'no es hs256 ni jwks',
+  convertir: (texto) => (texto === 'hs256' || texto === 'jwks' ? texto : undefined),
 };
 
 // Es la misma regla que aplica Node al escribir el encabezado en una respuesta.
@@ -149,6 +161,13 @@ export function cargarConfigTokens(env: Entorno): ResultadoConfig<ConfigTokens> 
 // Una línea por variable, como la tabla de Lógica 1 del plan (RNF-06.1, RNF-06.2).
 export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
   const lector = crearLector(env);
+  // Un modo inválido vuelve a `hs256` para seguir leyendo: así el error es uno solo y no pide además la URL de las claves.
+  const modoTokens = lector.opcional('M2_MODO_TOKENS', 'hs256', modoDeTokens);
+  // La URL se valida siempre que está, también en `hs256`: un error de tipeo no queda dormido hasta que se cambie de modo.
+  const urlJwks =
+    modoTokens === 'jwks'
+      ? lector.obligatoria('M2_URL_JWKS', urlHttp)
+      : lector.opcional<string | undefined>('M2_URL_JWKS', undefined, urlHttp);
   return lector.resultado({
     urlBd: lector.obligatoria('M2_URL_BD', urlPostgres),
     puerto: lector.opcional('M2_PUERTO', 8082, enteroEntre(1, 65535)),
@@ -160,5 +179,7 @@ export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
     urlM6: lector.obligatoria('M2_URL_M6', urlHttp),
     audienciaM6: lector.opcional('M2_AUDIENCIA_M6', 'm6-viajes', textoSinEspaciosAlBorde),
     reintentarDespuesS: lector.opcional('M2_REINTENTAR_DESPUES_S', 5, enteroEntre(1, 3600)),
+    modoTokens,
+    urlJwks,
   });
 }

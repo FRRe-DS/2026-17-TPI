@@ -4,7 +4,7 @@ import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { IMAGEN_POSTGRES } from '../ayudas/global.js';
 import configuracionDeVitest from '../../vitest.config.js';
-import { ARCHIVO_ULTIMO, OrdenDeArchivos } from '../distribuida/ayudas/orden.js';
+import { ARCHIVO_ULTIMO, ARCHIVO_ULTIMO_KEYCLOAK, OrdenDeArchivos } from '../distribuida/ayudas/orden.js';
 
 // Una versión exacta es X.Y.Z, con prelanzamiento o build opcionales. Todo lo demás es un rango o una etiqueta:
 // ^1.2.3, ~1.2.3, *, latest, >=1, 1.x, 1.2.3 - 2.0.0, 1.0.0 || 2.0.0, next.
@@ -74,9 +74,9 @@ const conBarras = (ruta: string) => ruta.replaceAll('\\', '/');
 const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd: raizEnDisco }).map(conBarras);
 const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
-describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF-07.1, RNF-07.5, RNF-07.7)', () => {
-  it('declara los cuatro proyectos, en ese orden', () => {
-    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida']);
+describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y keycloak (RNF-07.1, RNF-07.5, RNF-07.7, RNF-07.13)', () => {
+  it('declara los cinco proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida', 'keycloak']);
   });
 
   // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
@@ -87,14 +87,25 @@ describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF
     expect(existsSync(new URL('pruebas/ayudas/global.ts', raiz))).toBe(true);
   });
 
-  // `navegador` y `distribuida` quedan fuera: sus pruebas (specs 071 y 081) corren con `npm run panel:navegador` y
-  // `npm run integracion:m6`, no con `npm test`. Sin `--project`, Vitest correría los cuatro y un PR dependería del Grupo 12.
+  // `navegador`, `distribuida` y `keycloak` quedan fuera: sus pruebas (specs 071, 081 y 080) corren con `npm run panel:navegador`,
+  // `npm run integracion:m6` y `npm run keycloak:test`, no con `npm test`. Sin `--project`, Vitest correría los cinco y un PR
+  // dependería del Grupo 12 y de una imagen de Keycloak.
   it('npm test corre solo unitarias e integracion', () => {
     expect(paquete.scripts?.test).toBe('vitest run --project unitarias --project integracion');
   });
 
+  // La prueba con Keycloak real (spec 080, RNF-07.13): levanta su propio compose, con su proyecto y sus puertos.
+  it('npm run keycloak:test corre solo el proyecto keycloak, que levanta su entorno con pruebas/keycloak/global.ts', () => {
+    expect(paquete.scripts?.['keycloak:test']).toBe('vitest run --project keycloak');
+    const keycloak = proyectos.find((proyecto) => proyecto.test.name === 'keycloak');
+    expect(keycloak?.test.include).toEqual(['pruebas/keycloak/**/*.test.ts']);
+    expect(keycloak?.test.globalSetup).toEqual(['pruebas/keycloak/global.ts']);
+    expect(existsSync(new URL('pruebas/keycloak/global.ts', raiz))).toBe(true);
+    expect(archivosDe(keycloak ?? { test: { name: '', include: [] } }).length).toBeGreaterThan(0);
+  });
+
   it('hay pruebas en unitarias y en integracion', () => {
-    for (const proyecto of proyectos.filter((candidato) => !['navegador', 'distribuida'].includes(String(candidato.test.name)))) {
+    for (const proyecto of proyectos.filter((candidato) => !['navegador', 'distribuida', 'keycloak'].includes(String(candidato.test.name)))) {
       expect(archivosDe(proyecto).length, proyecto.test.name).toBeGreaterThan(0);
     }
   });
@@ -109,6 +120,8 @@ describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF
   it('el archivo que apaga a M6 existe y corre al final (spec 081)', () => {
     expect(configuracionDeVitest.test?.sequence?.sequencer).toBe(OrdenDeArchivos);
     expect(existsSync(new URL(ARCHIVO_ULTIMO, raiz))).toBe(true);
+    // El de Keycloak caído (spec 080, T15) detiene Keycloak y reinicia M2: también al final.
+    expect(existsSync(new URL(ARCHIVO_ULTIMO_KEYCLOAK, raiz))).toBe(true);
   });
 
   it('ninguna prueba cae en dos proyectos', () => {
@@ -116,16 +129,18 @@ describe('vitest.config.ts: unitarias, integracion, navegador y distribuida (RNF
     expect(repetidas).toEqual([]);
   });
 
-  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, las de distribuida/ de distribuida, y las demás, de unitarias', () => {
-    const [unitarias, integracion, navegador, distribuida] = proyectos;
+  it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, las de distribuida/ de distribuida, las de keycloak/ de keycloak, y las demás, de unitarias', () => {
+    const [unitarias, integracion, navegador, distribuida, keycloak] = proyectos;
     const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
     const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
     const deNavegador = new Set(navegador ? archivosDe(navegador) : []);
     const deDistribuida = new Set(distribuida ? archivosDe(distribuida) : []);
+    const deKeycloak = new Set(keycloak ? archivosDe(keycloak) : []);
     const alReves = todasLasPruebas.filter((archivo) => {
       if (/^pruebas\/(panel\/)?integracion\//.test(archivo)) return !deIntegracion.has(archivo);
       if (archivo.startsWith('pruebas/panel/navegador/')) return !deNavegador.has(archivo);
       if (archivo.startsWith('pruebas/distribuida/')) return !deDistribuida.has(archivo);
+      if (archivo.startsWith('pruebas/keycloak/')) return !deKeycloak.has(archivo);
       return !deUnitarias.has(archivo);
     });
     expect(alReves).toEqual([]);
@@ -226,7 +241,20 @@ describe('.dockerignore (RNF-04.2)', () => {
     .map((linea) => linea.trim())
     .filter((linea) => linea !== '' && !linea.startsWith('#'));
 
-  it.each(['node_modules', 'dist', '.git', 'specs', 'docs', 'pruebas', 'ejemplo.env', '.env', 'EN-CURSO.local.md'])(
+  it.each([
+    'node_modules',
+    'dist',
+    '.git',
+    'specs',
+    'docs',
+    'pruebas',
+    'ejemplo.env',
+    '.env',
+    'EN-CURSO.local.md',
+    // El perfil keycloak (spec 080): ni su archivo de entorno ni el realm van en la imagen.
+    'ejemplo-keycloak.env',
+    'keycloak',
+  ])(
     'deja afuera %s',
     (ruta) => {
       expect(ignorados).toContain(ruta);
@@ -243,6 +271,7 @@ describe('.dockerignore (RNF-04.2)', () => {
 });
 
 type ServicioCompose = {
+  command?: string | string[];
   build?: string | { context?: string; dockerfile?: string; target?: string };
   profiles?: string[];
   environment?: Record<string, string>;
@@ -261,12 +290,13 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   const m2 = compose.services?.['m2'];
   const bd = compose.services?.['bd'];
 
-  it('declara m2 y bd, los del panel (specs 071 y 072) solo bajo el perfil panel y los del M6 real (spec 081) solo bajo m6-real', () => {
-    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel']);
+  it('declara m2 y bd, los del panel (specs 071 y 072) solo bajo el perfil panel, los del M6 real (spec 081) solo bajo m6-real y los de Keycloak (spec 080) bajo el suyo', () => {
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'keycloak', 'keycloak-bd', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel']);
     expect(m2?.profiles).toBeUndefined();
     expect(bd?.profiles).toBeUndefined();
     for (const nombre of ['m6', 'panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
     for (const nombre of ['m6-real', 'm6-real-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['m6-real']);
+    for (const nombre of ['keycloak', 'keycloak-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['keycloak']);
   });
 
   it('las imágenes tienen versión exacta, nunca latest', () => {
@@ -294,10 +324,10 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
     expect(m2?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
   });
 
-  it('la base no publica ningún puerto y guarda sus datos en el volumen datos-bd', () => {
+  it('la base no publica ningún puerto y guarda sus datos en el volumen datos-bd; el de Keycloak es otro (spec 080)', () => {
     expect(bd?.ports).toBeUndefined();
     expect(bd?.volumes).toEqual(['datos-bd:/var/lib/postgresql']);
-    expect(Object.keys(compose.volumes ?? {})).toEqual(['datos-bd', 'datos-m6-real-bd']);
+    expect(Object.keys(compose.volumes ?? {})).toEqual(['datos-bd', 'datos-m6-real-bd', 'datos-keycloak-bd']);
   });
 
   // La imagen de m2 no trae curl ni wget; el chequeo lo hace Node, con un GET (wget --spider manda HEAD y da 405).
@@ -386,7 +416,17 @@ describe('panel/Dockerfile.dockerignore (spec 071, RNF-04.2)', () => {
     .map((linea) => linea.trim())
     .filter((linea) => linea !== '' && !linea.startsWith('#'));
 
-  it.each(['node_modules', 'panel/dist', '.git', 'ejemplo.env', '.env', 'pruebas', 'EN-CURSO.local.md'])('deja afuera %s', (ruta) => {
+  it.each([
+    'node_modules',
+    'panel/dist',
+    '.git',
+    'ejemplo.env',
+    '.env',
+    'pruebas',
+    'EN-CURSO.local.md',
+    'ejemplo-keycloak.env',
+    'keycloak',
+  ])('deja afuera %s', (ruta) => {
     expect(ignorados).toContain(ruta);
   });
 
@@ -576,3 +616,99 @@ describe('docker-compose.yml: puente a la base y variables nuevas del panel (spe
     expect(enCompose).toBe(deEjemplo(variable));
   });
 });
+
+// Keycloak con su propia base, solo con `--profile keycloak` (spec 080, RNF-04.10, RNF-05.6, RNF-06.8). M2 no depende de él:
+// en modo `jwks` pide las claves cuando las necesita (RNF-13.9).
+describe('docker-compose.yml: perfil keycloak (spec 080, RNF-04.10, RNF-05.6, RNF-06.8)', () => {
+  const textoCompose = readFileSync(new URL('docker-compose.yml', raiz), 'utf8');
+  const compose = parseYaml(textoCompose) as Compose;
+  const keycloak = compose.services?.['keycloak'];
+  const keycloakBd = compose.services?.['keycloak-bd'];
+  const realm = new URL('keycloak/ds-2026-realm-realm.json', raiz);
+
+  it('Keycloak y su base tienen imagen con versión exacta, y la base es la misma imagen que la de M2', () => {
+    expect(keycloak?.image).toBe('quay.io/keycloak/keycloak:26.8.2');
+    expect(imagenExacta(keycloak?.image ?? '')).toBe(true);
+    expect(keycloakBd?.image).toBe(IMAGEN_POSTGRES);
+  });
+
+  it('ninguno de los dos lee ejemplo.env: tomarían las POSTGRES_* de M2', () => {
+    expect(keycloak?.env_file).toBeUndefined();
+    expect(keycloakBd?.env_file).toBeUndefined();
+  });
+
+  it('la base de Keycloak no publica puertos y guarda sus datos en su propio volumen', () => {
+    expect(keycloakBd?.ports).toBeUndefined();
+    expect(keycloakBd?.volumes).toEqual(['datos-keycloak-bd:/var/lib/postgresql']);
+  });
+
+  it('la base de Keycloak toma usuario, contraseña y nombre de variables de compose, con valores de desarrollo', () => {
+    expect(keycloakBd?.environment).toEqual({
+      POSTGRES_USER: '${KEYCLOAK_BD_USUARIO:-keycloak}',
+      POSTGRES_PASSWORD: '${KEYCLOAK_BD_CLAVE:-keycloak-contrasena-de-desarrollo}',
+      POSTGRES_DB: 'keycloak',
+    });
+  });
+
+  it('el chequeo de la base de Keycloak usa pg_isready por TCP y las variables del contenedor, como el de bd', () => {
+    const prueba = (keycloakBd?.healthcheck?.test ?? []).join(' ');
+    expect(prueba).toContain('pg_isready');
+    expect(prueba).toContain('-h 127.0.0.1');
+    expect(prueba).toContain('$$POSTGRES_USER');
+    expect(prueba).toContain('$$POSTGRES_DB');
+  });
+
+  it('Keycloak arranca en modo start, importa el realm de ./keycloak montado solo lectura y espera a su base sana', () => {
+    expect([keycloak?.command].flat().join(' ')).toBe('start --import-realm');
+    expect(keycloak?.volumes).toEqual(['./keycloak:/opt/keycloak/data/import:ro']);
+    expect(keycloak?.depends_on).toEqual({ 'keycloak-bd': { condition: 'service_healthy' } });
+  });
+
+  it('Keycloak se publica solo en 127.0.0.1, en KEYCLOAK_PUERTO (8080 por defecto)', () => {
+    expect(keycloak?.ports).toEqual(['127.0.0.1:${KEYCLOAK_PUERTO:-8080}:8080']);
+  });
+
+  it('Keycloak usa la base y las credenciales de las mismas variables que su base, y las de administración de las suyas', () => {
+    expect(keycloak?.environment).toEqual({
+      KC_DB: 'postgres',
+      KC_DB_URL: 'jdbc:postgresql://keycloak-bd:5432/keycloak',
+      KC_DB_USERNAME: keycloakBd?.environment?.['POSTGRES_USER'],
+      KC_DB_PASSWORD: keycloakBd?.environment?.['POSTGRES_PASSWORD'],
+      KC_BOOTSTRAP_ADMIN_USERNAME: '${KEYCLOAK_ADMIN_USUARIO:-admin}',
+      KC_BOOTSTRAP_ADMIN_PASSWORD: '${KEYCLOAK_ADMIN_CLAVE:-admin-contrasena-de-desarrollo}',
+      // El emisor de los tokens es uno solo, el que ve la máquina; M2 baja las claves por la red de compose.
+      KC_HOSTNAME: 'http://localhost:${KEYCLOAK_PUERTO:-8080}',
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: 'true',
+      KC_HTTP_ENABLED: 'true',
+      KC_HEALTH_ENABLED: 'true',
+    });
+  });
+
+  // La imagen no trae curl: el chequeo es bash con /dev/tcp. Mira el código HTTP: el texto "UP" aparece en una comprobación
+  // interna mientras el estado general es DOWN, y el primer token recibiría 503 (plan, Datos).
+  it('el chequeo de Keycloak pide /health/ready en el puerto 9000 y mira el código HTTP, no el texto', () => {
+    const prueba = (keycloak?.healthcheck?.test ?? []).join(' ');
+    expect(prueba).toContain('/dev/tcp/127.0.0.1/9000');
+    expect(prueba).toContain('/health/ready');
+    expect(prueba).toContain('HTTP/1.1 200');
+    expect(prueba).not.toMatch(/\bUP\b/);
+    expect(prueba).not.toMatch(/curl|wget/);
+  });
+
+  it('m2 no depende de Keycloak ni nombra sus variables', () => {
+    expect(compose.services?.['m2']?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
+    expect(JSON.stringify(compose.services?.['m2'])).not.toMatch(/KEYCLOAK|keycloak/);
+  });
+
+  // `${VARIABLE:?}` haría fallar a compose también sin el perfil.
+  it('el compose no exige ninguna variable', () => {
+    expect(textoCompose).not.toMatch(/\$\{[^}]*:?\?/);
+  });
+
+  it('el realm está en keycloak/ con el nombre que Keycloak 26 importa: <realm>-realm.json', () => {
+    expect(existsSync(realm)).toBe(true);
+    expect(globSync('*', { cwd: fileURLToPath(new URL('keycloak/', raiz)) })).toEqual(['ds-2026-realm-realm.json']);
+    expect((JSON.parse(readFileSync(realm, 'utf8')) as { realm?: unknown }).realm).toBe('ds-2026-realm');
+  });
+});
+

@@ -15,6 +15,9 @@ ejemplo.env
 .env
 .env.*
 EN-CURSO.local.md
+# El perfil keycloak (spec 080): su archivo de entorno y el realm no van en ninguna imagen.
+ejemplo-keycloak.env
+keycloak
 CLAUDE.local.md
 *.md
 Dockerfile

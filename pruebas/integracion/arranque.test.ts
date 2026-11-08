@@ -6,7 +6,7 @@ import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { PG_MIGRATE_LOCK_ID } from 'node-pg-migrate';
 import { Client } from 'pg';
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { stringify } from 'yaml';
 import { arrancar, type Servicio } from '../../src/arranque.js';
 import type { Entorno } from '../../src/config.js';
@@ -15,9 +15,11 @@ import { listarOperaciones } from '../../src/contrato/operaciones.js';
 import { manejadores } from '../../src/operaciones/index.js';
 import { entorno, escucha, puertoLibre } from '../ayudas/arranque.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
+import { armarTokenRsa, crearClave, jwksDe } from '../ayudas/jwks.js';
 import { capturarLogs, type LineaDeLog } from '../ayudas/logs.js';
 import { crearProxy } from '../ayudas/proxy.js';
-import { CONFIG_TOKENS } from '../ayudas/tokens.js';
+import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
+import { CONFIG_TOKENS, SUB_DE_PRUEBA } from '../ayudas/tokens.js';
 
 // Los textos de las líneas del arranque.
 const NO_ARRANCA = 'El servicio no pudo arrancar';
@@ -35,6 +37,7 @@ const MARGEN_MS = 1000;
 
 // Los niveles de pino.
 const INFO = 30;
+const AVISO = 40;
 const ERROR = 50;
 
 // La contraseña de la base en las pruebas que no llegan a conectarse o que la base rechaza: no puede aparecer en el log.
@@ -595,6 +598,139 @@ describe('arrancar con la parada durante el arranque (RNF-04.5)', () => {
 
     await arranque;
     expect(salir.mock.calls).toEqual([[1]]);
+  });
+});
+
+// Keycloak suele tardar más que M2 en arrancar: el servicio no lo espera ni depende de él para atender (RNF-13.9, RNF-13.12).
+describe('arrancar en modo jwks: la precarga de las claves', () => {
+  const SIN_CLAVES = 'No se pudieron obtener las claves del servicio de identidad: llegarán con el primer token';
+  const clave = crearClave();
+  const jwks = crearServidorModulo();
+
+  const entornoJwks = (puerto: number, cambios: Entorno = {}) =>
+    entorno(base.urlBd, puerto, { M2_MODO_TOKENS: 'jwks', M2_URL_JWKS: `${jwks.url}/certs`, ...cambios });
+
+  const avisos = (lineas: LineaDeLog[]) => lineas.filter((linea) => linea.level === AVISO);
+
+  // Un token válido llega hasta la base, que no tiene ese perfil. El `detail` distingue este 404 del de una ruta que no existe.
+  async function pasaLaAutenticacion(puerto: number) {
+    const respuesta = await fetch(`http://127.0.0.1:${puerto}/api/v1/clientes/${SUB_DE_PRUEBA}`, {
+      headers: { authorization: `Bearer ${armarTokenRsa(clave)}` },
+    });
+    expect(respuesta.status).toBe(404);
+    expect(await respuesta.json()).toMatchObject({ detail: 'No existe el cliente pedido' });
+  }
+
+  beforeAll(async () => {
+    await jwks.levantar();
+  });
+
+  afterAll(async () => {
+    await jwks.cerrar();
+  });
+
+  beforeEach(() => {
+    jwks.responderCon({ tipo: 'ok', cuerpo: jwksDe(clave) });
+  });
+
+  it('con el JWKS caído no llama a salir, deja un aviso con el motivo y GET /health da 200', async () => {
+    jwks.responderCon({ tipo: '5xx', estado: 500 });
+    const puerto = await puertoLibre();
+    const { salir, logs, arranque } = arrancarParaProbar(entornoJwks(puerto, { M2_REINTENTOS_MODULOS: '1' }));
+    expect(await arranque).toBeDefined();
+
+    await vi.waitFor(() => expect(avisos(logs.lineas())).toHaveLength(1));
+
+    expect(salir).not.toHaveBeenCalled();
+    expect(avisos(logs.lineas())[0]).toMatchObject({ msg: SIN_CLAVES, motivo: expect.stringContaining('200 OK') as unknown });
+    expect(errores(logs.lineas())).toEqual([]);
+    expect(jwks.llamadas).toBe(2);
+    expect((await fetch(`http://127.0.0.1:${puerto}/health`)).status).toBe(200);
+  });
+
+  it('el aviso va después de que el servicio escucha', async () => {
+    jwks.responderCon({ tipo: '5xx', estado: 500 });
+    const puerto = await puertoLibre();
+    const { logs, arranque } = arrancarParaProbar(entornoJwks(puerto, { M2_REINTENTOS_MODULOS: '0' }));
+    await arranque;
+
+    await vi.waitFor(() => expect(avisos(logs.lineas())).toHaveLength(1));
+
+    const mensajes = logs.lineas().map(({ msg }) => msg ?? '');
+    expect(mensajes.indexOf(SIN_CLAVES)).toBeGreaterThan(mensajes.indexOf(`${ESCUCHANDO}http://127.0.0.1:${puerto}`));
+  });
+
+  it('con el JWKS colgado, arranca y GET /health da 200 sin esperar a que terminen los reintentos', async () => {
+    jwks.responderCon({ tipo: 'cuelga' });
+    const puerto = await puertoLibre();
+    const inicio = Date.now();
+    const { salir, logs, arranque } = arrancarParaProbar(
+      entornoJwks(puerto, { M2_TIEMPO_MODULOS_MS: '30000', M2_REINTENTOS_MODULOS: '1' }),
+    );
+    expect(await arranque).toBeDefined();
+
+    expect((await fetch(`http://127.0.0.1:${puerto}/health`)).status).toBe(200);
+
+    // Esperar la precarga tardaría 60 s. Todavía no terminó: no hay aviso.
+    expect(Date.now() - inicio).toBeLessThan(10_000);
+    expect(salir).not.toHaveBeenCalled();
+    expect(avisos(logs.lineas())).toEqual([]);
+    await vi.waitFor(() => expect(jwks.llamadas).toBe(1));
+  });
+
+  it('con el JWKS colgado, detener termina sin esperar a la precarga', async () => {
+    jwks.responderCon({ tipo: 'cuelga' });
+    const salir = vi.fn();
+    const servicio = await arrancar(
+      entornoJwks(await puertoLibre(), { M2_TIEMPO_MODULOS_MS: '30000', M2_REINTENTOS_MODULOS: '0' }),
+      salir,
+      { flujoLog: capturarLogs().flujo },
+    );
+    await vi.waitFor(() => expect(jwks.llamadas).toBe(1));
+
+    const inicio = Date.now();
+    await servicio?.detener();
+
+    expect(Date.now() - inicio).toBeLessThan(MARGEN_MS);
+    expect(salir).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it('con el JWKS andando las claves quedan cargadas sin haber recibido ningún token, y sin aviso', async () => {
+    const puerto = await puertoLibre();
+    const { logs, arranque } = arrancarParaProbar(entornoJwks(puerto));
+    await arranque;
+
+    await vi.waitFor(() => expect(jwks.llamadas).toBe(1));
+    // Se cae después de entregarlas: si la clave no quedó guardada, el token de abajo daría 503.
+    await new Promise((listo) => setTimeout(listo, 100));
+    jwks.responderCon({ tipo: '5xx', estado: 500 });
+
+    await pasaLaAutenticacion(puerto);
+    expect(jwks.llamadas).toBe(0);
+    expect(avisos(logs.lineas())).toEqual([]);
+  });
+
+  it('si la precarga falló, las claves llegan con el primer token', async () => {
+    jwks.responderCon({ tipo: '5xx', estado: 500 });
+    const puerto = await puertoLibre();
+    const { logs, arranque } = arrancarParaProbar(entornoJwks(puerto, { M2_REINTENTOS_MODULOS: '0' }));
+    await arranque;
+    await vi.waitFor(() => expect(avisos(logs.lineas())).toHaveLength(1));
+
+    jwks.responderCon({ tipo: 'ok', cuerpo: jwksDe(clave) });
+    await pasaLaAutenticacion(puerto);
+    expect(jwks.llamadas).toBe(1);
+  });
+
+  it('en modo hs256 no se hace ningún pedido, aunque haya una URL de claves', async () => {
+    const puerto = await puertoLibre();
+    const { logs, arranque } = arrancarParaProbar(entornoJwks(puerto, { M2_MODO_TOKENS: 'hs256' }));
+    await arranque;
+
+    await new Promise((listo) => setTimeout(listo, 100));
+
+    expect(jwks.llamadas).toBe(0);
+    expect(avisos(logs.lineas())).toEqual([]);
   });
 });
 

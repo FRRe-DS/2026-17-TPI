@@ -22,6 +22,8 @@ const DETENIENDO = 'Deteniendo el servicio';
 const DETENIDO = 'Servicio detenido';
 const NO_SE_DETUVO = 'El servicio no se detuvo en orden';
 
+const SIN_CLAVES = 'No se pudieron obtener las claves del servicio de identidad: llegarán con el primer token';
+
 // Los niveles de info y de error de pino, el logger de Fastify.
 const NIVEL_INFO = 30;
 const NIVEL_ERROR = 50;
@@ -113,6 +115,8 @@ export async function arrancar(
     let detencion: Promise<void> | undefined;
     const detener = ({ corteMs = CORTE_MS }: OpcionesParada = {}) =>
       (detencion ??= detenerEnOrden(app, pool, salir, corteMs));
+    // Sin esperarla: con un Keycloak colgado tardaría más de lo que admite la parada (RNF-04.5), y el servicio ya puede atender.
+    void precargarClaves(app);
     // Si la parada llegó con listen en curso, el servicio ya escucha: la atiende detener(), como si hubiera llegado un
     // instante después.
     if (parada?.aborted) void detener();
@@ -129,6 +133,13 @@ export async function arrancar(
     salir(1);
     return undefined;
   }
+}
+
+// Trae las claves de los tokens, si el modo las necesita (RNF-13.9). Si no puede, es un aviso y no un error: Keycloak suele
+// tardar más que M2 en arrancar, y las claves llegan con el primer token (RNF-13.12).
+async function precargarClaves(app: Servicio['app']): Promise<void> {
+  const motivo = await app.verificador.precargar();
+  if (motivo !== undefined) app.log.warn({ motivo }, SIN_CLAVES);
 }
 
 // Detiene el servicio en orden (plan, Lógica 13). Desde acá, lo que llega por una conexión abierta recibe 503 (app.ts);

@@ -282,3 +282,93 @@ Levanta todo por su cuenta en un proyecto de compose aparte (`m2-distribuida`, c
 Con `M2_DEJAR_LEVANTADO=1 npm run integracion:m6` el entorno queda levantado al terminar, para mirar los logs (`docker compose -p m2-distribuida --profile m6-real logs`) o repetir un archivo (`M2_DEJAR_LEVANTADO=1 npx vitest run --project distribuida pruebas/distribuida/historial.test.ts`; sin la variable, el entorno se baja al terminar); se baja con `docker compose -p m2-distribuida --profile m6-real down -v`. Si algo falla al arrancar (Docker apagado, el build roto), la corrida termina en rojo con un mensaje que dice qué falló.
 
 En CI corre aparte de los PR: `.github/workflows/integracion-m6.yml`, en cada push a `main` y a mano desde Actions.
+
+## 9. M2 con Keycloak real (tokens RS256)
+
+Spec 080. M2 puede validar los tokens con las claves públicas de Keycloak (modo `jwks`) en lugar de la clave compartida de desarrollo (modo `hs256`, el de las secciones anteriores). Sirve para ver la autenticación como será en TP2: firma asimétrica, audiencia `m2-clientes`, rol y scope. Hace falta lo mismo que antes (Node 24, Docker con compose v2 sin `sudo`) y acceso a internet la primera vez, para bajar la imagen de Keycloak (unos 470 MB).
+
+### Levantarlo
+
+```bash
+docker compose --env-file ejemplo-keycloak.env up -d --build --wait
+```
+
+Crea cuatro servicios sanos: `m2`, `bd`, `keycloak` y `keycloak-bd` (la base de Keycloak, aparte de la de M2). `ejemplo-keycloak.env` activa el perfil `keycloak` y deja a M2 en modo `jwks`; el primer arranque tarda un par de minutos porque Keycloak crea sus tablas e importa el realm `ds-2026-realm` (`keycloak/`).
+
+| Qué | Dónde |
+|---|---|
+| M2 | <http://localhost:8082> (o `M2_PUERTO`) |
+| Keycloak | <http://localhost:8080> (o `KEYCLOAK_PUERTO`), solo desde tu máquina |
+| Realm | `ds-2026-realm`; token en `http://localhost:8080/realms/ds-2026-realm/protocol/openid-connect/token` |
+
+Se corta con `docker compose --env-file ejemplo-keycloak.env down`. Para aplicar un cambio de `keycloak/` hace falta `down -v`: el realm se importa una sola vez, al crear la base de Keycloak, y con la base ya creada se ignora el archivo. `down -v` también borra los datos de M2.
+
+### Un token de persona
+
+El realm trae cuatro usuarios de desarrollo: `cliente1` y `cliente2` (rol `CLIENTE`), `operador1` (`OPERADOR`) y `conductor1` (`CONDUCTOR`). Su contraseña es `<usuario>-contrasena-de-desarrollo`, y sus `id` son fijos (el de `cliente1` es `c1e00000-0000-4000-8000-000000000001`). Se piden al cliente `m2-desarrollo`, que es solo para pruebas:
+
+```bash
+KC=http://localhost:8080/realms/ds-2026-realm/protocol/openid-connect/token
+campo() { node -pe 'JSON.parse(require("fs").readFileSync(0)).access_token'; }
+TOKEN=$(curl -s $KC -d grant_type=password -d client_id=m2-desarrollo -d username=cliente1 \
+  -d password=cliente1-contrasena-de-desarrollo -d 'scope=clientes:read clientes:write' | campo)
+```
+
+El token dura 300 s (5 minutos); pasado ese tiempo, M2 contesta `401` y se pide otro. Los scopes son opcionales: se piden los que se necesitan (`clientes:read`, `clientes:write` y, para el estado de cuenta, `clientes.estado:read`).
+
+### Un token de servicio
+
+Los módulos que consultan el estado de cuenta (M5 y M9, y también los que la cátedra cargó con rol `SERVICIO`) entran con `client_credentials`. Los secretos están en el realm de desarrollo; acá se leen del archivo para no repetirlos. Por ejemplo, con `grupo-04`, que tiene el rol `SERVICIO` y el scope `clientes.estado:read`:
+
+```bash
+SECRETO=$(node -pe 'JSON.parse(require("fs").readFileSync("keycloak/ds-2026-realm-realm.json","utf8")).clients.find(c=>c.clientId==="grupo-04").secret')
+TS=$(curl -s $KC -d grant_type=client_credentials -d client_id=grupo-04 -d client_secret=$SECRETO | campo)
+```
+
+### Probar una operación
+
+```bash
+uuid() { node -e 'console.log(crypto.randomUUID())'; }
+CLIENTE=c1e00000-0000-4000-8000-000000000001
+
+# 1. cliente1 crea su perfil (201): el clienteId es el sub del token.
+curl -s -w ' [%{http_code}]\n' -X POST -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuid)" -H 'Content-Type: application/json' \
+  -d '{"nombre":"Ana","apellido":"Gomez","telefono":"+5493624987654","fechaNacimiento":"1990-05-17"}' http://localhost:8082/api/v1/clientes
+
+# 2. Lo lee (200) y no puede leer el de cliente2 (403).
+curl -s -w ' [%{http_code}]\n' -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/clientes/$CLIENTE
+curl -s -o /dev/null -w '[%{http_code}]\n' -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/clientes/c1e00000-0000-4000-8000-000000000002
+
+# 3. El servicio lee el estado de cuenta (200) y no el perfil (403).
+curl -s -w ' [%{http_code}]\n' -H "Authorization: Bearer $TS" http://localhost:8082/api/v1/clientes/$CLIENTE/estado-cuenta
+curl -s -o /dev/null -w '[%{http_code}]\n' -H "Authorization: Bearer $TS" http://localhost:8082/api/v1/clientes/$CLIENTE
+
+# 4. Sin token (401).
+curl -s -o /dev/null -w '[%{http_code}]\n' http://localhost:8082/api/v1/clientes/$CLIENTE
+```
+
+Salida esperada: `[201]`, `[200]`, `[403]`, `{"clienteId":"c1e0…0001","estado":"ACTIVO","bloqueosVigentes":[]} [200]`, `[403]` y `[401]`.
+
+### Lo que conviene saber
+
+- **El panel solo funciona en modo `hs256`.** El panel firma sus propios tokens con la clave de desarrollo, y en modo `jwks` M2 los rechaza con `401`. El inicio de sesión del panel contra Keycloak es la spec del #83.
+- **`m2-front` no sirve para pedir tokens con usuario y contraseña.** Es el cliente público que usará esa spec: solo admite el flujo de código de autorización con PKCE `S256`, y con `grant_type=password` Keycloak contesta `unauthorized_client`. Para probar a mano se usa `m2-desarrollo`.
+- **El emisor tiene que coincidir.** M2 compara el `iss` del token con `M2_EMISOR_TOKENS`, que en `ejemplo-keycloak.env` es el `KC_HOSTNAME` de Keycloak (`http://localhost:8080/...`) más el realm. Si es distinto (por ejemplo, `127.0.0.1` en lugar de `localhost`, o un `KEYCLOAK_PUERTO` que no coincide), todo token da `401` con «El emisor del token no es el esperado». Por eso hay que pedir el token por el mismo nombre que figura ahí.
+- **Con Keycloak detenido**, M2 atiende con las claves que ya guardó y contesta `503` con `Retry-After` si nunca llegó a bajar una (RNF-13.10 a RNF-13.13).
+
+### Correr la prueba
+
+```bash
+npm ci
+npm run keycloak:test
+```
+
+Levanta todo por su cuenta en un proyecto de compose aparte (`m2-keycloak`, con M2 en el puerto 18083 y Keycloak en el 18080, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. Salida esperada: `Test Files  3 passed (3)` y `Tests  19 passed (19)`, en unos 90 s con las imágenes ya bajadas; la primera vez tarda más. Lo que prueba, por archivo (`pruebas/keycloak/`):
+
+| Archivo | Qué comprueba | Requisito |
+|---|---|---|
+| `operaciones.test.ts` | Un CLIENTE crea y lee su perfil y no el de otro (403); un OPERADOR registra un bloqueo; la cuenta de servicio de M5 lee el estado de cuenta y no el perfil; token alterado, HS256 o ID token (401) | RNF-07.13 |
+| `pkce.test.ts` | El flujo de código con `S256` de `m2-front`, y los rechazos (sin `code_challenge`, `plain`, retorno ajeno, canje sin `code_verifier`, usuario y contraseña, `client_credentials`) | RNF-12.20 |
+| `caido.test.ts` | Keycloak detenido: con la clave ya guardada M2 atiende (200); reiniciado, arranca y da 503 con `Retry-After`; y al volver Keycloak da 200 sin reiniciar M2 | RNF-13.9 a RNF-13.13 |
+
+Con `M2_DEJAR_LEVANTADO=1 npm run keycloak:test` el entorno queda levantado al terminar, para mirar los logs (`docker compose -p m2-keycloak --env-file ejemplo-keycloak.env logs`); se baja con `docker compose -p m2-keycloak --env-file ejemplo-keycloak.env down -v`. En CI corre en cada PR: el job `keycloak` de `.github/workflows/ci.yml`.
