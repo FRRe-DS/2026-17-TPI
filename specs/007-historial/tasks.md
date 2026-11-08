@@ -27,5 +27,5 @@ T11 y T12 vienen del cambio de 2026-11-08 (orden a cargo de M6 y log de cada lla
 
 - [x] **T11. Fijar el orden de M6 y registrar cada llamada a M6.** RF-2.4.14, RNF-14.10, RNF-19
   - Hecho cuando: una prueba HTTP comprueba que M2 devuelve los viajes en el orden que entrega el M6 simulado (uno que no es el de `createdAt` ni el de los `id`); pruebas de módulos comprueban una sola línea por llamada con correlación, módulo, método, código, intentos y duración en `200`, `4xx`, éxito al segundo intento y fallo agotado (`estado: null`, `warn`), y ninguna sin `log`; una prueba HTTP comprueba la línea con el id de correlación de la solicitud y sin `clienteId` ni identificadores de viajes; `npm test`, lint y build en verde.
-- [ ] **T12. Poner al día la guía.** RNF-20
+- [x] **T12. Poner al día la guía.** RNF-20
   - Hecho cuando: `guia.md` documenta T11 y, en la visión general, `calificado` (spec #8), la prueba con el M6 real (spec #81), el orden a cargo de M6 y la línea de log de cada llamada; `npm run contrato:test` y `spec-check` en verde.
