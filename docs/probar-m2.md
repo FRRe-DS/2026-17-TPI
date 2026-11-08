@@ -119,7 +119,7 @@ Para entender una funcionalidad, el orden recomendado es: su `spec.md` (qué pid
 
 ## 5. Qué está simulado y qué no
 
-- **M1 (Identidad) no existe todavía.** Los tokens los firma el servicio con la clave, el emisor y la audiencia de `ejemplo.env`. Cuando exista M1, cambia quién firma, no el código que valida (ADR 009).
+- **En el modo `hs256` (el de estas secciones) no hay M1.** Los tokens los firma el servicio con la clave, el emisor y la audiencia de `ejemplo.env` (ADR 009). Con Keycloak haciendo de M1, M2 valida en modo `jwks`: sección 9 (ADR 080).
 - **M6 (Viajes) tiene dos formas de probarse.** Por defecto, M2 se prueba contra un M6 simulado que cumple `contrato/dependencias/m6.yml` (lo verifica `pruebas/unitarias/m6-simulado.test.ts`). Contra el M6 real del Grupo 12, M2 se probó con la prueba distribuida de la spec 081: sección 8. Lo que difiere entre el contrato supuesto y el M6 real está en `specs/081-integracion-m6-real/guia.md`. El servicio le pide a M6 con un token de servicio firmado en cada intento.
 - **M5 y M9** consultan el estado de cuenta con el rol `SERVICIO`. M2 no los llama, y en la demo ese rol lo hace un token propio.
 - **Los datos de ejemplo:** el servicio arranca con la base vacía. No hay datos cargados de antemano.

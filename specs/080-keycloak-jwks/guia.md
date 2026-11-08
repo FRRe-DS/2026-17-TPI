@@ -1,5 +1,58 @@
 # Guía — Spec 080 M2 valida tokens de Keycloak (JWKS y scope) y compose con Keycloak
 
+## Visión general
+
+M2 puede validar los tokens con la clave pública de Keycloak, que hace de M1, en lugar de una clave compartida: nadie que no sea
+Keycloak puede firmar un token que M2 acepte. Además del rol y de «un cliente solo ve lo suyo», en ese modo exige el scope que el
+contrato declara para cada operación. Keycloak se levanta con compose (perfil `keycloak`) con un realm de desarrollo propio. Sin
+configurar nada, M2 sigue en el modo de antes (`hs256`) y las pruebas, la demo y el panel no cambian.
+
+**Recorrido** (modo `jwks`, `GET /api/v1/clientes/{clienteId}` con `Authorization: Bearer <token de Keycloak>`).
+1. Al arrancar, `src/arranque.ts:precargarClaves` le pide a `app.verificador` las claves del JWKS (`M2_URL_JWKS`). Si Keycloak no
+   contesta, deja un aviso y arranca igual: las claves llegan con el primer token (RNF-13.9, RNF-13.12).
+2. `src/auth/permisos.ts:registrarPermisos` (hook `onRequest`) llama a `src/auth/tokens.ts:crearVerificador`, que comprueba la
+   firma RS256 con la clave del `kid` y los claims (`iss`, `aud`, `exp`, `sub`, `roles`); cualquier otro algoritmo da `401`
+   sin pedir claves (RNF-12.11, RNF-12.12). Un `kid` desconocido hace que `src/auth/claves-jwks.ts:crearClaves` vuelva a pedir el
+   JWKS, como mucho una vez cada 30 s (RNF-12.16, RNF-12.19); si no puede, `503` con `Retry-After` (RNF-13.10).
+3. `autorizar` mira el rol que la operación admite y `exigirScope` el scope: los dos salen del mismo renglón de `security` del
+   contrato, que `src/contrato/operaciones.ts:permisosDe` separa por tipo de esquema (`OAuth2Bearer` es `oauth2`: scopes). Sin el
+   scope, `403` con un `detail` que habla del scope (RNF-12.13). Después, la propiedad del recurso, como antes (RNF-12.14).
+4. La operación sigue igual que en el modo `hs256`.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos |
+|---|---|---|
+| `src/config.ts` | `M2_MODO_TOKENS` y `M2_URL_JWKS`; no arranca con un modo desconocido o sin URL en `jwks` | RNF-06.7, RNF-06.9 |
+| `src/auth/tokens.ts` | Verificador por modo: HS256 con la clave de desarrollo o RS256 con el JWKS; `scope` del token | RNF-12.11, RNF-12.12, RNF-12.15 |
+| `src/auth/claves-jwks.ts` | Pedir, guardar y renovar las claves; tiempo máximo, reintento y `503` | RNF-12.16, RNF-12.19, RNF-13.10 a RNF-13.13 |
+| `src/auth/permisos.ts`, `src/contrato/operaciones.ts` | Rol y scope de cada operación, leídos del contrato | RNF-12.13, RNF-12.14 |
+| `src/arranque.ts` | Precarga de las claves sin frenar el arranque | RNF-13.9, RNF-13.12 |
+| `keycloak/ds-2026-realm-realm.json` | Realm de desarrollo: roles, scopes, `m2-token`, usuarios, `m2-desarrollo`, `m2-front` (PKCE) | RNF-12.17, RNF-12.20, RNF-06.8 |
+| `docker-compose.yml`, `ejemplo-keycloak.env` | Perfil `keycloak` con su base; sin el perfil, lo mismo de antes | RNF-04.10, RNF-05.6 |
+| `pruebas/keycloak/` | Prueba con Keycloak real (`npm run keycloak:test`) | RNF-07.13 |
+
+**Decisiones clave** (ADR 080; plan, Decisiones). Rol y scope se exigen juntos, en el mismo renglón de `security` (ADR 079):
+con dos renglones, OpenAPI los lee como alternativas y un token sin rol abriría la operación. Un solo modo por vez: aceptar los
+dos dejaría abierta la clave compartida. Si Keycloak se cae, M2 sigue atendiendo con las claves que ya tiene; descartado no
+arrancar sin Keycloak, que tumbaría a M2 entero. `obtenerEstadoCuenta` pide `clientes.estado:read`, el único scope de M2 que
+tienen las cuentas de M5 y M9.
+
+**Nota sobre la spec.** «Contexto» y «Fuera de alcance» de `spec.md` dicen que el contrato todavía no declara scopes: eran
+ciertos al aprobarla. El contrato los declara desde el PR #95 (ADR 079), y la T18 lo comprueba.
+
+**Conceptos.** JWKS (las claves públicas de un emisor, cada una con su `kid`); RS256 frente a HS256 (firma asimétrica frente a
+clave compartida); scope de OAuth 2.0 (qué puede hacer el token) frente a rol (quién es); PKCE (`S256`), para que un frontend
+público pida tokens sin secreto.
+
+**Cómo probarlo uno mismo.** `npm run keycloak:test` levanta todo en un proyecto aparte y corre 23 pruebas (unos 90 s). A
+mano: `docs/probar-m2.md`, sección 9 (tokens de persona y de servicio con `curl` y la salida esperada).
+
+**Preguntas de comprobación.**
+1. ¿Por qué un token HS256 firmado con la clave de desarrollo da `401` en modo `jwks`, aunque traiga el emisor y la audiencia correctos?
+2. ¿Qué pasa con una solicitud si Keycloak está caído y M2 ya tiene la clave del token? ¿Y si nunca la bajó?
+3. ¿Por qué el scope va en el mismo renglón que el rol, y qué abriría ponerlo en otro?
+4. ¿Por qué la cuenta de M5 no puede leer el perfil de un cliente aunque pida `clientes:read`?
+
 ## Tareas
 
 ### T1 — Configuración del modo de tokens · commit `080/T1`
