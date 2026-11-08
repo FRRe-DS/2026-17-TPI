@@ -355,7 +355,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       for (const dato of [id, CONDUCTOR, ...viajes.map(({ id: v }) => v)]) expect(linea).not.toContain(dato);
     });
 
-    it('si M6 no responde, la línea va como warn, sin código y con los dos intentos', async () => {
+    it('si M6 responde 5xx en los dos intentos, la línea va como warn, con ese código y los dos intentos', async () => {
       const id = await perfil();
       serv.responderCon({ tipo: '5xx', estado: 500 });
       const { pedir, logs } = crear();
@@ -364,7 +364,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
 
       expect(respuesta.statusCode).toBe(503);
       expect(logs.lineas().filter(({ msg }) => msg === 'llamada a M6')).toEqual([
-        expect.objectContaining({ level: 40, idCorrelacion: respuesta.headers['x-request-id'], estado: null, intentos: 2 }),
+        expect.objectContaining({ level: 40, idCorrelacion: respuesta.headers['x-request-id'], estado: 500, intentos: 2 }),
       ]);
     });
   });
