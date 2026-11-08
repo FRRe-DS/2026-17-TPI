@@ -2,3 +2,6 @@ repositorio: https://github.com/FRRe-DS/2026-TPI
 archivo: contratos/m2_clientes/openapi.yml
 commit: 61465e9ff368cc50dd77bee82b2927a72b67047e
 copiado: 2026-10-21
+diferencias: desde el ADR 079 este archivo adelanta lo acordado con el Grupo 1 sobre 360caad (scopes de la cátedra):
+  rol y scope en el mismo renglón de security, `clientes` bien escrito, `clientes.estado:read`, tokenUrl de Keycloak
+  y textos de autenticación. Se vuelve copia exacta cuando el PR conjunto entre a la cátedra: ahí cambia `commit`.

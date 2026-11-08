@@ -613,9 +613,10 @@ describe('arrancar en modo jwks: la precarga de las claves', () => {
   const avisos = (lineas: LineaDeLog[]) => lineas.filter((linea) => linea.level === AVISO);
 
   // Un token válido llega hasta la base, que no tiene ese perfil. El `detail` distingue este 404 del de una ruta que no existe.
+  // Trae el scope que `obtenerCliente` pide en el contrato (ADR 079): sin él, el modo `jwks` responde 403.
   async function pasaLaAutenticacion(puerto: number) {
     const respuesta = await fetch(`http://127.0.0.1:${puerto}/api/v1/clientes/${SUB_DE_PRUEBA}`, {
-      headers: { authorization: `Bearer ${armarTokenRsa(clave)}` },
+      headers: { authorization: `Bearer ${armarTokenRsa(clave, { claims: { scope: 'clientes:read' } })}` },
     });
     expect(respuesta.status).toBe(404);
     expect(await respuesta.json()).toMatchObject({ detail: 'No existe el cliente pedido' });

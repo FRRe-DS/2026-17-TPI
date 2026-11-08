@@ -5,8 +5,9 @@ info:
   description: |
     Alcance: RF-2.4, RF-2.5 y RNF-05. Solo las dos consultas que M2 consume y los componentes que referencian, sin cambios.
     Fuente: contrato de M6 del Grupo 12 subido a la cátedra en FRRe-DS/2026-TPI#9, archivo contratos/m6_viajes/openapi.yml,
-    commit 9e720a0d074ef8e9cc20ba189baf340b071779f3 (2026-10-25). Es el contrato que va a usar el consorcio, aunque el PR
-    todavía no está mergeado. Decisión y diferencias con el borrador anterior: ADR 057 e issue #57.
+    commit 9e720a0d074ef8e9cc20ba189baf340b071779f3 (2026-10-25). El PR se mergeó sin cambios en el archivo el 2026-10-29
+    (merge 69e9481). Decisión y diferencias con el borrador anterior: ADR 057 e issue #57. La cátedra tiene una versión
+    posterior (commit 35b3c4d, 2026-11-01, Grupos 5 y 12) que no se extrajo todavía: ver ADR 079.
     [NECESITA ACLARACIÓN] Grupo 12: qué `aud` e `iss` valida M6 en el token de servicio (ADR 009).
 servers:
   - url: http://localhost:3006/api/v1

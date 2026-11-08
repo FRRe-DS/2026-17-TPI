@@ -1,20 +1,22 @@
 # Contrato de dependencia: M1 Identidad y Acceso
 #
-# Lo que M2 Clientes necesita de M1, como propuesta para el consorcio.
-# Mientras M1 no exista como servicio, M2 valida tokens con una clave
-# simétrica por entorno (HS256) y los tests generan sus propios tokens.
+# Lo que M2 Clientes necesita de M1. Keycloak hace de M1 (ADR 080): en el
+# modo `jwks`, M2 valida tokens RS256 con las claves públicas del realm
+# `ds-2026-realm`. El modo `hs256` (clave simétrica por entorno, ADR 009)
+# queda para desarrollo y pruebas, que generan sus propios tokens.
 #
-# Origen: propuesta del Grupo 17 (M2 Clientes), issue #9.
-# Estado: borrador, pendiente de acuerdo con el consorcio.
+# Origen: propuesta del Grupo 17 (M2 Clientes), issue #9; actualizado con el
+# ADR 080 y el ADR 079.
+# Estado: Keycloak como M1, acordado con el Grupo 1 (FRRe-DS/2026-01-TPI#7).
 
 openapi: 3.1.0
 info:
   title: M1 Identidad y Acceso — lo que necesita M2
   description: |
     Contrato desde el consumidor: las operaciones y el formato de token que
-    M2 Clientes necesita de M1 Identidad y Acceso. Es una propuesta para el
-    consorcio (issue #9), no un contrato publicado.
-  version: 0.1.0-borrador
+    M2 Clientes necesita de M1 Identidad y Acceso, que hace Keycloak (realm
+    `ds-2026-realm`, ADR 080). No es un contrato publicado por M1.
+  version: 0.2.0
   license:
     name: MIT
     identifier: MIT
@@ -24,16 +26,15 @@ servers:
     description: URL relativa; la base se configura por entorno.
 
 paths:
-  /.well-known/jwks.json:
+  /realms/ds-2026-realm/protocol/openid-connect/certs:
     get:
       operationId: obtenerClaves
       summary: Claves públicas de firma de tokens (JWKS)
       description: |
         Devuelve el JSON Web Key Set con las claves públicas que los módulos
-        usan para validar la firma de los tokens JWT. Mientras M1 use HS256
-        con clave simétrica compartida, este endpoint no es necesario: cada
-        módulo conoce la clave por entorno. Se incluye como propuesta para
-        cuando M1 migre a firma asimétrica (RS256 o ES256).
+        usan para validar la firma de los tokens JWT. M2 lo baja al arrancar
+        y cuando llega un `kid` que no conoce (`M2_URL_JWKS`, ADR 080). En el
+        modo `hs256` de desarrollo no se usa: la clave va por entorno.
       security: []
       responses:
         '200':
@@ -44,8 +45,7 @@ paths:
                 $ref: '#/components/schemas/JWKS'
         '404':
           description: >-
-            El endpoint no publica claves públicas en este entorno (por ejemplo,
-            mientras M1 opere con HS256 y clave simétrica compartida).
+            El realm no existe en este Keycloak.
 
 components:
   securitySchemes:
@@ -54,10 +54,12 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        Token JWT firmado por M1 con HS256 (TP1) o con clave asimétrica
-        (cuando M1 exista). Algoritmo aceptado en TP1: solo HS256.
+        Token JWT firmado por Keycloak con RS256 (modo `jwks`) o, en
+        desarrollo, con HS256 y clave por entorno (modo `hs256`, ADR 009). M2
+        acepta un solo algoritmo según el modo.
         Claims obligatorios: sub, iss, aud, exp y roles (lista de textos).
-        Claims opcionales: iat y nbf.
+        Claims opcionales: iat, nbf y scope (en modo `jwks`, M2 exige los
+        scopes que declara cada operación de su contrato).
 
   schemas:
     JWKS:
@@ -151,15 +153,19 @@ components:
           description: |
             Identificador único de quien llama. Para usuarios, suele ser un UUID
             (en M2, su relación con el clienteId la define la spec del perfil #4).
-            Para llamadas entre servicios con rol SERVICIO, identifica al módulo
-            emisor (por ejemplo, "m9-reservas").
+            Para llamadas entre servicios con rol SERVICIO, en Keycloak es el UUID
+            de la cuenta de servicio del cliente del módulo (por ejemplo, el de
+            `grupo-04`); en el modo `hs256` de desarrollo, un nombre como "m9-reservas".
           examples:
             - 550e8400-e29b-41d4-a716-446655440000
             - m9-reservas
         iss:
           type: string
-          description: Emisor del token. Se propone "m1-identidad" para todo el consorcio.
+          description: |
+            Emisor del token. En Keycloak, la URL del realm, fijada por
+            `KC_HOSTNAME`; en el modo `hs256` de desarrollo, "m1-identidad".
           examples:
+            - http://localhost:8080/realms/ds-2026-realm
             - m1-identidad
         aud:
           description: |
