@@ -237,6 +237,8 @@ M2_PUERTO=9090 docker compose up -d --build --wait
 | `M2_URL_M6` | sí | — | URL base de M6 (Viajes), `http://` o `https://`, con su ruta `/api/v1` y sin usuario ni contraseña; el servicio no arranca sin ella |
 | `M2_AUDIENCIA_M6` | no | `m6-viajes` | Audiencia (`aud`) del token de servicio con el que M2 se presenta ante M6; no puede estar en blanco ni tener espacios al principio o al final |
 | `M2_REINTENTAR_DESPUES_S` | no | `5` | Segundos que sugiere `Retry-After` cuando M6 no está disponible, de 1 a 3600 |
+| `M2_MODO_TOKENS` | no | `hs256` | Cómo se validan los tokens: `hs256` (clave compartida, para desarrollo) o `jwks` (RS256 con las claves públicas de Keycloak, spec 080; ver [`docs/probar-m2.md`](docs/probar-m2.md), sección 9) |
+| `M2_URL_JWKS` | solo con `jwks` | — | URL de las claves públicas (JWKS) de Keycloak, `http://` o `https://` y sin usuario ni contraseña; en `hs256` no se usa, pero si está se valida |
 | `POSTGRES_USER` | solo para la base | el de `ejemplo.env` | Usuario que crea la imagen de PostgreSQL |
 | `POSTGRES_PASSWORD` | solo para la base | el de `ejemplo.env` | Contraseña de ese usuario |
 | `POSTGRES_DB` | solo para la base | el de `ejemplo.env` | Base que se crea al inicializar |
