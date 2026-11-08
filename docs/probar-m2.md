@@ -363,11 +363,11 @@ npm ci
 npm run keycloak:test
 ```
 
-Levanta todo por su cuenta en un proyecto de compose aparte (`m2-keycloak`, con M2 en el puerto 18083 y Keycloak en el 18080, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. Salida esperada: `Test Files  3 passed (3)` y `Tests  19 passed (19)`, en unos 90 s con las imágenes ya bajadas; la primera vez tarda más. Lo que prueba, por archivo (`pruebas/keycloak/`):
+Levanta todo por su cuenta en un proyecto de compose aparte (`m2-keycloak`, con M2 en el puerto 18083 y Keycloak en el 18080, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. Salida esperada: `Test Files  3 passed (3)` y `Tests  23 passed (23)`, en unos 90 s con las imágenes ya bajadas; la primera vez tarda más. Lo que prueba, por archivo (`pruebas/keycloak/`):
 
 | Archivo | Qué comprueba | Requisito |
 |---|---|---|
-| `operaciones.test.ts` | Un CLIENTE crea y lee su perfil y no el de otro (403); un OPERADOR registra un bloqueo; la cuenta de servicio de M5 lee el estado de cuenta y no el perfil; token alterado, HS256 o ID token (401) | RNF-07.13 |
+| `operaciones.test.ts` | Un CLIENTE crea y lee su perfil y no el de otro (403); un OPERADOR registra un bloqueo; la cuenta de servicio de M5 lee el estado de cuenta y no el perfil; el scope de cada operación (sin scopes, solo `clientes:read`, solo `clientes:write`, estado de cuenta con y sin `clientes.estado:read`: 403 o 200); token alterado, HS256 o ID token (401) | RNF-07.13, RNF-12.13 |
 | `pkce.test.ts` | El flujo de código con `S256` de `m2-front`, y los rechazos (sin `code_challenge`, `plain`, retorno ajeno, canje sin `code_verifier`, usuario y contraseña, `client_credentials`) | RNF-12.20 |
 | `caido.test.ts` | Keycloak detenido: con la clave ya guardada M2 atiende (200); reiniciado, arranca y da 503 con `Retry-After`; y al volver Keycloak da 200 sin reiniciar M2 | RNF-13.9 a RNF-13.13 |
 
