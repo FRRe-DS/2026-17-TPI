@@ -19,7 +19,7 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - HU-4. Como cliente, quiero que, si el historial no se puede obtener en ese momento, la respuesta me lo diga con claridad para poder reintentar luego.
 
 ## Requisitos funcionales
-- RF-2.4: CUANDO un CLIENTE consulta el historial de su propio perfil o un OPERADOR el de un cliente existente, EL SISTEMA obtiene los viajes del cliente de la API de M6 y responde `200` con la página pedida, ordenada del viaje más reciente al más antiguo.
+- RF-2.4: CUANDO un CLIENTE consulta el historial de su propio perfil o un OPERADOR el de un cliente existente, EL SISTEMA obtiene los viajes del cliente de la API de M6 y responde `200` con la página pedida, ordenada del viaje más reciente al más antiguo en el orden que entrega M6 (RF-2.4.14).
 - RF-2.4.1: EL SISTEMA devuelve de cada viaje su `viajeId`, su `estado` tal como lo informa M6, sin traducirlo, y su `conductorId` si M6 lo informa, y omite los campos del contrato que M6 no informa; si M6 no informa el conductor de un viaje, el viaje se incluye sin `conductorId`. Además, EL SISTEMA agrega a cada viaje `calificado`, que no viene de M6 sino de las calificaciones de M2 (RF-2.5.14 de la spec #8).
 - RF-2.4.2: EL SISTEMA responde con `page` y `size` iguales a los pedidos (por defecto `0` y `20`, con `size` de `1` a `100`), `totalElementos` igual al total de viajes que informa M6 y `totalPaginas` igual a `totalElementos` dividido `size`, redondeado hacia arriba.
 - RF-2.4.3: CUANDO el cliente existe pero M6 no informa viajes para él, o la página pedida queda fuera del total, EL SISTEMA responde `200` con `items` vacío y los totales que informa M6.
@@ -31,6 +31,7 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - RF-2.4.9: EL SISTEMA pide a M6 solo los viajes del `clienteId` de la ruta, y SI M6 devuelve un viaje de otro cliente, ENTONCES EL SISTEMA no lo incluye en la respuesta y registra el hecho sin identificadores.
 - RF-2.4.10: SI M6 responde `200` con un total que no es un entero mayor o igual que cero o con más viajes que el tamaño de página pedido, ENTONCES EL SISTEMA lo trata como falta de disponibilidad (RF-2.4.6) y no devuelve la respuesta de M6.
 - RF-2.4.11: CUANDO M2 pide viajes a M6, EL SISTEMA envía en `Authorization: Bearer` un token de servicio que firma para ese intento según el acuerdo de M1 (ADR 009): JWT HS256 con la clave compartida del consorcio, `iss` igual al emisor que M2 ya valida, `sub` `m2-clientes`, `roles` `["SERVICIO"]`, `aud` igual a la audiencia de M6 y `exp` 60 segundos después de firmarlo; nunca reenvía el token de quien llamó a M2.
+- RF-2.4.14: EL SISTEMA devuelve los viajes de cada página en el mismo orden en que los entrega M6, sin reordenarlos; el orden del más reciente al más antiguo queda a cargo de M6, cuyo contrato lo declara por `createdAt` descendente.
 
 ## Requisitos no funcionales
 - RNF-03: EL SISTEMA implementa `listarHistorialViajes` con las validaciones, códigos y errores `application/problem+json` del contrato.
@@ -38,7 +39,8 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - RNF-06: EL SISTEMA lee la dirección y la audiencia de M6 de variables de entorno, firma el token de servicio con la clave de tokens que ya lee del entorno, no guarda ninguna en el repositorio y no arranca si falta la dirección.
 - RNF-07: EL SISTEMA verifica las reglas con pruebas unitarias, HTTP, integración con un M6 simulado y la prueba de contrato.
 - RNF-13: CUANDO M2 llama a M6, EL SISTEMA aplica a la llamada el tiempo máximo por intento, el reintento de lecturas y la respuesta `503` definidos por la spec #3 (RNF-13.1 a RNF-13.3).
-- RNF-14: EL SISTEMA registra la llamada a M6 y su causa de falla con el identificador de correlación de la solicitud.
+- RNF-14: EL SISTEMA registra cada llamada a M6, salga bien o mal (RNF-14.10), y la causa de su falla (RNF-14.8), con el identificador de correlación de la solicitud.
+- RNF-14.10: CUANDO termina una llamada a M6, EL SISTEMA registra una línea con el identificador de correlación de la solicitud, el módulo llamado, el código que respondió M6 (o que no respondió), la cantidad de intentos y la duración total en milisegundos, sin lo que prohíbe RNF-19.
 - RNF-19: EL SISTEMA no registra tokens (ni el de quien llama ni el que firma ante M6), cuerpos de M6, identificadores de viajes ni de conductores en los logs.
 - RNF-20: EL SISTEMA documenta en la guía el recorrido de una consulta, qué campos salen de M6, cómo se prueba con un M6 simulado y qué pasa si M6 falla.
 
@@ -63,12 +65,15 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - La base de M2 no responde al buscar `calificado` (RF-2.5.14): `503` genérico, y no se devuelve un historial sin ese campo.
 - M6 rechaza el token de servicio de M2 (otra clave, otra audiencia o un rol que no admite): es un `4xx` de M6, `500` (RF-2.4.7).
 - El reintento lleva un token nuevo, firmado para ese intento: nunca vence entre un intento y el siguiente.
+- M6 entrega una página fuera de orden: M2 la devuelve igual. El orden es responsabilidad de M6 y M2 no lo verifica ni lo corrige (RF-2.4.14).
+- Una llamada a M6 que sale bien al segundo intento deja una sola línea con dos intentos y el código final (RNF-14.10).
 
 ## Fuera de alcance
 - Guardar o cachear viajes de M6 (la caché queda para TP2).
 - Obtener `calificado` de M6: no es un dato de M6. Lo completa M2 con sus propias calificaciones, en la spec #8 (RF-2.5.14).
 - Devolver `tipoVehiculo`, `origen`, `destino`, `iniciadoEn` y `finalizadoEn` mientras M6 no los informe en el resumen.
 - Filtrar por estado o fecha, cambiar el orden o consultar el detalle de un viaje.
+- Reordenar los viajes o comprobar el orden que entrega M6 (RF-2.4.14).
 - Traducir los estados de M6 a los de M2.
 - Recibir eventos de M6; en TP1 M2 solo lee.
 - Pedir el token de servicio a M1 o firmarlo con clave asimétrica: queda para cuando M1 exista (ADR 009).
@@ -79,6 +84,8 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - `npm test`, `npm run lint`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` terminan en verde.
 - El M6 simulado de las pruebas cumple `contrato/dependencias/m6.yml` (ADR 057) y comprueba el token de servicio de M2.
 - La guía explica el recorrido y cómo probarlo con un M6 simulado.
+- Una prueba comprueba que M2 conserva el orden de M6 (RF-2.4.14) y otra, la línea de log de una llamada a M6 que sale bien y de una que falla (RNF-14.10).
+- La guía incluye `calificado` (spec #8) y remite a la prueba con el M6 real del Grupo 12 (spec #81).
 
 ## Decisiones
 - Se devuelve solo lo que el resumen de M6 informa (`viajeId`, `estado`, `conductorId`) y se omite el resto, más `calificado`, que completa M2 (spec #8), porque el contrato de M2 lo permite (solo `viajeId` y `estado` son obligatorios) y no se inventan datos. Alternativas descartadas: pedir el detalle de cada viaje a M6 (hasta 100 llamadas por consulta y datos de ubicación que M2 no necesita) y completar fechas con valores que no son las del viaje.
@@ -89,6 +96,8 @@ El cliente quiere ver un resumen de sus viajes anteriores. Los viajes los guarda
 - M2 firma su propio token de servicio, de vida corta y nuevo en cada intento, porque el acuerdo de M1 (ADR 009) dice que todo token vence y que, mientras M1 no exista, el módulo que llama firma el suyo con la clave compartida; M6 ya acepta `roles: ["SERVICIO"]`. Alternativas descartadas: un token fijo por variable de entorno, como se había implementado en T1 y T2 (vence, o no vence y viola el acuerdo), y reenviar el token del cliente (el acuerdo no lo prevé, y con el de un operador M6 no filtraría igual).
 - M2 manda siempre el `clienteId` de la ruta, que además es el filtro que M6 exige a un token de servicio, y descarta cualquier viaje de otro cliente por si M6 devolviera uno. Un `404` de M6 se trata como `4xx` (RF-2.4.7): es un error de configuración, no un cliente sin viajes.
 - `conductorId` se devuelve si M6 lo informa y nunca se registra en los logs.
+- El orden del historial (del más reciente al más antiguo, RF-2.4) queda a cargo de M6, que pagina y declara `createdAt` descendente en su contrato; M2 conserva el orden que recibe (RF-2.4.14). Decidido por Lautaro el 2026-11-08, tras la validación. Alternativas descartadas: reordenar en M2 (solo ordenaría dentro de una página, porque la paginación la hace M6, y el resumen de M2 no trae la fecha) y pedir a M6 un parámetro de orden (su contrato no lo tiene).
+- Toda llamada a M6 deja una línea de log al terminar, no solo las que fallan (RNF-14.10), para poder seguir una solicitud entre M2 y M6 con el mismo identificador. La validación encontró que solo se registraban las fallas.
 - Supuestos provisorios a confirmar con M6 y el Grupo 1. Ninguno cambia el plan; si alguno cambia, se ajusta la configuración:
   - Audiencia y emisor que valida M6: su contrato no los dice. Supuesto: `aud` `m6-viajes` (configurable) e `iss` el del consorcio (`m1-identidad`). Pregunta para el Grupo 12 en `contrato/dependencias/m6-propuesta.md` (#57).
   - Campos del resumen: `TripSummary` no trae origen, destino, tipo de vehículo ni fechas de inicio y fin (`createdAt` no es el inicio del viaje). Se devuelven solo `viajeId`, `estado` y `conductorId`, más `calificado`, que completa M2 con sus calificaciones (spec #8).
