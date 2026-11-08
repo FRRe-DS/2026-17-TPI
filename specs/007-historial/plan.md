@@ -11,19 +11,19 @@ No hay tabla nueva: el historial se arma en cada consulta con la respuesta de M6
 |---|---|---|
 | `src/config.ts` | `M2_URL_M6` (obligatoria), `M2_AUDIENCIA_M6` (`m6-viajes` por defecto) y `M2_REINTENTAR_DESPUES_S` (5 por defecto). `M2_CREDENCIAL_M6`, de T1, se quita | RNF-06, RF-2.4.6, RF-2.4.11 |
 | `src/auth/tokens.ts` | `tokenDeServicio`: firma el token de M2 ante otro módulo con la firma de `generarToken` | RF-2.4.11, RNF-19 |
-| `src/modulos/cliente.ts` | Credencial opcional por intento (`Authorization: Bearer`, una función que da el token) y `Retry-After` en `ModuloNoDisponible` | RNF-06, RNF-13, RF-2.4.6, RF-2.4.11 |
+| `src/modulos/cliente.ts` | Credencial opcional por intento (`Authorization: Bearer`, una función que da el token), `Retry-After` en `ModuloNoDisponible` y una línea de log al terminar cada llamada (cambio de 2026-11-08) | RNF-06, RNF-13, RF-2.4.6, RF-2.4.11, RNF-14.10 |
 | `src/errores.ts` | `ModuloNoDisponible` acepta `Retry-After`; nuevo `ErrorDeIntegracion` (500) | RF-2.4.6, RF-2.4.7 |
 | `src/historial/modelo.ts` | Tipos, traducción de página y conversión de `TripSummary` a `ViajeResumen`, funciones puras; `conCalificado` agrega `calificado` a la página (spec #8) | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
 | `src/historial/m6.ts` | Pedido `GET /trips` a M6 con el cliente de módulos y el token de servicio, y lectura de su respuesta | RF-2.4, RF-2.4.6, RF-2.4.7, RF-2.4.10, RF-2.4.11, RNF-13 |
 | `src/historial/servicio.ts` | Propiedad, perfil y llamada a M6, en ese orden; después, una consulta a la base de M2 con los viajes calificados de la página (spec #8) | RF-2.4.1, RF-2.4.3 a RF-2.4.5 |
 | `src/historial/operaciones.ts` | Manejador de `listarHistorialViajes` | RNF-03 |
-| `src/app.ts` | `construirApp` crea el cliente de M6 desde la configuración y lo decora como `app.m6`; las pruebas lo apuntan a un M6 simulado con `urlM6` | RNF-06 |
+| `src/app.ts` | `construirApp` crea el cliente de M6 desde la configuración, con el logger de la app, y lo decora como `app.m6`; las pruebas lo apuntan a un M6 simulado con `urlM6` | RNF-06, RNF-14.10 |
 | `src/operaciones/index.ts` | Registro por `operationId`, en el orden del contrato | RNF-03 |
 | `ejemplo.env`, `docker-compose.yml`, `README.md` | Variables nuevas, con valores de desarrollo | RNF-06, RNF-20 |
 | `pruebas/unitarias/historial.test.ts` | Conversión, traducción de páginas y descarte | RF-2.4.1, RF-2.4.2, RF-2.4.9, RF-2.4.10 |
 | `pruebas/unitarias/tokens.test.ts` | Claims y firma del token de servicio | RF-2.4.11 |
 | `pruebas/modulos/m6.test.ts` | Lectura de M6, fallas y token de servicio con un servidor HTTP simulado | RF-2.4.6, RF-2.4.7, RF-2.4.10, RF-2.4.11 |
-| `pruebas/integracion/historial-http.test.ts` | Contrato, permisos, errores y logs por HTTP, con PostgreSQL y M6 simulado | RF-2.4 a RF-2.4.8, RNF-03, RNF-14, RNF-19 |
+| `pruebas/integracion/historial-http.test.ts` | Contrato, permisos, errores, orden y logs por HTTP, con PostgreSQL y M6 simulado | RF-2.4 a RF-2.4.8, RF-2.4.14, RNF-03, RNF-14, RNF-14.10, RNF-19 |
 | `pruebas/integracion/historial.test.ts` | Perfil real en PostgreSQL, M6 simulado y logs | RF-2.4.3, RF-2.4.4, RNF-05, RNF-14, RNF-19 |
 | `specs/007-historial/guia.md` | Mapa y uso | RNF-20 |
 
@@ -67,6 +67,7 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 - Si algún viaje no es de `clienteId` (RF-2.4.9), se descarta y se registra un aviso sin identificadores (solo la cantidad y el identificador de correlación).
 - Un elemento de `items` sin `id` o `state` en texto, o que no es un objeto, hace que toda la respuesta cuente como inválida (RF-2.4.10).
 - `totalElementos` es el total de M6 aunque se hayan descartado viajes de otro cliente: el filtro de M6 es el que cuenta.
+- Orden (RF-2.4.14): `aPaginaViajes` filtra y convierte con `filter` y `map`, que conservan el orden de `items`; ni `modelo.ts` ni `servicio.ts` ordenan. Lo que cambia con este requisito es una prueba que lo fije, no el código.
 
 ## Integraciones
 - **M6**, `GET /trips` (lectura): un intento tarda como máximo `M2_TIEMPO_MODULOS_MS` (2 s), se reintenta una vez tras 200 ms y, si falla, `503` con `detail` «M6 no está disponible» y `Retry-After` (RNF-13.1 a RNF-13.3, ya implementados en `crearClienteModulo`).
@@ -78,6 +79,14 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
   ```
   El claim de roles se llama `roles`, el del acuerdo, aunque `M2_CAMPO_ROLES` cambie el que M2 lee. El cliente de módulos recibe una función que da el token y la llama en cada intento: un reintento lleva su propio token. El token no se registra y no aparece en `detail`, en la causa ni en los logs; la clave que lo firma ya está en `secretosDeConfig`. Si M6 rechaza el token, responde un `4xx`: `500` (RF-2.4.7).
 - La URL base sale de `M2_URL_M6`; el servicio no arranca sin ella (RNF-06).
+- Log de cada llamada (RNF-14.10): `crearClienteModulo` recibe un `log` opcional (el logger de la app, `app.log`, que `construirApp` pasa a `crearM6`). Al terminar `ejecutar`, salga bien o mal, escribe una sola línea:
+  ```
+  { [CAMPO_ID_CORRELACION]: idCorrelacion, modulo: nombre, metodo, estado: <código final> | null,
+    intentos: <los que hizo>, duracionMs: <desde el primer intento hasta el final> }
+  nivel: info si el módulo respondió (también un 4xx); warn si no respondió (corte, red, 5xx, no JSON)
+  mensaje: «llamada a <módulo>»
+  ```
+  No lleva la ruta ni la query (traen el `clienteId` o el `viajeId`), ni encabezados, ni el cuerpo, ni la causa: la causa ya la registra el `503` (RNF-14.8) y el `500` (RF-2.4.7). Sin `log` no escribe nada, así las pruebas que crean el cliente a mano no cambian. Si M2 no puede dar la credencial, la falla es de M2, sale antes de llamar y no deja esta línea.
 
 ## Pruebas
 - Unitarias: conversión con y sin `driverId`, estado sin traducir, traducción de páginas (`page + 1`), `totalPaginas`, descarte de viajes ajenos, respuesta inválida.
@@ -85,6 +94,8 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 - Módulos (servidor HTTP simulado de M6): `200`, página vacía, `5xx`, cuerpo que no es JSON, `4xx` (`400`, `401`, `403`, `404`), demora mayor al tiempo, total inválido e `items` de más; el `Authorization` llega solo con credencial configurada, cada intento con un token nuevo, y el token de servicio que recibe el M6 simulado verifica con la clave y la audiencia de M6.
 - HTTP: `200`, `400` de `page`, `size` y `clienteId`, `401`, `403` (propietario, ajeno, CLIENTE+OPERADOR), `404` sin llamar a M6, `500`, `503` con `Retry-After`, problem+json.
 - Integración: perfil real en PostgreSQL con M6 simulado; el `503` de la base no lleva `Retry-After`; ningún token, identificador de viaje ni de conductor aparece en los logs.
+- Orden (RF-2.4.14), HTTP: el M6 simulado devuelve una página en un orden que no es el de `createdAt` ni el de los `id`, y M2 responde los `viajeId` en ese mismo orden.
+- Log (RNF-14.10), módulos: con un `log` de prueba, una llamada con `200`, una con `4xx`, una que sale bien al segundo intento (`intentos: 2`) y una que agota los intentos (`estado: null`, `warn`) dejan una sola línea cada una con correlación, módulo, método, código, intentos y duración; sin `log`, nada. HTTP: una consulta al historial deja la línea con el id de correlación de la solicitud, sin el `clienteId` ni identificadores de viajes.
 - Contrato: `listarHistorialViajes` deja de figurar pendiente. En la prueba de contrato no hay M6, así que el `503` de M6 se acepta para esta operación en `schemathesis.toml`, como los `422` de las otras.
 
 ## Trazabilidad
@@ -103,6 +114,8 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 | RNF-07 | Unitarias, módulos, HTTP, integración y contrato |
 | RNF-13 | Cliente de módulos de la spec #3 y pruebas de módulos |
 | RNF-14 | Correlación hacia M6 y causa en el log del `503` y del `500` |
+| RNF-14.10 | `cliente.ts` (línea al terminar `ejecutar`), `app.ts` y `m6.ts` (pasan el logger), pruebas de módulos y HTTP |
+| RF-2.4.14 | `modelo.ts` sin ordenar; prueba HTTP de orden |
 | RNF-19 | Token de servicio y cuerpos fuera del log; pruebas de módulos y de logs en integración |
 | RNF-20 | Guía por tarea y visión general al validar |
 
@@ -117,6 +130,7 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 - `ErrorDeIntegracion` es un `500` genérico (`about:blank`, título «Error interno»): el contrato no define un `type` propio para este caso. La causa lleva el código de M6 y nunca su cuerpo.
 - En la prueba de contrato no se agrega un M6 simulado (Prism) al `docker-compose.yml`: sería una imagen nueva. Se acepta el `503` en `schemathesis.toml`. Se puede agregar más adelante si el grupo lo pide.
 - No se agrega ADR ni dependencia.
+- Cambio de 2026-11-08 (orden a cargo de M6 y log de cada llamada): la línea de log va en el cliente de módulos y no en `m6.ts`, porque ahí se saben los intentos y la duración total, y sirve igual para cualquier módulo que se sume. El logger se pasa al crear el cliente y no en cada llamada, para no cambiar la firma de `obtener` y `enviar` ni la de sus usos; el id de correlación ya llega en cada llamada. Alternativa descartada: pasar `request.log` en cada llamada (mismo resultado, más cambios en `m6.ts`, `servicio.ts` y las calificaciones).
 
 ## Dudas abiertas
 Ninguna. Los supuestos con M6 y el Grupo 1 están en `## Decisiones` de la spec.

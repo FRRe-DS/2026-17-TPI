@@ -22,3 +22,10 @@ Depende de: las specs #3 (cliente de módulos) y #4 (perfiles) en `main`. T2, T4
   - Hecho cuando: pruebas unitarias comprueban que `tokenDeServicio` da un JWT HS256 que verifica con la clave del consorcio, con `iss` del emisor configurado, `sub` `m2-clientes`, `roles` `["SERVICIO"]` (también con otro `M2_CAMPO_ROLES`), `aud` igual a `M2_AUDIENCIA_M6` y `exp` 60 segundos después de `iat`.
 - [x] **T10. Enviar el token de servicio en cada intento a M6.** RF-2.4.11, RNF-13, RNF-19
   - Hecho cuando: la opción `credencial` del cliente de módulos es una función que se llama en cada intento; pruebas de módulos comprueban que sin ella no hay `Authorization`, que cada intento (también el reintento) lleva un token propio, que el M6 simulado recibe un token de servicio que verifica con la clave y la audiencia de M6, y que el token no aparece en `detail`, en la causa ni en el log.
+
+T11 y T12 vienen del cambio de 2026-11-08 (orden a cargo de M6 y log de cada llamada, tras la validación). T11 es delicada (cliente de módulos compartido): Opus. T12, Sonnet.
+
+- [ ] **T11. Fijar el orden de M6 y registrar cada llamada a M6.** RF-2.4.14, RNF-14.10, RNF-19
+  - Hecho cuando: una prueba HTTP comprueba que M2 devuelve los viajes en el orden que entrega el M6 simulado (uno que no es el de `createdAt` ni el de los `id`); pruebas de módulos comprueban una sola línea por llamada con correlación, módulo, método, código, intentos y duración en `200`, `4xx`, éxito al segundo intento y fallo agotado (`estado: null`, `warn`), y ninguna sin `log`; una prueba HTTP comprueba la línea con el id de correlación de la solicitud y sin `clienteId` ni identificadores de viajes; `npm test`, lint y build en verde.
+- [ ] **T12. Poner al día la guía.** RNF-20
+  - Hecho cuando: `guia.md` documenta T11 y, en la visión general, `calificado` (spec #8), la prueba con el M6 real (spec #81), el orden a cargo de M6 y la línea de log de cada llamada; `npm run contrato:test` y `spec-check` en verde.
