@@ -27,19 +27,19 @@ docs/probar-m2.md        sección nueva
 ## Contrato
 No se implementan operaciones nuevas. Cambia cómo se autorizan las 19 protegidas (RNF-12.11 a RNF-12.16). `verificarSalud` sigue pública (RNF-12.15). Los códigos ya están declarados en las 19: `401`, `403` y `503`.
 
-El `503` de RNF-13.10 usa `type: about:blank`, que entra tanto en `ServicioNoDisponible` (`ProblemaGenerico`) como en `DependenciaNoDisponible` (`Problema`, cuyo `type` es cualquier `uri-reference`). Tres textos del contrato no lo dicen y se ajustan en #79, sin cambiar el esquema: la descripción de `ServicioNoDisponible`, que habla solo de la base; la frase de que el `503` de dependencia tiene `type` propio; y la descripción de `SinPermiso`, que no menciona el scope. `about:blank` es lo correcto: 17 de las 19 operaciones declaran `ProblemaGenerico`, con ese `type` fijo.
+El `503` de RNF-13.10 usa `type: about:blank`, que entra tanto en `ServicioNoDisponible` (`ProblemaGenerico`) como en `DependenciaNoDisponible` (`Problema`, cuyo `type` es cualquier `uri-reference`). Tres textos del contrato no lo decían y se ajustaron en #79 (PR #95, ADR 079), sin cambiar el esquema: la descripción de `ServicioNoDisponible`, que habla solo de la base; la frase de que el `503` de dependencia tiene `type` propio; y la descripción de `SinPermiso`, que no menciona el scope. `about:blank` es lo correcto: 17 de las 19 operaciones declaran `ProblemaGenerico`, con ese `type` fijo.
 
-**Scopes y #79.** `contrato/openapi.yml` todavía no declara scopes. M2 los lee del contrato con el mismo mecanismo que los roles (Lógica 4): antes de #79 ninguna operación real exige scope; después, todas, sin tocar `src/`. Lo único que espera a #79 es T18. Lo que #79 tiene que escribir, para que el contrato pida los dos:
+**Scopes y #79.** Hasta #79, `contrato/openapi.yml` no declaraba scopes; los declara desde el PR #95 (ADR 079), con el esquema `OAuth2Bearer`. M2 los lee del contrato con el mismo mecanismo que los roles (Lógica 4): antes de #79 ninguna operación real exigía scope; después, todas, sin tocar `src/`. Lo único que esperaba a #79 era T18. Lo que #79 escribió, para que el contrato pida los dos:
 ```yaml
 security:
   - bearerAuth: [CLIENTE]
-    keycloak: [clientes:read]
+    OAuth2Bearer: [clientes:read]
 ```
 Con lo acordado con el Grupo 1 (FRRe-DS/2026-01-TPI#7), `obtenerEstadoCuenta` pide `clientes.estado:read` y no `clientes:read`, también a CLIENTE y OPERADOR; las de bloqueos, `clientes:write` con OPERADOR, como cualquier escritura:
 ```yaml
 security:
   - bearerAuth: [CLIENTE, OPERADOR, SERVICIO]
-    keycloak: [clientes.estado:read]
+    OAuth2Bearer: [clientes.estado:read]
 ```
 
 ## Datos
@@ -155,7 +155,7 @@ El token hacia M6 no cambia (`tokenDeServicio`, ADR 080).
   - `pruebas/http/autenticacion-jwks.test.ts`: `401`, `403` y `503` de punta a punta, con el contrato de prueba y `contratoCon` para los scopes.
   - `pruebas/integracion/arranque.test.ts`: arrancar con el JWKS caído o colgado, y detener sin esperar a la precarga.
 - **Modo `hs256` sin cambios** (RNF-12.15). Las pruebas que ya existen tienen que pasar como están, incluidas `pruebas/http/operaciones.test.ts`, que compara los permisos con `toEqual`, y `pruebas/http/autenticacion.test.ts`. Solo cambian las que enumeran variables, servicios y proyectos: `pruebas/unitarias/ejemplo-env.test.ts`, `pruebas/unitarias/consistencia.test.ts` (también el proyecto `keycloak`, como `navegador`, y los dos `.dockerignore`) y `CONFIG` en `pruebas/ayudas/app.ts`.
-- **Realm** (RNF-12.17, RNF-12.20). `pruebas/unitarias/realm.test.ts` lee el JSON y comprueba roles, scopes, clientes y usuarios, que la audiencia de `m2-token` no vaya al ID token, que los clientes de M5 y M9 no tengan otro scope de M2 que `clientes.estado:read`, la configuración de `m2-front` (pública, solo código de autorización, `S256`, retorno solo local), y que todo scope que declare el contrato exista en el realm: antes de #79 no hay ninguno, y después, un tipeo como `cleintes` da rojo.
+- **Realm** (RNF-12.17, RNF-12.20). `pruebas/unitarias/realm.test.ts` lee el JSON y comprueba roles, scopes, clientes y usuarios, que la audiencia de `m2-token` no vaya al ID token, que los clientes de M5 y M9 no tengan otro scope de M2 que `clientes.estado:read`, la configuración de `m2-front` (pública, solo código de autorización, `S256`, retorno solo local), y que todo scope que declare el contrato exista en el realm: antes de #79 no había ninguno; desde #79 son los tres de M2, y un tipeo como `cleintes` da rojo.
 - **Cliente del frontend con Keycloak real** (RNF-12.20). Dentro de `npm run keycloak:test`: el flujo de código con PKCE sin navegador (pedir la página de inicio de sesión, mandar el formulario con la cookie de sesión, leer el `code` de la redirección y canjearlo con el `code_verifier`), y los rechazos comprobados arriba. Con ese token, `cliente1` lee su perfil en M2 (`200`).
 - **Con Keycloak real** (RNF-07.13). `npm run keycloak:test` = `vitest run --project keycloak`, fuera de `npm test`. Su `globalSetup` corre compose con el proyecto `m2-keycloak` y puertos propios (`M2_PUERTO=18083`, `KEYCLOAK_PUERTO=18080`), para no pisar lo que la persona tenga levantado, y al terminar `down -v`. Los tokens se piden a Keycloak por HTTP, los de persona con `clientes:read clientes:write`, para que los escenarios sigan valiendo después de #79. Como duran 300 s, el de Keycloak caído se pide justo antes de detenerlo. Si Docker no está, termina en rojo con el motivo, sin saltarse.
 - **Contrato.** `npm run contrato:test` no cambia: corre en modo `hs256`.

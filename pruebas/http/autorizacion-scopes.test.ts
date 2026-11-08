@@ -8,7 +8,8 @@ import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
 import { armarToken, SUB_DE_PRUEBA } from '../ayudas/tokens.js';
 
 // El scope de cada operación, junto con el rol y la propiedad del recurso (RNF-12.13, RNF-12.14, RNF-12.15). El contrato es de
-// la prueba: el real todavía no declara scopes (#79), y M2 los lee del contrato como lee los roles.
+// la prueba, para controlar cada caso: M2 lee los scopes del contrato como lee los roles. Los del contrato real (#79) los
+// comprueba `pruebas/unitarias/scopes-contrato.test.ts`.
 const servidor = crearServidorModulo();
 const clave = crearClave();
 

@@ -318,7 +318,7 @@ El token dura 300 s (5 minutos); pasado ese tiempo, M2 contesta `401` y se pide 
 
 ### Un token de servicio
 
-Los módulos que consultan el estado de cuenta (M5 y M9, y también los que la cátedra cargó con rol `SERVICIO`) entran con `client_credentials`. Los secretos están en el realm de desarrollo; acá se leen del archivo para no repetirlos. Por ejemplo, con `grupo-04`, que tiene el rol `SERVICIO` y el scope `clientes.estado:read`:
+Los módulos que consultan el estado de cuenta (M5 y M9, y también los que la cátedra cargó con rol `SERVICIO`) entran con `client_credentials`. Los secretos están en el realm de desarrollo; acá se leen del archivo para no repetirlos. Son los del realm de la cátedra, que ya son públicos, y solo sirven para este Keycloak de desarrollo (ADR 080). Por ejemplo, con `grupo-04`, que tiene el rol `SERVICIO` y el scope `clientes.estado:read`:
 
 ```bash
 SECRETO=$(node -pe 'JSON.parse(require("fs").readFileSync("keycloak/ds-2026-realm-realm.json","utf8")).clients.find(c=>c.clientId==="grupo-04").secret')
