@@ -1,6 +1,6 @@
 # Spec 081 — Integración distribuida de M2 con el M6 real del Grupo 12
 
-Estado: implementada
+Estado: aprobada
 Issue: #81
 Etapa: TP2
 Responsable: @sandobaitt
