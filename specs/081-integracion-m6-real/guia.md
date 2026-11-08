@@ -184,4 +184,4 @@ El revisor (2026-11-07) pidió estos cambios, ya aplicados:
 - **Vigilancia.** `consistencia.test.ts` ahora sí exige el comando exacto de `npm test` (la guía de la T2 lo daba por hecho y no existía) y que `docs/probar-m2.md` cite el commit que usa compose.
 - **Otros.** `resiliencia` pasa a 240 s por prueba, más que los 180 s que puede tardar `restablecerM6`. En `docs/probar-m2.md`, repetir un archivo lleva `M2_DEJAR_LEVANTADO=1`, y `down -v` avisa que borra la base de trabajo de M2.
 
-Queda sin tocar: RNF-13.8 dice que la calificación vuelve a `200`, y la prueba y el contrato dicen `201`. Manda el contrato; la spec se corrige en el próximo `sdd-change`.
+RNF-13.8 decía que la calificación vuelve a `200`, y la prueba y el contrato dicen `201`. Manda el contrato; la spec se corrigió el 2026-11-08 con un `sdd-change` (rama `spec/081-integracion-m6-real-cambio`): solo cambió el texto, no el código ni el plan.
