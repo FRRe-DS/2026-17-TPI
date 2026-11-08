@@ -340,6 +340,116 @@ describe('crearClienteModulo', () => {
     });
   });
 
+  // ## Spec 007, T11
+  //
+  // Toda llamada al módulo deja una sola línea al terminar, salga bien o mal (RNF-14.10). Sin la ruta, que lleva el clienteId o el
+  // viajeId, ni encabezados ni cuerpos (RNF-19).
+  describe('la línea de log de cada llamada (RNF-14.10)', () => {
+    type Linea = { nivel: 'info' | 'warn'; campos: Record<string, unknown>; mensaje: string };
+    const logDePrueba = () => {
+      const lineas: Linea[] = [];
+      const log = {
+        info: (campos: Record<string, unknown>, mensaje: string) => lineas.push({ nivel: 'info', campos, mensaje }),
+        warn: (campos: Record<string, unknown>, mensaje: string) => lineas.push({ nivel: 'warn', campos, mensaje }),
+      };
+      return { log, lineas };
+    };
+    const conLog = (log: ReturnType<typeof logDePrueba>['log'], reintentos = 1) =>
+      crearClienteModulo({
+        nombre: 'M6',
+        urlBase: serv.url,
+        tiempoMs: TIEMPO_MS,
+        reintentos,
+        encabezadoCorrelacion: 'X-Request-Id',
+        credencial: async () => CREDENCIAL,
+        log,
+      });
+    const RUTA = '/trips?clientId=ruta-con-datos-del-cliente';
+
+    it('un 200: info, con correlación, módulo, método, código, un intento y la duración', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { dato: 'del-cuerpo' } });
+      const { log, lineas } = logDePrueba();
+
+      await conLog(log).obtener(RUTA, 'id-de-la-solicitud');
+
+      expect(lineas).toHaveLength(1);
+      expect(lineas[0]).toMatchObject({
+        nivel: 'info',
+        mensaje: 'llamada a M6',
+        campos: { idCorrelacion: 'id-de-la-solicitud', modulo: 'M6', metodo: 'GET', estado: 200, intentos: 1 },
+      });
+      expect(lineas[0]?.campos.duracionMs).toBeTypeOf('number');
+      // Lista cerrada de campos: ni la ruta, ni la credencial, ni el cuerpo.
+      expect(Object.keys(lineas[0]?.campos ?? {}).sort()).toEqual(
+        ['duracionMs', 'estado', 'idCorrelacion', 'intentos', 'metodo', 'modulo'].sort(),
+      );
+      const texto = JSON.stringify(lineas);
+      for (const dato of ['ruta-con-datos-del-cliente', CREDENCIAL, 'del-cuerpo']) expect(texto).not.toContain(dato);
+    });
+
+    it('un 4xx: info con ese código, porque el módulo respondió', async () => {
+      serv.responderCon({ tipo: '4xx', estado: 404, cuerpo: { title: 'No encontrado' } });
+      const { log, lineas } = logDePrueba();
+
+      await conLog(log).obtener(RUTA, 'id');
+
+      expect(lineas).toEqual([expect.objectContaining({ nivel: 'info', campos: expect.objectContaining({ estado: 404, intentos: 1 }) })]);
+    });
+
+    it('bien al segundo intento: una sola línea, con dos intentos, el código final y la pausa en la duración', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 500 }, { tipo: 'ok', cuerpo: { ok: true } }]);
+      const { log, lineas } = logDePrueba();
+
+      await conLog(log).obtener(RUTA, 'id');
+
+      expect(lineas).toHaveLength(1);
+      expect(lineas[0]).toMatchObject({ nivel: 'info', campos: { estado: 200, intentos: 2 } });
+      expect(lineas[0]?.campos.duracionMs as number).toBeGreaterThanOrEqual(PAUSA_MS - 20);
+    });
+
+    it('agotados los intentos: warn, sin código y con los intentos que hizo', async () => {
+      serv.responderCon({ tipo: '5xx', estado: 502, cuerpo: { secreto: 'del-cuerpo' } });
+      const { log, lineas } = logDePrueba();
+
+      await expect(conLog(log).obtener(RUTA, 'id')).rejects.toThrow(ModuloNoDisponible);
+
+      expect(lineas).toHaveLength(1);
+      expect(lineas[0]).toMatchObject({
+        nivel: 'warn',
+        mensaje: 'llamada a M6',
+        campos: { idCorrelacion: 'id', modulo: 'M6', metodo: 'GET', estado: null, intentos: 2 },
+      });
+      expect(JSON.stringify(lineas)).not.toContain('del-cuerpo');
+    });
+
+    it('un POST, que no se reintenta, deja su línea con el método', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+      const { log, lineas } = logDePrueba();
+
+      await conLog(log).enviar('POST', '/', { dato: 1 }, 'id');
+
+      expect(lineas).toEqual([expect.objectContaining({ campos: expect.objectContaining({ metodo: 'POST', estado: 200, intentos: 1 }) })]);
+    });
+
+    it('si M2 no puede dar la credencial, no se llamó al módulo y no hay línea', async () => {
+      const { log, lineas } = logDePrueba();
+      const cliente = crearClienteModulo({
+        nombre: 'M6',
+        urlBase: serv.url,
+        tiempoMs: TIEMPO_MS,
+        reintentos: 1,
+        encabezadoCorrelacion: 'X-Request-Id',
+        credencial: async () => {
+          throw new Error('no se pudo firmar');
+        },
+        log,
+      });
+
+      await expect(cliente.obtener(RUTA, 'id')).rejects.toThrow('no se pudo firmar');
+      expect(lineas).toEqual([]);
+    });
+  });
+
   describe('Retry-After en el 503 (RF-2.4.6)', () => {
     it('con reintentarDespuesS, ModuloNoDisponible lo lleva en segundos', async () => {
       serv.responderCon({ tipo: '5xx', estado: 500 });

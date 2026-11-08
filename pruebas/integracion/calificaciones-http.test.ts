@@ -553,8 +553,10 @@ describe('calificaciones por HTTP (008/T8)', () => {
       expect(credenciales.every((credencial) => credencial !== '' && !tokens.includes(credencial))).toBe(true);
       const prohibidos = [...tokens, ...credenciales, 'Bearer ey', comentario, clave, viajeId, otroViaje, CONDUCTOR, calificacionId];
       for (const prohibido of prohibidos) expect(texto).not.toContain(prohibido);
-      // La línea de la solicitud lleva la plantilla de la ruta, no los identificadores (RNF-19).
-      expect(logs.lineas().filter(({ metodo }) => metodo === 'GET').map(({ ruta }) => ruta)).toEqual([
+      // La línea de la solicitud lleva la plantilla de la ruta, no los identificadores (RNF-19). Se filtra por el mensaje: las
+      // líneas de las llamadas a M6 (007/T11, RNF-14.10) también llevan `metodo`, y no llevan ruta.
+      const deSolicitud = logs.lineas().filter(({ metodo, msg }) => metodo === 'GET' && msg === 'Solicitud terminada');
+      expect(deSolicitud.map(({ ruta }) => ruta)).toEqual([
         '/api/v1/clientes/:clienteId/calificaciones',
         '/api/v1/clientes/:clienteId/calificaciones/:calificacionId',
         '/api/v1/clientes/:clienteId/calificaciones/:calificacionId',

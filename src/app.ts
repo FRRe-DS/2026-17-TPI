@@ -105,7 +105,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   // Fastify lee también text/plain; sin ese lector, ese cuerpo da 415 como cualquier otro que no es JSON (RNF-03.2).
   app.removeContentTypeParser('text/plain');
   app.decorate('pool', pool);
-  app.decorate('m6', crearM6(config));
+  app.decorate('m6', crearM6(config, app.log));
   app.decorate('verificador', crearVerificador(config));
   app.setValidatorCompiler(crearCompilador(contrato));
   app.setErrorHandler(responderProblema);

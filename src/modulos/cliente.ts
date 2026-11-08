@@ -1,4 +1,6 @@
+import type { FastifyBaseLogger } from 'fastify';
 import { ModuloNoDisponible } from '../errores.js';
+import { CAMPO_ID_CORRELACION } from '../logs.js';
 
 export type RespuestaModulo = {
   estado: number;
@@ -23,6 +25,8 @@ type OpcionesCliente = {
   credencial?: () => Promise<string>;
   // Los segundos del `Retry-After` del 503, si el contrato lo declara para este módulo (spec 007, RF-2.4.6).
   reintentarDespuesS?: number;
+  // El logger de la app, para la línea de cada llamada (RNF-14.10). Sin él no se escribe nada.
+  log?: Pick<FastifyBaseLogger, 'info' | 'warn'>;
 };
 
 // La pausa entre un intento y el siguiente (plan, Integraciones).
@@ -38,7 +42,26 @@ export function crearClienteModulo({
   encabezadoCorrelacion,
   credencial,
   reintentarDespuesS,
+  log,
 }: OpcionesCliente): ClienteModulo {
+  // Una sola línea por llamada, al terminar, salga bien o mal (RNF-14.10): `estado` es el código con el que respondió el
+  // módulo, también un 4xx, y `null` si no respondió en ningún intento (corte, red, 5xx o cuerpo que no es JSON), que va como
+  // advertencia. Es una lista cerrada de campos: ni la ruta ni la query, que llevan el clienteId o el viajeId, ni encabezados,
+  // ni cuerpos (RNF-19). La causa de la falla no va acá: la registra el 503 (RNF-14.8).
+  function registrarLlamada(metodo: string, idCorrelacion: string, estado: number | null, intentos: number, inicio: number) {
+    if (log === undefined) return;
+    const linea = {
+      [CAMPO_ID_CORRELACION]: idCorrelacion,
+      modulo: nombre,
+      metodo,
+      estado,
+      intentos,
+      duracionMs: Math.round(performance.now() - inicio),
+    };
+    if (estado === null) log.warn(linea, `llamada a ${nombre}`);
+    else log.info(linea, `llamada a ${nombre}`);
+  }
+
   // Un intento: devuelve la respuesta del módulo, que puede ser un 4xx. Si no la obtiene, lanza lo que falló: el corte por
   // tiempo, el error de red, el 5xx o el cuerpo que no es JSON, estos dos con su código y sin su cuerpo, que puede traer
   // datos del otro módulo y va al log como causa (RNF-14.8, RNF-19.2). Es lo que se reintenta.
@@ -90,18 +113,22 @@ export function crearClienteModulo({
   // los intentos, lanza `ModuloNoDisponible` con lo que falló en el último como causa (RNF-14.8).
   async function ejecutar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
     const intentos = metodo === 'GET' ? 1 + reintentos : 1;
+    const inicio = performance.now();
     let ultimaFalla: unknown;
     for (let intento = 1; intento <= intentos; intento++) {
       // Fuera del try: si M2 no puede dar su credencial, la falla es de M2 y no del módulo. No se reintenta ni es un 503: sale
-      // tal cual y da 500.
+      // tal cual y da 500, sin la línea de la llamada.
       const autorizacion = credencial !== undefined ? `Bearer ${await credencial()}` : undefined;
       try {
-        return await intentar(metodo, ruta, cuerpo, idCorrelacion, autorizacion);
+        const respuesta = await intentar(metodo, ruta, cuerpo, idCorrelacion, autorizacion);
+        registrarLlamada(metodo, idCorrelacion, respuesta.estado, intento, inicio);
+        return respuesta;
       } catch (error) {
         ultimaFalla = error;
         if (intento < intentos) await pausar(PAUSA_REINTENTO_MS);
       }
     }
+    registrarLlamada(metodo, idCorrelacion, null, intentos, inicio);
     throw new ModuloNoDisponible(nombre, { cause: ultimaFalla, reintentarDespuesS });
   }
 
