@@ -197,3 +197,23 @@
   - Los pasos de logs y de bajada llevan `-p m2-keycloak --env-file ejemplo-keycloak.env`: sin el archivo, compose no ve el perfil `keycloak` y no encuentra los contenedores. `docker compose … config -q` con esos argumentos da verde en local.
   - **No se pudo correr en GitHub Actions desde acá:** el job se ve recién en el PR. Si en el runner la primera corrida pasa de los 30 minutos (`timeout-minutes`), hay que subirlo.
   - Que `keycloak` no sea obligatorio es una decisión de la protección de `main`, que está en GitHub y no en el repo: si la persona integradora la tiene que cambiar, es un paso manual de ella.
+
+### T17 — Documentación · commit `080/T17`
+- Qué cambió: `docs/probar-m2.md` suma la sección 9 («M2 con Keycloak real»): cómo levantar el perfil, un token de persona (`cliente1` con `m2-desarrollo`), uno de servicio (`grupo-04`, con el secreto leído del realm y no copiado), una tanda de pedidos con su salida esperada, `npm run keycloak:test` y qué prueba cada archivo. `README.md` enlaza la sección desde el apartado de pruebas distribuidas.
+- Por qué así: RNF-20.5. La sección copia la forma de la 8 (la de M6 real), para que se lea igual. Los usuarios y sus contraseñas de desarrollo sí se escriben (están en el realm, `<usuario>-contrasena-de-desarrollo`); los secretos de los clientes de servicio, no.
+- Cómo se conecta: las cinco aclaraciones que pedía la tarea están en «Lo que conviene saber» y «Levantarlo»: `down -v` para aplicar el realm, el panel solo en `hs256` hasta el #83, `m2-front` no sirve con usuario y contraseña, y el emisor distinto del `KC_HOSTNAME` da `401`.
+- Tests: no hay código. Cada comando se corrió tal como está escrito, con M2 y Keycloak levantados en un proyecto aparte (`COMPOSE_PROJECT_NAME=m2-t17`, antes de cada comando de compose; los puertos 8080 y 8082 estaban libres): `201`, `200`, `403`, `200` con `"bloqueosVigentes":[]`, `403` y `401`, como dice la sección. También se comprobó: `m2-front` con `grant_type=password` da `unauthorized_client`; con `M2_EMISOR_TOKENS=http://127.0.0.1:8080/realms/ds-2026-realm` el mismo token da `401` («El emisor del token no es el esperado») y al volver al valor normal da `200`; y un token HS256 del comando de tokens da `401` en modo `jwks` (que es lo que le pasa al panel).
+- Para mirar con atención:
+  - **La salida esperada de `npm run keycloak:test` (3 archivos, 19 pruebas, ~90 s) sale de la T19 y no se volvió a correr en esta tarea.** Si crece una prueba, hay que cambiar el número en la sección.
+  - El token dura 300 s: quien tarde en copiar los comandos recibe `401` y tiene que pedir otro.
+
+#### Pendientes para la rama `contrato/079-…`
+Textos y reglas del contrato que quedaron desactualizados con la 080, anotados acá para no perderlos. La spec no puede cambiarlos (el contrato solo se toca en una rama `contrato/`):
+- **Rol y scope en el mismo renglón de `security`** en las 19 operaciones (y `obtenerEstadoCuenta` con `clientes.estado:read`, no `clientes:read`), como dice el plan. Con dos renglones, M2 los pide a los dos y no a uno u otro, que es lo que OpenAPI dice de los renglones.
+- **`ServicioNoDisponible`** (`contrato/openapi.yml`, «La base de M2 no está disponible»): también es el `503` de M2 cuando Keycloak no entrega una clave que necesita (RNF-13.10).
+- **`SinPermiso`** («El rol no permite la operación, o el cliente no es el dueño del recurso»): suma «o el token no trae el scope que la operación exige».
+- **El `503` de dependencia** (la frase que dice que lleva `type` propio): el de Keycloak usa `type: about:blank`, que entra tanto en `ServicioNoDisponible` como en `DependenciaNoDisponible` (plan, «Contrato»).
+- **El `sub` de servicio** (`openapi.yml`, descripción de `bearerAuth` y encabezado): dice que en los tokens de SERVICIO el `sub` «nombra al módulo que consulta»; en Keycloak es el UUID de la cuenta de servicio. Pasa igual en `contrato/dependencias/m1.yml`, en la descripción del claim `sub` (el ejemplo `m9-reservas`).
+- **`contrato/dependencias/m1.yml`**: dice que M2 valida con HS256 «mientras M1 no exista», que JWKS «no es necesario» y que «el algoritmo aceptado en TP1 es solo HS256». Con la 080, M2 acepta RS256 con JWKS en el modo `jwks` y el emisor ya no es `m1-identidad`: es el realm de Keycloak.
+- **`contrato/dependencias/README.md`**: la fila de M1 sigue diciendo «Propuesta borrador (ADR 009)» y «JWKS futuro»; el JWKS ya se consume.
+

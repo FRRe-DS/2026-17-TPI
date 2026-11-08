@@ -58,7 +58,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `080/Tn: …`, con
 
 ## Tramo C — Documentación y scope real
 
-- [ ] **T17. Documentación.** RNF-20.5
+- [x] **T17. Documentación.** RNF-20.5
   - Hecho cuando: `docs/probar-m2.md` tiene una sección nueva que dice cómo levantar el perfil, pedir un token de persona y uno de servicio, y probar una operación, y aclara que hace falta `down -v` para aplicar cambios del realm, que el panel solo funciona en modo `hs256` hasta la spec de inicio de sesión (#83), que `m2-front` es el cliente que usará esa spec y no sirve para pedir tokens con usuario y contraseña, y que un `M2_EMISOR_TOKENS` distinto del `KC_HOSTNAME` da `401`; cada comando se corrió tal como está escrito; `README.md` enlaza la sección; y `guia.md` anota como pendientes para la rama `contrato/079-…`: rol y scope en el mismo renglón de `security`, los textos de `ServicioNoDisponible`, de `SinPermiso`, del `503` de dependencia y del `sub` de servicio, y los de `contrato/dependencias/m1.yml` y `dependencias/README.md`.
 
 - [ ] **T18. Escenario de scope con Keycloak real (bloqueada hasta el merge de #79).** RNF-12.13, RNF-07.13
