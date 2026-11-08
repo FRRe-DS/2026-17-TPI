@@ -50,6 +50,17 @@ npm test && npm run contrato:test
 4. Con la base colgada, ¿cuánto tarda `GET /health` en responder, qué responde y dónde queda la causa? (RNF-14.2 y RNF-14.8; `conTiempoMaximo` y `responderProblema`).
 5. ¿Por qué el healthcheck de `bd` en `docker-compose.yml` usa TCP y no el socket? (plan, «Trampas verificadas», imagen `postgres:18.6`).
 
+## Revalidación (2026-11-08)
+La spec volvió a `aprobada` con el cambio de redacción de RNF-14.6 (issue #66, commit `b74faef`), ya implementado en la 008/T8. Se revalidó con `npm test` (5443 en verde), `npm run build`, `npm run lint`, `npm run contrato:test` (20 de 20 operaciones, 3629 casos) y a mano: con la base detenida, `/health` da `503` en `problem+json` en 0,14 s, y al volver la base da `200` sin reiniciar el servicio. Un revisor independiente (solo lectura) mapeó cada requisito a su prueba.
+
+**Corregido:** `README.md` no listaba `M2_MODO_TOKENS` ni `M2_URL_JWKS` (RNF-20.1); ya están.
+
+**Queda anotado, sin resolver** (nada de esto es un error de funcionamiento):
+- Sin prueba automática: RNF-17.1 y RNF-17.2 (el workflow y la protección de `main` viven en GitHub), RNF-20.1 (revisión humana), el comportamiento de `scripts/contrato-test.mjs` (mensaje de «nada para probar», pendientes, código 0; RNF-07.2), que `docker compose` interpole las variables de `ejemplo.env` (RNF-06.3), `up --wait` con una variable inválida (solo a mano, T27 y T28) y «los datos están solo en su base» (RNF-05.1).
+- **El texto de la spec quedó viejo respecto del código que otras specs sumaron:** RNF-06.1 lista 10 variables (hoy hay más), «Operaciones de otros módulos» dice ninguna (M2 consume M6), RNF-12.2 solo habla de HS256 (la 080 suma `jwks` y scopes) y «Fuera de alcance» excluye JWKS, `Idempotency-Key` y las URLs de otros módulos. Pide un `sdd-change` de la 003; no es urgente.
+- Residuo en `ci.yml`: el job `contrato` conserva el paso que omite el lint si el contrato no tiene `paths`. Hoy el lint corre.
+- Arriba, «Tokens HS256 con una sola clave» y «JWKS queda para el acuerdo #9» son lo que decía la 003; desde la spec 080 existe el modo `jwks` (ADR `docs/adr/080-keycloak.md`).
+
 ## Tareas
 
 ### T1 — Crear el proyecto · commit `003/T1`
