@@ -313,6 +313,62 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
     });
   });
 
+  // 007/T11: el orden del historial queda a cargo de M6 (RF-2.4.14), y cada llamada a M6 deja su línea (RNF-14.10).
+  describe('orden de M6 y línea de la llamada (RF-2.4.14, RNF-14.10)', () => {
+    it('M2 devuelve los viajes en el orden en que los entrega M6, sin reordenarlos', async () => {
+      const id = await perfil();
+      // Ni por createdAt (ascendente o descendente) ni por id: si M2 ordenara por cualquiera de los dos, cambiaría.
+      const viajes = [
+        viaje(3, id, { createdAt: '2026-10-01T10:00:00Z' }),
+        viaje(1, id, { createdAt: '2026-10-03T10:00:00Z' }),
+        viaje(2, id, { createdAt: '2026-10-02T10:00:00Z' }),
+      ];
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina(viajes, 3) });
+
+      const respuesta = await crear().pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(respuesta.json().items.map(({ viajeId }: { viajeId: string }) => viajeId)).toEqual(viajes.map(({ id: v }) => v));
+    });
+
+    it('la consulta deja una línea de la llamada a M6 con el id de correlación de la solicitud y sin identificadores', async () => {
+      const id = await perfil();
+      const viajes = [viaje(1, id)];
+      serv.responderCon({ tipo: 'ok', cuerpo: pagina(viajes, 1) });
+      const { pedir, logs } = crear();
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      const llamadas = logs.lineas().filter(({ msg }) => msg === 'llamada a M6');
+      expect(llamadas).toHaveLength(1);
+      expect(llamadas[0]).toMatchObject({
+        level: 30,
+        idCorrelacion: respuesta.headers['x-request-id'],
+        modulo: 'M6',
+        metodo: 'GET',
+        estado: 200,
+        intentos: 1,
+      });
+      expect(llamadas[0]?.duracionMs).toBeTypeOf('number');
+      const linea = JSON.stringify(llamadas[0]);
+      for (const dato of [id, CONDUCTOR, ...viajes.map(({ id: v }) => v)]) expect(linea).not.toContain(dato);
+    });
+
+    it('si M6 responde 5xx en los dos intentos, la línea va como warn, con ese código y los dos intentos', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: '5xx', estado: 500 });
+      const { pedir, logs } = crear();
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(logs.lineas().filter(({ msg }) => msg === 'llamada a M6')).toEqual([
+        expect.objectContaining({ level: 40, idCorrelacion: respuesta.headers['x-request-id'], estado: 500, intentos: 2 }),
+      ]);
+    });
+  });
+
   // 008/T9, RF-2.5.14: `calificado` es un dato de M2, que el contrato ya declara en cada viaje.
   describe('calificado (RF-2.5.14)', () => {
     it('cada viaje trae calificado: true si el cliente lo calificó y false si no; M6 se llama una sola vez', async () => {

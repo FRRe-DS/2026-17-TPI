@@ -1,6 +1,7 @@
 // Los pedidos a M6 y la lectura de sus respuestas. Sigue el contrato que publicó el Grupo 12: `GET /trips` con `clientId`,
 // `page` desde 1 y `pageSize`, que responde `TripSummaryPage`, para el historial (plan 007, Lectura de la respuesta de M6), y
 // `GET /trips/{id}`, que responde `Trip`, para calificar al conductor (plan 008, Lectura del viaje de M6).
+import type { FastifyBaseLogger } from 'fastify';
 import { tokenDeServicio } from '../auth/tokens.js';
 import type { Config, ConfigTokens } from '../config.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../errores.js';
@@ -68,7 +69,8 @@ const formaInesperada = (estado: number, reintentarDespuesS: number) =>
     reintentarDespuesS,
   });
 
-export function crearM6(config: ConfigM6): M6 {
+// `log` es el de la app: cada llamada a M6 deja su línea con el id de correlación de la solicitud (RNF-14.10).
+export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
   const cliente = crearClienteModulo({
     nombre: NOMBRE,
     urlBase: config.urlM6,
@@ -77,6 +79,7 @@ export function crearM6(config: ConfigM6): M6 {
     encabezadoCorrelacion: config.encabezadoCorrelacion,
     credencial: () => tokenDeServicio(config),
     reintentarDespuesS: config.reintentarDespuesS,
+    log,
   });
 
   return {

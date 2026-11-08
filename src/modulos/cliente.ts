@@ -1,4 +1,6 @@
+import type { FastifyBaseLogger } from 'fastify';
 import { ModuloNoDisponible } from '../errores.js';
+import { CAMPO_ID_CORRELACION } from '../logs.js';
 
 export type RespuestaModulo = {
   estado: number;
@@ -23,12 +25,25 @@ type OpcionesCliente = {
   credencial?: () => Promise<string>;
   // Los segundos del `Retry-After` del 503, si el contrato lo declara para este módulo (spec 007, RF-2.4.6).
   reintentarDespuesS?: number;
+  // El logger de la app, para la línea de cada llamada (RNF-14.10). Sin él no se escribe nada.
+  log?: Pick<FastifyBaseLogger, 'info' | 'warn'>;
 };
 
 // La pausa entre un intento y el siguiente (plan, Integraciones).
 export const PAUSA_REINTENTO_MS = 200;
 
 export const pausar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Un intento en el que el módulo respondió, pero con algo que no sirve: un 5xx o un cuerpo que no es JSON. Lleva el código
+// para la línea de la llamada (RNF-14.10); el mensaje tiene el código y nunca el cuerpo (RNF-19.2).
+class RespuestaInutil extends Error {
+  constructor(
+    readonly estado: number,
+    mensaje: string,
+  ) {
+    super(mensaje);
+  }
+}
 
 export function crearClienteModulo({
   nombre,
@@ -38,7 +53,33 @@ export function crearClienteModulo({
   encabezadoCorrelacion,
   credencial,
   reintentarDespuesS,
+  log,
 }: OpcionesCliente): ClienteModulo {
+  // Una sola línea por llamada, al terminar, salga bien o mal (RNF-14.10): `estado` es el código con el que respondió el
+  // módulo en el último intento, también un 4xx o un 5xx, y `null` si en ese intento no respondió (corte o red). Si la llamada
+  // falló, va como advertencia. Es una lista cerrada de campos: ni la ruta ni la query, que llevan el clienteId o el viajeId,
+  // ni encabezados, ni cuerpos (RNF-19). La causa de la falla no va acá: la registra el 503 (RNF-14.8).
+  function registrarLlamada(
+    metodo: string,
+    idCorrelacion: string,
+    estado: number | null,
+    intentos: number,
+    inicio: number,
+    fallo: boolean,
+  ) {
+    if (log === undefined) return;
+    const linea = {
+      [CAMPO_ID_CORRELACION]: idCorrelacion,
+      modulo: nombre,
+      metodo,
+      estado,
+      intentos,
+      duracionMs: Math.round(performance.now() - inicio),
+    };
+    if (fallo) log.warn(linea, `llamada a ${nombre}`);
+    else log.info(linea, `llamada a ${nombre}`);
+  }
+
   // Un intento: devuelve la respuesta del módulo, que puede ser un 4xx. Si no la obtiene, lanza lo que falló: el corte por
   // tiempo, el error de red, el 5xx o el cuerpo que no es JSON, estos dos con su código y sin su cuerpo, que puede traer
   // datos del otro módulo y va al log como causa (RNF-14.8, RNF-19.2). Es lo que se reintenta.
@@ -68,7 +109,7 @@ export function crearClienteModulo({
     // Se lee con la misma señal: el cuerpo también cuenta para el corte.
     const texto = await respuesta.text();
 
-    if (respuesta.status >= 500) throw new Error(`${nombre} respondió ${respuesta.status}`);
+    if (respuesta.status >= 500) throw new RespuestaInutil(respuesta.status, `${nombre} respondió ${respuesta.status}`);
     // Un 4xx es una respuesta del módulo: se devuelve tal cual, sin reintento. Si no es JSON, va el texto.
     if (respuesta.status >= 400) {
       try {
@@ -82,7 +123,7 @@ export function crearClienteModulo({
     try {
       return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown };
     } catch {
-      throw new Error(`${nombre} respondió ${respuesta.status} con un cuerpo que no es JSON`);
+      throw new RespuestaInutil(respuesta.status, `${nombre} respondió ${respuesta.status} con un cuerpo que no es JSON`);
     }
   }
 
@@ -90,18 +131,31 @@ export function crearClienteModulo({
   // los intentos, lanza `ModuloNoDisponible` con lo que falló en el último como causa (RNF-14.8).
   async function ejecutar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
     const intentos = metodo === 'GET' ? 1 + reintentos : 1;
+    const inicio = performance.now();
     let ultimaFalla: unknown;
+    let ultimoEstado: number | null = null;
     for (let intento = 1; intento <= intentos; intento++) {
       // Fuera del try: si M2 no puede dar su credencial, la falla es de M2 y no del módulo. No se reintenta ni es un 503: sale
-      // tal cual y da 500.
-      const autorizacion = credencial !== undefined ? `Bearer ${await credencial()}` : undefined;
+      // tal cual y da 500. Si ya había salido un intento, la llamada queda registrada con los que salieron; si no, no hubo
+      // llamada y no hay línea.
+      let autorizacion: string | undefined;
       try {
-        return await intentar(metodo, ruta, cuerpo, idCorrelacion, autorizacion);
+        autorizacion = credencial !== undefined ? `Bearer ${await credencial()}` : undefined;
+      } catch (error) {
+        if (intento > 1) registrarLlamada(metodo, idCorrelacion, ultimoEstado, intento - 1, inicio, true);
+        throw error;
+      }
+      try {
+        const respuesta = await intentar(metodo, ruta, cuerpo, idCorrelacion, autorizacion);
+        registrarLlamada(metodo, idCorrelacion, respuesta.estado, intento, inicio, false);
+        return respuesta;
       } catch (error) {
         ultimaFalla = error;
+        ultimoEstado = error instanceof RespuestaInutil ? error.estado : null;
         if (intento < intentos) await pausar(PAUSA_REINTENTO_MS);
       }
     }
+    registrarLlamada(metodo, idCorrelacion, ultimoEstado, intentos, inicio, true);
     throw new ModuloNoDisponible(nombre, { cause: ultimaFalla, reintentarDespuesS });
   }
 

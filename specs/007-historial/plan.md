@@ -81,12 +81,14 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 - La URL base sale de `M2_URL_M6`; el servicio no arranca sin ella (RNF-06).
 - Log de cada llamada (RNF-14.10): `crearClienteModulo` recibe un `log` opcional (el logger de la app, `app.log`, que `construirApp` pasa a `crearM6`). Al terminar `ejecutar`, salga bien o mal, escribe una sola línea:
   ```
-  { [CAMPO_ID_CORRELACION]: idCorrelacion, modulo: nombre, metodo, estado: <código final> | null,
+  { [CAMPO_ID_CORRELACION]: idCorrelacion, modulo: nombre, metodo,
+    estado: <código con que respondió el módulo en el último intento> | null (corte o red: no respondió),
     intentos: <los que hizo>, duracionMs: <desde el primer intento hasta el final> }
-  nivel: info si el módulo respondió (también un 4xx); warn si no respondió (corte, red, 5xx, no JSON)
+  nivel: info si la llamada devolvió una respuesta (también un 4xx); warn si se agotaron los intentos (5xx, no JSON,
+         corte o red), con el código del 5xx o del cuerpo que no es JSON
   mensaje: «llamada a <módulo>»
   ```
-  No lleva la ruta ni la query (traen el `clienteId` o el `viajeId`), ni encabezados, ni el cuerpo, ni la causa: la causa ya la registra el `503` (RNF-14.8) y el `500` (RF-2.4.7). Sin `log` no escribe nada, así las pruebas que crean el cliente a mano no cambian. Si M2 no puede dar la credencial, la falla es de M2, sale antes de llamar y no deja esta línea.
+  No lleva la ruta ni la query (traen el `clienteId` o el `viajeId`), ni encabezados, ni el cuerpo, ni la causa: la causa ya la registra el `503` (RNF-14.8) y el `500` (RF-2.4.7). Sin `log` no escribe nada, así las pruebas que crean el cliente a mano no cambian. Si M2 no puede dar la credencial, la falla es de M2: en el primer intento no hubo llamada y no hay línea; en un reintento, la línea registra los intentos que salieron, como `warn`.
 
 ## Pruebas
 - Unitarias: conversión con y sin `driverId`, estado sin traducir, traducción de páginas (`page + 1`), `totalPaginas`, descarte de viajes ajenos, respuesta inválida.
@@ -95,7 +97,7 @@ aPaginaViajes(cuerpoM6, clienteId, page, size):
 - HTTP: `200`, `400` de `page`, `size` y `clienteId`, `401`, `403` (propietario, ajeno, CLIENTE+OPERADOR), `404` sin llamar a M6, `500`, `503` con `Retry-After`, problem+json.
 - Integración: perfil real en PostgreSQL con M6 simulado; el `503` de la base no lleva `Retry-After`; ningún token, identificador de viaje ni de conductor aparece en los logs.
 - Orden (RF-2.4.14), HTTP: el M6 simulado devuelve una página en un orden que no es el de `createdAt` ni el de los `id`, y M2 responde los `viajeId` en ese mismo orden.
-- Log (RNF-14.10), módulos: con un `log` de prueba, una llamada con `200`, una con `4xx`, una que sale bien al segundo intento (`intentos: 2`) y una que agota los intentos (`estado: null`, `warn`) dejan una sola línea cada una con correlación, módulo, método, código, intentos y duración; sin `log`, nada. HTTP: una consulta al historial deja la línea con el id de correlación de la solicitud, sin el `clienteId` ni identificadores de viajes.
+- Log (RNF-14.10), módulos: con un `log` de prueba, una llamada con `200`, una con `4xx`, una que sale bien al segundo intento (`intentos: 2`) y las que agotan los intentos (`warn`: con el código del `5xx` o del `200` que no es JSON, `estado: null` si el último fue un corte) dejan una sola línea cada una con correlación, módulo, método, código, intentos y duración; sin `log`, nada. HTTP: una consulta al historial deja la línea con el id de correlación de la solicitud, sin el `clienteId` ni identificadores de viajes.
 - Contrato: `listarHistorialViajes` deja de figurar pendiente. En la prueba de contrato no hay M6, así que el `503` de M6 se acepta para esta operación en `schemathesis.toml`, como los `422` de las otras.
 
 ## Trazabilidad

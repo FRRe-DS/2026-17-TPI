@@ -3,29 +3,37 @@
 ## Visión general
 
 El cliente (o un operador) consulta el historial resumido de viajes de un cliente. M2 no guarda viajes: en cada consulta le pide
-la página a M6 (`GET /trips`), la convierte y devuelve `viajeId`, `estado` y, si M6 lo informa, `conductorId`. Si M6 no contesta
-responde `503` con `Retry-After`, sin historial parcial.
+la página a M6 (`GET /trips`), la convierte y devuelve `viajeId`, `estado` y, si M6 lo informa, `conductorId`, más `calificado`, que no
+viene de M6 sino de las calificaciones de M2 (spec 008, RF-2.5.14). Los viajes salen en el orden en que los entrega M6, que es quien
+los ordena del más reciente al más antiguo (RF-2.4.14). Si M6 no contesta responde `503` con `Retry-After`, sin historial parcial.
 
 **Recorrido** (`GET /api/v1/clientes/{clienteId}/viajes?page=0&size=20`).
 1. `src/operaciones/index.ts` asocia `listarHistorialViajes`; `src/app.ts` crea `app.m6`. Ruta, parámetros y roles salen del OpenAPI.
 2. `src/auth/permisos.ts:registrarPermisos` da `401`/`403` por rol y el validador del contrato, `400`. Nada de esto llama a M6.
 3. `src/historial/operaciones.ts` pasa identidad, roles, parámetros y `request.id` a `servicio.ts:listarHistorialViajes`: propiedad (`403`), perfil (`404`) y M6.
 4. `src/historial/m6.ts:listarViajes` pide `/trips?clientId&page+1&pageSize` con `src/modulos/cliente.ts` (timeout, un reintento) y firma en cada intento `src/auth/tokens.ts:tokenDeServicio`; comprueba la forma de la respuesta.
-5. `src/historial/modelo.ts:aPaginaViajes` descarta viajes de otro cliente, traduce la paginación y arma la página.
+   Cada llamada deja una línea «llamada a M6» con el mismo id de correlación de la solicitud, los intentos y la duración (RNF-14.10, T11).
+5. `src/historial/modelo.ts:aPaginaViajes` descarta viajes de otro cliente, traduce la paginación y arma la página. Filtra y convierte con `filter` y `map`, sin ordenar: el orden es el de M6.
+6. `src/historial/servicio.ts` pregunta a la base de M2 cuáles de esos viajes calificó el cliente (una consulta por página, sin volver a llamar a M6, y ninguna si la página queda vacía) y `modelo.ts:conCalificado` agrega `calificado` a cada viaje. Si la base falla, `503` genérico y no un historial sin el campo.
 
 **Mapa.**
 | Archivo | Responsabilidad | Requisitos |
 |---|---|---|
 | `src/config.ts`, `ejemplo.env`, README | `M2_URL_M6` (obligatoria), `M2_AUDIENCIA_M6`, `M2_REINTENTAR_DESPUES_S` | RNF-06 |
-| `src/modulos/cliente.ts`, `src/auth/tokens.ts` | Credencial por intento, `Retry-After`; token de servicio de 60 s con rol `SERVICIO` | RF-2.4.6, RF-2.4.11, RNF-13, RNF-19 |
-| `src/historial/{modelo,m6,servicio,operaciones}.ts` | Conversión, pedido a M6, orden de comprobaciones y manejador | RF-2.4 a RF-2.4.10, RNF-03, RNF-05 |
+| `src/modulos/cliente.ts`, `src/auth/tokens.ts` | Credencial por intento, `Retry-After`, línea de log de cada llamada; token de servicio de 60 s con rol `SERVICIO` | RF-2.4.6, RF-2.4.11, RNF-13, RNF-14.10, RNF-19 |
+| `src/historial/{modelo,m6,servicio,operaciones}.ts` | Conversión (sin reordenar), pedido a M6, `calificado`, orden de comprobaciones y manejador | RF-2.4 a RF-2.4.10, RF-2.4.14, RNF-03, RNF-05 |
 | `schemathesis.toml` | Acepta el `503` de M6 solo en esta operación (la prueba de contrato no tiene M6) | RNF-07 |
 | `pruebas/**/historial*.test.ts`, `m6.test.ts`, `cliente.test.ts` | Unitarias, M6 simulado, HTTP e integración | RNF-07, RNF-14, RNF-19 |
 
 **Decisiones.** El token se firma en cada intento (ADR 009); se descartó la credencial fija por variable (T1 y T2; la quitó T8). Un `4xx`
 de M6 es un problema de integración nuestro (`500`, sin reintento); un `200` con otra forma es falta de disponibilidad (`503`). Detalle en `plan.md`.
 **Supuestos con M6 y el Grupo 1** (si cambian, se ajusta la configuración): audiencia `m6-viajes` por defecto y emisor `M2_EMISOR_TOKENS`; `GET /trips`
-paginado con `page` desde 1 y `pageSize` hasta 100, ordenado por `createdAt` descendente (Grupo 12, ADR 057; `contrato/dependencias/m6.yml`); el resumen solo trae `viajeId`, `estado` y `conductorId`, y el orden es el de M6; el `type` del `503` es `about:blank`.
+paginado con `page` desde 1 y `pageSize` hasta 100, ordenado por `createdAt` descendente (Grupo 12, ADR 057; `contrato/dependencias/m6.yml`); el resumen de M6 solo trae `viajeId`, `estado` y `conductorId` (`calificado` lo agrega M2); el `type` del `503` es `about:blank`.
+**Orden a cargo de M6** (cambio del 2026-11-08, RF-2.4.14). M6 pagina, así que reordenar en M2 solo ordenaría dentro de una página, y el resumen de M2 no trae la fecha. Por eso M2 devuelve cada página como la recibe y una prueba HTTP lo fija con una página que no está ordenada ni por `createdAt` ni por `id`. Si M6 dejara de ordenar, el historial saldría desordenado sin que M2 lo note.
+
+**Con el M6 real del Grupo 12** (spec 081, RNF-07.11). Todo lo anterior se probó con un M6 simulado que cumple su contrato. La spec 081 lo repite contra el M6 verdadero, construido desde su repositorio en un commit fijo: `npm run integracion:m6` (7 archivos, 35 pruebas; el historial es `pruebas/distribuida/historial.test.ts`) y, a mano, la sección 8 de `docs/probar-m2.md`. Corre en CI en el workflow `integracion-m6.yml` sobre `main` (verde el 2026-11-07). La tabla de diferencias entre el contrato supuesto y el M6 real está en `specs/081-integracion-m6-real/guia.md`.
+
+**Log de cada llamada a M6** (T11, RNF-14.10). Para seguir una solicitud entre M2 y M6: `docker compose logs m2 | grep 'llamada a M6'`. La línea lleva `idCorrelacion`, `modulo`, `metodo`, `estado` (el código con que respondió M6 en el último intento, también un 5xx, o `null` si no respondió: corte o red), `intentos` y `duracionMs`, y nunca la ruta, que trae el `clienteId`. El mismo `idCorrelacion` está en la línea «Solicitud terminada» de esa consulta y viaja a M6 en `X-Request-Id`.
 
 **Cómo probarlo uno mismo.** Ejemplos comprobados el 2026-10-25 contra el compose, con un M6 simulado en el host y datos ficticios:
 ```bash
@@ -65,6 +73,8 @@ npm test && npm run contrato:test
 3. ¿Por qué el token de servicio se firma en cada intento y no una vez al arrancar?
 4. ¿Qué `page` recibe M6 si el cliente pide `page=0`, y qué `totalPaginas` da M2 con 42 viajes y `size=20`?
 5. ¿Por qué `schemathesis.toml` acepta el `503` solo para esta operación?
+6. ¿Por qué M2 no reordena los viajes que recibe de M6, y qué pasaría si lo hiciera?
+7. ¿Qué dice la línea «llamada a M6» cuando la llamada sale bien al segundo intento, y qué campos no puede llevar?
 
 ## Tareas
 
@@ -143,4 +153,25 @@ npm test && npm run contrato:test
 - Por qué así: lo pidió la revisión independiente antes de la PR. Con `?page=1e21`, que el contrato admite, M6 recibía `page=1e+21` y M2 respondía `500` o `503` en vez del `200` vacío de RF-2.4.3. Con `M2_URL_M6=http://u:clave@m6/...`, el servicio arrancaba y cada pedido fallaba con un error de `fetch` que copia la URL con la clave, y ese error iba al log como causa del `503` (RNF-19). Un id que no es UUID haría que M2 respondiera fuera de su contrato. Una audiencia con espacios al borde haría que M6 rechazara todos los tokens.
 - Cómo se conecta: la página inalcanzable sigue el mismo criterio de tope que `listarDirecciones` y `listarBloqueos` (specs #5 y #4). El servicio no cambia: con `items` vacío no hay descarte que registrar.
 - Tests: `unitarias/historial.test.ts` (bordes de `paginaInalcanzable`), `modulos/m6.test.ts` (página inalcanzable: M6 recibe `page=1` y el resultado no trae viajes; ids y `driverId` que no son UUID dan `503`), `integracion/historial-http.test.ts` (`?page=1e21` responde `200` vacío con los totales de M6; el `500` por un `401` de M6 deja la causa con el id de correlación de la solicitud, que también llega a M6), `unitarias/config.test.ts` (URL con usuario o contraseña, sin repetir el valor en el error; audiencia con espacios al borde) y `unitarias/tokens.test.ts` (el vencimiento ahora prueba también la tolerancia de 30 s de M2). Antes del código fallaban 17; después, `npm test` da 2909 verdes.
-- Para mirar con atención: el `page` de la respuesta es el pedido, así que `?page=1e21` responde `"page":1e+21`, un número JSON válido. Quedan para un issue aparte: un `429` de M6 hoy da `500` (RF-2.4.7), y RNF-14 habla de registrar también las llamadas a M6 que salen bien.
+- Para mirar con atención: el `page` de la respuesta es el pedido, así que `?page=1e21` responde `"page":1e+21`, un número JSON válido. Quedan para un issue aparte: un `429` de M6 hoy da `500` (RF-2.4.7), y RNF-14 habla de registrar también las llamadas a M6 que salen bien (resuelto en T11, RNF-14.10).
+
+### T11 — Orden de M6 y línea de log de cada llamada · commit `007/T11`
+- Qué cambió: `src/modulos/cliente.ts:crearClienteModulo` recibe un `log` opcional y, en `ejecutar`, `registrarLlamada` escribe una sola línea «llamada a M6» al terminar cada llamada: `idCorrelacion`, `modulo`, `metodo`, `estado` (el código con que respondió M6, también un 4xx, o `null` si no respondió en ningún intento), `intentos` y `duracionMs` desde el primer intento. Va como `info` si M6 respondió y como `warn` si no. (Corregido en V2: un 5xx o un 200 sin JSON registran su código; `null` solo si el último intento no tuvo respuesta.) `src/historial/m6.ts:crearM6` recibe el logger y lo pasa; `src/app.ts:construirApp` le da `app.log`. El orden del historial no cambió en el código: `modelo.ts:aPaginaViajes` solo usa `filter` y `map`.
+- Por qué así: cambio de spec del 2026-11-08, tras la validación. RF-2.4.14 deja el orden del más reciente al más antiguo a cargo de M6, que pagina y declara `createdAt` descendente; reordenar en M2 solo ordenaría dentro de una página. RNF-14.10 pide la línea de cada llamada, también las que salen bien, para seguir una solicitud entre M2 y M6 con el mismo id. La línea va en el cliente de módulos porque ahí se saben los intentos y la duración total, y el logger se pasa al crearlo para no cambiar la firma de `obtener` y `enviar` (plan, Decisiones). Es una lista cerrada de campos: ni la ruta, que lleva el `clienteId` o el `viajeId`, ni encabezados, ni cuerpos, ni la causa, que ya registra el `503` (RNF-14.8, RNF-19).
+- Cómo se conecta: el campo de correlación es `CAMPO_ID_CORRELACION` de `src/logs.ts`, el mismo que pone `request.log` en la línea de la solicitud, así las dos se encuentran con el mismo valor. El id llega en cada llamada, como ya llegaba para el encabezado hacia M6 (RNF-14.7). Sirve igual para `obtenerViaje` de la spec 008: calificar también deja su línea.
+- Tests: `pruebas/modulos/cliente.test.ts` («la línea de log de cada llamada»): `200`, `4xx`, éxito al segundo intento (una línea, `intentos: 2`, la pausa en la duración), intentos agotados (`warn`, `estado: null`), `POST`, campos exactos y sin la ruta, la credencial ni el cuerpo; si la credencial falla, ninguna línea. `pruebas/integracion/historial-http.test.ts` («orden de M6 y línea de la llamada»): M2 devuelve los viajes en el orden de M6 (uno que no es el de `createdAt` ni el de los `id`), la línea lleva el id de correlación de la respuesta y ningún identificador, y con M6 caído va como `warn` con dos intentos.
+- Para mirar con atención: la prueba del orden pasó desde el principio, porque fija algo que el código ya hacía; las de log estuvieron en rojo (7). `pruebas/integracion/calificaciones-http.test.ts` buscaba las líneas de solicitud por `metodo === 'GET'` y empezó a encontrar también las de M6: ahora filtra además por el mensaje «Solicitud terminada». Un 5xx de M6 queda con `estado: null`, como un corte, porque para M2 es «no respondió»; el código del 5xx está en la causa del `503`. Si M2 no puede firmar el token, la llamada no sale y no hay línea. (Las dos cosas se corrigieron en V2: el 5xx registra su código, y una credencial que falla en el reintento deja la línea con el intento que salió.)
+
+### T12 — Guía al día · commit `007/T12`
+- Qué cambió: solo esta guía. La visión general suma `calificado` (spec 008), el orden a cargo de M6, la línea de log de cada llamada y la prueba contra el M6 real (spec 081). El recorrido gana el paso 6 (`calificado`) y una nota de la línea de log en el paso 4; el mapa cita RF-2.4.14 y RNF-14.10; las preguntas de comprobación suman dos.
+- Por qué así: la guía se había escrito en T7, antes de que existieran `calificado` y el M6 real, y la validación encontró que no los mencionaba (RNF-20). El orden y la línea de log vienen del cambio de spec del 2026-11-08.
+- Cómo se conecta: remite a `docs/probar-m2.md` (sección 8) y a la guía de la 081 en vez de repetir sus comandos y su tabla de diferencias.
+- Tests: ninguno nuevo, no hay código. `npm run contrato:test` con el servicio construido desde T11 (`docker compose up -d --build --wait`): 20/20 operaciones, 3596 casos sin fallas, 32 omitidos. `spec-check` con `--rama` en verde.
+- Para mirar con atención: los ejemplos de «Cómo probarlo uno mismo» siguen siendo los comprobados el 2026-10-25 con un M6 simulado en el host. No se volvieron a correr: desde entonces cada viaje trae también `calificado: false` (todavía nadie calificó) y el resto de lo que dicen los comentarios no cambió. Los dos avisos de `contrato:test` (12 operaciones con `404` repetidos por falta de datos y 1 con datos generados rechazados) vienen de antes y no son de esta spec.
+
+### V2 — Correcciones de la validación del cambio · commit `007/V`
+- Qué cambió: `src/modulos/cliente.ts`: el 5xx y el cuerpo que no es JSON se lanzan como `RespuestaInutil`, que lleva el código, y `ejecutar` guarda el del último intento. La línea «llamada a M6» de una llamada que agota los intentos va como `warn` con ese código (`502`, o el `200` sin JSON) y con `estado: null` solo si el último intento no tuvo respuesta (corte o red). Si la credencial falla en un reintento, la línea registra los intentos que ya salieron. `plan.md` (Integraciones y Pruebas) y el «Hecho cuando» de T11 en `tasks.md` dicen lo mismo.
+- Por qué así: la validación encontró que el plan contradecía la spec. RNF-14.10 pide «el código que respondió M6 (o que no respondió)», y con `null` para un 5xx el log no distinguía «M6 respondió 502» de «M6 no contestó». La spec manda sobre el plan, así que se corrigió el plan.
+- Cómo se conecta: nada cambia para quien llama. `ModuloNoDisponible` (503) y su causa en el log son los de antes; `RespuestaInutil` es un `Error` con el mismo mensaje.
+- Tests: `pruebas/modulos/cliente.test.ts` suma 5xx agotado con su código y la duración, `200` sin JSON, último intento cortado tras un 5xx (`null`), credencial que falla en el reintento y cliente sin `log`, y el `4xx` y el éxito al segundo intento comprueban también la correlación y el módulo. `pruebas/integracion/historial-http.test.ts`: con M6 en `500`, la línea lleva `estado: 500`.
+- Para mirar con atención: el código del log es el del último intento. Si el primer intento dio `502` y el segundo se cortó, queda `null`, porque eso es lo último que pasó. Un corte mientras llega el cuerpo también da `null`, aunque los encabezados ya hubieran traído un código: la respuesta no llegó entera. Un 4xx, o un 200 con una forma que M2 no acepta, va como `info` aunque M2 termine respondiendo `500` o `503`: M6 respondió, y la causa la registran el `500` o el `503`.
