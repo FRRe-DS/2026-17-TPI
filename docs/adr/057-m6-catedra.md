@@ -31,3 +31,6 @@ El contrato de M2 (`contrato/openapi.yml`) y `contrato/ORIGEN` no cambian.
 - Queda una pregunta para el Grupo 12: qué `iss` y `aud` valida M6 en el token de servicio (ADR 009). Hasta que respondan, M2 usa `iss: m1-identidad` y una audiencia configurable.
 - Redocly valida el archivo con cuatro avisos que vienen de la fuente (sin `license`, servidor `localhost` y sin `operationId`): no se inventan.
 - Si el PR #9 cambia antes del merge, se repite la extracción en otra rama `contrato/` con el commit nuevo.
+
+## Actualización 2026-11-08 (ADR 079)
+El PR #9 se mergeó el 2026-10-29 (`69e9481`) sin cambios en el archivo: la extracción sigue siendo copia fiel. El 2026-11-01 la cátedra recibió otra versión (`35b3c4d`, «Contrato confirmado por ambos grupos», Grupos 5 y 12) que cambia estados (`CANCELLED`), roles (`SYSTEM`), correlación (`X-Correlation-Id`) y errores. No se extrae en la rama del ADR 079: obliga a cambiar el M6 simulado y el cliente de M2, y el M6 real del Grupo 12 que se prueba (spec 081) todavía no la sigue. Va en un cambio aparte.

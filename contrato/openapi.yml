@@ -8,12 +8,16 @@ info:
     Contrato común de M2, acordado entre el Grupo 1 y el Grupo 17.
 
     Convenciones:
-    - Autenticación: `Authorization: Bearer <JWT>` emitido por M1. En los
-      tokens de CLIENTE el `sub` es el `clienteId`; en los de SERVICIO, el `sub`
-      nombra al módulo que consulta (no es un `clienteId`). Los roles salen del token (CLIENTE, OPERADOR,
-      SERVICIO) y cada operación declara los que admite en `security`, como
-      roles de OpenAPI 3.1 (`bearerAuth: [CLIENTE, OPERADOR]`). `GET /health`
-      no exige token.
+    - Autenticación: `Authorization: Bearer <JWT>` emitido por M1 (Keycloak,
+      realm `ds-2026-realm`). En los tokens de CLIENTE el `sub` es el
+      `clienteId`; en los de SERVICIO, el `sub` identifica la cuenta de servicio
+      del módulo que consulta (no es un `clienteId`). Cada operación declara en
+      un mismo renglón de `security` los roles que admite, como roles de
+      OpenAPI 3.1 (`bearerAuth: [CLIENTE, OPERADOR]`), y el scope que exige
+      (`OAuth2Bearer`): el token tiene que traer los dos. Los scopes son
+      `clientes:read` (lecturas), `clientes:write` (escrituras) y
+      `clientes.estado:read` (solo `obtenerEstadoCuenta`). `GET /health` no
+      exige token.
     - Un CLIENTE solo opera sobre su propio `clienteId`; si no coincide con su
       `sub`, recibe `403`. SERVICIO es el rol de los módulos que consultan a M2
       (por ejemplo M5 y M9) y solo está habilitado en `obtenerEstadoCuenta`.
@@ -23,7 +27,8 @@ info:
       M2 genera uno nuevo (nunca responde `400` por este encabezado).
     - Errores: `application/problem+json` (RFC 9457) con el esquema `Problema`.
       Los genéricos (`400`, `401`, `403`, `404`, `405`, `413`, `415`, `500`,
-      `503` de la base) usan `type: about:blank` y un `title` en español; los
+      `503` de la base o de la clave del token) usan `type: about:blank` y un
+      `title` en español; los
       de dominio (`409`, `422`, `503` de dependencia) tienen su propio `type`.
       Un método no definido para una ruta existente responde `405` con el
       encabezado `Allow`.
@@ -43,6 +48,9 @@ servers:
     description: Relativa al host donde se despliegue (en local, puerto 8082).
 security:
   - bearerAuth: []
+    OAuth2Bearer:
+      - clientes:read
+      - clientes:write
 tags:
   - name: Salud
     description: Disponibilidad del servicio.
@@ -98,6 +106,8 @@ paths:
         Un cliente tiene como máximo un perfil: si ya existe, `409`.
       security:
         - bearerAuth: [CLIENTE]
+          OAuth2Bearer:
+            - clientes:write
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -147,6 +157,8 @@ paths:
       summary: Consultar el perfil
       security:
         - bearerAuth: [CLIENTE, OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       responses:
         '200':
           description: Perfil del cliente.
@@ -176,6 +188,8 @@ paths:
       description: Actualiza solo los campos enviados.
       security:
         - bearerAuth: [CLIENTE]
+          OAuth2Bearer:
+            - clientes:write
       requestBody:
         required: true
         content:
@@ -219,6 +233,8 @@ paths:
       summary: Listar direcciones frecuentes
       security:
         - bearerAuth: [CLIENTE, OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       parameters:
         - name: tipo
           in: query
@@ -259,6 +275,8 @@ paths:
         coordenadas). No guarda identificadores internos de M4.
       security:
         - bearerAuth: [CLIENTE]
+          OAuth2Bearer:
+            - clientes:write
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -314,6 +332,8 @@ paths:
       summary: Consultar una dirección
       security:
         - bearerAuth: [CLIENTE, OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       responses:
         '200':
           description: Dirección.
@@ -342,6 +362,8 @@ paths:
       summary: Actualizar una dirección
       security:
         - bearerAuth: [CLIENTE]
+          OAuth2Bearer:
+            - clientes:write
       requestBody:
         required: true
         content:
@@ -380,6 +402,8 @@ paths:
       summary: Eliminar una dirección
       security:
         - bearerAuth: [CLIENTE]
+          OAuth2Bearer:
+            - clientes:write
       responses:
         '204':
           description: Dirección eliminada.
@@ -410,6 +434,8 @@ paths:
       description: Si el cliente nunca las guardó, devuelve los valores por defecto.
       security:
         - bearerAuth: [CLIENTE, OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       responses:
         '200':
           description: Preferencias del cliente.
@@ -439,6 +465,8 @@ paths:
       description: Reemplaza todas las preferencias. Es idempotente por naturaleza.
       security:
         - bearerAuth: [CLIENTE]
+          OAuth2Bearer:
+            - clientes:write
       requestBody:
         required: true
         content:
@@ -486,6 +514,8 @@ paths:
         `503`.
       security:
         - bearerAuth: [CLIENTE, OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
@@ -522,6 +552,8 @@ paths:
       summary: Listar las calificaciones que hizo el cliente
       security:
         - bearerAuth: [CLIENTE, OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
@@ -558,6 +590,8 @@ paths:
         base: un segundo intento con otra `Idempotency-Key` devuelve `409`.
       security:
         - bearerAuth: [CLIENTE]
+          OAuth2Bearer:
+            - clientes:write
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -615,6 +649,8 @@ paths:
       summary: Consultar una calificación
       security:
         - bearerAuth: [CLIENTE, OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       responses:
         '200':
           description: Calificación.
@@ -649,9 +685,13 @@ paths:
       description: |
         Lo consultan el cliente, el operador y los módulos que necesitan saber
         si el cliente está habilitado (por ejemplo M5 y M9) con un token de rol
-        SERVICIO emitido por M1. Es la única operación que admite SERVICIO.
+        SERVICIO emitido por M1. Es la única operación que admite SERVICIO, y
+        la única que pide `clientes.estado:read`: ese scope no da acceso a nada
+        más de M2.
       security:
         - bearerAuth: [CLIENTE, OPERADOR, SERVICIO]
+          OAuth2Bearer:
+            - clientes.estado:read
       responses:
         '200':
           description: Estado de cuenta.
@@ -685,6 +725,8 @@ paths:
       summary: Historial de bloqueos (vigentes y levantados)
       security:
         - bearerAuth: [OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       parameters:
         - name: vigente
           in: query
@@ -721,6 +763,8 @@ paths:
       summary: Bloquear administrativamente al cliente
       security:
         - bearerAuth: [OPERADOR]
+          OAuth2Bearer:
+            - clientes:write
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -776,6 +820,8 @@ paths:
       summary: Consultar un bloqueo
       security:
         - bearerAuth: [OPERADOR]
+          OAuth2Bearer:
+            - clientes:read
       responses:
         '200':
           description: Bloqueo.
@@ -807,6 +853,8 @@ paths:
         Levantar uno ya levantado devuelve `409`.
       security:
         - bearerAuth: [OPERADOR]
+          OAuth2Bearer:
+            - clientes:write
       requestBody:
         required: true
         content:
@@ -849,10 +897,32 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        Token emitido por M1. En los tokens de CLIENTE, `sub` = `clienteId`; en
-        los de SERVICIO, `sub` nombra al módulo que consulta. Los roles
-        (CLIENTE, OPERADOR, SERVICIO) van en el token y cada operación declara
-        en `security` los que admite.
+        Token emitido por M1 (Keycloak). En los tokens de CLIENTE, `sub` =
+        `clienteId`; en los de SERVICIO, `sub` identifica la cuenta de servicio
+        del módulo que consulta. Los roles (CLIENTE, OPERADOR, SERVICIO) van en
+        el token y cada operación declara en `security` los que admite, en el
+        mismo renglón que su scope de `OAuth2Bearer`.
+    OAuth2Bearer:
+      type: oauth2
+      description: |
+        Los scopes que exige cada operación, en el mismo renglón de `security`
+        que sus roles: el token tiene que traer los dos. Los módulos piden el
+        token con sus credenciales (`clientCredentials`); las personas, con
+        código de autorización y PKCE (`authorizationCode`).
+      flows:
+        clientCredentials:
+          tokenUrl: http://localhost:8080/realms/ds-2026-realm/protocol/openid-connect/token
+          scopes:
+            clientes:read: Lectura de clientes.
+            clientes:write: Escritura de clientes.
+            clientes.estado:read: Solo el estado de cuenta (obtenerEstadoCuenta).
+        authorizationCode:
+          authorizationUrl: http://localhost:8080/realms/ds-2026-realm/protocol/openid-connect/auth
+          tokenUrl: http://localhost:8080/realms/ds-2026-realm/protocol/openid-connect/token
+          scopes:
+            clientes:read: Lectura de clientes.
+            clientes:write: Escritura de clientes.
+            clientes.estado:read: Solo el estado de cuenta (obtenerEstadoCuenta).
 
   parameters:
     XRequestId:
@@ -953,7 +1023,9 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemaGenerico'
     SinPermiso:
-      description: El rol no permite la operación, o el cliente no es el dueño del recurso.
+      description: |
+        El rol no permite la operación, el token no trae el scope que la
+        operación exige, o el cliente no es el dueño del recurso.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -1011,7 +1083,9 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemaGenerico'
     ServicioNoDisponible:
-      description: La base de M2 no está disponible.
+      description: |
+        La base de M2 no está disponible, o M2 no puede obtener de M1 la clave
+        pública que firma el token.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -1046,8 +1120,9 @@ components:
     DependenciaNoDisponible:
       description: |
         Un módulo del que depende la operación (M6) no respondió a tiempo
-        (`type` propio). Si la que no está disponible es la base de M2, el
-        `503` es genérico (`type: about:blank`), como en `ServicioNoDisponible`.
+        (`type` propio). Si la que no está disponible es la base de M2, o M2 no
+        puede obtener la clave del token, el `503` es genérico
+        (`type: about:blank`), como en `ServicioNoDisponible`.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'

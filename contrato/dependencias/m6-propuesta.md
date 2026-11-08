@@ -1,6 +1,6 @@
 # M6 — consumo de M2 y preguntas pendientes
 
-Estado: contrato del Grupo 12 subido a la cátedra ([FRRe-DS/2026-TPI#9](https://github.com/FRRe-DS/2026-TPI/pull/9), commit `9e720a0`), adoptado por el grupo aunque el PR no está mergeado. ADR: [057](../../docs/adr/057-m6-catedra.md), que reemplaza al [002](../../docs/adr/002-dependencia-m6.md). Issue: #57.
+Estado: contrato del Grupo 12 subido a la cátedra ([FRRe-DS/2026-TPI#9](https://github.com/FRRe-DS/2026-TPI/pull/9), commit `9e720a0`), adoptado por el grupo antes del merge; el PR se mergeó sin cambios en el archivo el 2026-10-29 (`69e9481`). Hay una versión posterior en la cátedra (`35b3c4d`, 2026-11-01) que todavía no se extrajo: ver [ADR 079](../../docs/adr/079-scopes-catedra.md). ADR: [057](../../docs/adr/057-m6-catedra.md), que reemplaza al [002](../../docs/adr/002-dependencia-m6.md). Issue: #57.
 Alcance: RF-2.4, RF-2.5 y RNF-05.
 
 ## Qué consume M2

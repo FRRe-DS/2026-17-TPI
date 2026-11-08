@@ -314,7 +314,7 @@ TOKEN=$(curl -s $KC -d grant_type=password -d client_id=m2-desarrollo -d usernam
   -d password=cliente1-contrasena-de-desarrollo -d 'scope=clientes:read clientes:write' | campo)
 ```
 
-El token dura 300 s (5 minutos); pasado ese tiempo, M2 contesta `401` y se pide otro. Los scopes son opcionales: se piden los que se necesitan (`clientes:read`, `clientes:write` y, para el estado de cuenta, `clientes.estado:read`).
+El token dura 300 s (5 minutos); pasado ese tiempo, M2 contesta `401` y se pide otro. En Keycloak los scopes son opcionales: se piden en `scope` los que se necesitan (`clientes:read`, `clientes:write` y, para el estado de cuenta, `clientes.estado:read`). M2 exige en cada operación el que declara el contrato, en el mismo renglón que el rol (ADR 079): un token sin ese scope recibe `403`.
 
 ### Un token de servicio
 
