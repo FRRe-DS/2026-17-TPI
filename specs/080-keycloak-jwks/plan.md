@@ -35,6 +35,12 @@ security:
   - bearerAuth: [CLIENTE]
     keycloak: [clientes:read]
 ```
+Con lo acordado con el Grupo 1 (FRRe-DS/2026-01-TPI#7), `obtenerEstadoCuenta` pide `clientes.estado:read` y no `clientes:read`, también a CLIENTE y OPERADOR; las de bloqueos, `clientes:write` con OPERADOR, como cualquier escritura:
+```yaml
+security:
+  - bearerAuth: [CLIENTE, OPERADOR, SERVICIO]
+    keycloak: [clientes.estado:read]
+```
 
 ## Datos
 Sin tablas ni migraciones en M2. El `sub` sigue siendo el `clienteId` (spec 004): Keycloak usa UUID, que es lo que M2 ya exige. Keycloak guarda lo suyo en `keycloak-bd`, con su volumen `datos-keycloak-bd`, sin compartir nada con `bd` (RNF-05.6).
@@ -59,9 +65,10 @@ Tres detalles que se comprobaron y no son obvios:
 **Realm** (RNF-12.17, RNF-06.8). Copia del `ds-2026-realm` de la cátedra (commit `6dfdd40`), con el mismo nombre, los mismos clientes `grupo-NN` y sus mismos secretos. Ya son públicos en el repositorio de la cátedra, así que este repositorio no expone nada nuevo; si aparece un Keycloak compartido que los use, se cambian en nuestro realm. Le suma:
 - Roles de realm `CLIENTE`, `OPERADOR`, `SERVICIO` y `CONDUCTOR`, además de los `*-be`.
 - Client scope `m2-token`, sin aparecer en el `scope` del token, con dos mappers: roles de realm en el campo `roles` y audiencia `m2-clientes`, esta solo en el token de acceso (`access.token.claim: true`, `id.token.claim: false`). Así un ID token, firmado con la misma clave, no pasa en M2.
-- Client scopes `clientes:read` y `clientes:write`, que sí aparecen en el `scope` del token.
-- Los clientes de M5 y M9 de los dos consorcios (`grupo-04`, `grupo-13`, `grupo-08`, `grupo-09`) con rol `SERVICIO` y `clientes:read` por defecto. Se comprobó que pedir otro scope da `invalid_scope`.
-- Un cliente público `m2-desarrollo`, solo para pedir tokens de persona con usuario y contraseña, con `clientes:read` y `clientes:write` como opcionales. Se comprobó que, sin pedirlos, el token trae `scope: ""`: sirve para probar el `403` de scope.
+- Client scopes `clientes:read`, `clientes:write` y `clientes.estado:read`, que sí aparecen en el `scope` del token.
+- Los clientes de M5 y M9 de los dos consorcios (`grupo-04`, `grupo-13`, `grupo-08`, `grupo-09`) con rol `SERVICIO` y `clientes.estado:read` por defecto, y ningún otro scope de M2 ni por defecto ni opcional. Se comprobó que pedir otro scope da `invalid_scope`.
+- Un cliente público `m2-desarrollo`, solo para pedir tokens de persona con usuario y contraseña, con `clientes:read`, `clientes:write` y `clientes.estado:read` como opcionales. Se comprobó que, sin pedirlos, el token trae `scope: ""`: sirve para probar el `403` de scope.
+- Un cliente público `m2-front` para el frontend (RNF-12.20), que usará el inicio de sesión del #83: `publicClient: true`, solo `standardFlowEnabled` (sin `directAccessGrantsEnabled`, `implicitFlowEnabled` ni `serviceAccountsEnabled`), `pkce.code.challenge.method: S256`, retorno y orígenes solo en `http://localhost:8083` y `http://127.0.0.1:8083` (el panel, `PANEL_PUERTO`), `m2-token` por defecto y los tres scopes de M2 como opcionales. Comprobado el 2026-11-07 en la 26.8.2 con un realm mínimo: sin `code_challenge` vuelve `invalid_request` («Missing parameter: code_challenge_method»), con `plain` también («code challenge method is not matching»), una dirección de retorno ajena da `400`, usuario y contraseña directos y `client_credentials` dan `unauthorized_client`, y canjear el código sin `code_verifier` da `invalid_grant`. El flujo completo con `S256` da un token de acceso con `aud: m2-clientes`, el `sub` fijo del usuario, `roles: ["CLIENTE"]` y en `scope` solo lo pedido (más `openid`, que M2 ignora); el ID token tiene `aud: m2-front` y sin `roles`.
 - Usuarios `cliente1`, `cliente2`, `operador1` y `conductor1`, con `id` fijo y contraseña de desarrollo.
 
 El `sub` hay que mirarlo. Desde Keycloak 25 sale del scope `basic`: con el realm mínimo faltó hasta nombrarlo, pero el JSON de la cátedra, que no lo declara, emitió un token con `sub`. `basic` se agrega solo si T12 o T13 muestran que hace falta, y las dos comprueban el `sub` con un token real.
@@ -136,6 +143,8 @@ El token hacia M6 no cambia (`tokenDeServicio`, ADR 080).
 - **`ejemplo-keycloak.env` y no tres variables en la línea de comandos.** Se escribe mal menos veces, y evita el error más probable: un `M2_EMISOR_TOKENS` distinto del `KC_HOSTNAME`, que daría `401` en todos los tokens.
 - **La prueba real corre en un job de CI en cada PR, sin ser un check obligatorio**, como el job `panel`. Solo baja imágenes públicas, y la autenticación merece verse en cada cambio. Alternativa descartada: solo al mergear, como la spec 081, que lo hace así porque construye otro repositorio.
 - **Un `kid` inventado durante un corte puede llegar a Keycloak.** Se acepta para TP2 (Casos límite de la spec). Alternativa descartada: recordar el último fallo y no reintentar por un tiempo, que suma estado propio y demoraría la recuperación cuando Keycloak vuelve.
+- **`clientes.estado:read` en el mismo renglón que los tres roles de `obtenerEstadoCuenta`**, no en uno aparte para SERVICIO. M2 no lee dos renglones como alternativas (T8), y escribirlo así contradiría al contrato. El costo: los tokens de persona que lean el estado de cuenta piden también ese scope. No toca `src/`: la lectura de `security` y `exigirScope` ya sirven para cualquier nombre de scope.
+- **`m2-front` aparte de `m2-desarrollo`.** Las pruebas necesitan pedir tokens de persona sin navegador, y eso es usuario y contraseña directos; el frontend no debería aceptarlos. Alternativa descartada: un solo cliente con los dos flujos. Las direcciones de retorno apuntan al panel de hoy; si el #83 usa otra, las cambia ahí.
 - **La implementación se puede cerrar en dos PR.** T18 depende de #79, y #79 de una respuesta del Grupo 1. Si no llegó al terminar T17, el PR «Impl 080» lleva T1 a T17 con `Estado: aprobada`, y T18 va después en `impl/080-escenario-scope`; recién ahí la spec pasa a `implementada`. Alternativa descartada: frenar todo hasta #79, que dejaría la entrega de TP2 esperando a otro grupo.
 
 ## Pruebas
@@ -146,7 +155,8 @@ El token hacia M6 no cambia (`tokenDeServicio`, ADR 080).
   - `pruebas/http/autenticacion-jwks.test.ts`: `401`, `403` y `503` de punta a punta, con el contrato de prueba y `contratoCon` para los scopes.
   - `pruebas/integracion/arranque.test.ts`: arrancar con el JWKS caído o colgado, y detener sin esperar a la precarga.
 - **Modo `hs256` sin cambios** (RNF-12.15). Las pruebas que ya existen tienen que pasar como están, incluidas `pruebas/http/operaciones.test.ts`, que compara los permisos con `toEqual`, y `pruebas/http/autenticacion.test.ts`. Solo cambian las que enumeran variables, servicios y proyectos: `pruebas/unitarias/ejemplo-env.test.ts`, `pruebas/unitarias/consistencia.test.ts` (también el proyecto `keycloak`, como `navegador`, y los dos `.dockerignore`) y `CONFIG` en `pruebas/ayudas/app.ts`.
-- **Realm** (RNF-12.17). `pruebas/unitarias/realm.test.ts` lee el JSON y comprueba roles, scopes, clientes y usuarios, que la audiencia de `m2-token` no vaya al ID token, y que todo scope que declare el contrato exista en el realm: antes de #79 no hay ninguno, y después, un tipeo como `cleintes` da rojo.
+- **Realm** (RNF-12.17, RNF-12.20). `pruebas/unitarias/realm.test.ts` lee el JSON y comprueba roles, scopes, clientes y usuarios, que la audiencia de `m2-token` no vaya al ID token, que los clientes de M5 y M9 no tengan otro scope de M2 que `clientes.estado:read`, la configuración de `m2-front` (pública, solo código de autorización, `S256`, retorno solo local), y que todo scope que declare el contrato exista en el realm: antes de #79 no hay ninguno, y después, un tipeo como `cleintes` da rojo.
+- **Cliente del frontend con Keycloak real** (RNF-12.20). Dentro de `npm run keycloak:test`: el flujo de código con PKCE sin navegador (pedir la página de inicio de sesión, mandar el formulario con la cookie de sesión, leer el `code` de la redirección y canjearlo con el `code_verifier`), y los rechazos comprobados arriba. Con ese token, `cliente1` lee su perfil en M2 (`200`).
 - **Con Keycloak real** (RNF-07.13). `npm run keycloak:test` = `vitest run --project keycloak`, fuera de `npm test`. Su `globalSetup` corre compose con el proyecto `m2-keycloak` y puertos propios (`M2_PUERTO=18083`, `KEYCLOAK_PUERTO=18080`), para no pisar lo que la persona tenga levantado, y al terminar `down -v`. Los tokens se piden a Keycloak por HTTP, los de persona con `clientes:read clientes:write`, para que los escenarios sigan valiendo después de #79. Como duran 300 s, el de Keycloak caído se pide justo antes de detenerlo. Si Docker no está, termina en rojo con el motivo, sin saltarse.
 - **Contrato.** `npm run contrato:test` no cambia: corre en modo `hs256`.
 
@@ -174,6 +184,7 @@ El token hacia M6 no cambia (`tokenDeServicio`, ADR 080).
 | RNF-05.6 | Datos, `keycloak-bd` (T10) |
 | RNF-06.8 | Compose y Realm (T10, T11, T12, T13) |
 | RNF-12.17 | Realm (T12, T13) |
+| RNF-12.20 | Realm, `m2-front` (T19) |
 | RNF-07.12 | Pruebas sin Keycloak (T2 a T9) |
-| RNF-07.13 | Pruebas con Keycloak real (T14, T15, T16, T18) |
+| RNF-07.13 | Pruebas con Keycloak real (T14, T15, T16, T18, T19) |
 | RNF-20.5 | `docs/probar-m2.md` y ADR 080 (T17) |
