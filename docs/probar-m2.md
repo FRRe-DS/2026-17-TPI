@@ -119,7 +119,7 @@ Para entender una funcionalidad, el orden recomendado es: su `spec.md` (qué pid
 
 ## 5. Qué está simulado y qué no
 
-- **M1 (Identidad) no existe todavía.** Los tokens los firma el servicio con la clave, el emisor y la audiencia de `ejemplo.env`. Cuando exista M1, cambia quién firma, no el código que valida (ADR 009).
+- **En el modo `hs256` (el de estas secciones) no hay M1.** Los tokens los firma el servicio con la clave, el emisor y la audiencia de `ejemplo.env` (ADR 009). Con Keycloak haciendo de M1, M2 valida en modo `jwks`: sección 9 (ADR 080).
 - **M6 (Viajes) tiene dos formas de probarse.** Por defecto, M2 se prueba contra un M6 simulado que cumple `contrato/dependencias/m6.yml` (lo verifica `pruebas/unitarias/m6-simulado.test.ts`). Contra el M6 real del Grupo 12, M2 se probó con la prueba distribuida de la spec 081: sección 8. Lo que difiere entre el contrato supuesto y el M6 real está en `specs/081-integracion-m6-real/guia.md`. El servicio le pide a M6 con un token de servicio firmado en cada intento.
 - **M5 y M9** consultan el estado de cuenta con el rol `SERVICIO`. M2 no los llama, y en la demo ese rol lo hace un token propio.
 - **Los datos de ejemplo:** el servicio arranca con la base vacía. No hay datos cargados de antemano.
@@ -318,7 +318,7 @@ El token dura 300 s (5 minutos); pasado ese tiempo, M2 contesta `401` y se pide 
 
 ### Un token de servicio
 
-Los módulos que consultan el estado de cuenta (M5 y M9, y también los que la cátedra cargó con rol `SERVICIO`) entran con `client_credentials`. Los secretos están en el realm de desarrollo; acá se leen del archivo para no repetirlos. Por ejemplo, con `grupo-04`, que tiene el rol `SERVICIO` y el scope `clientes.estado:read`:
+Los módulos que consultan el estado de cuenta (M5 y M9, y también los que la cátedra cargó con rol `SERVICIO`) entran con `client_credentials`. Los secretos están en el realm de desarrollo; acá se leen del archivo para no repetirlos. Son los del realm de la cátedra, que ya son públicos, y solo sirven para este Keycloak de desarrollo (ADR 080). Por ejemplo, con `grupo-04`, que tiene el rol `SERVICIO` y el scope `clientes.estado:read`:
 
 ```bash
 SECRETO=$(node -pe 'JSON.parse(require("fs").readFileSync("keycloak/ds-2026-realm-realm.json","utf8")).clients.find(c=>c.clientId==="grupo-04").secret')
@@ -363,11 +363,11 @@ npm ci
 npm run keycloak:test
 ```
 
-Levanta todo por su cuenta en un proyecto de compose aparte (`m2-keycloak`, con M2 en el puerto 18083 y Keycloak en el 18080, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. Salida esperada: `Test Files  3 passed (3)` y `Tests  19 passed (19)`, en unos 90 s con las imágenes ya bajadas; la primera vez tarda más. Lo que prueba, por archivo (`pruebas/keycloak/`):
+Levanta todo por su cuenta en un proyecto de compose aparte (`m2-keycloak`, con M2 en el puerto 18083 y Keycloak en el 18080, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. Salida esperada: `Test Files  3 passed (3)` y `Tests  23 passed (23)`, en unos 90 s con las imágenes ya bajadas; la primera vez tarda más. Lo que prueba, por archivo (`pruebas/keycloak/`):
 
 | Archivo | Qué comprueba | Requisito |
 |---|---|---|
-| `operaciones.test.ts` | Un CLIENTE crea y lee su perfil y no el de otro (403); un OPERADOR registra un bloqueo; la cuenta de servicio de M5 lee el estado de cuenta y no el perfil; token alterado, HS256 o ID token (401) | RNF-07.13 |
+| `operaciones.test.ts` | Un CLIENTE crea y lee su perfil y no el de otro (403); un OPERADOR registra un bloqueo; la cuenta de servicio de M5 lee el estado de cuenta y no el perfil; el scope de cada operación (sin scopes, solo `clientes:read`, solo `clientes:write`, estado de cuenta con y sin `clientes.estado:read`: 403 o 200); token alterado, HS256 o ID token (401) | RNF-07.13, RNF-12.13 |
 | `pkce.test.ts` | El flujo de código con `S256` de `m2-front`, y los rechazos (sin `code_challenge`, `plain`, retorno ajeno, canje sin `code_verifier`, usuario y contraseña, `client_credentials`) | RNF-12.20 |
 | `caido.test.ts` | Keycloak detenido: con la clave ya guardada M2 atiende (200); reiniciado, arranca y da 503 con `Retry-After`; y al volver Keycloak da 200 sin reiniciar M2 | RNF-13.9 a RNF-13.13 |
 

@@ -1,6 +1,6 @@
 # Spec 080 — M2 valida tokens de Keycloak (JWKS y scope) y compose con Keycloak
 
-Estado: aprobada
+Estado: implementada
 Issue: #80
 Etapa: TP2
 Responsable: @sandobaitt

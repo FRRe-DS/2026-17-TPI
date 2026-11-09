@@ -55,6 +55,49 @@ describe('M2 con tokens de Keycloak real (RNF-07.13)', () => {
   });
 });
 
+// Con el contrato de #79 (ADR 079), cada operación pide su scope en el mismo renglón que el rol (T18). En `m2-desarrollo` los
+// tres scopes de M2 son opcionales: un token pedido sin `scope` no trae ninguno. El perfil de cliente1 ya existe (lo crea el
+// primer describe). Un 403 por scope habla del scope, no del rol (RNF-12.13).
+describe('M2 exige el scope de cada operación con tokens de Keycloak real (RNF-07.13, RNF-12.13, T18)', () => {
+  const perfil = `/api/v1/clientes/${cliente1.id}`;
+  const leer = (token: string) => pedirM2(token, 'GET', perfil);
+  const escribir = (token: string) => pedirM2(token, 'PATCH', perfil, { cuerpo: { nombre: DATOS.nombre } });
+  const esperar403DeScope = (respuesta: Awaited<ReturnType<typeof pedirM2>>) => {
+    expect(respuesta.estado, respuesta.texto).toBe(403);
+    expect(respuesta.encabezados.get('content-type')).toMatch(/^application\/problem\+json/);
+    expect((respuesta.cuerpo as { detail?: string }).detail).toMatch(/scope/);
+  };
+
+  it('sin scopes, cliente1 no lee su propio perfil: 403', async () => {
+    const token = await tokenDePersona('cliente1', []);
+    expect(String(claimsDe(token)['scope'] ?? '')).not.toMatch(/clientes/);
+    esperar403DeScope(await leer(token));
+  });
+
+  it('solo con clientes:write, escribe su perfil (200) y no lo lee (403)', async () => {
+    const token = await tokenDePersona('cliente1', ['clientes:write']);
+    const escritura = await escribir(token);
+    expect(escritura.estado, escritura.texto).toBe(200);
+    esperar403DeScope(await leer(token));
+  });
+
+  it('solo con clientes:read, lee su perfil (200) y no lo escribe (403)', async () => {
+    const token = await tokenDePersona('cliente1', ['clientes:read']);
+    const lectura = await leer(token);
+    expect(lectura.estado, lectura.texto).toBe(200);
+    esperar403DeScope(await escribir(token));
+  });
+
+  it('el estado de cuenta pide clientes.estado:read: con clientes:read solo, 403; con él, 200', async () => {
+    const estado = `/api/v1/clientes/${cliente1.id}/estado-cuenta`;
+    esperar403DeScope(await pedirM2(await tokenDePersona('cliente1', ['clientes:read']), 'GET', estado));
+
+    const conEstado = await pedirM2(await tokenDePersona('cliente1', ['clientes:read', 'clientes.estado:read']), 'GET', estado);
+    expect(conEstado.estado, conEstado.texto).toBe(200);
+    expect(conEstado.cuerpo).toMatchObject({ clienteId: cliente1.id });
+  });
+});
+
 describe('M2 rechaza lo que no es un token de acceso de Keycloak: 401 (RNF-07.13, RNF-12.11)', () => {
   const esperar401 = async (token: string, motivo: RegExp) => {
     const lectura = await pedirM2(token, 'GET', `/api/v1/clientes/${cliente1.id}`);

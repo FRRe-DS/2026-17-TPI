@@ -1,5 +1,58 @@
 # Guía — Spec 080 M2 valida tokens de Keycloak (JWKS y scope) y compose con Keycloak
 
+## Visión general
+
+M2 puede validar los tokens con la clave pública de Keycloak, que hace de M1, en lugar de una clave compartida: nadie que no sea
+Keycloak puede firmar un token que M2 acepte. Además del rol y de «un cliente solo ve lo suyo», en ese modo exige el scope que el
+contrato declara para cada operación. Keycloak se levanta con compose (perfil `keycloak`) con un realm de desarrollo propio. Sin
+configurar nada, M2 sigue en el modo de antes (`hs256`) y las pruebas, la demo y el panel no cambian.
+
+**Recorrido** (modo `jwks`, `GET /api/v1/clientes/{clienteId}` con `Authorization: Bearer <token de Keycloak>`).
+1. Al arrancar, `src/arranque.ts:precargarClaves` le pide a `app.verificador` las claves del JWKS (`M2_URL_JWKS`). Si Keycloak no
+   contesta, deja un aviso y arranca igual: las claves llegan con el primer token (RNF-13.9, RNF-13.12).
+2. `src/auth/permisos.ts:registrarPermisos` (hook `onRequest`) llama a `src/auth/tokens.ts:crearVerificador`, que comprueba la
+   firma RS256 con la clave del `kid` y los claims (`iss`, `aud`, `exp`, `sub`, `roles`); cualquier otro algoritmo da `401`
+   sin pedir claves (RNF-12.11, RNF-12.12). Un `kid` desconocido hace que `src/auth/claves-jwks.ts:crearClaves` vuelva a pedir el
+   JWKS, como mucho una vez cada 30 s (RNF-12.16, RNF-12.19); si no puede, `503` con `Retry-After` (RNF-13.10).
+3. `autorizar` mira el rol que la operación admite y `exigirScope` el scope: los dos salen del mismo renglón de `security` del
+   contrato, que `src/contrato/operaciones.ts:permisosDe` separa por tipo de esquema (`OAuth2Bearer` es `oauth2`: scopes). Sin el
+   scope, `403` con un `detail` que habla del scope (RNF-12.13). Después, la propiedad del recurso, como antes (RNF-12.14).
+4. La operación sigue igual que en el modo `hs256`.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisitos |
+|---|---|---|
+| `src/config.ts` | `M2_MODO_TOKENS` y `M2_URL_JWKS`; no arranca con un modo desconocido o sin URL en `jwks` | RNF-06.7, RNF-06.9 |
+| `src/auth/tokens.ts` | Verificador por modo: HS256 con la clave de desarrollo o RS256 con el JWKS; `scope` del token | RNF-12.11, RNF-12.12, RNF-12.15 |
+| `src/auth/claves-jwks.ts` | Pedir, guardar y renovar las claves; tiempo máximo, reintento y `503` | RNF-12.16, RNF-12.19, RNF-13.10 a RNF-13.13 |
+| `src/auth/permisos.ts`, `src/contrato/operaciones.ts` | Rol y scope de cada operación, leídos del contrato | RNF-12.13, RNF-12.14 |
+| `src/arranque.ts` | Precarga de las claves sin frenar el arranque | RNF-13.9, RNF-13.12 |
+| `keycloak/ds-2026-realm-realm.json` | Realm de desarrollo: roles, scopes, `m2-token`, usuarios, `m2-desarrollo`, `m2-front` (PKCE) | RNF-12.17, RNF-12.20, RNF-06.8 |
+| `docker-compose.yml`, `ejemplo-keycloak.env` | Perfil `keycloak` con su base; sin el perfil, lo mismo de antes | RNF-04.10, RNF-05.6 |
+| `pruebas/keycloak/` | Prueba con Keycloak real (`npm run keycloak:test`) | RNF-07.13 |
+
+**Decisiones clave** (ADR 080; plan, Decisiones). Rol y scope se exigen juntos, en el mismo renglón de `security` (ADR 079):
+con dos renglones, OpenAPI los lee como alternativas y un token sin rol abriría la operación. Un solo modo por vez: aceptar los
+dos dejaría abierta la clave compartida. Si Keycloak se cae, M2 sigue atendiendo con las claves que ya tiene; descartado no
+arrancar sin Keycloak, que tumbaría a M2 entero. `obtenerEstadoCuenta` pide `clientes.estado:read`, el único scope de M2 que
+tienen las cuentas de M5 y M9.
+
+**Nota sobre la spec.** «Contexto» y «Fuera de alcance» de `spec.md` dicen que el contrato todavía no declara scopes: eran
+ciertos al aprobarla. El contrato los declara desde el PR #95 (ADR 079), y la T18 lo comprueba.
+
+**Conceptos.** JWKS (las claves públicas de un emisor, cada una con su `kid`); RS256 frente a HS256 (firma asimétrica frente a
+clave compartida); scope de OAuth 2.0 (qué puede hacer el token) frente a rol (quién es); PKCE (`S256`), para que un frontend
+público pida tokens sin secreto.
+
+**Cómo probarlo uno mismo.** `npm run keycloak:test` levanta todo en un proyecto aparte y corre 23 pruebas (unos 90 s). A
+mano: `docs/probar-m2.md`, sección 9 (tokens de persona y de servicio con `curl` y la salida esperada).
+
+**Preguntas de comprobación.**
+1. ¿Por qué un token HS256 firmado con la clave de desarrollo da `401` en modo `jwks`, aunque traiga el emisor y la audiencia correctos?
+2. ¿Qué pasa con una solicitud si Keycloak está caído y M2 ya tiene la clave del token? ¿Y si nunca la bajó?
+3. ¿Por qué el scope va en el mismo renglón que el rol, y qué abriría ponerlo en otro?
+4. ¿Por qué la cuenta de M5 no puede leer el perfil de un cliente aunque pida `clientes:read`?
+
 ## Tareas
 
 ### T1 — Configuración del modo de tokens · commit `080/T1`
@@ -207,8 +260,8 @@
   - **La salida esperada de `npm run keycloak:test` (3 archivos, 19 pruebas, ~90 s) sale de la T19 y no se volvió a correr en esta tarea.** Si crece una prueba, hay que cambiar el número en la sección.
   - El token dura 300 s: quien tarde en copiar los comandos recibe `401` y tiene que pedir otro.
 
-#### Pendientes para la rama `contrato/079-…`
-Textos y reglas del contrato que quedaron desactualizados con la 080, anotados acá para no perderlos. La spec no puede cambiarlos (el contrato solo se toca en una rama `contrato/`):
+#### Pendientes para la rama `contrato/079-…` (resueltos en el PR #95, ADR 079)
+Textos y reglas del contrato que quedaron desactualizados con la 080, anotados acá para no perderlos. La spec no podía cambiarlos (el contrato solo se toca en una rama `contrato/`). Todos se resolvieron en el PR #95, y la T18 comprueba los renglones de `security`:
 - **Rol y scope en el mismo renglón de `security`** en las 19 operaciones (y `obtenerEstadoCuenta` con `clientes.estado:read`, no `clientes:read`), como dice el plan. Con dos renglones, M2 los pide a los dos y no a uno u otro, que es lo que OpenAPI dice de los renglones.
 - **`ServicioNoDisponible`** (`contrato/openapi.yml`, «La base de M2 no está disponible»): también es el `503` de M2 cuando Keycloak no entrega una clave que necesita (RNF-13.10).
 - **`SinPermiso`** («El rol no permite la operación, o el cliente no es el dueño del recurso»): suma «o el token no trae el scope que la operación exige».
@@ -217,3 +270,17 @@ Textos y reglas del contrato que quedaron desactualizados con la 080, anotados a
 - **`contrato/dependencias/m1.yml`**: dice que M2 valida con HS256 «mientras M1 no exista», que JWKS «no es necesario» y que «el algoritmo aceptado en TP1 es solo HS256». Con la 080, M2 acepta RS256 con JWKS en el modo `jwks` y el emisor ya no es `m1-identidad`: es el realm de Keycloak.
 - **`contrato/dependencias/README.md`**: la fila de M1 sigue diciendo «Propuesta borrador (ADR 009)» y «JWKS futuro»; el JWKS ya se consume.
 
+
+### T18 — Escenario de scope con Keycloak real · commit `080/T18`
+- Qué cambió: `pruebas/unitarias/scopes-contrato.test.ts` (nuevo) recorre las 19 operaciones con token del contrato real y comprueba que cada una tiene un solo renglón de `security`, con su rol en `bearerAuth` y su scope en `OAuth2Bearer`: `clientes:read` en las lecturas, `clientes.estado:read` en `obtenerEstadoCuenta`, `clientes:write` en las escrituras, también las de bloqueos (solo OPERADOR); que `verificarSalud` sigue pública y que `OAuth2Bearer` declara los tres scopes en cada flujo. `pruebas/keycloak/operaciones.test.ts` suma un `describe` con tokens reales de `cliente1`: sin scopes, `403` al leer su perfil; solo `clientes:write`, `200` al escribirlo (`PATCH`) y `403` al leerlo; solo `clientes:read`, al revés; y el estado de cuenta, `403` con `clientes:read` solo y `200` con `clientes.estado:read`. Cada `403` es `problem+json` y su `detail` habla del scope. `docs/probar-m2.md` (sección 9) dice 23 pruebas y suma el scope a la tabla.
+- Por qué así: RNF-12.13 y RNF-07.13. El contrato de #79 (ADR 079) declara los scopes, y M2 los exige en modo `jwks` sin cambiar `src/` (plan, Scopes y #79). La prueba del contrato fija que #79 escribió rol y scope en el mismo renglón: con dos renglones, OpenAPI los lee como alternativas.
+- Cómo se conecta: el `describe` nuevo va después del que crea el perfil de `cliente1`, en el mismo archivo, porque los archivos del proyecto `keycloak` comparten el entorno y corren de a uno. En `m2-desarrollo` los tres scopes son opcionales: sin `scope` en el pedido, el token no trae ninguno de M2. `M2_CONTRATO_SCOPES` deja correr la prueba del contrato contra otro archivo.
+- Tests: no hubo rojo propio, porque las dos pruebas fijan algo que ya hacían la T9 y #79. Para ver que detectan el error: la del contrato, contra el de la cátedra (`360caad`, dos renglones y `cleintes`), da 21 de 22 en rojo; los escenarios de Keycloak, con el contrato de antes de #79 (sin scopes), dan 4 de 23 en rojo, justo los nuevos. Con el contrato de `main`: `npm test` 143 archivos y 5478 pruebas, `npm run keycloak:test` 3 archivos y 23 pruebas, `npm run contrato:test` 20/20 operaciones y 3658 casos, lint y build en verde.
+- Para mirar con atención: los escenarios usan el perfil y el nombre de `cliente1`; el `PATCH` reescribe el mismo nombre, así que no cambia lo que comprueban los demás. Si el Grupo 1 pide cambiar los scopes antes del PR a la cátedra, esta prueba es la que va a avisar.
+
+### V — Correcciones de la validación · commit `080/V`
+- Qué cambió: solo textos. La lista «Pendientes para la rama `contrato/079-…`» de esta guía queda marcada como resuelta en el PR #95. El ADR 080 dice que `m1.yml`, el README de dependencias y los textos de `SinPermiso` y `ServicioNoDisponible` ya se actualizaron (#95), y suma una consecuencia sobre los secretos de los `grupo-NN` del realm. `docs/probar-m2.md` (§9) dice lo mismo en una línea. El comentario de `pruebas/http/autorizacion-scopes.test.ts` ya no dice que el contrato real no declara scopes. En `plan.md`, «Contrato», «Scopes y #79» y la prueba del realm pasan a tiempo pasado, y el ejemplo de `security` usa `OAuth2Bearer`, el nombre del esquema en el contrato.
+- Por qué así: la validación (revisión independiente) no encontró defectos funcionales, pero sí textos anteriores al #79 que contradecían al contrato (RNF-20). La justificación de los secretos del realm (RNF-06.8, RNF-19) estaba solo en el plan.
+- Cómo se conecta: `spec.md` todavía dice, en «Contexto» y en «Fuera de alcance», que el contrato no declara scopes. En una rama `impl/` la spec no se toca: lo aclara la Visión general.
+- Tests: no cambia código. Verificado a mano en la validación: `M2_MODO_TOKENS` inválido o `jwks` sin `M2_URL_JWKS` no arrancan (salida 1, nombra la variable sin repetir el valor); compose sin perfil levanta solo `bd` y `m2`; la tanda de la §9 contra Keycloak real con el contrato de #79 da lo esperado; `grupo-04` y `grupo-13` reciben `invalid_scope` si piden `clientes:read` o `clientes:write`; un token sin scope da `403` con el `detail` del scope; en modo `hs256`, `scripts/demo.mjs` pasa los 51 pasos y el panel responde.
+- Para mirar con atención: `scripts/demo.mjs` falla dos pasos de «M6 caído» si se corre con `--profile panel`, porque el `m6` de ese perfil sigue respondiendo cuando la demo apaga el suyo. La demo pide el compose normal y así pasa; no es de esta spec.
