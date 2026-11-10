@@ -133,7 +133,7 @@ describe('arrancarM6', () => {
     const control = `http://127.0.0.1:${env.M6_PUERTO_CONTROL}`;
     expect(await (await fetch(`${control}/control/estado`)).json()).toMatchObject({ modo: 'normal' });
     const token = await tokenDeServicio(configDe(env));
-    const api = await fetch(`http://127.0.0.1:${env.M6_PUERTO}/api/v1/trips/3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b`, { headers: { authorization: `Bearer ${token}` } });
+    const api = await fetch(`http://127.0.0.1:${env.M6_PUERTO}/trips/3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b`, { headers: { authorization: `Bearer ${token}` } });
     expect(api.status).toBe(404);
   });
 

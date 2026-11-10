@@ -4,7 +4,8 @@ import { CLIENTE_DEL_AJENO, CONDUCTOR_DE_EJEMPLO, derivarUuid, ID_AJENO, ID_INEX
 // Los viajes y el modo del M6 simulado, en memoria: se pierden al reiniciarlo y «Cargar ejemplo» los repone (plan, Datos). Los
 // ids se guardan en minúscula, porque un UUID no distingue mayúsculas.
 
-export type FiltroDeViajes = { clientId?: string | undefined; driverId?: string | undefined; state?: EstadoDeViaje | undefined };
+// `state` es una lista: el viaje tiene que estar en alguno de esos estados.
+export type FiltroDeViajes = { clientId?: string | undefined; driverId?: string | undefined; state?: readonly EstadoDeViaje[] | undefined };
 
 // normal: responde. lento: espera `M6_RETARDO_LENTO_MS` antes de responder. caido: no acepta conexiones.
 export const MODOS = ['normal', 'lento', 'caido'] as const;
@@ -21,14 +22,18 @@ export type Escenario = {
 const viajeDeEjemplo = (id: string, clientId: string, cambios: Partial<Viaje>): Viaje => ({
   id,
   requestId: derivarUuid(`${id}|solicitud`),
+  reservationId: null,
   clientId,
   driverId: CONDUCTOR_DE_EJEMPLO,
   vehicleId: derivarUuid(`${id}|vehiculo`),
+  vehicleType: 'CAR',
   originLatitude: -27.45,
   originLongitude: -58.98,
   destinationLatitude: -27.47,
   destinationLongitude: -58.83,
   state: 'COMPLETED',
+  // Creado, llegada, inicio y fin: cuatro versiones.
+  version: 4,
   distanceKm: 3.2,
   durationMinutes: 12,
   createdAt: '2026-10-01T10:00:00.000Z',
@@ -38,7 +43,7 @@ const viajeDeEjemplo = (id: string, clientId: string, cambios: Partial<Viaje>): 
 
 export function crearEstadoM6() {
   const viajes = new Map<string, Viaje>();
-  const igual = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
+  const igual = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   let modo: Modo = 'normal';
 
   const estado = {
@@ -56,7 +61,7 @@ export function crearEstadoM6() {
       return [...viajes.values()]
         .filter((viaje) => clientId === undefined || igual(viaje.clientId, clientId))
         .filter((viaje) => driverId === undefined || igual(viaje.driverId, driverId))
-        .filter((viaje) => state === undefined || viaje.state === state)
+        .filter((viaje) => state === undefined || state.includes(viaje.state))
         .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
     },
     // Un viaje completado y uno en curso del cliente, y el viaje ajeno de todos. Si ya estaban, los reemplaza por lo mismo.
@@ -67,6 +72,7 @@ export function crearEstadoM6() {
       estado.guardar(
         viajeDeEjemplo(ids.enCurso, cliente, {
           state: 'IN_PROGRESS',
+          version: 3,
           distanceKm: null,
           durationMinutes: null,
           createdAt: '2026-10-02T10:00:00.000Z',

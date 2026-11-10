@@ -1,30 +1,30 @@
 # M6 — consumo de M2 y preguntas pendientes
 
-Estado: contrato del Grupo 12 subido a la cátedra ([FRRe-DS/2026-TPI#9](https://github.com/FRRe-DS/2026-TPI/pull/9), commit `9e720a0`), adoptado por el grupo antes del merge; el PR se mergeó sin cambios en el archivo el 2026-10-29 (`69e9481`). Hay una versión posterior en la cátedra (`35b3c4d`, 2026-11-01) que todavía no se extrajo: ver [ADR 079](../../docs/adr/079-scopes-catedra.md). ADR: [057](../../docs/adr/057-m6-catedra.md), que reemplaza al [002](../../docs/adr/002-dependencia-m6.md). Issue: #57.
+Estado: contrato de M6 (Grupos 5 y 12) publicado en la cátedra, `contratos/m6_viajes/openapi.yml`, commit `35b3c4d` (2026-11-01, «Contrato confirmado por ambos grupos»). `m6.yml` es su extracción desde el 2026-11-10. ADR: [096](../../docs/adr/096-m6-35b3c4d.md), que actualiza al [057](../../docs/adr/057-m6-catedra.md); el 057 reemplazó al [002](../../docs/adr/002-dependencia-m6.md). Issue: #96.
 Alcance: RF-2.4, RF-2.5 y RNF-05.
 
 ## Qué consume M2
 
 | Consumo | Contrato (`m6.yml`) |
 |---|---|
-| Historial (RF-2.4, spec 007) | `GET /trips?clientId=…&page=…&pageSize=…`. `page` desde 1, `pageSize` de 1 a 100. Responde `TripSummaryPage { items, page, pageSize, total }`, ordenado por `createdAt` descendente. M2 traduce su `page` (desde 0) sumando 1. |
-| Verificar viaje (RF-2.5, spec 008) | `GET /trips/{id}`: `Trip` con `state`, `clientId` y `driverId`. `COMPLETED` es el estado que habilita calificar. |
-| Autorización | Bearer JWT. M6 acepta `roles` como lista, incluido `SERVICIO` (ADR 009). Un token de servicio tiene que mandar al menos un filtro (`400 FILTER_REQUIRED` sin filtro); M2 siempre manda `clientId`. |
-| Errores | `application/json` con `ErrorResponse { code, message, timestamp, correlationId }`. M2 no lee el cuerpo de un error de M6. |
+| Historial (RF-2.4, spec 007) | `GET /trips?clientId=…&page=…&pageSize=…` (`listTrips`). `page` desde 1, `pageSize` de 1 a 100. Responde `TripSummaryPage { items, page, pageSize, total }`, del más reciente al más antiguo. M2 traduce su `page` (desde 0) sumando 1. |
+| Verificar viaje (RF-2.5, spec 008) | `GET /trips/{tripId}` (`getTrip`): `Trip` con `state`, `clientId` y `driverId`, los tres obligatorios. M2 califica solo un viaje `COMPLETED`. |
+| Autorización | Bearer JWT con `exp`. El contrato nombra el rol `SYSTEM` para llamadas entre módulos. Un token `SYSTEM` tiene que mandar `clientId` o `driverId` (`400 VALIDATION` sin ninguno); M2 siempre manda `clientId`. M2 se presenta con `roles: ["SERVICIO"]`: el M6 del Grupo 12 lo acepta como alias de `SYSTEM` y lo documenta en su repositorio, todavía no en la cátedra. |
+| Errores | `application/problem+json` con `Problem { type, title, status, code, message, timestamp }` y un `code` de lista cerrada. M2 no lee el cuerpo de un error de M6. |
+| Correlación | `X-Correlation-Id`. M2 manda hoy `X-Request-Id` (`M2_ENCABEZADO_CORRELACION`); enviarlo va en el cambio de las specs 007 y 008. |
+| Límite de pedidos | 1200 por minuto para un servicio; `429` con `Retry-After` al superarlo. Qué responde M2 ante ese `429` va en el mismo cambio de specs. |
 
 ## Estado de las preguntas del ADR 002
 
-1. Contrato compartido, versión y URL: respondida. Es el de la cátedra, versión 1.0.0. La URL de desarrollo es `http://localhost:3006/api/v1`; M2 la configura con `M2_URL_M6`.
+1. Contrato compartido, versión y URL: respondida. Es el de la cátedra, versión 1.0.0. Las URL de desarrollo son `http://localhost:3006` (Grupo 12) y `http://localhost:3000` (Grupo 5), sin `/api/v1`; M2 la configura con `M2_URL_M6`.
 2. El filtro `clientId` devuelve solo viajes de ese cliente: respondida para el rol de servicio. M2 igual descarta un viaje de otro cliente (spec 007, RF-2.4.9).
-3. `COMPLETED` habilita calificar: respondida (descripción de `GET /trips/{id}`).
+3. `COMPLETED` habilita calificar: respondida. Es el estado final de un viaje terminado; la versión actual ya no nombra la calificación en `getTrip`, la regla es de M2 (RF-2.5).
 4. Paginación y orden: respondida. Sigue sin decir qué responde ante una página fuera del total; M2 lo trata como página vacía.
-5. Campos obligatorios: **abierta**. Ni `Trip` ni `TripSummary` declaran `required`. M2 exige `id` y `state` en texto; si faltan, responde `503` (spec 007, RF-2.4.10).
-6. Autorización entre módulos: respondida en parte (`roles: ["SERVICIO"]`). **Abierta**: qué `iss` y `aud` valida M6.
-7. Errores y correlación: respondida en parte (`ErrorResponse`, `400`, `401`, `403` y `404` en `GET /trips/{id}`). **Abierta**: qué encabezado de correlación lee M6; M2 manda `X-Request-Id`.
-8. Ejemplos acordados para pruebas: **abierta**.
+5. Campos obligatorios: respondida. `TripSummary` exige `id`, `state`, `vehicleType`, `clientId`, `driverId` y `createdAt`; `Trip` exige además `requestId`, `reservationId`, `vehicleId`, las coordenadas y `version`. M2 sigue exigiendo solo `id` y `state` en texto; si faltan, responde `503` (spec 007, RF-2.4.10).
+6. Autorización entre módulos: respondida en parte (rol `SYSTEM`; `SERVICIO` como alias en el M6 del Grupo 12). **Abierta**: qué `iss` y `aud` valida M6, preguntado en [FRRe-DS/2026-12-TPI#9](https://github.com/FRRe-DS/2026-12-TPI/issues/9).
+7. Errores y correlación: respondida. `Problem` en `application/problem+json`; `400`, `401`, `403` y `429` en `listTrips`; `304`, `401`, `404` y `429` en `getTrip`; encabezado `X-Correlation-Id`.
+8. Ejemplos acordados para pruebas: respondida en parte. `Trip` trae un ejemplo en el contrato, y la spec 081 prueba contra el M6 real del Grupo 12.
 
-## Mensaje preparado — no enviado
+## Mensajes al Grupo 12
 
-Para el Grupo 12 (copia al Grupo 5):
-
-> Desde el Grupo 17 (M2), gracias por subir el contrato de M6 a la cátedra (PR #9): ya lo adoptamos para el historial de viajes y la calificación. Nos quedan tres dudas. (1) Para el token de servicio de M2, ¿qué `iss` y qué `aud` valida M6? Según el acuerdo de M1 (ADR 009) proponemos `iss: m1-identidad`, `aud: m6-viajes`, `sub: m2-clientes` y `roles: ["SERVICIO"]`, firmado con HS256 y la clave compartida de desarrollo. (2) ¿Qué encabezado de correlación leen? Nosotros mandamos `X-Request-Id`. (3) ¿`id` y `state` vienen siempre en `TripSummary` y en `Trip`? Si nos pueden pasar un ejemplo real de `GET /trips?clientId=…` con y sin viajes, lo usamos en nuestras pruebas.
+El mensaje que estaba preparado acá no se envió y ya no hace falta: el encabezado de correlación y los campos obligatorios los responde el contrato, y la pregunta de `iss` y `aud` se hizo en su issue #9. Los alias de rol se pidieron en su issue #10, cerrado el 2026-11-08.

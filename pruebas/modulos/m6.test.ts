@@ -242,7 +242,7 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
   // RF-2.4.7: un 4xx es un problema de configuración o de acuerdo entre módulos, no del cliente de M2: 500, sin reintento.
   describe('M6 rechaza el pedido: error de integración (RF-2.4.7)', () => {
     it.each([400, 401, 403, 404, 409, 422])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', DEL_CUERPO) });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, DEL_CUERPO) });
 
       const error = await fallaDe(listar());
 
@@ -406,7 +406,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   // que el conductor: un viaje ajeno nunca revela su estado.
   describe('un viaje que no existe o es de otro cliente (RF-2.5.1)', () => {
     it('un 404 de M6 da null, sin reintento', async () => {
-      serv.responderCon({ tipo: '4xx', estado: 404, cuerpo: errorDeM6('NOT_FOUND', DEL_CUERPO) });
+      serv.responderCon({ tipo: '4xx', estado: 404, cuerpo: errorDeM6(404, DEL_CUERPO) });
 
       expect(await obtener()).toBeNull();
       expect(serv.llamadas).toBe(1);
@@ -491,7 +491,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   // RF-2.5.6: un 4xx distinto de 404 es un problema de configuración o de acuerdo entre módulos: 500, sin reintento.
   describe('M6 rechaza el pedido: error de integración (RF-2.5.6)', () => {
     it.each([400, 401, 403, 409, 422, 429])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', DEL_CUERPO) });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, DEL_CUERPO) });
 
       const error = await fallaDe(obtener());
 

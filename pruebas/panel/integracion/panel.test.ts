@@ -67,7 +67,7 @@ beforeAll(async () => {
     audienciaTokens: CONFIG_PANEL.audienciaTokens,
     campoRoles: CONFIG_PANEL.campoRoles,
     audienciaM6: CONFIG_M6.audienciaM6,
-    urlM6: `http://127.0.0.1:${puertoApi}/api/v1`,
+    urlM6: `http://127.0.0.1:${puertoApi}`,
     tiempoModulosMs: ESPERA_DE_M2_MS,
     reintentosModulos: 1,
     reintentarDespuesS: REINTENTAR_DESPUES_S,

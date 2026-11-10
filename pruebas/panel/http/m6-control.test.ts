@@ -78,7 +78,7 @@ const cargarEjemplo = (m6: Levantado, cliente = CLIENTE) => aControl(m6, `/contr
 
 const comoM2 = async (m6: Levantado) => ({ authorization: `Bearer ${await tokenDeServicio(m6.config)}` });
 const aApi = async (m6: Levantado, ruta: string) =>
-  fetch(`http://127.0.0.1:${m6.puerto}/api/v1${ruta}`, { headers: await comoM2(m6) });
+  fetch(`http://127.0.0.1:${m6.puerto}${ruta}`, { headers: await comoM2(m6) });
 
 describe('cargar el ejemplo de un cliente (RF-2.1.10, RF-2.1.11)', () => {
   it('registra un viaje completado y uno en curso del cliente, con ids derivados de su clienteId', async () => {
@@ -228,7 +228,7 @@ describe('modos', () => {
     const headers = await comoM2(m6);
     const pedir = async () => {
       const inicio = performance.now();
-      const respuesta = await fetch(`http://127.0.0.1:${m6.puerto}/api/v1/trips/${INEXISTENTE}`, { headers });
+      const respuesta = await fetch(`http://127.0.0.1:${m6.puerto}/trips/${INEXISTENTE}`, { headers });
       return { estado: respuesta.status, ms: performance.now() - inicio };
     };
 
@@ -250,7 +250,7 @@ describe('modos', () => {
     await ponerModo(m6, 'lento');
 
     const inicio = performance.now();
-    const respuesta = await fetch(`http://127.0.0.1:${m6.puerto}/api/v1/trips/${INEXISTENTE}`);
+    const respuesta = await fetch(`http://127.0.0.1:${m6.puerto}/trips/${INEXISTENTE}`);
 
     expect(respuesta.status).toBe(401);
     expect(performance.now() - inicio).toBeLessThan(RETARDO_MS / 2);
@@ -296,7 +296,7 @@ describe('modos', () => {
     const m6 = await levantar();
     const headers = await comoM2(m6);
     await ponerModo(m6, 'lento');
-    const pendiente = fetch(`http://127.0.0.1:${m6.puerto}/api/v1/trips/${INEXISTENTE}`, { headers }).then(
+    const pendiente = fetch(`http://127.0.0.1:${m6.puerto}/trips/${INEXISTENTE}`, { headers }).then(
       () => 'respondió',
       () => 'cortado',
     );

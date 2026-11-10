@@ -8,6 +8,7 @@ import { crearEstadoM6 } from '../../../panel/m6-simulado/estado.js';
 import { CLIENTE, CONDUCTOR, CONFIG_M6, crearM6, OTRO_CLIENTE, viaje } from '../ayudas/m6.js';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const OTRO_CONDUCTOR = '7a6b5c4d-3e2f-4a1b-8c9d-0e1f2a3b4c5d';
 
 const abiertas: ReturnType<typeof crearM6>['app'][] = [];
 function m6(viajes: Parameters<typeof crearM6>[0] = []) {
@@ -33,13 +34,13 @@ const aMano = (claims: Record<string, unknown> = {}, opciones: Parameters<typeof
 
 describe('token de servicio (RNF-13.7): el M6 simulado acepta lo que manda M2 y nada más', () => {
   it('acepta el token de servicio de M2', async () => {
-    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/api/v1/trips/${id(1)}`, headers: await comoM2() });
+    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/trips/${id(1)}`, headers: await comoM2() });
 
     expect(respuesta.statusCode).toBe(200);
   });
 
   it('acepta el token armado a mano con el formato del acuerdo', async () => {
-    expect((await m6([viaje(id(1))]).inject({ method: 'GET', url: `/api/v1/trips/${id(1)}`, headers: aMano() })).statusCode).toBe(200);
+    expect((await m6([viaje(id(1))]).inject({ method: 'GET', url: `/trips/${id(1)}`, headers: aMano() })).statusCode).toBe(200);
   });
 
   it.each([
@@ -60,43 +61,45 @@ describe('token de servicio (RNF-13.7): el M6 simulado acepta lo que manda M2 y 
     ['sin firma (alg none)', async () => aMano({}, { alg: 'none' })],
     ['con HS512', async () => aMano({}, { alg: 'HS512' })],
   ])('responde 401 %s', async (_caso, encabezados) => {
-    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/api/v1/trips/${id(1)}`, headers: await encabezados() });
+    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/trips/${id(1)}`, headers: await encabezados() });
 
     expect(respuesta.statusCode).toBe(401);
-    expect(respuesta.json()).toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(respuesta.json()).toMatchObject({ status: 401, code: 'UNAUTHENTICATED' });
   });
 
   it('un token de persona que firma el panel (rol CLIENTE, audiencia de M2) no sirve', async () => {
     const token = await firmarToken({ sub: CLIENTE, roles: ['CLIENTE'] }, CONFIG_M6);
 
-    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/api/v1/trips/${id(1)}`, headers: { authorization: `Bearer ${token}` } });
+    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/trips/${id(1)}`, headers: { authorization: `Bearer ${token}` } });
 
     expect(respuesta.statusCode).toBe(401);
   });
 
   it('el 401 va antes que todo: también en una ruta que no existe y en la lista', async () => {
     const app = m6();
-    expect((await app.inject({ method: 'GET', url: '/api/v1/otra' })).statusCode).toBe(401);
-    expect((await app.inject({ method: 'GET', url: `/api/v1/trips?clientId=${CLIENTE}` })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/otra' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: `/trips?clientId=${CLIENTE}` })).statusCode).toBe(401);
   });
 
   it('el 401 no repite el token', async () => {
-    const respuesta = await m6().inject({ method: 'GET', url: '/api/v1/trips', headers: aMano({ roles: ['CLIENTE'] }) });
+    const respuesta = await m6().inject({ method: 'GET', url: '/trips', headers: aMano({ roles: ['CLIENTE'] }) });
 
     expect(respuesta.body).not.toContain('eyJ');
   });
 });
 
-describe('GET /api/v1/trips (RF-2.4): filtra, ordena y pagina como el contrato', () => {
+describe('GET /trips (RF-2.4): filtra, ordena y pagina como el contrato', () => {
+  // El viaje 2 es de otro conductor, para que el filtro por `driverId` deje algo afuera.
   const VIAJES = [
     viaje(id(1), { createdAt: '2026-10-01T10:00:00.000Z' }),
-    viaje(id(2), { createdAt: '2026-10-03T10:00:00.000Z', state: 'IN_PROGRESS', driverId: undefined, distanceKm: null, durationMinutes: null }),
-    viaje(id(3), { createdAt: '2026-10-02T10:00:00.000Z', state: 'CANCELLED_BY_CLIENT' }),
+    viaje(id(2), { createdAt: '2026-10-03T10:00:00.000Z', state: 'IN_PROGRESS', version: 3, driverId: OTRO_CONDUCTOR, distanceKm: null, durationMinutes: null }),
+    viaje(id(3), { createdAt: '2026-10-02T10:00:00.000Z', state: 'CANCELLED', version: 2, distanceKm: null, durationMinutes: null }),
     viaje(id(4), { clientId: OTRO_CLIENTE, createdAt: '2026-10-04T10:00:00.000Z' }),
   ];
 
   const listar = async (query: string) => {
-    const respuesta = await m6(VIAJES).inject({ method: 'GET', url: `/api/v1/trips?${query}`, headers: await comoM2() });
+    const respuesta = await m6(VIAJES).inject({ method: 'GET', url: `/trips?${query}`, headers: await comoM2() });
     return { estado: respuesta.statusCode, cuerpo: respuesta.json<{ items: { id: string; state: string }[]; page: number; pageSize: number; total: number }>() };
   };
 
@@ -119,8 +122,11 @@ describe('GET /api/v1/trips (RF-2.4): filtra, ordena y pagina como el contrato',
     expect(cuerpo.total).toBe(1);
   });
 
-  it('filtra por state solo', async () => {
-    expect((await listar('state=COMPLETED')).cuerpo.items.map((v) => v.id)).toEqual([id(4), id(1)]);
+  it('filtra por varios estados separados por comas', async () => {
+    const { cuerpo } = await listar(`clientId=${CLIENTE}&state=COMPLETED,CANCELLED`);
+
+    expect(cuerpo.items.map((v) => v.id)).toEqual([id(3), id(1)]);
+    expect(cuerpo.total).toBe(2);
   });
 
   it('filtra por driverId', async () => {
@@ -142,23 +148,35 @@ describe('GET /api/v1/trips (RF-2.4): filtra, ordena y pagina como el contrato',
     expect(fuera.cuerpo).toMatchObject({ items: [], page: 3, total: 3 });
   });
 
-  it('el resumen no lleva coordenadas, y un viaje sin conductor no trae driverId', async () => {
+  it('el resumen no lleva coordenadas y trae lo que exige TripSummary', async () => {
     const { cuerpo } = await listar(`clientId=${CLIENTE}&state=IN_PROGRESS`);
 
-    expect(cuerpo.items[0]).toEqual({ id: id(2), state: 'IN_PROGRESS', clientId: CLIENTE, distanceKm: null, durationMinutes: null, createdAt: '2026-10-03T10:00:00.000Z' });
+    expect(cuerpo.items[0]).toEqual({
+      id: id(2),
+      state: 'IN_PROGRESS',
+      vehicleType: 'CAR',
+      clientId: CLIENTE,
+      driverId: OTRO_CONDUCTOR,
+      distanceKm: null,
+      durationMinutes: null,
+      createdAt: '2026-10-03T10:00:00.000Z',
+    });
   });
 
-  it('sin ningún filtro responde 400 FILTER_REQUIRED, como el M6 del Grupo 12 con rol SERVICIO', async () => {
-    const { estado, cuerpo } = await listar('page=1');
+  // El contrato le exige `clientId` o `driverId` a un token de servicio; `state` solo ya no alcanza (ADR 096).
+  it.each(['page=1', 'state=COMPLETED'])('sin clientId ni driverId (%s) responde 400 VALIDATION', async (query) => {
+    const { estado, cuerpo } = await listar(query);
 
     expect(estado).toBe(400);
-    expect(cuerpo).toMatchObject({ code: 'FILTER_REQUIRED' });
+    expect(cuerpo).toMatchObject({ status: 400, code: 'VALIDATION' });
   });
 
   it.each([
     'clientId=no-es-uuid',
     'driverId=123',
     'state=TERMINADO',
+    `clientId=${CLIENTE}&state=COMPLETED,TERMINADO`,
+    `clientId=${CLIENTE}&state=`,
     `clientId=${CLIENTE}&page=0`,
     `clientId=${CLIENTE}&page=1.5`,
     `clientId=${CLIENTE}&page=abc`,
@@ -168,7 +186,7 @@ describe('GET /api/v1/trips (RF-2.4): filtra, ordena y pagina como el contrato',
     const { estado, cuerpo } = await listar(query);
 
     expect(estado).toBe(400);
-    expect(cuerpo).toMatchObject({ code: 'BAD_REQUEST' });
+    expect(cuerpo).toMatchObject({ status: 400, code: 'VALIDATION' });
   });
 
   it('acepta pageSize 100', async () => {
@@ -176,30 +194,33 @@ describe('GET /api/v1/trips (RF-2.4): filtra, ordena y pagina como el contrato',
   });
 });
 
-describe('GET /api/v1/trips/{id} (RF-2.5)', () => {
+describe('GET /trips/{tripId} (RF-2.5)', () => {
   it('devuelve el viaje completo, de cualquier cliente: el rol SERVICIO puede verlos todos', async () => {
     const app = m6([viaje(id(1)), viaje(id(4), { clientId: OTRO_CLIENTE })]);
     const encabezados = await comoM2();
 
-    expect((await app.inject({ method: 'GET', url: `/api/v1/trips/${id(1)}`, headers: encabezados })).json()).toEqual(viaje(id(1)));
-    expect((await app.inject({ method: 'GET', url: `/api/v1/trips/${id(4)}`, headers: encabezados })).json()).toMatchObject({ clientId: OTRO_CLIENTE });
+    expect((await app.inject({ method: 'GET', url: `/trips/${id(1)}`, headers: encabezados })).json()).toEqual(viaje(id(1)));
+    expect((await app.inject({ method: 'GET', url: `/trips/${id(4)}`, headers: encabezados })).json()).toMatchObject({ clientId: OTRO_CLIENTE });
   });
 
   it('el id no distingue mayúsculas', async () => {
-    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/api/v1/trips/${id(1).toUpperCase()}`, headers: await comoM2() });
+    const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url: `/trips/${id(1).toUpperCase()}`, headers: await comoM2() });
 
     expect(respuesta.statusCode).toBe(200);
   });
 
   it.each([
-    ['un viaje que no existe', '/api/v1/trips/44444444-4444-4444-8444-444444444444'],
-    ['un id que no es UUID', '/api/v1/trips/no-es-uuid'],
-    ['una ruta que no existe', '/api/v1/viajes'],
-  ])('%s da 404 NOT_FOUND', async (_caso, url) => {
+    ['un viaje que no existe', '/trips/44444444-4444-4444-8444-444444444444', 'TRIP_NOT_FOUND'],
+    ['un id que no es UUID', '/trips/no-es-uuid', 'TRIP_NOT_FOUND'],
+    ['una ruta que no existe', '/viajes', 'ROUTE_NOT_FOUND'],
+    // El prefijo de la versión anterior del contrato ya no existe: ni el simulado ni el M6 real sirven en `/api/v1`.
+    ['la ruta con el prefijo /api/v1', `/api/v1/trips/${id(1)}`, 'ROUTE_NOT_FOUND'],
+  ])('%s da 404', async (_caso, url, code) => {
     const respuesta = await m6([viaje(id(1))]).inject({ method: 'GET', url, headers: await comoM2() });
 
     expect(respuesta.statusCode).toBe(404);
-    expect(respuesta.json()).toMatchObject({ code: 'NOT_FOUND' });
+    expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+    expect(respuesta.json()).toMatchObject({ status: 404, code });
   });
 });
 
@@ -212,12 +233,12 @@ describe('logs del M6 simulado', () => {
     abiertas.push(app);
     const encabezados = await comoM2();
 
-    await app.inject({ method: 'GET', url: `/api/v1/trips/${id(1)}`, headers: { ...encabezados, 'x-request-id': 'de-m2' } });
-    await app.inject({ method: 'GET', url: `/api/v1/trips?clientId=${CLIENTE}`, headers: encabezados });
+    await app.inject({ method: 'GET', url: `/trips/${id(1)}`, headers: { ...encabezados, 'x-request-id': 'de-m2' } });
+    await app.inject({ method: 'GET', url: `/trips?clientId=${CLIENTE}`, headers: encabezados });
 
     expect(logs.lineas().map((l) => [l['metodo'], l['ruta'], l['estado']])).toEqual([
-      ['GET', '/api/v1/trips/:id', 200],
-      ['GET', '/api/v1/trips', 200],
+      ['GET', '/trips/:tripId', 200],
+      ['GET', '/trips', 200],
     ]);
     expect(logs.lineas()[0]?.idCorrelacion).toBe('de-m2');
     expect(logs.texto()).not.toContain(encabezados.authorization.slice(7));

@@ -437,7 +437,7 @@ describe('calificaciones por HTTP (008/T8)', () => {
 
     it.each([400, 401, 403])('un %i de M6 no se reintenta y da 500 genérico, sin Retry-After ni datos de M6', async (estado) => {
       const clienteId = await cliente();
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', 'dato-de-m6') });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, 'dato-de-m6') });
 
       const respuesta = await crear().alta(clienteId, { viajeId: randomUUID(), puntaje: 5 });
 

@@ -146,7 +146,7 @@ export async function levantarPanelConM2(opciones: { directorioCliente?: string;
     campoRoles: CONFIG_PANEL.campoRoles,
     // M2 se presenta ante M6 como lo verifica el simulado (la audiencia de M6).
     audienciaM6: CONFIG_M6.audienciaM6,
-    urlM6: `http://127.0.0.1:${puertoApiM6}/api/v1`,
+    urlM6: `http://127.0.0.1:${puertoApiM6}`,
     tiempoModulosMs: ESPERA_DE_M2_MS,
     reintentosModulos: 1,
     reintentarDespuesS: REINTENTAR_DESPUES_S,
