@@ -1,6 +1,6 @@
 # Spec 071 — Front de M2: app de cliente y base del panel
 
-Estado: implementada
+Estado: aprobada
 Issue: #71
 Etapa: TP1
 Responsable: @sandobaitt
@@ -62,6 +62,7 @@ En esta spec «el sistema» es el panel; cuando se habla del servicio, se lo lla
 - RNF-12.9: CUANDO la persona abre el panel sin sesión, EL SISTEMA muestra una pantalla de inicio de sesión que funciona con la fuente simulada de RNF-02.2 (elegir rol e identificador, o «Entrar como cliente nuevo»), y CUANDO pulsa «Cerrar sesión», EL SISTEMA olvida el rol y el cliente actuales y vuelve a esa pantalla.
 - RNF-13.5: CUANDO la persona elige el escenario del M6 simulado (viaje completado, en curso, ajeno, inexistente) y su modo (normal, lento o caído), EL SISTEMA lo configura por el canal de control del M6 simulado, sin usar Docker, y muestra qué respuesta esperar de M2 (`201`, `422`, `404`, `404`, y `503` con `Retry-After` para lento y caído).
 - RNF-13.7: EL SISTEMA incluye un M6 simulado que cumple `contrato/dependencias/m6.yml`, alcanzable por M2 con el nombre y el puerto que ya espera (`m6:3006`) sin cambiar su configuración, y que responde según el escenario y el modo vigentes.
+- RNF-14.13: CUANDO el M6 simulado recibe de M2 un pedido con el encabezado `X-Correlation-Id`, que es el que declara el contrato de M6, EL SISTEMA usa ese valor como identificador de correlación en su log y en el `correlationId` de sus errores y lo devuelve en el `X-Correlation-Id` de la respuesta; SI el encabezado no viene o no tiene de 1 a 100 caracteres de letras, números, `.`, `_` y `-`, ENTONCES EL SISTEMA genera un identificador propio y es ese el que usa y devuelve.
 - RNF-14.9: CUANDO la persona abre «Detalle técnico», EL SISTEMA muestra los últimos 50 pedidos con método, ruta, código, duración y `X-Request-Id`, y permite copiar el `curl` equivalente con el token reemplazado por una variable; EL SISTEMA envía en cada pedido un `X-Request-Id` propio para que se lo encuentre en `docker compose logs m2`.
 - RNF-15: EL SISTEMA muestra en cada pantalla de cliente estados claros de espera, confirmación, rechazo, cancelación, error y recuperación.
 - RNF-15.1: EL SISTEMA se usa sin desplazamiento horizontal desde 360 hasta 1440 píxeles de ancho, con controles táctiles de al menos 44×44 píxeles.
@@ -74,7 +75,7 @@ En esta spec «el sistema» es el panel; cuando se habla del servicio, se lo lla
 
 ## Contrato y dependencias
 - Operaciones del contrato que consume (las 20, sin cambiarlas): `verificarSalud`, `crearCliente`, `obtenerCliente`, `actualizarCliente`, `listarDirecciones`, `crearDireccion`, `obtenerDireccion`, `actualizarDireccion`, `eliminarDireccion`, `obtenerPreferencias`, `guardarPreferencias`, `listarHistorialViajes`, `listarCalificaciones`, `calificarConductor`, `obtenerCalificacion`, `obtenerEstadoCuenta`, `listarBloqueos`, `crearBloqueo`, `obtenerBloqueo`, `levantarBloqueo`. El panel no agrega rutas a M2.
-- Operaciones de otros módulos: el panel no llama a M1 ni a M6. M2 llama a M6 (`GET /trips`, `GET /trips/{id}`), y para eso el panel trae un M6 simulado con un canal de control propio (RNF-13.5, RNF-13.7). Si el M6 simulado no está, M2 responde `503` con `Retry-After`, y el panel lo muestra (RF-2.4.13).
+- Operaciones de otros módulos: el panel no llama a M1 ni a M6. M2 llama a M6 (`GET /trips`, `GET /trips/{tripId}`), y para eso el panel trae un M6 simulado con un canal de control propio (RNF-13.5, RNF-13.7). Si el M6 simulado no está, M2 responde `503` con `Retry-After`, y el panel lo muestra (RF-2.4.13).
 - Depende de las specs 004 a 008 (implementadas), de `scripts/demo.mjs` y `docs/probar-m2.md` (#68) y del ADR 009 (tokens de desarrollo). El #72 depende de esta spec.
 - Cuando existan M1 y M6 reales, cambian el origen del token y la dirección de M6 (RNF-02.2); las pantallas quedan.
 
@@ -97,6 +98,7 @@ En esta spec «el sistema» es el panel; cuando se habla del servicio, se lo lla
 - Pantallas de otros módulos (pedir un viaje, mapa, pagos, conductores).
 - Cambios en `src/`, `contrato/` o `migraciones/`, incluidos CORS en M2 y una interfaz tipo Swagger dentro del servicio.
 - La vista de demostración, las altas simultáneas, la restricción de la base y apagar la base: son del issue #72.
+- Un modo «límite de pedidos» del M6 simulado (`429`): lo que M2 responde ante un `429` de M6 lo definen y lo prueban las specs #7 y #8, y en la pantalla se vería igual que el modo caído (`503` con `Retry-After`). Tampoco los filtros `from` y `to` ni el GET condicional de M6, que M2 no usa.
 - Revertir y reaplicar migraciones desde el panel (modifica el esquema; queda como comando manual en la guía).
 - Sembrar la base de antemano y borrarla desde el panel: los datos de ejemplo se cargan por la API (`docker compose down -v` sigue siendo manual).
 - Publicar el panel en la nube, HTTPS o usarlo en producción: es una herramienta de desarrollo y demostración.
@@ -110,6 +112,7 @@ En esta spec «el sistema» es el panel; cuando se habla del servicio, se lo lla
 - `docker compose up -d --build --wait` sigue funcionando sin cambios para quien no usa el panel, y `docker compose --profile panel up -d --build --wait` levanta además el panel y el M6 simulado.
 - `npm test`, `npm run lint`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` terminan en verde.
 - El README, `docs/probar-m2.md` y la guía explican cómo levantar el panel de cada forma.
+- Pruebas directas contra el M6 simulado comprueban que devuelve el `X-Correlation-Id` que recibe, que lo pone en el `correlationId` de un error y que sin un encabezado válido genera y devuelve uno propio; otra, con el cliente de M6 de M2, comprueba que el identificador con que M2 llama aparece en el log del simulado (RNF-14.13).
 
 ## Decisiones
 - Una sola app para la que usa el cliente y la que usa quien evalúa, por delegación de Lautaro del 2026-10-27, pensando en TP3. Alternativas descartadas: solo un panel de demostración, que no cumple RNF-15 y se tira; y dos aplicaciones separadas, que duplican pantallas y conexión con M2.
@@ -125,6 +128,11 @@ En esta spec «el sistema» es el panel; cuando se habla del servicio, se lo lla
 - Etapa TP1 aunque RNF-15 sea de TP3: el issue #71 lo pide y completarlo en TP3 es agregar pantallas, no rehacer. Soporte de plataformas igual al de `scripts/demo.mjs` (Linux, macOS, Windows con Docker).
 - El diseño visual lo delega Lautaro a quien implementa, con las skills de diseño instaladas; las decisiones de estilo van en el plan, no en esta spec.
 - Supuesto sobre M6: el M6 simulado cumple `contrato/dependencias/m6.yml`; si el Grupo 12 cambia algo, se ajusta el simulado y las pantallas del historial y de calificar quedan igual.
+- **Cambio del 2026-11-11 (#96, ADR 096): el M6 simulado sigue la versión `35b3c4d` del contrato de M6.** La rama `contrato/096-…` ya lo alineó en rutas (`/trips`, sin `/api/v1`), errores (`Problem` en `application/problem+json`), estados (`CANCELLED`) y campos. Faltaba la correlación, que se dejó para cuando M2 mandara `X-Correlation-Id` (RNF-14.11 de la spec #7). Decidido por delegación de @sandobaitt:
+  - El simulado toma la correlación solo de `X-Correlation-Id` (RNF-14.13), como el M6 real, y deja de leer `X-Request-Id`. Alternativa descartada: aceptar los dos, que escondería un M2 que no manda el encabezado del contrato.
+  - El canal de control del simulado y el panel siguen con `X-Request-Id` (RNF-14.9): son pedidos propios del panel, no del contrato de M6.
+  - El simulado sigue aceptando el rol `SERVICIO`, que es el que M2 manda (decisión de Lautaro del 2026-11-11, en la spec #7).
+  - No se agrega un modo de `429` (ver Fuera de alcance).
 
 ## Dudas abiertas
 Ninguna.

@@ -119,3 +119,8 @@ Orden de dependencia, en cinco tramos. Cada tarea es un commit `071/Tn: …`, co
 
 - [x] **T36. Documentación.** RNF-20.2
   - Hecho cuando: el `README.md`, `docs/probar-m2.md` y `ejemplo.env` explican cómo levantar el panel de las dos formas, qué hace cada vista y qué está simulado; `guia.md` tiene una entrada por tarea y su visión general explica React, Vite, los hooks y los dos puntos de conexión para quien nunca los usó; `node scripts/spec-check.mjs` termina en verde.
+
+T37 viene del cambio de 2026-11-11 (el M6 simulado sigue la versión `35b3c4d` del contrato de M6, #96 y ADR 096). Depende de T13 de la spec #7 en `main`. Sonnet.
+
+- [ ] **T37. Correlación del M6 simulado por `X-Correlation-Id`.** RNF-14.13, RNF-20.2
+  - Hecho cuando: pruebas HTTP del simulado comprueban que con `X-Correlation-Id` válido la respuesta lo devuelve en ese encabezado, la línea de log lo lleva y un error (`404`, `401`) lo trae en `correlationId`; que uno de 100 caracteres exactos se acepta; que sin el encabezado, con uno de 101 caracteres o con caracteres no válidos, y con solo `X-Request-Id`, el simulado genera un id propio y devuelve ese en `X-Correlation-Id`; la prueba del simulado con el cliente de M6 de M2 (`m6-con-m2.test.ts`) comprueba que el identificador con que M2 llama aparece en el log del simulado; `guia.md` documenta T37 y ya no dice que el simulado sirve en `/api/v1` ni que sus errores son `ErrorResponse`; `npm test`, las pruebas de navegador del panel y `spec-check` en verde.
