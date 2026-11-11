@@ -1,3 +1,4 @@
+import type { FastifyBaseLogger } from 'fastify';
 import { jwtVerify } from 'jose';
 import { inspect } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -341,6 +342,105 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
 
       expect(error).toBeInstanceOf(ErrorDeIntegracion);
       expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    // El Retry-After solo cuenta en un 429: en otro 4xx no cambia nada (007/T15).
+    it.each([400, 401, 403, 404])('un %i sigue dando error de integración aunque traiga Retry-After', async (estado) => {
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, DEL_CUERPO), encabezados: { 'Retry-After': '30' } });
+
+      const error = await fallaDe(listar());
+
+      expect(error).toBeInstanceOf(ErrorDeIntegracion);
+      expect(serv.llamadas).toBe(1);
+      expect(aProblema(error).encabezados).toEqual({ 'Content-Type': 'application/problem+json' });
+    });
+  });
+
+  // RF-2.4.15: el 429 es el límite de pedidos de M6, no un rechazo. M2 responde 503 con el Retry-After de M6 si vale (solo
+  // dígitos, de 1 a 3600) y si no, con el configurado, y no reintenta: otro pedido caería en la misma ventana del límite.
+  describe('M6 limita los pedidos: el 429 da 503 con Retry-After (RF-2.4.15; 007/T15)', () => {
+    const limite = (reintentarDespues?: string | string[]): Comportamiento => ({
+      tipo: '4xx',
+      estado: 429,
+      cuerpo: errorDeM6(429, DEL_CUERPO),
+      ...(reintentarDespues === undefined ? {} : { encabezados: { 'Retry-After': reintentarDespues } }),
+    });
+
+    it('con el Retry-After de M6: 503 que nombra a M6, con ese valor y un solo pedido', async () => {
+      serv.responderCon(limite('30'));
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(serv.llamadas).toBe(1);
+      const respuesta = aProblema(error, '/api/v1/clientes/x/viajes');
+      expect(respuesta.codigo).toBe(503);
+      expect(respuesta.cuerpo.detail).toBe('M6 no está disponible');
+      expect(respuesta.encabezados).toEqual({ 'Content-Type': 'application/problem+json', 'Retry-After': '30' });
+      // La causa va al log (RNF-14.8): el código de M6, nunca su cuerpo (RNF-19).
+      expect((error as Error).cause).toMatchObject({ message: 'M6 respondió 429' });
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    it.each([
+      ['el mínimo', '1', '1'],
+      ['el máximo', '3600', '3600'],
+      ['ceros a la izquierda', '030', '30'],
+    ])('vale %s (%s): Retry-After %s', async (_caso, deM6, esperado) => {
+      serv.responderCon(limite(deM6));
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe(esperado);
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it.each([
+      ['falta', undefined],
+      ['es 0', '0'],
+      ['pasa de 3600', '3601'],
+      ['es un número enorme', '99999999999999999999'],
+      ['trae una unidad', '30s'],
+      ['trae decimales', '1.5'],
+      ['es una fecha HTTP', 'Wed, 11 Nov 2026 20:00:00 GMT'],
+      ['viene repetido', ['30', '30']],
+    ])('si el Retry-After de M6 %s: 503 con el valor configurado y un solo pedido', async (_caso, deM6) => {
+      serv.responderCon(limite(deM6));
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('7');
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('también si el 429 no responde con JSON', async () => {
+      serv.responderCon({ tipo: 'no-json', estado: 429, contenido: DEL_CUERPO, encabezados: { 'Retry-After': '12' } });
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('12');
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    // El reintento es por el corte, no por el 429: con el 429 del segundo intento la llamada termina, aunque el tercero
+    // respondería bien.
+    it('un intento cortado seguido de un 429 da lo mismo, con dos pedidos y sin un tercero', async () => {
+      serv.responderCon([{ tipo: 'corta' }, limite('30'), ok(pagina([], 0))]);
+      const lineas: { nivel: string; campos: Record<string, unknown> }[] = [];
+      const anotar = (nivel: string) => (campos: Record<string, unknown>) => void lineas.push({ nivel, campos });
+      const log = { info: anotar('info'), warn: anotar('warn') } as unknown as FastifyBaseLogger;
+      const conLog = crearM6({ ...CONFIG, urlM6: serv.url, tiempoModulosMs: TIEMPO_MS, reintentosModulos: 1, reintentarDespuesS: 7 }, log);
+
+      const error = await fallaDe(conLog.listarViajes(CLIENTE, 0, 20, 'id-de-correlacion'));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('30');
+      expect(serv.llamadas).toBe(2);
+      // Un 429 es una respuesta de M6: la línea va como `info`, con su código (RNF-14.10).
+      expect(lineas).toEqual([{ nivel: 'info', campos: expect.objectContaining({ modulo: 'M6', estado: 429, intentos: 2 }) }]);
     });
   });
 });

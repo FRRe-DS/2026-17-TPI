@@ -6,11 +6,11 @@ import { tokenDeServicio } from '../auth/tokens.js';
 import type { Config, ConfigTokens } from '../config.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../errores.js';
 import { crearClienteModulo } from '../modulos/cliente.js';
-import { aPaginaDeM6, paginaInalcanzable, type PaginaM6, type ViajeM6 } from './modelo.js';
+import { aPaginaDeM6, paginaInalcanzable, segundosDeEspera, type PaginaM6, type ViajeM6 } from './modelo.js';
 
 export type M6 = {
-  // `page` es el de M2, desde 0. Devuelve la página de M6 ya comprobada; lanza `ModuloNoDisponible` (503) o
-  // `ErrorDeIntegracion` (500).
+  // `page` es el de M2, desde 0. Devuelve la página de M6 ya comprobada; lanza `ModuloNoDisponible` (503, también si M6
+  // limita los pedidos con un 429) o `ErrorDeIntegracion` (500).
   listarViajes(clienteId: string, page: number, size: number, idCorrelacion: string): Promise<PaginaM6>;
   // El viaje `viajeId` para que `clienteId` lo califique: `null` si M6 dice que no existe o es de otro cliente (RF-2.5.1).
   // Lanza `ModuloNoDisponible` (503) o `ErrorDeIntegracion` (500), como `listarViajes`.
@@ -72,6 +72,19 @@ const formaInesperada = (estado: number, reintentarDespuesS: number) =>
     reintentarDespuesS,
   });
 
+// El código con que M6 avisa que M2 pasó su límite de pedidos (contrato de M6, respuesta `TooManyRequests`).
+const LIMITE_DE_PEDIDOS = 429;
+
+// Un 429 no es un rechazo sino un límite: M6 no puede atender ahora y hay que volver a pedir después (RF-2.4.15). Es un 503
+// con los segundos que informa M6 en su `Retry-After` si valen y, si no, con los configurados. El cliente de módulos no
+// reintenta un 4xx, así que no hay otro pedido dentro de la misma ventana del límite. La causa lleva el código y nunca el
+// cuerpo (RNF-19).
+const limiteDePedidos = (reintentarDespues: string | undefined, reintentarDespuesS: number) =>
+  new ModuloNoDisponible(NOMBRE, {
+    cause: new Error(`${NOMBRE} respondió ${LIMITE_DE_PEDIDOS}`),
+    reintentarDespuesS: segundosDeEspera(reintentarDespues, reintentarDespuesS),
+  });
+
 // `log` es el de la app: cada llamada a M6 deja su línea con el id de correlación de la solicitud (RNF-14.10).
 export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
   const cliente = crearClienteModulo({
@@ -93,8 +106,9 @@ export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
       const pageM6 = inalcanzable ? 1 : aPaginaDeM6(page);
       const query = new URLSearchParams({ clientId: clienteId, page: String(pageM6), pageSize: String(size) });
       // Puede lanzar ModuloNoDisponible, tras el reintento (RF-2.4.6, RNF-13).
-      const { estado, cuerpo } = await cliente.obtener(`/trips?${query}`, idCorrelacion);
+      const { estado, cuerpo, reintentarDespues } = await cliente.obtener(`/trips?${query}`, idCorrelacion);
 
+      if (estado === LIMITE_DE_PEDIDOS) throw limiteDePedidos(reintentarDespues, config.reintentarDespuesS);
       // Las causas llevan el código y nunca el cuerpo, que puede traer datos de viajes (RNF-19).
       if (estado >= 400) throw new ErrorDeIntegracion({ cause: new Error(`${NOMBRE} respondió ${estado}`) });
       if (!esPagina(cuerpo, size)) throw formaInesperada(estado, config.reintentarDespuesS);

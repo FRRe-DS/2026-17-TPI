@@ -242,6 +242,39 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(serv.llamadas).toBe(1);
     });
 
+    // RF-2.4.15: el 429 de M6 es un límite, no un rechazo: M2 responde 503 con el Retry-After de M6 y no reintenta.
+    it('un 429 de M6 con Retry-After: 30 da 503 problem+json que nombra a M6, con Retry-After: 30 (007/T15)', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 429, cuerpo: errorDeM6(429, 'dato-de-m6'), encabezados: { 'Retry-After': '30' } });
+      const { pedir, logs } = crear({ reintentarDespuesS: 7 });
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(respuesta.headers['retry-after']).toBe('30');
+      expect(respuesta.json()).toMatchObject({ status: 503, detail: 'M6 no está disponible' });
+      expect(respuesta.body).not.toContain('dato-de-m6');
+      expect(serv.llamadas).toBe(1);
+      // La línea de la llamada lleva el código de M6 (RNF-14.10) y la causa del 503 queda en el log (RNF-14.8).
+      expect(logs.lineas().filter(({ msg }) => msg === 'llamada a M6')).toEqual([
+        expect.objectContaining({ level: 30, idCorrelacion: respuesta.headers['x-request-id'], estado: 429, intentos: 1 }),
+      ]);
+      expect(logs.texto()).toContain('M6 respondió 429');
+      expect(logs.texto()).not.toContain('dato-de-m6');
+    });
+
+    it('un 429 de M6 sin un Retry-After que valga da 503 con el valor configurado (007/T15)', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': 'Wed, 11 Nov 2026 20:00:00 GMT' } });
+
+      const respuesta = await crear({ reintentarDespuesS: 7 }).pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['retry-after']).toBe('7');
+      expect(serv.llamadas).toBe(1);
+    });
+
     // RF-2.4.7 y RNF-14: el 500 deja en el log la causa (el código de M6) con el id de correlación de la solicitud, que también
     // llegó a M6.
     it('el 500 por un 4xx de M6 se registra con su causa y el id de correlación, que también llegó a M6', async () => {
