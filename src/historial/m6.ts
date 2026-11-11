@@ -1,6 +1,6 @@
 // Los pedidos a M6 y la lectura de sus respuestas. Sigue el contrato que publicó el Grupo 12: `GET /trips` con `clientId`,
 // `page` desde 1 y `pageSize`, que responde `TripSummaryPage`, para el historial (plan 007, Lectura de la respuesta de M6), y
-// `GET /trips/{id}`, que responde `Trip`, para calificar al conductor (plan 008, Lectura del viaje de M6).
+// `GET /trips/{tripId}`, que responde `Trip`, para calificar al conductor (plan 008, Lectura del viaje de M6).
 import type { FastifyBaseLogger } from 'fastify';
 import { tokenDeServicio } from '../auth/tokens.js';
 import type { Config, ConfigTokens } from '../config.js';
@@ -36,7 +36,8 @@ const CORRELACION_DE_M6 = { encabezado: 'X-Correlation-Id', largoMaximo: 100 };
 const esObjeto = (valor: unknown): valor is Record<string, unknown> =>
   typeof valor === 'object' && valor !== null && !Array.isArray(valor);
 
-// Un texto, o nada: M6 no declara campos obligatorios en `TripSummary`, y un viaje sin conductor puede traerlo nulo.
+// Un texto, o nada. El contrato de M6 exige `clientId` y `driverId` en `TripSummary`, pero M2 no rechaza la página si faltan o
+// vienen nulos: un viaje sin `clientId` se descarta y uno sin `driverId` va sin conductor (spec 007, Casos límite).
 const textoOpcional = (valor: unknown) => valor === undefined || valor === null || typeof valor === 'string';
 
 // `viajeId` y `conductorId` son `format: uuid` en el contrato de M2: un id que no lo es haría que M2 respondiera fuera de su
@@ -45,8 +46,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const esUuid = (valor: unknown): valor is string => typeof valor === 'string' && UUID.test(valor);
 
 // Un viaje tiene que traer `id` (un UUID) y `state` en texto; `clientId`, si viene, en texto, y `driverId`, si viene, un UUID
-// (vacío cuenta como sin conductor, como en `aViajeResumen`). Un viaje sin `clientId` no se puede dar por propio:
-// `aPaginaViajes` lo descarta (RF-2.4.9).
+// (vacío cuenta como sin conductor, como en `aViajeResumen`). Un viaje sin `driverId` está fuera del contrato de M6 y se acepta
+// igual; uno sin `clientId` no se puede dar por propio: `aPaginaViajes` lo descarta (RF-2.4.9).
 const esViaje = (valor: unknown): valor is ViajeM6 =>
   esObjeto(valor) &&
   esUuid(valor.id) &&

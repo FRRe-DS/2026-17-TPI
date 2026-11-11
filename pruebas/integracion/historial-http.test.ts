@@ -72,9 +72,10 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
   describe('200 (RF-2.4, RF-2.4.1, RF-2.4.2)', () => {
     it('un CLIENTE ve su historial: página convertida, X-Request-Id y los valores por defecto de page y size', async () => {
       const id = await perfil();
+      // El segundo viaje no trae `driverId`: está fuera del contrato de M6, que lo exige, y M2 lo incluye igual, sin conductor.
       serv.responderCon({
         tipo: 'ok',
-        cuerpo: pagina([viaje(1, id), viaje(2, id, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' })], 42),
+        cuerpo: pagina([viaje(1, id), viaje(2, id, { driverId: undefined, state: 'CANCELLED' })], 42),
       });
       const { pedir } = crear();
 
@@ -90,7 +91,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
         totalPaginas: 3,
         items: [
           { viajeId: viaje(1, id).id, estado: 'COMPLETED', conductorId: CONDUCTOR, calificado: false },
-          { viajeId: viaje(2, id).id, estado: 'CANCELLED_BY_CLIENT', calificado: false },
+          { viajeId: viaje(2, id).id, estado: 'CANCELLED', calificado: false },
         ],
       });
       expect(consultaDeM6()).toEqual({ clientId: id, page: '1', pageSize: '20' });

@@ -28,10 +28,11 @@ describe('aViajeResumen (007/T3, RF-2.4.1)', () => {
     expect(resumen).toEqual({ viajeId: viaje(1).id, estado: 'COMPLETED', conductorId: CONDUCTOR });
   });
 
-  it('sin driverId, el viaje se incluye sin conductorId (la clave no está)', () => {
-    const resumen = aViajeResumen(viaje(2, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' }));
+  // El contrato de M6 exige `driverId` en todo viaje: uno que no lo trae está fuera de contrato, y M2 lo incluye igual.
+  it('sin driverId, que está fuera del contrato de M6, el viaje se incluye sin conductorId (la clave no está)', () => {
+    const resumen = aViajeResumen(viaje(2, { driverId: undefined, state: 'CANCELLED' }));
 
-    expect(resumen).toEqual({ viajeId: viaje(2).id, estado: 'CANCELLED_BY_CLIENT' });
+    expect(resumen).toEqual({ viajeId: viaje(2).id, estado: 'CANCELLED' });
     expect(Object.keys(resumen)).not.toContain('conductorId');
   });
 

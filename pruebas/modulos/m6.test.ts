@@ -45,9 +45,9 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
     it('suma /trips a la URL base de M6, que puede traer un camino', async () => {
       serv.responderCon(ok(pagina([], 0)));
 
-      await m6({ urlM6: `${serv.url}/api/v1` }).listarViajes(CLIENTE, 0, 20, 'id');
+      await m6({ urlM6: `${serv.url}/pasarela/m6` }).listarViajes(CLIENTE, 0, 20, 'id');
 
-      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe('/api/v1/trips');
+      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe('/pasarela/m6/trips');
     });
   });
 
@@ -196,7 +196,8 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
 
   describe('un 200 con la forma esperada (RF-2.4, RF-2.4.3)', () => {
     it('devuelve los viajes y el total, en el orden de M6', async () => {
-      const items = [viaje(1), viaje(2, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' })];
+      // El segundo viaje no trae `driverId`: está fuera del contrato de M6, que lo exige, y M2 lo acepta igual.
+      const items = [viaje(1), viaje(2, { driverId: undefined, state: 'CANCELLED' })];
       serv.responderCon(ok(pagina(items, 42)));
 
       const resultado = await listar();
@@ -220,7 +221,7 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
       expect((await listar(0, 2)).items).toHaveLength(2);
     });
 
-    it('un driverId nulo es un viaje sin conductor, no una respuesta inválida', async () => {
+    it('un driverId nulo está fuera del contrato de M6, pero es un viaje sin conductor y no una respuesta inválida', async () => {
       serv.responderCon(ok(pagina([viaje(1, { driverId: null })], 1)));
 
       expect((await listar()).items).toHaveLength(1);

@@ -4,7 +4,8 @@ export type ViajeResumen = components['schemas']['ViajeResumen'];
 export type PaginaViajes = components['schemas']['PaginaViajes'];
 
 // Lo que M2 usa de un viaje de M6 (`TripSummary`): el resto de sus campos no se lee ni se devuelve (spec 007, Decisiones).
-// M6 no declara campos obligatorios: `clientId` y `driverId` pueden faltar o venir nulos.
+// El contrato de M6 exige `clientId` y `driverId` en todo viaje, pero M2 los acepta ausentes o nulos: no depende de que M6
+// cumpla para armar el historial (spec 007, Casos límite).
 export type ViajeM6 = {
   id: string;
   state: string;
@@ -40,8 +41,8 @@ export function segundosDeEspera(texto: string | undefined, porDefecto: number):
   return segundos >= ESPERA_MINIMA_S && segundos <= ESPERA_MAXIMA_S ? segundos : porDefecto;
 }
 
-// El estado va tal como lo informa M6 (RF-2.4.1). Sin `driverId` (por ejemplo, un viaje cancelado antes de asignar conductor),
-// el viaje va sin `conductorId`.
+// El estado va tal como lo informa M6 (RF-2.4.1). Un viaje sin `driverId` está fuera del contrato de M6, que lo exige en todo
+// viaje; M2 lo incluye igual, sin `conductorId`: no inventa datos y el cliente no se queda sin historial (spec 007, Decisiones).
 export function aViajeResumen(viaje: ViajeM6): ViajeResumen {
   return {
     viajeId: viaje.id,

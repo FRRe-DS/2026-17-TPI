@@ -20,7 +20,7 @@ export const CONFIG: Config = {
   tiempoModulosMs: 2000,
   reintentosModulos: 1,
   encabezadoCorrelacion: 'X-Request-Id',
-  urlM6: 'http://m6:3006/api/v1',
+  urlM6: 'http://m6:3006',
   audienciaM6: 'm6-viajes',
   reintentarDespuesS: 5,
   modoTokens: 'hs256',

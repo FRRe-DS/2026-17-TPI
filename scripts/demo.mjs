@@ -49,12 +49,13 @@ async function token(sub, roles) {
   return stdout.trim();
 }
 
-// Un M6 que responde según el viaje: `GET /trips/{id}` (el viaje a calificar) y `GET /trips` (el historial del cliente).
+// Un M6 que responde según el viaje: `GET /trips/{tripId}` (el viaje a calificar) y `GET /trips` (el historial del cliente).
+// Sigue `contrato/dependencias/m6.yml`: los viajes traen los campos que M2 lee y el error es un `Problem`.
 const CODIGO_M6 = `
 const cliente = process.env.CLIENTE;
 const viaje = (id, state, clientId = cliente) => ({ id, state, clientId, driverId: '${CONDUCTOR}', createdAt: '2026-10-01T10:00:00Z' });
-const error = (code, message) => ({ code, message, timestamp: new Date().toISOString() });
-const responder = (res, estado, cuerpo) => { res.statusCode = estado; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(cuerpo)); };
+const error = (status, code, title, message) => ({ type: 'https://movilidad.example/errors/' + code.toLowerCase().replaceAll('_', '-'), title, status, code, detail: message, message, timestamp: new Date().toISOString() });
+const responder = (res, estado, cuerpo) => { res.statusCode = estado; res.setHeader('content-type', estado >= 400 ? 'application/problem+json' : 'application/json'); res.end(JSON.stringify(cuerpo)); };
 require('http').createServer((req, res) => {
   const ruta = req.url.split('?')[0];
   if (ruta.endsWith('/trips')) {
@@ -63,7 +64,7 @@ require('http').createServer((req, res) => {
   const id = ruta.split('/').pop();
   if (id.startsWith('22222222')) return responder(res, 200, viaje(id, 'IN_PROGRESS'));
   if (id.startsWith('33333333')) return responder(res, 200, viaje(id, 'COMPLETED', '99999999-9999-4999-8999-999999999999'));
-  if (id.startsWith('44444444')) return responder(res, 404, error('NOT_FOUND', 'Viaje no encontrado'));
+  if (id.startsWith('44444444')) return responder(res, 404, error(404, 'NOT_FOUND', 'No encontrado', 'Viaje no encontrado'));
   return responder(res, 200, viaje(id, 'COMPLETED'));
 }).listen(3006);`;
 
