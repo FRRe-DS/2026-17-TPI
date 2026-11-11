@@ -144,8 +144,10 @@ fijos para todos los clientes: AJENO 33333333-3333-4333-8333-333333333333 (de ot
                                INEXISTENTE 44444444-4444-4444-8444-444444444444 (nunca se guarda)
 cargarEjemplo(clienteId): guarda el completado y el en curso (si ya están, los reemplaza por lo mismo)
 escenarios(clienteId): [completado→201, enCurso→422, ajeno→404, inexistente→404], con el id de cada uno
-GET /api/v1/trips?clientId=…  → TripSummaryPage (filtra por clientId y state; page y pageSize)
-GET /api/v1/trips/{id}       → Trip, o 404 ErrorResponse
+GET /trips?clientId=…         → TripSummaryPage (filtra por clientId y state; page y pageSize)
+GET /trips/{tripId}           → Trip, o 404 Problem (application/problem+json)
+correlación (RNF-14.13): el id del pedido es X-Correlation-Id si tiene de 1 a 100 caracteres válidos; si no, "m6-" + uuid.
+                         Va al log, al correlationId de los errores y al X-Correlation-Id de toda respuesta
 toda llamada: verificar el token de servicio con la clave, el emisor y la audiencia M2_AUDIENCIA_M6 y el rol SERVICIO; si no, 401
 modo lento: esperar M6_RETARDO_LENTO_MS antes de responder (M2 corta a los 2 s, reintenta y responde 503)
 modo caido: cerrar el puerto M6_PUERTO (conexión rechazada); volver a normal lo abre de nuevo
@@ -159,7 +161,7 @@ el puerto de control sigue abierto en todos los modos
 |---|---|---|
 | M2 (panel → M2) | `fetch` con token firmado por pedido y `X-Request-Id`, tiempo máximo 10 s, sin reintento automático (reintenta la persona, con la misma clave en los POST) | `504` `m2-no-responde` → «M2 no responde» con «Reintentar» (RNF-15.4) |
 | M6 simulado, canal de control (panel → M6) | `fetch` con tiempo máximo 3 s, sin reintento | `502` problem+json del panel; en «Cargar ejemplo» el aviso parcial de RF-2.1.10 |
-| M6 simulado, API (M2 → M6) | sin cambios en M2: sigue llamando a `M2_URL_M6` (`http://m6:3006/api/v1`) | M2 responde `503` con `Retry-After`; el historial y calificar lo muestran con RF-2.4.13 y RF-2.5.16 |
+| M6 simulado, API (M2 → M6) | sin cambios en M2: sigue llamando a `M2_URL_M6` (`http://m6:3006`, sin `/api/v1` desde el ADR 096) y le manda la correlación en `X-Correlation-Id` (RNF-14.11 de la spec #7) | M2 responde `503` con `Retry-After`; el historial y calificar lo muestran con RF-2.4.13 y RF-2.5.16 |
 
 Con el perfil `panel`, el servicio de compose se llama `m6`, así que M2 lo alcanza con el nombre y el puerto que ya espera, sin cambiar su configuración (RNF-13.7). Sin el perfil, M2 queda como hoy.
 
@@ -184,6 +186,7 @@ El estilo lo decide quien implementa, con las skills ya instaladas, y se anota e
 - La prueba en navegador usa M2 real (en el proceso de la prueba, con la base de Testcontainers y el M6 simulado) y no un M2 de mentira: así comprueba el recorrido completo. Alternativa descartada: un M2 simulado, que no detectaría un cambio de contrato.
 - Dependencias nuevas, todas en `devDependencies`, con versiones consultadas en npm el 2026-10-27 y fijadas exactas en `package.json`: `react` 19.3.1, `react-dom` 19.3.1, `@types/react` 19.3.0, `@types/react-dom` 19.3.0, `@vitejs/plugin-react` 6.1.2 (compatible con el Vite 8.3.4 que ya está), `playwright-core` 1.64.1 y `axe-core` 4.14.0. React y Vite los eligió Lautaro; se confirman todas juntas antes de instalar (AGENTS.md).
 - La prueba en navegador queda fuera de `npm test` y tiene su script y su job de CI: sin Chrome, `npm test` sigue en verde. El job nuevo no es uno de los que exige la protección de `main`.
+- **Cambio de 2026-11-11 (contrato de M6 `35b3c4d`, #96): correlación del M6 simulado.** En `panel/m6-simulado/app-m6.ts`, `genReqId` lee `x-correlation-id` en lugar de `x-request-id`, con la misma expresión de caracteres válidos y un máximo de 100 (el del contrato de M6), y un hook `onSend` pone `X-Correlation-Id` con el id del pedido en toda respuesta, también en los errores y en una ruta que no existe. `app-control.ts` no cambia: el canal de control es del panel y sigue con `X-Request-Id`. Depende de T13 de la spec #7 en `main`: hasta entonces M2 no manda `X-Correlation-Id` y el simulado generaría siempre un id propio. Sin dependencias ni variables nuevas.
 
 ## Pruebas
 | Nivel | Dónde | Qué comprueba | Requisitos |
@@ -220,6 +223,7 @@ CI: `build-test` suma `npm run panel:build`; un job nuevo `panel` (después de `
 | RNF-12.9 | `pantallas/ingresar`, `fuentes/sesion-simulada`, botón «Cerrar sesión» |
 | RNF-13.5, RNF-13.7 | `m6-simulado/` (API, control, modos), `pantallas/m6-simulado`, servicio `m6` de compose |
 | RNF-14.9 | `servidor/pedidos`, `servidor/proxy`, `pantallas/detalle-tecnico` |
+| RNF-14.13 | `m6-simulado/app-m6.ts` (`genReqId` y el encabezado de la respuesta), `pruebas/panel/http/m6-api.test.ts` y `m6-con-m2.test.ts` |
 | RNF-15, RNF-15.1 a RNF-15.5 | `hooks/` y `componentes/` (estado de pantalla, botón de acción, diálogo, avisos, formularios), estilos con variables, prueba en navegador |
 | RNF-19.3 | la clave y los tokens no salen de `servidor/`; logs sin token ni cuerpo; `Authorization` enmascarado |
 | RNF-20.2 | `README.md`, `docs/probar-m2.md`, `guia.md`, `docs/adr/071-front-panel.md` |
