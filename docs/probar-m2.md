@@ -14,6 +14,8 @@ docker compose down                     # al terminar (agrega -v para borrar tam
 
 La demo crea un cliente nuevo en cada corrida, así que se puede repetir sin limpiar la base. Levanta por su cuenta un M6 simulado (un contenedor llamado `m6-simulado`), lo usa para calificaciones e historial y lo borra al terminar. Imprime una línea por paso con ✔ o ✘ y termina con código distinto de cero si alguna respuesta no es la que dice el contrato. Con `--detalle` muestra además el `curl` equivalente y la respuesta completa de cada paso; con `--dejar-m6` no borra el M6 simulado.
 
+Si el panel está levantado (`--profile panel`, sección 7), la demo detiene el M6 del panel mientras corre y lo vuelve a arrancar al terminar: los dos responden al nombre de red `m6` y M2 no puede tener dos. El M6 del panel vuelve con su modo y sus viajes de ejemplo de arranque.
+
 Lo que recorre, por requisito de la cátedra:
 
 | Requisito | Qué se comprueba | Secciones de la demo |
@@ -131,6 +133,7 @@ Para entender una funcionalidad, el orden recomendado es: su `spec.md` (qué pid
 - Node 20 no sirve: `nvm use 24`.
 - Puerto 8082 ocupado: `M2_PUERTO=8090 docker compose up -d --build --wait` y `M2_PUERTO=8090 node scripts/demo.mjs`.
 - Una corrida de la demo cortada a la mitad puede dejar el contenedor `m6-simulado`: `docker rm -f m6-simulado`.
+- Después de una demo cortada de golpe, el panel dice que M6 no responde: `docker rm -f m6-simulado` y `docker compose start m6`.
 - En Windows, después de clonar, ver la «Trampa de Windows» de `AGENTS.md` (finales de línea).
 
 ## 7. El panel (interfaz web)

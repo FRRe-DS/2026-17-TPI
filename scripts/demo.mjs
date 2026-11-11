@@ -6,6 +6,7 @@
 //   node scripts/demo.mjs [--detalle] [--dejar-m6]
 // --detalle: muestra además el curl equivalente de cada paso y la respuesta completa.
 // --dejar-m6: no borra el M6 simulado al terminar (se borra con `docker rm -f m6-simulado`).
+// Con el perfil `panel` levantado, detiene el M6 del panel mientras corre y lo vuelve a arrancar al terminar (#104).
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,8 @@ const BASE = `${SERVICIO}/api/v1`;
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
 const IMAGEN = 'm2-clientes:0.1.0';
 const NOMBRE_M6 = 'm6-simulado';
+// El servicio de compose del perfil `panel` que también responde al nombre de red `m6`.
+const SERVICIO_M6_PANEL = 'm6';
 
 // Los viajes del M6 simulado: lo que M6 responde depende del comienzo del id del viaje.
 const VIAJE_COMPLETADO = '11111111-1111-4111-8111-111111111111';
@@ -63,6 +66,45 @@ require('http').createServer((req, res) => {
   if (id.startsWith('44444444')) return responder(res, 404, error('NOT_FOUND', 'Viaje no encontrado'));
   return responder(res, 200, viaje(id, 'COMPLETED'));
 }).listen(3006);`;
+
+// Con el perfil `panel`, compose ya tiene un servicio `m6` en la red de M2. Si queda arriba, el nombre `m6` resuelve a dos
+// contenedores y M2 le pregunta a cualquiera: la demostración deja de controlar qué responde M6, y al detener el suyo M2 no
+// devuelve 503 (#104). Por eso se lo detiene mientras dura la demostración. Lo que el M6 del panel tenía en memoria (modo y
+// viajes de ejemplo) vuelve a sus valores de arranque.
+let m6DelPanelDetenido = false;
+
+async function apartarM6DelPanel() {
+  const { stdout } = await compose('ps', '-q', '--status', 'running', SERVICIO_M6_PANEL).catch(() => ({ stdout: '' }));
+  if (stdout.trim() === '') return;
+  // La marca va antes de detenerlo: si el pedido se corta a la mitad, igual se intenta volver a arrancarlo.
+  m6DelPanelDetenido = true;
+  await compose('stop', SERVICIO_M6_PANEL);
+  console.log(gris('El M6 del panel (servicio m6 de compose) se detiene mientras dura la demostración.'));
+}
+
+// Deja todo como estaba: borra el M6 de la demostración y vuelve a arrancar el del panel si se lo había detenido.
+// Una sola vez, aunque la pidan el final de la demostración y una interrupción a la vez.
+let restauracion;
+const restaurar = () => (restauracion ??= dejarComoEstaba());
+
+async function dejarComoEstaba() {
+  if (!opciones['dejar-m6']) await ejecutar('docker', ['rm', '-f', NOMBRE_M6]).catch(() => undefined);
+  if (!m6DelPanelDetenido) return;
+  const comando = `docker compose start ${SERVICIO_M6_PANEL}`;
+  const { stdout: quedaElDeLaDemo } = await ejecutar('docker', ['ps', '-q', '--filter', `name=^${NOMBRE_M6}$`]).catch(() => ({ stdout: '' }));
+  if (quedaElDeLaDemo.trim() !== '') {
+    // Con --dejar-m6 y el simulado todavía arriba, arrancar el del panel repetiría el choque de nombres.
+    console.log(gris(`El M6 del panel queda detenido. Para volver a usarlo: docker rm -f ${NOMBRE_M6} && ${comando}`));
+    return;
+  }
+  try {
+    await compose('start', SERVICIO_M6_PANEL);
+    m6DelPanelDetenido = false;
+    console.log(gris('El M6 del panel vuelve a estar arriba.'));
+  } catch {
+    console.error(rojo(`No se pudo volver a arrancar el M6 del panel. Arrancalo con: ${comando}`));
+  }
+}
 
 async function levantarM6(clienteId) {
   await ejecutar('docker', ['rm', '-f', NOMBRE_M6]).catch(() => undefined);
@@ -175,6 +217,7 @@ async function main() {
 
   console.log(negrita('M2 Clientes · demostración'));
   console.log(gris(`Servicio: ${SERVICIO} · cliente de la prueba: ${cliente}`));
+  await apartarM6DelPanel();
   await levantarM6(cliente);
   console.log(gris(`M6 simulado: contenedor ${NOMBRE_M6}, alias de red m6`));
 
@@ -293,13 +336,21 @@ async function main() {
   await paso('Y también las calificaciones ya guardadas: 200', { metodo: 'GET', ruta: calificaciones, tk: tkCliente, esperado: 200 });
 }
 
+// Ctrl+C no pasa por el `finally`: sin esto, cortar la demostración dejaría detenido el M6 del panel.
+for (const senal of ['SIGINT', 'SIGTERM']) {
+  process.once(senal, () => {
+    console.error(rojo('\nLa demostración se interrumpió.'));
+    void restaurar().finally(() => process.exit(130));
+  });
+}
+
 try {
   await main();
 } catch (error) {
   console.error(rojo(`La demostración se cortó: ${error instanceof Error ? error.message : String(error)}`));
   fallas.push('se cortó antes de terminar');
 } finally {
-  if (!opciones['dejar-m6']) await ejecutar('docker', ['rm', '-f', NOMBRE_M6]).catch(() => undefined);
+  await restaurar();
 }
 
 console.log('');
