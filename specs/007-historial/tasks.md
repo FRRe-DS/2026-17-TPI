@@ -32,7 +32,7 @@ T11 y T12 vienen del cambio de 2026-11-08 (orden a cargo de M6 y log de cada lla
 
 T13 a T17 vienen del cambio de 2026-11-11 (M2 se alinea con la versión `35b3c4d` del contrato de M6, #96 y ADR 096). T13, T14 y T15 son delicadas (cliente de módulos compartido y encabezados de red): Opus. T16 y T17, Sonnet.
 
-- [ ] **T13. Enviar `X-Correlation-Id` a M6.** RNF-14, RNF-14.11, RNF-14.12
+- [x] **T13. Enviar `X-Correlation-Id` a M6.** RNF-14, RNF-14.11, RNF-14.12
   - Hecho cuando: pruebas de módulos comprueban que cada intento a M6, también el reintento, lleva `X-Correlation-Id` y el encabezado configurado con el mismo identificador; que con un identificador de 100 caracteres exactos va en los dos y con uno de 101 va solo en el configurado; que si el configurado es `x-correlation-id` el encabezado sale una sola vez y con 101 caracteres no sale ninguno; y que un cliente de módulos sin la opción nueva manda lo mismo que antes. Una prueba HTTP comprueba que el identificador de un pedido al historial llega al M6 simulado en `X-Correlation-Id`.
 - [ ] **T14. Leer el `Retry-After` de una respuesta de M6.** RF-2.4.15
   - Hecho cuando: pruebas unitarias cubren `segundosDeEspera`: `1`, `30`, `3600` y `030` (da 30) valen; ausente, vacío, `0`, `3601`, `99999999999999999999`, `-5`, `+30`, `1.5`, `30s`, `abc`, `30, 30` y una fecha HTTP dan el valor configurado. Pruebas de módulos comprueban que la respuesta del cliente de módulos trae `reintentarDespues` con el `Retry-After` de un `4xx` tal como llegó, que no lo trae si el `4xx` no tiene ese encabezado, y que un `4xx` se sigue devolviendo sin reintento.

@@ -19,6 +19,9 @@ type OpcionesCliente = {
   // Cuántas veces se vuelve a intentar un GET que falló. Los demás métodos no se reintentan.
   reintentos: number;
   encabezadoCorrelacion: string;
+  // El encabezado de correlación que declara el contrato del módulo y el largo máximo que admite. Si está, el identificador va
+  // también en él (RNF-14.11), salvo que pase de ese largo (RNF-14.12). Sin ella, solo va el configurado.
+  correlacionDelModulo?: { encabezado: string; largoMaximo: number };
   // Da con qué se presenta M2 ante el módulo, en `Authorization: Bearer`, y se llama en cada intento: un token de servicio
   // de vida corta, nuevo en cada uno (RF-2.4.11). Sin ella no se envía el encabezado. Es un secreto que cambia en cada
   // intento y `secretosDeConfig` no conoce: no va en ningún error ni en el log (RNF-19.1).
@@ -51,10 +54,28 @@ export function crearClienteModulo({
   tiempoMs,
   reintentos,
   encabezadoCorrelacion,
+  correlacionDelModulo,
   credencial,
   reintentarDespuesS,
   log,
 }: OpcionesCliente): ClienteModulo {
+  // Los nombres de encabezado no distinguen mayúsculas: si el del módulo es el configurado, es uno solo, y `fetch` uniría las
+  // dos claves en un encabezado con el valor repetido.
+  const elDelModuloEsElConfigurado =
+    correlacionDelModulo !== undefined && correlacionDelModulo.encabezado.toLowerCase() === encabezadoCorrelacion.toLowerCase();
+
+  // Los encabezados de correlación de un intento. El configurado va siempre (RNF-14.7) y el del módulo se suma con el mismo
+  // valor (RNF-14.11). Un identificador más largo que lo que admite el módulo no va en su encabezado; si ese encabezado es
+  // el configurado, la llamada sale sin correlación (RNF-14.12).
+  function encabezadosDeCorrelacion(idCorrelacion: string): Record<string, string> {
+    if (correlacionDelModulo === undefined) return { [encabezadoCorrelacion]: idCorrelacion };
+    const cabe = idCorrelacion.length <= correlacionDelModulo.largoMaximo;
+    if (elDelModuloEsElConfigurado) return cabe ? { [encabezadoCorrelacion]: idCorrelacion } : {};
+    return cabe
+      ? { [encabezadoCorrelacion]: idCorrelacion, [correlacionDelModulo.encabezado]: idCorrelacion }
+      : { [encabezadoCorrelacion]: idCorrelacion };
+  }
+
   // Una sola línea por llamada, al terminar, salga bien o mal (RNF-14.10): `estado` es el código con el que respondió el
   // módulo en el último intento, también un 4xx o un 5xx, y `null` si en ese intento no respondió (corte o red). Si la llamada
   // falló, va como advertencia. Es una lista cerrada de campos: ni la ruta ni la query, que llevan el clienteId o el viajeId,
@@ -94,7 +115,7 @@ export function crearClienteModulo({
     const senal = AbortSignal.timeout(tiempoMs);
     const encabezados: Record<string, string> = {
       Accept: 'application/json',
-      [encabezadoCorrelacion]: idCorrelacion,
+      ...encabezadosDeCorrelacion(idCorrelacion),
     };
     if (cuerpo !== undefined) encabezados['Content-Type'] = 'application/json';
     if (autorizacion !== undefined) encabezados.Authorization = autorizacion;

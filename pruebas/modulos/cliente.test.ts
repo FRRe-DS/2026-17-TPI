@@ -516,6 +516,60 @@ describe('crearClienteModulo', () => {
     });
   });
 
+  // La opción es del cliente y no de M6: cada módulo declara su encabezado y su largo en su contrato (plan 007, Decisiones).
+  describe('el encabezado de correlación propio del módulo (RNF-14.11, RNF-14.12; 007/T13)', () => {
+    const conPropio = (encabezadoCorrelacion = 'X-Request-Id') =>
+      crearClienteModulo({
+        nombre: 'M6',
+        urlBase: serv.url,
+        tiempoMs: TIEMPO_MS,
+        reintentos: 1,
+        encabezadoCorrelacion,
+        correlacionDelModulo: { encabezado: 'X-Traza', largoMaximo: 8 },
+      });
+
+    it('sin la opción, el cliente manda lo mismo que antes: solo el encabezado configurado', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, { tipo: 'ok' }]);
+
+      await clienteDe(serv.url, 1).obtener('/', 'a'.repeat(128));
+
+      expect(serv.llamadas).toBe(2);
+      for (const intento of [0, 1]) {
+        expect(serv.valoresDe(intento, 'x-request-id')).toEqual(['a'.repeat(128)]);
+        expect(serv.valoresDe(intento, 'x-correlation-id')).toEqual([]);
+      }
+    });
+
+    it('con la opción, el identificador va en el encabezado del módulo y en el configurado, también en un POST', async () => {
+      serv.responderCon({ tipo: 'ok' });
+
+      await conPropio().enviar('POST', '/', { dato: 1 }, 'id-corto');
+
+      expect(serv.valoresDe(0, 'x-traza')).toEqual(['id-corto']);
+      expect(serv.valoresDe(0, 'x-request-id')).toEqual(['id-corto']);
+    });
+
+    it('si el identificador pasa del largo máximo del módulo, va solo en el configurado', async () => {
+      serv.responderCon({ tipo: 'ok' });
+
+      await conPropio().obtener('/', 'id-de-nueve'.slice(0, 9));
+
+      expect(serv.valoresDe(0, 'x-traza')).toEqual([]);
+      expect(serv.valoresDe(0, 'x-request-id')).toEqual(['id-de-nueve'.slice(0, 9)]);
+    });
+
+    it('si el encabezado del módulo es el configurado, sale una vez y, pasado el largo máximo, no sale', async () => {
+      serv.responderCon({ tipo: 'ok' });
+      await conPropio('x-traza').obtener('/', 'id-corto');
+      expect(serv.valoresDe(0, 'x-traza')).toEqual(['id-corto']);
+
+      serv.responderCon({ tipo: 'ok' });
+      await conPropio('x-traza').obtener('/', 'id-de-nueve'.slice(0, 9));
+      expect(serv.llamadas).toBe(1);
+      expect(serv.valoresDe(0, 'x-traza')).toEqual([]);
+    });
+  });
+
   describe('Retry-After en el 503 (RF-2.4.6)', () => {
     it('con reintentarDespuesS, ModuloNoDisponible lo lleva en segundos', async () => {
       serv.responderCon({ tipo: '5xx', estado: 500 });

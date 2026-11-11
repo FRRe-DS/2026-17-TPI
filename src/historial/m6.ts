@@ -30,6 +30,9 @@ type ConfigM6 = ConfigTokens &
 
 const NOMBRE = 'M6';
 
+// El encabezado de correlación que declara el contrato de M6 y el largo máximo de su valor (RNF-14.11, RNF-14.12).
+const CORRELACION_DE_M6 = { encabezado: 'X-Correlation-Id', largoMaximo: 100 };
+
 const esObjeto = (valor: unknown): valor is Record<string, unknown> =>
   typeof valor === 'object' && valor !== null && !Array.isArray(valor);
 
@@ -77,6 +80,7 @@ export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
     tiempoMs: config.tiempoModulosMs,
     reintentos: config.reintentosModulos,
     encabezadoCorrelacion: config.encabezadoCorrelacion,
+    correlacionDelModulo: CORRELACION_DE_M6,
     credencial: () => tokenDeServicio(config),
     reintentarDespuesS: config.reintentarDespuesS,
     log,

@@ -23,6 +23,9 @@ export function crearServidorModulo() {
   let rutaRecibida = '';
   // El Authorization de cada llamada, en orden (undefined si no vino), para ver qué llevó cada intento.
   const autorizaciones: (string | undefined)[] = [];
+  // Los encabezados de cada llamada, en orden y tal como llegaron (nombre y valor, sin unir los repetidos), para ver qué llevó
+  // cada intento y si un encabezado salió una sola vez.
+  const encabezadosCrudos: [string, string][][] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
   // El método y el cuerpo de la última llamada, tal como llegaron.
   let metodoRecibido = '';
@@ -33,6 +36,9 @@ export function crearServidorModulo() {
     momentos.push(Date.now());
     rutaRecibida = req.url ?? '';
     autorizaciones.push(req.headers.authorization);
+    const crudos: [string, string][] = [];
+    for (let i = 0; i + 1 < req.rawHeaders.length; i += 2) crudos.push([req.rawHeaders[i]!, req.rawHeaders[i + 1]!]);
+    encabezadosCrudos.push(crudos);
     encabezadosRecibidos.clear();
     for (const [clave, valor] of Object.entries(req.headers)) {
       if (typeof valor === 'string') encabezadosRecibidos.set(clave.toLowerCase(), valor);
@@ -106,6 +112,11 @@ export function crearServidorModulo() {
     get autorizaciones(): (string | undefined)[] {
       return autorizaciones;
     },
+    // Los valores con los que llegó un encabezado en una llamada (la primera es la 0): vacío si no vino, más de uno si vino
+    // repetido. El nombre se compara sin distinguir mayúsculas.
+    valoresDe(llamada: number, nombre: string): string[] {
+      return (encabezadosCrudos[llamada] ?? []).filter(([n]) => n.toLowerCase() === nombre.toLowerCase()).map(([, valor]) => valor);
+    },
     get metodoRecibido(): string {
       return metodoRecibido;
     },
@@ -118,6 +129,7 @@ export function crearServidorModulo() {
       llamadas = 0;
       momentos.length = 0;
       autorizaciones.length = 0;
+      encabezadosCrudos.length = 0;
     },
     async cerrar(): Promise<void> {
       for (const t of timers) clearTimeout(t);

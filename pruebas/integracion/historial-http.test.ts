@@ -331,6 +331,20 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(respuesta.json().items.map(({ viajeId }: { viajeId: string }) => viajeId)).toEqual(viajes.map(({ id: v }) => v));
     });
 
+    // RNF-14.11: el identificador de la solicitud viaja a M6 en el encabezado que declara su contrato, además del configurado.
+    it('el identificador de un pedido al historial llega a M6 en X-Correlation-Id (007/T13)', async () => {
+      const id = await perfil();
+      const { pedir } = crear();
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      const idCorrelacion = respuesta.headers['x-request-id'];
+      expect(idCorrelacion).toBeTypeOf('string');
+      expect(serv.valoresDe(0, 'x-correlation-id')).toEqual([idCorrelacion]);
+      expect(serv.valoresDe(0, 'x-request-id')).toEqual([idCorrelacion]);
+    });
+
     it('la consulta deja una línea de la llamada a M6 con el id de correlación de la solicitud y sin identificadores', async () => {
       const id = await perfil();
       const viajes = [viaje(1, id)];

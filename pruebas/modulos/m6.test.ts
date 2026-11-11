@@ -50,6 +50,77 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
     });
   });
 
+  // El contrato de M6 declara `X-Correlation-Id`, de 100 caracteres como máximo: M2 lo manda además del encabezado configurado
+  // (`X-Request-Id` en estas pruebas) y con el mismo valor.
+  describe('la correlación hacia M6 (RNF-14.11, RNF-14.12; 007/T13)', () => {
+    const ID = 'id-de-correlacion';
+    const listarCon = (idCorrelacion: string, extra: Partial<typeof CONFIG> = {}) =>
+      m6(extra).listarViajes(CLIENTE, 0, 20, idCorrelacion);
+
+    it('cada intento, también el reintento, lleva X-Correlation-Id y el encabezado configurado con el mismo identificador', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, ok(pagina([], 0))]);
+
+      await listarCon(ID);
+
+      expect(serv.llamadas).toBe(2);
+      for (const intento of [0, 1]) {
+        expect(serv.valoresDe(intento, 'x-correlation-id')).toEqual([ID]);
+        expect(serv.valoresDe(intento, 'x-request-id')).toEqual([ID]);
+      }
+    });
+
+    it('un identificador de 100 caracteres exactos va en los dos encabezados', async () => {
+      serv.responderCon(ok(pagina([], 0)));
+      const justo = 'a'.repeat(100);
+
+      await listarCon(justo);
+
+      expect(serv.valoresDe(0, 'x-correlation-id')).toEqual([justo]);
+      expect(serv.valoresDe(0, 'x-request-id')).toEqual([justo]);
+    });
+
+    it('un identificador de 101 caracteres va solo en el encabezado configurado, en cada intento', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, ok(pagina([], 0))]);
+      const largo = 'a'.repeat(101);
+
+      await listarCon(largo);
+
+      expect(serv.llamadas).toBe(2);
+      for (const intento of [0, 1]) {
+        expect(serv.valoresDe(intento, 'x-correlation-id')).toEqual([]);
+        expect(serv.valoresDe(intento, 'x-request-id')).toEqual([largo]);
+      }
+    });
+
+    // `fetch` uniría dos claves que solo difieren en mayúsculas en un solo encabezado con el valor repetido.
+    describe.each(['x-correlation-id', 'X-Correlation-Id', 'X-CORRELATION-ID'])('si el encabezado configurado es %s', (configurado) => {
+      it('sale una sola vez', async () => {
+        serv.responderCon([{ tipo: '5xx', estado: 502 }, ok(pagina([], 0))]);
+
+        await listarCon(ID, { encabezadoCorrelacion: configurado });
+
+        expect(serv.llamadas).toBe(2);
+        for (const intento of [0, 1]) {
+          expect(serv.valoresDe(intento, 'x-correlation-id')).toEqual([ID]);
+          expect(serv.valoresDe(intento, 'x-request-id')).toEqual([]);
+        }
+      });
+
+      it('con 100 caracteres sale y con 101 no sale ninguno: la llamada va sin correlación', async () => {
+        serv.responderCon(ok(pagina([], 0)));
+
+        await listarCon('a'.repeat(100), { encabezadoCorrelacion: configurado });
+        expect(serv.valoresDe(0, 'x-correlation-id')).toEqual(['a'.repeat(100)]);
+
+        serv.responderCon(ok(pagina([], 0)));
+        await listarCon('a'.repeat(101), { encabezadoCorrelacion: configurado });
+        expect(serv.llamadas).toBe(1);
+        expect(serv.valoresDe(0, 'x-correlation-id')).toEqual([]);
+        expect(serv.valoresDe(0, 'x-request-id')).toEqual([]);
+      });
+    });
+  });
+
   // RF-2.4.11, ADR 009: M2 se presenta con un token de servicio de vida corta, firmado en cada intento.
   describe('el token de servicio (RF-2.4.11, RNF-19)', () => {
     const tokenDe = (autorizacion: string | undefined) => /^Bearer (\S+)$/.exec(autorizacion ?? '')?.[1] ?? '';
