@@ -37,3 +37,13 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 
 - [x] **T10. Diferencias para el Grupo 12 y propuestas de cambio.** RNF-20.4
   - Hecho cuando: por cada diferencia de la tabla que le toque al Grupo 12 hay un texto de issue redactado en `guia.md` (qué se observó, qué dice el contrato, qué se pide); @sandobaitt revisó los textos y, con su OK explícito, los issues están publicados en `FRRe-DS/2026-12-TPI` y sus enlaces figuran en la tabla (sin OK, la tarea queda con los textos listos y se anota que falta publicarlos); el `429` como `503` y el `X-Correlation-Id` están descritos en `guia.md` como propuestas de `sdd-change` de la 007 y la 008, para abrir sus issues con permiso.
+
+## Tramo D — Cambio de 2026-11-11 (contrato de M6 `35b3c4d`, #96)
+
+T11 no depende de los cambios de las specs 007 y 008. T12 se hace después de que estén en `main` los cambios de las specs 007 y 008, porque la tabla dice qué quedó resuelto (T13 a T15 de la 007 y T11 de la 008). Las dos, Sonnet.
+
+- [ ] **T11. Correlación contra el M6 real.** RNF-07.14
+  - Hecho cuando: `correlacion.test.ts` manda al M6 real un `GET /trips` y un `GET /trips/{tripId}` de un viaje inexistente con un `X-Correlation-Id` nuevo y comprueba que las dos respuestas (`200` y `404`) lo devuelven igual en `X-Correlation-Id` y que el cuerpo del `404` lo trae en `correlationId`, y si no, muestra el valor recibido; corre antes de `resiliencia.test.ts`; `npm run integracion:m6` termina en verde con el contador por debajo de 600, y `npm test` pasa el mismo número de pruebas que antes.
+
+- [ ] **T12. Tabla de diferencias y textos al día.** RNF-20.4
+  - Hecho cuando: en `guia.md`, la tabla compara al M6 real con `m6.yml` en `35b3c4d`: las filas 1, 4, 11 y 12 figuran como cerradas por la extracción nueva (ADR 096), las 7 y 8, como resueltas por las specs 007 y 008 con sus requisitos, y la 3, como diferencia abierta (el contrato nombra solo `SYSTEM`; el alias `SERVICIO` está solo en el repositorio del Grupo 12; riesgo aceptado, lo vigila RNF-07.11); ni el párrafo de arriba de la tabla ni ninguna celda dicen que `m6.yml` está desactualizado o nombran la rama `contrato/079-…` como pendiente; `guia.md` documenta T11; `docs/probar-m2.md` nombra la prueba de correlación en la salida esperada; los textos de `pruebas/distribuida/token-servicio.test.ts` y `pruebas/unitarias/distribuida-errores.test.ts` dicen `/trips/{tripId}` y `Problem` en lugar de `/trips/{id}` y `ErrorResponse`; `npm test`, `npm run integracion:m6` y `spec-check` en verde.

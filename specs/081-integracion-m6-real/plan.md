@@ -2,6 +2,8 @@
 
 No cambia `contrato/openapi.yml`, `contrato/dependencias/m6.yml`, `src/` ni `migraciones/`, y no agrega dependencias: levantar el M6 real es compose, y la prueba usa Vitest y `fetch`, que ya están. Si la prueba encuentra algo que obligue a tocar M2, ese cambio va por `sdd-change` de la 007 o la 008 (ver Decisiones y tarea T10).
 
+Cambio del 2026-11-11 (#96): `m6.yml` pasó a la versión `35b3c4d` en la rama `contrato/096-…` (ADR 096) y las specs 007 y 008 cambian a M2 por `sdd-change`. Acá se suma una prueba (RNF-07.14) y se pone al día la guía; sigue sin tocarse `src/`.
+
 ## Estructura
 ```
 docker-compose.yml                  perfil `m6-real`: servicios `m6-real` y `m6-real-bd`
@@ -12,6 +14,7 @@ pruebas/distribuida/
   global.ts                         levanta y baja el entorno
   ayudas/                           pedidos a M2 y a M6, preparación de viajes, contador de pedidos
   historial.test.ts  calificacion.test.ts  rechazos.test.ts  token-servicio.test.ts  resiliencia.test.ts
+  correlacion.test.ts               el M6 real toma y devuelve `X-Correlation-Id` (cambio de 2026-11-11)
 .github/workflows/integracion-m6.yml   job aparte
 docs/probar-m2.md                   sección nueva
 specs/081-integracion-m6-real/guia.md  diferencias y guía de tareas
@@ -59,6 +62,17 @@ Los nombres exactos de rutas, cuerpos y roles salen de `openapi.yaml` del Grupo 
 
 **Pedidos**. `pedirM2(token, método, ruta, cuerpo?)` y `pedirM6(...)`, con `fetch`, `AbortSignal.timeout(10 s)` y un contador de pedidos. El token de un cliente sale del mismo comando que usa la demo (`docker compose exec m2 node dist/herramientas/token.js`), no de uno armado con claves de prueba. El token de servicio de la comprobación RNF-07.11 sale de `tokenDeServicio`, corrida dentro del contenedor de M2 con su configuración: así M2 se presenta ante M6 con el token que firma de verdad (`sub` `m2-clientes`, `roles` `["SERVICIO"]`, `aud` de M6; ADR 009).
 
+**Correlación** (`correlacion.test.ts`, RNF-07.14). Sin pasar por M2, con las ayudas que ya existen:
+```
+id = un identificador nuevo por corrida, de letras, números y guiones, de menos de 100 caracteres
+r1 = pedirM6('GET', '/trips?clientId=<uuid nuevo>', { token: 'SYSTEM', encabezados: { 'X-Correlation-Id': id } })
+     → 200 y r1.encabezados['x-correlation-id'] == id
+r2 = pedirM6('GET', '/trips/<uuid que no existe>', lo mismo)
+     → 404, r2.encabezados['x-correlation-id'] == id y r2.cuerpo.correlationId == id
+si alguno no coincide: la prueba falla y muestra el valor recibido
+```
+Son dos pedidos más a M6, que entran en el contador. Corre antes de `resiliencia.test.ts`, que sigue siendo la última.
+
 **Límite de M6** (1200 por minuto). Un contador suma los pedidos de la prueba a M6 y, por cada pedido a M2 que consulta a M6, hasta `1 + M2_REINTENTOS_MODULOS`. Una prueba final comprueba que el total de la corrida no pasa de 600, la mitad del límite.
 
 **Resiliencia** (`resiliencia.test.ts`), en este orden y al final, porque deja a M6 apagado un rato:
@@ -72,7 +86,7 @@ Los nombres exactos de rutas, cuerpos y roles salen de `openapi.yaml` del Grupo 
 Un `finally` hace `unpause` y `start`, para no dejar el entorno a medias si un paso falla.
 
 ## Integraciones
-M2 → M6 no cambia: su cliente (`src/modulos/cliente.ts`) ya tiene el timeout (`M2_TIEMPO_MODULOS_MS`, 2 s), el reintento limitado (`M2_REINTENTOS_MODULOS`, 1) y el `503` con `Retry-After` (RNF-13). Esta spec comprueba ese comportamiento contra un servicio real, que es lo que el M6 simulado no podía demostrar. Lo que M2 no hace y M6 sí espera (el `429` como `503`, el `X-Correlation-Id`) queda como propuesta de `sdd-change`.
+M2 → M6 no cambia: su cliente (`src/modulos/cliente.ts`) ya tiene el timeout (`M2_TIEMPO_MODULOS_MS`, 2 s), el reintento limitado (`M2_REINTENTOS_MODULOS`, 1) y el `503` con `Retry-After` (RNF-13). Esta spec comprueba ese comportamiento contra un servicio real, que es lo que el M6 simulado no podía demostrar. Lo que M2 no hacía y M6 sí espera (el `429` como `503`, el `X-Correlation-Id`) se resolvió el 2026-11-11 con el cambio de las specs 007 y 008 (RF-2.4.15, RF-2.5.18, RNF-14.11 y RNF-14.12), que se prueba con el M6 simulado. De eso, acá solo se comprueba que el M6 real toma y devuelve `X-Correlation-Id` (RNF-07.14).
 
 ## Pruebas
 - **Distribuida** (esta spec): `npm run integracion:m6` = `vitest run --project distribuida`. Proyecto aparte, sin `globalSetup` compartido con `integracion` (no usa Testcontainers: el entorno es el de compose) y con `testTimeout` y `hookTimeout` largos (el primer build baja y compila a M6). Queda fuera de `npm test`.
@@ -85,7 +99,9 @@ M2 → M6 no cambia: su cliente (`src/modulos/cliente.ts`) ya tiene el timeout (
 - **Un proyecto de Vitest y no un script `.mjs`.** Las comprobaciones son muchas y con detalle (cuerpos, encabezados, conteos); Vitest da el mismo formato de salida que el resto y filtra por archivo. `scripts/contrato-test.mjs` se justifica porque lanza Schemathesis, que no es de Vitest.
 - **`docker compose` por `child_process`, no la API de Testcontainers.** No agrega dependencias (hay que preguntar antes) y es el mismo comando que documenta `probar-m2.md`, así que quien lo corre a mano ve lo mismo que la prueba.
 - **`pause` además de `stop`.** Detener el contenedor da un error de nombre (`ENOTFOUND`) al instante, porque Docker quita el nombre de un contenedor detenido; «no responde dentro del tiempo máximo» (RNF-13.8) solo se ve con un servicio que acepta la conexión y no contesta.
-- **Sin ADR.** Nada de esto cambia el contrato ni la arquitectura de M2: es entorno de prueba. El ADR 057 ya registra que M6 sale del contrato de la cátedra.
+- **Sin ADR.** Nada de esto cambia el contrato ni la arquitectura de M2: es entorno de prueba. Los ADR 057 y 096 ya registran que M6 sale del contrato de la cátedra y de qué versión.
+- **Cambio de 2026-11-11: la correlación se prueba directo contra M6, no a través de M2.** M2 no devuelve nada de la respuesta de M6 a quien lo llama, y el M6 real, en el commit fijado, no registra las consultas en su log: no hay dónde ver, desde afuera, que el identificador de un pedido a M2 llegó a M6. Se comprueban las dos mitades: que M2 lo envía (pruebas de la spec 007, con el M6 simulado) y que el M6 real lo toma y lo devuelve (acá). Alternativa descartada: agregar a M2 una salida de diagnóstico solo para esta prueba, que es código de producción para probar.
+- **Cambio de 2026-11-11: no se cambia el commit fijado de M6.** `7d3d5af` ya sigue la versión `35b3c4d` del contrato. Los commits posteriores del Grupo 12 (`VehicleType` `AUTO`/`MOTO`, alias de rol documentados) no están en la cátedra; se toman cuando entren, con su rama `contrato/`.
 
 ## Cobertura de requisitos
 | Requisito | Qué parte lo cubre |
@@ -97,5 +113,6 @@ M2 → M6 no cambia: su cliente (`src/modulos/cliente.ts`) ya tiene el timeout (
 | RNF-07.9 | `calificacion.test.ts` (T5) |
 | RNF-07.10 | `rechazos.test.ts` (T6) |
 | RNF-07.11 | `token-servicio.test.ts` (T3) |
+| RNF-07.14 | `correlacion.test.ts` (T11) |
 | RNF-13.8 | `resiliencia.test.ts` (T7) |
-| RNF-20.4 | `docs/probar-m2.md`, `guia.md` con las diferencias y los issues para el Grupo 12 (T9, T10) |
+| RNF-20.4 | `docs/probar-m2.md`, `guia.md` con las diferencias y los issues para el Grupo 12 (T9, T10); tabla de diferencias contra `m6.yml` en `35b3c4d` (T12) |
