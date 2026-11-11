@@ -159,7 +159,7 @@ devolver conCalificado(pagina, calificados)         # calificado: calificados.ha
 - **Sin ADR**: ninguna decisión afecta al grupo ni cambia un acuerdo. **Sin dependencias nuevas.**
 - **Migración**: se genera con el nombre y la marca de tiempo del resto (`<marca>_calificaciones.sql`) y se prueba hacia arriba y hacia abajo en `migraciones.test.ts`. Es un cambio de esquema: se pregunta antes de aplicarla en T1 (AGENTS.md).
 - **Pruebas de la spec #7**: las que comparan el cuerpo exacto del historial se ajustan para incluir `calificado: false`. No cambia ninguna regla de la #7 salvo lo que RF-2.5.14 amplía.
-- **Cambio de 2026-11-11 (contrato de M6 `35b3c4d`, #96):** el `429` se trata dentro de `obtenerViaje`, igual que en `listarViajes`, y no en el servicio de calificaciones: así las dos consultas a M6 responden lo mismo y el servicio sigue sin saber de códigos de M6. Depende de T13 y T14 de la spec #7, que agregan la correlación al cliente de M6, `reintentarDespues` y `segundosDeEspera`: este cambio se implementa después de que estén en `main`. Sin ADR, sin migración y sin dependencias.
+- **Cambio de 2026-11-11 (contrato de M6 `35b3c4d`, #96):** el `429` se trata dentro de `obtenerViaje`, igual que en `listarViajes`, y no en el servicio de calificaciones: así las dos consultas a M6 responden lo mismo y el servicio sigue sin saber de códigos de M6. Depende de T13 a T15 de la spec #7, que agregan la correlación al cliente de M6, `reintentarDespues` y `segundosDeEspera`: este cambio se implementa después de que estén en `main`. Sin ADR, sin migración y sin dependencias.
 
 ## Dudas abiertas
 Ninguna. Los supuestos con M6 y el Grupo 12 están en `## Decisiones` de la spec.
