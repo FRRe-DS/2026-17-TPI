@@ -1,9 +1,9 @@
 # Plan 008 — Calificación del conductor
 
-Spec: [spec.md](spec.md) · Issue: #8 · Contrato: `contrato/openapi.yml` · Depende de: specs #3, #4 y #7 · Contrato de M6: `contrato/dependencias/m6.yml` (ADR 057) · Token de servicio: ADR 009
+Spec: [spec.md](spec.md) · Issue: #8 · Contrato: `contrato/openapi.yml` · Depende de: specs #3, #4 y #7 · Contrato de M6: `contrato/dependencias/m6.yml` (ADR 096, que actualiza el 057) · Token de servicio: ADR 009
 
 ## Resumen
-Una tabla nueva, `calificaciones`, con la restricción única (cliente, viaje) que garantiza RNF-08. Un módulo `src/calificaciones/` con las tres operaciones. El cliente de M6 de la spec #7 gana `obtenerViaje` (`GET /trips/{id}`), con el mismo token de servicio, tiempo máximo, reintento y `Retry-After`. La idempotencia de la spec #4 gana una lectura de la respuesta guardada, para que una repetición no consulte a M6. El historial de la spec #7 agrega `calificado` con una consulta a la base. No cambia el contrato de M2 ni hay variables de entorno nuevas.
+Una tabla nueva, `calificaciones`, con la restricción única (cliente, viaje) que garantiza RNF-08. Un módulo `src/calificaciones/` con las tres operaciones. El cliente de M6 de la spec #7 gana `obtenerViaje` (`GET /trips/{tripId}`), con el mismo token de servicio, tiempo máximo, reintento y `Retry-After`. La idempotencia de la spec #4 gana una lectura de la respuesta guardada, para que una repetición no consulte a M6. El historial de la spec #7 agrega `calificado` con una consulta a la base. No cambia el contrato de M2 ni hay variables de entorno nuevas. El cambio del 2026-11-11 (#96) alinea la consulta del viaje con la versión `35b3c4d` del contrato de M6: un `429` pasa a ser `503` con el `Retry-After` de M6, con lo que agrega el cambio de la spec #7 del mismo día.
 
 ## Estructura
 
@@ -12,7 +12,7 @@ Una tabla nueva, `calificaciones`, con la restricción única (cliente, viaje) q
 | `migraciones/<marca>_calificaciones.sql` | Tabla `calificaciones`, restricción única e índice del listado | RNF-05, RNF-08, RF-2.5.3, RF-2.5.8 |
 | `src/errores.ts` | `CalificacionDuplicada` (409) y `ViajeNoCompletado` (422), con `type` propio | RF-2.5.2, RF-2.5.3 |
 | `src/bd/idempotencia.ts` | `buscarRespuesta`: la respuesta guardada de una solicitud, sin bloquear ni reservar | RF-2.5.4 |
-| `src/historial/m6.ts` | `obtenerViaje(viajeId, clienteId, idCorrelacion)`: pedido a M6, lectura y comprobación de su respuesta | RF-2.5, RF-2.5.1, RF-2.5.5, RF-2.5.6, RF-2.5.13, RNF-13 |
+| `src/historial/m6.ts` | `obtenerViaje(viajeId, clienteId, idCorrelacion)`: pedido a M6, lectura y comprobación de su respuesta; el `429` como `503` (cambio de 2026-11-11) | RF-2.5, RF-2.5.1, RF-2.5.5, RF-2.5.6, RF-2.5.13, RF-2.5.18, RNF-13 |
 | `src/historial/modelo.ts` | `conCalificado`: agrega `calificado` a cada viaje (pura) | RF-2.5.14 |
 | `src/historial/servicio.ts` | Después de armar la página, consulta qué viajes están calificados y llama a `conCalificado` | RF-2.5.14 |
 | `src/calificaciones/modelo.ts` | Tipos del contrato y `aCalificacion`, `aPaginaCalificaciones` (puras) | RF-2.5, RF-2.5.8 |
@@ -24,9 +24,9 @@ Una tabla nueva, `calificaciones`, con la restricción única (cliente, viaje) q
 | `README.md` | Operaciones de calificaciones y cómo probarlas | RNF-20 |
 | `pruebas/unitarias/calificaciones.test.ts` | `aCalificacion`, `aPaginaCalificaciones` | RF-2.5, RF-2.5.8 |
 | `pruebas/unitarias/historial.test.ts` | `conCalificado` (se amplía) | RF-2.5.14 |
-| `pruebas/modulos/m6.test.ts` | `obtenerViaje` contra un M6 simulado (se amplía) | RF-2.5.1, RF-2.5.2, RF-2.5.5, RF-2.5.6, RF-2.5.13 |
-| `pruebas/integracion/calificaciones.test.ts` | Servicio con PostgreSQL real y M6 simulado: unicidad, concurrencia, repetición, orden de las comprobaciones, lectura y logs | RF-2.5 a RF-2.5.4, RF-2.5.8 a RF-2.5.11, RNF-05, RNF-08, RNF-19 |
-| `pruebas/integracion/calificaciones-http.test.ts` | Contrato, permisos, validación y errores por HTTP | RF-2.5.5 a RF-2.5.7, RF-2.5.12, RNF-03, RNF-14 |
+| `pruebas/modulos/m6.test.ts` | `obtenerViaje` contra un M6 simulado (se amplía) | RF-2.5.1, RF-2.5.2, RF-2.5.5, RF-2.5.6, RF-2.5.13, RF-2.5.18 |
+| `pruebas/integracion/calificaciones.test.ts` | Servicio con PostgreSQL real y M6 simulado: unicidad, concurrencia, repetición, orden de las comprobaciones, lectura y logs; el `429` no guarda nada ni gasta la clave | RF-2.5 a RF-2.5.4, RF-2.5.8 a RF-2.5.11, RF-2.5.18, RNF-05, RNF-08, RNF-19 |
+| `pruebas/integracion/calificaciones-http.test.ts` | Contrato, permisos, validación y errores por HTTP; el `503` ante un `429` y la correlación que llega a M6 | RF-2.5.5 a RF-2.5.7, RF-2.5.12, RF-2.5.18, RNF-03, RNF-14 |
 | `pruebas/integracion/historial.test.ts`, `historial-http.test.ts` | Se ajustan: cada viaje trae `calificado`; casos con y sin calificación | RF-2.5.14 |
 | `pruebas/integracion/arranque.test.ts`, `salud.test.ts` | Las listas de operaciones implementadas suman las tres | RNF-03 |
 | `specs/008-calificacion-conductor/guia.md` | Mapa y uso | RNF-20 |
@@ -84,6 +84,9 @@ Una migración nueva, `calificaciones`:
 ```
 respuesta = cliente.obtener('/trips/' + viajeId, idCorrelacion)      # reintenta una vez; puede lanzar ModuloNoDisponible
 si respuesta.estado == 404: devolver null                            # RF-2.5.1
+si respuesta.estado == 429:                                          # RF-2.5.18 (cambio de 2026-11-11)
+    lanzar ModuloNoDisponible('M6', causa «M6 respondió 429»,
+        reintentarDespuesS: segundosDeEspera(respuesta.reintentarDespues, config.reintentarDespuesS))
 si respuesta.estado >= 400: lanzar ErrorDeIntegracion                # 500, la causa lleva solo el código (RF-2.5.6)
 v = respuesta.cuerpo
 si v no es objeto, o v.state no es texto, o v.clientId no es texto: lanzar ModuloNoDisponible('M6')     # 503 (RF-2.5.5)
@@ -111,16 +114,19 @@ devolver conCalificado(pagina, calificados)         # calificado: calificados.ha
 - `conCalificado` es pura: `{ ...pagina, items: items.map(v => ({ ...v, calificado: calificados.has(v.viajeId.toLowerCase()) })) }`.
 
 ## Integraciones
-- **M6**, `GET /trips/{id}` (lectura): el mismo `ClienteModulo` de la spec #7, así que un intento tarda como máximo `M2_TIEMPO_MODULOS_MS` (2 s), se reintenta una vez tras 200 ms y, si falla, `503` con `detail` «M6 no está disponible» y `Retry-After` (RNF-13.1 a RNF-13.3). Un `4xx` distinto de `404` no se reintenta y responde `500` (RF-2.5.6). Un `404` es «viaje no encontrado».
+- **M6**, `GET /trips/{tripId}` (lectura): el mismo `ClienteModulo` de la spec #7, así que un intento tarda como máximo `M2_TIEMPO_MODULOS_MS` (2 s), se reintenta una vez tras 200 ms y, si falla, `503` con `detail` «M6 no está disponible» y `Retry-After` (RNF-13.1 a RNF-13.3). Un `4xx` distinto de `404` y de `429` no se reintenta y responde `500` (RF-2.5.6). Un `404` es «viaje no encontrado».
+- Un `429` (RF-2.5.18, cambio de 2026-11-11) tampoco se reintenta y responde `503` con `Retry-After`. Usa lo que deja el cambio de la spec #7: el campo `reintentarDespues` de la respuesta del cliente de módulos y `segundosDeEspera` de `src/historial/modelo.ts`. En el servicio no cambia nada: el `429` llega en el paso 6, antes de toda escritura, así que no queda fila ni clave de idempotencia guardada, y el duplicado del paso 5 sigue respondiendo `409` sin llamar a M6.
+- La consulta del viaje lleva `X-Correlation-Id` sin cambios en esta spec: sale del mismo cliente de M6, que la spec #7 configura con ese encabezado (RNF-14.11 y RNF-14.12 de esa spec).
 - La credencial es el token de servicio de la spec #7, firmado para cada intento (RF-2.5.13); no se reenvía el token de quien llamó a M2.
 - La llamada a M6 va **fuera** de la transacción de base de datos (ver Decisiones). La falla de M6 no deja nada guardado: no hay escritura hasta el paso 7.
 - No hay variables de entorno nuevas (RNF-06): `M2_URL_M6`, `M2_AUDIENCIA_M6` y `M2_REINTENTAR_DESPUES_S` ya existen.
 
 ## Pruebas
 - Unitarias: `aCalificacion` (con y sin comentario, comentario vacío presente, `creadoEn` en ISO), `aPaginaCalificaciones` (totales, página vacía), `conCalificado` (con, sin y mayúsculas).
-- Módulos (servidor HTTP simulado de M6): `obtenerViaje` con `COMPLETED` y conductor; estados distintos (`IN_PROGRESS`, `CANCELLED_BY_CLIENT`, uno desconocido) que devuelven el estado sin conductor; viaje ajeno y `404` que dan `null`; `400`, `401`, `403` que dan `500`; `5xx`, demora mayor al tiempo y no JSON que dan `503` tras un reintento; `state` o `clientId` ausentes o que no son texto, y `COMPLETED` sin `driverId` o con uno que no es UUID, que dan `503`; el viaje ajeno con respuesta mal formada da `null`, no `503`; el token de servicio llega, verifica con la clave y la audiencia de M6 y es nuevo en cada intento.
+- Módulos (servidor HTTP simulado de M6): `obtenerViaje` con `COMPLETED` y conductor; estados distintos (`IN_PROGRESS`, `CANCELLED`, uno desconocido) que devuelven el estado sin conductor; viaje ajeno y `404` que dan `null`; `400`, `401`, `403` que dan `500`; `5xx`, demora mayor al tiempo y no JSON que dan `503` tras un reintento; `state` o `clientId` ausentes o que no son texto, y `COMPLETED` sin `driverId` o con uno que no es UUID, que dan `503`; el viaje ajeno con respuesta mal formada da `null`, no `503`; el token de servicio llega, verifica con la clave y la audiencia de M6 y es nuevo en cada intento.
 - Integración (PostgreSQL real y M6 simulado): alta feliz y fila guardada con el conductor de M6; viaje ajeno, inexistente y no completado sin fila; duplicado con otra clave (`409`) sin llamar a M6, también con M6 caído; repetición con la misma clave y cuerpo (`201` original, sin segunda llamada a M6 y con M6 caído); misma clave con otro cuerpo (`422`); una clave tras un error se evalúa de nuevo; concurrencia (diez altas a la vez con claves distintas: un `201`, nueve `409`, una fila; diez con la misma clave: un solo efecto y la misma respuesta); perfil inexistente sin llamar a M6; `403` de propiedad sin tocar la base; listado (orden, desempate, página vacía y fuera del total, perfil inexistente); lectura por id (propia, ajena, inexistente); `calificado` verdadero y falso en el historial; ningún token, comentario, clave ni identificador en los logs.
 - HTTP: `201` con `Location`, `400` (cuerpo, clave, ids, `page`, `size`), `401`, `403` (otro cliente, OPERADOR, SERVICIO), `404`, `409` y `422` con su `type`, `500` y `503` con `Retry-After`, problem+json; el `503` de la base sin `Retry-After`.
+- `429` (RF-2.5.18). Módulos: un `429` de `GET /trips/{tripId}` da `ModuloNoDisponible` con el `Retry-After` de M6 o con el configurado y un solo pedido a M6; `400`, `401` y `403` siguen dando `ErrorDeIntegracion` y `404`, `null`; el pedido lleva `X-Correlation-Id`. Integración: con M6 respondiendo `429`, calificar no deja fila ni respuesta guardada, y el mismo pedido con la misma clave da `201` cuando M6 vuelve a responder; un viaje ya calificado da `409` sin llamar a M6. HTTP: `503` en problem+json con `detail` que nombra a M6 y el `Retry-After` de M6.
 - Contrato: las tres operaciones dejan de figurar pendientes. En la prueba de contrato no hay M6, así que `calificarConductor` acepta el `503` y el `422` en `schemathesis.toml`, como el historial y las otras altas.
 
 ## Trazabilidad
@@ -135,11 +141,12 @@ devolver conCalificado(pagina, calificados)         # calificado: calificados.ha
 | RF-2.5.8, RF-2.5.9, RF-2.5.10 | `repositorio.ts`, `modelo.ts`, pruebas de integración y HTTP |
 | RF-2.5.11, RF-2.5.12 | `servicio.ts` (pasos 1 y 4), pruebas de integración y HTTP |
 | RF-2.5.14 | `historial/servicio.ts`, `historial/modelo.ts`, `repositorio.ts`, pruebas unitarias e integración |
+| RF-2.5.18 | `m6.ts` (`obtenerViaje`: el `429` como `ModuloNoDisponible`), con `segundosDeEspera` y `reintentarDespues` de la spec #7; pruebas de módulos, integración y HTTP |
 | RNF-03 | Registro por OpenAPI, pruebas HTTP y de contrato |
 | RNF-05 | Migración con solo los identificadores del viaje y del conductor; M6 solo por su API |
 | RNF-06 | Sin variables nuevas; las de la spec #7 |
 | RNF-07 | Unitarias, módulos, HTTP, integración y contrato |
-| RNF-14 | Correlación hacia M6 y causa en el log del `503` y del `500` |
+| RNF-14 | Correlación hacia M6, también en `X-Correlation-Id` (cliente de M6 de la spec #7), y causa en el log del `503` y del `500` |
 | RNF-19 | Pruebas de logs en integración: comentario, clave, token e identificadores fuera del log |
 | RNF-20 | Guía por tarea y visión general al validar |
 
@@ -152,6 +159,7 @@ devolver conCalificado(pagina, calificados)         # calificado: calificados.ha
 - **Sin ADR**: ninguna decisión afecta al grupo ni cambia un acuerdo. **Sin dependencias nuevas.**
 - **Migración**: se genera con el nombre y la marca de tiempo del resto (`<marca>_calificaciones.sql`) y se prueba hacia arriba y hacia abajo en `migraciones.test.ts`. Es un cambio de esquema: se pregunta antes de aplicarla en T1 (AGENTS.md).
 - **Pruebas de la spec #7**: las que comparan el cuerpo exacto del historial se ajustan para incluir `calificado: false`. No cambia ninguna regla de la #7 salvo lo que RF-2.5.14 amplía.
+- **Cambio de 2026-11-11 (contrato de M6 `35b3c4d`, #96):** el `429` se trata dentro de `obtenerViaje`, igual que en `listarViajes`, y no en el servicio de calificaciones: así las dos consultas a M6 responden lo mismo y el servicio sigue sin saber de códigos de M6. Depende de T13 y T14 de la spec #7, que agregan la correlación al cliente de M6, `reintentarDespues` y `segundosDeEspera`: este cambio se implementa después de que estén en `main`. Sin ADR, sin migración y sin dependencias.
 
 ## Dudas abiertas
 Ninguna. Los supuestos con M6 y el Grupo 12 están en `## Decisiones` de la spec.

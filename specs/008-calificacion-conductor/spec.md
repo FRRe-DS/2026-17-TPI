@@ -1,6 +1,6 @@
 # Spec 008 — Calificación del conductor
 
-Estado: implementada
+Estado: aprobada
 Issue: #8
 Etapa: TP1
 Responsable: @sandobaitt
