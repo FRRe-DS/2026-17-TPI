@@ -5,13 +5,16 @@
 El cliente (o un operador) consulta el historial resumido de viajes de un cliente. M2 no guarda viajes: en cada consulta le pide
 la página a M6 (`GET /trips`), la convierte y devuelve `viajeId`, `estado` y, si M6 lo informa, `conductorId`, más `calificado`, que no
 viene de M6 sino de las calificaciones de M2 (spec 008, RF-2.5.14). Los viajes salen en el orden en que los entrega M6, que es quien
-los ordena del más reciente al más antiguo (RF-2.4.14). Si M6 no contesta responde `503` con `Retry-After`, sin historial parcial.
+los ordena del más reciente al más antiguo (RF-2.4.14). Si M6 no contesta, o limita los pedidos con un `429`, M2 responde `503` con
+`Retry-After`, sin historial parcial (RF-2.4.6, RF-2.4.15). El identificador de correlación de la solicitud viaja a M6 también en
+`X-Correlation-Id`, el encabezado de su contrato (RNF-14.11).
 
 **Recorrido** (`GET /api/v1/clientes/{clienteId}/viajes?page=0&size=20`).
 1. `src/operaciones/index.ts` asocia `listarHistorialViajes`; `src/app.ts` crea `app.m6`. Ruta, parámetros y roles salen del OpenAPI.
 2. `src/auth/permisos.ts:registrarPermisos` da `401`/`403` por rol y el validador del contrato, `400`. Nada de esto llama a M6.
 3. `src/historial/operaciones.ts` pasa identidad, roles, parámetros y `request.id` a `servicio.ts:listarHistorialViajes`: propiedad (`403`), perfil (`404`) y M6.
 4. `src/historial/m6.ts:listarViajes` pide `/trips?clientId&page+1&pageSize` con `src/modulos/cliente.ts` (timeout, un reintento) y firma en cada intento `src/auth/tokens.ts:tokenDeServicio`; comprueba la forma de la respuesta.
+   Cada intento lleva el id de correlación en el encabezado configurado y en `X-Correlation-Id` (T13). Un `429` de M6 sale como `503` con el `Retry-After` que lee `modelo.ts:segundosDeEspera`, sin reintento (T14, T15).
    Cada llamada deja una línea «llamada a M6» con el mismo id de correlación de la solicitud, los intentos y la duración (RNF-14.10, T11).
 5. `src/historial/modelo.ts:aPaginaViajes` descarta viajes de otro cliente, traduce la paginación y arma la página. Filtra y convierte con `filter` y `map`, sin ordenar: el orden es el de M6.
 6. `src/historial/servicio.ts` pregunta a la base de M2 cuáles de esos viajes calificó el cliente (una consulta por página, sin volver a llamar a M6, y ninguna si la página queda vacía) y `modelo.ts:conCalificado` agrega `calificado` a cada viaje. Si la base falla, `503` genérico y no un historial sin el campo.
@@ -20,32 +23,37 @@ los ordena del más reciente al más antiguo (RF-2.4.14). Si M6 no contesta resp
 | Archivo | Responsabilidad | Requisitos |
 |---|---|---|
 | `src/config.ts`, `ejemplo.env`, README | `M2_URL_M6` (obligatoria), `M2_AUDIENCIA_M6`, `M2_REINTENTAR_DESPUES_S` | RNF-06 |
-| `src/modulos/cliente.ts`, `src/auth/tokens.ts` | Credencial por intento, `Retry-After`, línea de log de cada llamada; token de servicio de 60 s con rol `SERVICIO` | RF-2.4.6, RF-2.4.11, RNF-13, RNF-14.10, RNF-19 |
-| `src/historial/{modelo,m6,servicio,operaciones}.ts` | Conversión (sin reordenar), pedido a M6, `calificado`, orden de comprobaciones y manejador | RF-2.4 a RF-2.4.10, RF-2.4.14, RNF-03, RNF-05 |
+| `src/modulos/cliente.ts`, `src/auth/tokens.ts` | Credencial por intento, `Retry-After`, línea de log de cada llamada, encabezado de correlación propio del módulo y `Retry-After` de un `4xx`; token de servicio de 60 s con rol `SERVICIO` | RF-2.4.6, RF-2.4.11, RF-2.4.15, RNF-13, RNF-14.10 a RNF-14.12, RNF-19 |
+| `src/historial/{modelo,m6,servicio,operaciones}.ts` | Conversión (sin reordenar), pedido a M6, el `429` como `503`, `calificado`, orden de comprobaciones y manejador | RF-2.4 a RF-2.4.10, RF-2.4.14, RF-2.4.15, RNF-03, RNF-05 |
 | `schemathesis.toml` | Acepta el `503` de M6 solo en esta operación (la prueba de contrato no tiene M6) | RNF-07 |
 | `pruebas/**/historial*.test.ts`, `m6.test.ts`, `cliente.test.ts` | Unitarias, M6 simulado, HTTP e integración | RNF-07, RNF-14, RNF-19 |
 
 **Decisiones.** El token se firma en cada intento (ADR 009); se descartó la credencial fija por variable (T1 y T2; la quitó T8). Un `4xx`
 de M6 es un problema de integración nuestro (`500`, sin reintento); un `200` con otra forma es falta de disponibilidad (`503`). Detalle en `plan.md`.
+**El `429` de M6** (cambio del 2026-11-11, RF-2.4.15). Es la excepción a la regla del `4xx`: no es un rechazo sino el límite de pedidos de M6, así que M2 responde `503` y no `500`. Usa el `Retry-After` de M6 si son solo dígitos y va de 1 a 3600 segundos; si no, `M2_REINTENTAR_DESPUES_S`. No reintenta: el límite es por minuto y otro pedido a los 200 ms cae en la misma ventana.
+**`X-Correlation-Id`** (RNF-14.11, RNF-14.12). M6 lee ese encabezado y no `X-Request-Id`, así que M2 manda el identificador en los dos. Si pasa de 100 caracteres, que es el máximo del contrato de M6, no va en `X-Correlation-Id`. `M2_ENCABEZADO_CORRELACION` sigue mandando en lo que M2 recibe y devuelve.
+**Por qué M2 sigue con el rol `SERVICIO`** (decisión de Lautaro del 2026-11-11). El contrato publicado de M6 nombra el rol `SYSTEM`, pero no dice en qué campo del token va. `SERVICIO` es el rol del acuerdo de M1 (ADR 009) y del contrato de M2, y el M6 real del Grupo 12 lo acepta como alias de `SYSTEM` (spec 081). Riesgo aceptado: si otro M6 lo rechaza, M2 responde `500` y el rol se cambia con otro cambio de esta spec.
 **Supuestos con M6 y el Grupo 1** (si cambian, se ajusta la configuración): audiencia `m6-viajes` por defecto y emisor `M2_EMISOR_TOKENS`; `GET /trips`
-paginado con `page` desde 1 y `pageSize` hasta 100, ordenado por `createdAt` descendente (Grupo 12, ADR 057; `contrato/dependencias/m6.yml`); el resumen de M6 solo trae `viajeId`, `estado` y `conductorId` (`calificado` lo agrega M2); el `type` del `503` es `about:blank`.
+paginado con `page` desde 1 y `pageSize` hasta 100, ordenado por `createdAt` descendente (contrato de la cátedra en su versión `35b3c4d`, ADR 096; `contrato/dependencias/m6.yml`); el resumen de M6 solo trae `viajeId`, `estado` y `conductorId` (`calificado` lo agrega M2); el `type` del `503` es `about:blank`.
 **Orden a cargo de M6** (cambio del 2026-11-08, RF-2.4.14). M6 pagina, así que reordenar en M2 solo ordenaría dentro de una página, y el resumen de M2 no trae la fecha. Por eso M2 devuelve cada página como la recibe y una prueba HTTP lo fija con una página que no está ordenada ni por `createdAt` ni por `id`. Si M6 dejara de ordenar, el historial saldría desordenado sin que M2 lo note.
 
 **Con el M6 real del Grupo 12** (spec 081, RNF-07.11). Todo lo anterior se probó con un M6 simulado que cumple su contrato. La spec 081 lo repite contra el M6 verdadero, construido desde su repositorio en un commit fijo: `npm run integracion:m6` (7 archivos, 35 pruebas; el historial es `pruebas/distribuida/historial.test.ts`) y, a mano, la sección 8 de `docs/probar-m2.md`. Corre en CI en el workflow `integracion-m6.yml` sobre `main` (verde el 2026-11-07). La tabla de diferencias entre el contrato supuesto y el M6 real está en `specs/081-integracion-m6-real/guia.md`.
 
-**Log de cada llamada a M6** (T11, RNF-14.10). Para seguir una solicitud entre M2 y M6: `docker compose logs m2 | grep 'llamada a M6'`. La línea lleva `idCorrelacion`, `modulo`, `metodo`, `estado` (el código con que respondió M6 en el último intento, también un 5xx, o `null` si no respondió: corte o red), `intentos` y `duracionMs`, y nunca la ruta, que trae el `clienteId`. El mismo `idCorrelacion` está en la línea «Solicitud terminada» de esa consulta y viaja a M6 en `X-Request-Id`.
+**Log de cada llamada a M6** (T11, RNF-14.10). Para seguir una solicitud entre M2 y M6: `docker compose logs m2 | grep 'llamada a M6'`. La línea lleva `idCorrelacion`, `modulo`, `metodo`, `estado` (el código con que respondió M6 en el último intento, también un 5xx, o `null` si no respondió: corte o red), `intentos` y `duracionMs`, y nunca la ruta, que trae el `clienteId`. El mismo `idCorrelacion` está en la línea «Solicitud terminada» de esa consulta y viaja a M6 en `X-Request-Id` y en `X-Correlation-Id` (T13). Un `429` queda como `info` con `estado: 429`, porque M6 sí respondió; la causa la registra el `503`.
 
-**Cómo probarlo uno mismo.** Ejemplos comprobados el 2026-10-25 contra el compose, con un M6 simulado en el host y datos ficticios:
+**Cómo probarlo uno mismo.** Ejemplos comprobados el 2026-11-11 contra el compose, con un M6 simulado en el host y datos ficticios. El simulado muestra el `X-Correlation-Id` que recibe y responde `429` cuando se le pide `pageSize=7`:
 ```bash
 docker compose up -d --build --wait
 SIMULADO=$(mktemp -d)/m6-simulado.mjs
 cat > "$SIMULADO" <<'EOF'
 import { createServer } from 'node:http';
-const v = (n, c, x = {}) => ({ id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`, state: 'COMPLETED', clientId: c, driverId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', ...x });
+const v = (n, c, x = {}) => ({ id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`, state: 'COMPLETED', vehicleType: 'CAR', clientId: c, driverId: '0b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e', createdAt: '2026-10-01T10:00:00Z', ...x });
 createServer((req, res) => {
   const u = new URL(req.url, 'http://x'); const c = u.searchParams.get('clientId');
+  console.log('M6 recibió X-Correlation-Id:', req.headers['x-correlation-id']);
+  if (u.searchParams.get('pageSize') === '7') { res.writeHead(429, { 'Content-Type': 'application/problem+json', 'Retry-After': '30' }); return res.end('{}'); }
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ items: [v(1, c), v(2, c, { driverId: null, state: 'CANCELLED_BY_CLIENT' })], page: +u.searchParams.get('page'), pageSize: +u.searchParams.get('pageSize'), total: 42 }));
+  res.end(JSON.stringify({ items: [v(1, c), v(2, c, { state: 'CANCELLED' })], page: +u.searchParams.get('page'), pageSize: +u.searchParams.get('pageSize'), total: 42 }));
 }).listen(3006, '0.0.0.0');
 EOF
 node "$SIMULADO" & SIM=$!
@@ -60,6 +68,8 @@ curl -i "$B/$CLI/viajes?page=1&size=2" -H "Authorization: Bearer $TC" # 200: tot
 curl -i "$B/$CLI/viajes" -H "Authorization: Bearer $TM" # 200: OPERADOR ve el de otro cliente
 curl -i "$B/$CLI/viajes" -H "Authorization: Bearer $TO" # 403: CLIENTE ajeno, sin llamar a M6
 curl -i "$B/$CLI/viajes?size=0" -H "Authorization: Bearer $TC" # 400
+curl -i "$B/$CLI/viajes?size=7" -H "Authorization: Bearer $TC" # 503 con Retry-After: 30: M6 respondió 429 (RF-2.4.15)
+curl -i "$B/$CLI/viajes" -H "Authorization: Bearer $TC" -H 'X-Request-Id: guia-007' # 200; el simulado muestra «M6 recibió X-Correlation-Id: guia-007»
 curl -i "$B/$(node -p "require('node:crypto').randomUUID()")/viajes" -H "Authorization: Bearer $TM" # 404: sin perfil
 kill $SIM; sleep 1
 curl -i "$B/$CLI/viajes" -H "Authorization: Bearer $TC" # 503 problem+json con Retry-After: 5
@@ -75,6 +85,8 @@ npm test && npm run contrato:test
 5. ¿Por qué `schemathesis.toml` acepta el `503` solo para esta operación?
 6. ¿Por qué M2 no reordena los viajes que recibe de M6, y qué pasaría si lo hiciera?
 7. ¿Qué dice la línea «llamada a M6» cuando la llamada sale bien al segundo intento, y qué campos no puede llevar?
+8. ¿Qué responde M2 si M6 contesta `429` con `Retry-After: 30`? ¿Y si ese `Retry-After` es una fecha? ¿Por qué no reintenta?
+9. ¿En qué encabezados le llega a M6 el identificador de correlación, y cuándo no le llega en `X-Correlation-Id`?
 
 ## Tareas
 
@@ -203,3 +215,10 @@ npm test && npm run contrato:test
 - Cómo se conecta: el comportamiento ya estaba alineado desde el PR #99 (dependencia y M6 simulados) y T13 a T15. La prueba de la dirección con camino sigue cubriendo que M2 suma `/trips` a lo que diga `M2_URL_M6`, con otro camino de ejemplo.
 - Tests: ninguno nuevo. `npm test` sigue en 5554 pruebas, las mismas que después de T15; lint y build en verde. `node scripts/demo.mjs` con el servicio levantado desde esta rama: 51 pasos en verde.
 - Para mirar con atención: el cuerpo del `404` del M6 de la demostración cambió de forma, algo que la tarea no pedía con esas palabras; M2 nunca lee el cuerpo de un error de M6, así que la demostración responde igual. En `config.test.ts` quedan dos direcciones con `/api` a secas, en los casos de URL inválida: no son ejemplos de una dirección de M6 que sirva.
+
+### T17 — README y guía al día · commit `007/T17`
+- Qué cambió: `README.md`, reescrito para que se lea de arriba abajo: «Empezar en cinco minutos» con los cuatro comandos y qué hacer si algo no anda; la tabla de las 20 operaciones con su ruta, qué hace y qué roles admite; una sección sobre la relación con los otros módulos, con qué le pide M2 a M6 (`GET /trips` y `GET /trips/{tripId}`) y una tabla de qué responde M2 ante cada falla de M6, el `429` incluido; las tres maneras de probarlo; las pruebas automáticas en una tabla; las variables agrupadas (servicio y base, tokens, llamadas a M6); y una sección para quien desarrolla. `M2_REINTENTAR_DESPUES_S` y `M2_ENCABEZADO_CORRELACION` dicen qué pasa con M6. Esta guía: la visión general suma el `429`, `X-Correlation-Id` y por qué M2 sigue con el rol `SERVICIO`, y su M6 de ejemplo usa `CANCELLED`, trae los campos obligatorios del contrato, muestra el `X-Correlation-Id` que recibe y responde `429` a pedido.
+- Por qué así: RNF-20. El README anterior tenía la información, pero había que leerlo entero para saber cómo empezar o qué pasaba con M6. Lautaro pidió que quedara claro. No se quitó contenido: lo que estaba sigue, reordenado, y lo que cada spec exige del README (levantar, probar, token, migración, variables, diagrama, panel y vista de demostración) está en su sección.
+- Cómo se conecta: la tabla de operaciones resume `contrato/openapi.yml`, que sigue siendo la fuente de verdad (rutas, resúmenes y roles se sacaron de ahí). El título «Generar un token» se conserva porque `scripts/demo.mjs` lo nombra. El README dice que al calificar un `429` todavía da `500`: hay que actualizar esa fila cuando se implemente el cambio de la spec 008.
+- Tests: ninguno nuevo. Comprobado el 2026-11-11 con el servicio construido desde esta rama: el bloque del M6 simulado del README corrido tal cual (`201`, `201`, `409`, listado, historial y `503` con el simulado detenido); el bloque «Cómo probarlo uno mismo» de esta guía corrido tal cual (`201`, `200`, `200`, `403`, `400`, `503` con `Retry-After: 30`, `200` con «M6 recibió X-Correlation-Id: guia-007», `404` y `503` con `Retry-After: 5`); `npm run contrato:test`: 20 operaciones, 3603 casos sin fallas, 28 omitidos; `npm test`: 5554 pruebas; `spec-check` con `--rama` en verde.
+- Para mirar con atención: la tabla de operaciones y la de roles duplican datos del contrato; si el contrato cambia, hay que tocarlas. Los anclajes del índice dependen de los títulos numerados.
