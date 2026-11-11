@@ -426,14 +426,14 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
       expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
     });
 
-    // El reintento es por el corte, no por el 429: con el 429 del segundo intento la llamada termina, aunque el tercero
-    // respondería bien.
+    // El reintento es por el corte, no por el 429: con el 429 del segundo intento la llamada termina. Con dos reintentos
+    // permitidos, un 429 que se reintentara haría un tercer pedido, que respondería bien.
     it('un intento cortado seguido de un 429 da lo mismo, con dos pedidos y sin un tercero', async () => {
       serv.responderCon([{ tipo: 'corta' }, limite('30'), ok(pagina([], 0))]);
       const lineas: { nivel: string; campos: Record<string, unknown> }[] = [];
       const anotar = (nivel: string) => (campos: Record<string, unknown>) => void lineas.push({ nivel, campos });
       const log = { info: anotar('info'), warn: anotar('warn') } as unknown as FastifyBaseLogger;
-      const conLog = crearM6({ ...CONFIG, urlM6: serv.url, tiempoModulosMs: TIEMPO_MS, reintentosModulos: 1, reintentarDespuesS: 7 }, log);
+      const conLog = crearM6({ ...CONFIG, urlM6: serv.url, tiempoModulosMs: TIEMPO_MS, reintentosModulos: 2, reintentarDespuesS: 7 }, log);
 
       const error = await fallaDe(conLog.listarViajes(CLIENTE, 0, 20, 'id-de-correlacion'));
 

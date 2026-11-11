@@ -30,7 +30,7 @@ node scripts/demo.mjs                    # recorre las 20 operaciones y comprueb
 docker compose down                      # al terminar
 ```
 
-La demostración imprime una línea por paso, con ✔ o ✘, y termina con «Todo en orden: 51 pasos comprobados.». Levanta por su cuenta un M6 simulado para el historial y las calificaciones, y lo borra al terminar.
+La demostración imprime una línea por paso, con ✔ o ✘, y termina con «Todo en orden» y la cantidad de pasos comprobados (hoy, 51). Levanta por su cuenta un M6 simulado para el historial y las calificaciones, y lo borra al terminar.
 
 Si algo no anda:
 
@@ -115,7 +115,7 @@ En cada pedido M2 se presenta con un token de servicio de vida corta (rol `SERVI
 | Lo que pasa con M6 | Qué responde M2 |
 |---|---|
 | No contesta a tiempo, corta la conexión, responde `5xx` o algo que no es JSON | Reintenta a los 200 ms (una vez, salvo que se cambie `M2_REINTENTOS_MODULOS`). Si vuelve a fallar: `503` con `Retry-After` |
-| Responde `200` con una forma que no es la de su contrato | `503` con `Retry-After`, sin reintentar |
+| Responde `200` con una forma que M2 no puede leer | `503` con `Retry-After`, sin reintentar |
 | Limita los pedidos (`429`) | En el historial: `503`, sin reintentar, con el `Retry-After` que informa M6 si va de 1 a 3600 segundos y, si no, con el configurado. Al calificar todavía responde `500`; lo cambia la spec 008 (issue #96) |
 | Responde `404` al pedirle un viaje | Al calificar: `404`, el viaje no existe |
 | Rechaza el pedido con otro `4xx` | `500`, sin reintentar: es un problema de configuración entre módulos, no del cliente |
@@ -277,7 +277,7 @@ Un servicio con una variable obligatoria faltante o inválida no arranca: sale c
 | `M2_URL_BD` | sí | — | URL de la base, `postgres://` o `postgresql://` |
 | `M2_PUERTO` | no | `8082` | Puerto de escucha, también el que se publica en la máquina |
 | `M2_TIEMPO_BD_MS` | no | `2000` | Espera máxima a la base, en milisegundos (de 1 a 2147483647) |
-| `M2_ENCABEZADO_CORRELACION` | no | `X-Request-Id` | Nombre del encabezado de correlación que M2 recibe y devuelve. A M6 le manda el mismo identificador en ese encabezado y además en `X-Correlation-Id`, el de su contrato, salvo que el identificador pase de 100 caracteres |
+| `M2_ENCABEZADO_CORRELACION` | no | `X-Request-Id` | Nombre del encabezado de correlación que M2 recibe y devuelve. A M6 le manda el mismo identificador en ese encabezado y además en `X-Correlation-Id`, el de su contrato, salvo que el identificador pase de 100 caracteres. Si esta variable ya vale `X-Correlation-Id` y el identificador pasa de 100, la llamada a M6 sale sin correlación |
 | `POSTGRES_USER` | solo para la base | el de `ejemplo.env` | Usuario que crea la imagen de PostgreSQL |
 | `POSTGRES_PASSWORD` | solo para la base | el de `ejemplo.env` | Contraseña de ese usuario |
 | `POSTGRES_DB` | solo para la base | el de `ejemplo.env` | Base que se crea al inicializar |

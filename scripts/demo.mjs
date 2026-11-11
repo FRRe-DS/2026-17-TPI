@@ -64,7 +64,7 @@ require('http').createServer((req, res) => {
   const id = ruta.split('/').pop();
   if (id.startsWith('22222222')) return responder(res, 200, viaje(id, 'IN_PROGRESS'));
   if (id.startsWith('33333333')) return responder(res, 200, viaje(id, 'COMPLETED', '99999999-9999-4999-8999-999999999999'));
-  if (id.startsWith('44444444')) return responder(res, 404, error(404, 'NOT_FOUND', 'No encontrado', 'Viaje no encontrado'));
+  if (id.startsWith('44444444')) return responder(res, 404, error(404, 'TRIP_NOT_FOUND', 'No encontrado', 'Viaje no encontrado'));
   return responder(res, 200, viaje(id, 'COMPLETED'));
 }).listen(3006);`;
 
