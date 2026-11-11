@@ -231,7 +231,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
 
     it.each([400, 401, 403, 404])('un %i de M6 no se reintenta y da 500 genérico', async (estado) => {
       const id = await perfil();
-      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6('X', 'dato-de-m6') });
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, 'dato-de-m6') });
 
       const respuesta = await crear().pedir(id);
 

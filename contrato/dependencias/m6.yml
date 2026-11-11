@@ -3,272 +3,613 @@ info:
   title: Dependencia M6 consumida por M2 — extracción del contrato de la cátedra
   version: 1.0.0
   description: |
-    Alcance: RF-2.4, RF-2.5 y RNF-05. Solo las dos consultas que M2 consume y los componentes que referencian, sin cambios.
-    Fuente: contrato de M6 del Grupo 12 subido a la cátedra en FRRe-DS/2026-TPI#9, archivo contratos/m6_viajes/openapi.yml,
-    commit 9e720a0d074ef8e9cc20ba189baf340b071779f3 (2026-10-25). El PR se mergeó sin cambios en el archivo el 2026-10-29
-    (merge 69e9481). Decisión y diferencias con el borrador anterior: ADR 057 e issue #57. La cátedra tiene una versión
-    posterior (commit 35b3c4d, 2026-11-01, Grupos 5 y 12) que no se extrajo todavía: ver ADR 079.
-    [NECESITA ACLARACIÓN] Grupo 12: qué `aud` e `iss` valida M6 en el token de servicio (ADR 009).
+    Alcance: RF-2.4, RF-2.5 y RNF-05. Solo las dos consultas que M2 consume (`listTrips` y `getTrip`) y los componentes
+    que referencian, sin cambios.
+    Fuente: contrato de M6 (Grupos 5 y 12) publicado en la cátedra, FRRe-DS/2026-TPI, archivo
+    contratos/m6_viajes/openapi.yml, commit 35b3c4da1390bb9cf8aea48601a506562b614e21 (2026-11-01, «Contrato confirmado
+    por ambos grupos»). Decisión y diferencias con la extracción anterior (commit 9e720a0): ADR 096 e issue #96.
+    El `openapi.yaml` del repositorio del Grupo 12 (FRRe-DS/2026-12-TPI) va adelante de este contrato en dos puntos que
+    todavía no subieron a la cátedra (visto el 2026-11-10): `VehicleType` con `AUTO` y `MOTO` (su commit f6e1b6f) y el
+    claim `roles` con los alias en español, entre ellos `SERVICIO` como `SYSTEM` (su commit c36830a). Mientras no entren
+    a la cátedra, vale lo que dice este archivo (ADR 096).
+    [NECESITA ACLARACIÓN] Grupo 12: qué `aud` e `iss` valida M6 en el token de servicio (ADR 009; su issue #9).
+
+    Lo que sigue es de la descripción de la fuente, sin cambios. Se omiten las secciones de eventos y de su transporte,
+    que M2 no consume.
+
+    **Máquina de estados:**
+
+    `PENDING_ARRIVAL → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`, y `CANCELLED` desde los estados
+    no terminales según el rol.
+
+    **Convenciones comunes**
+    - Autenticación: `Authorization: Bearer <JWT emitido por M1>`. El token trae el id del usuario
+      y su rol (`CLIENT`, `DRIVER`, `OPERATOR`, o `SYSTEM` para llamadas entre módulos).
+    - Errores: siempre `application/problem+json` (RFC 9457) con un `code` estable.
+    - Concurrencia: cada viaje expone su versión como `ETag`. Las acciones aceptan `If-Match`
+      opcional; si la versión no coincide se responde `412`.
+    - Idempotencia: las acciones aceptan `Idempotency-Key`. Repetir la misma clave devuelve la
+      misma respuesta sin volver a aplicar la acción.
+    - Correlación: `X-Correlation-Id` se propaga en logs y eventos; si no viene, M6 genera uno.
+    - GET condicional: `GET /trips/{tripId}` acepta `If-None-Match` y responde `304 Not Modified`
+      sin cuerpo cuando el viaje no cambió, para que el cliente no baje el JSON completo de nuevo.
+    - Fechas en ISO 8601 con zona horaria (UTC).
+    - Una ruta inexistente responde `404` con código `ROUTE_NOT_FOUND`.
+
+    **Seguridad (RNF-12)**
+    - El token debe tener vencimiento (`exp`); sin él, o vencido, se responde `401`.
+    - Límite de pedidos por usuario y por minuto (120 para usuarios, 1200 para servicios, configurable).
+      Las respuestas exitosas (`200` y `201`) informan `RateLimit-Limit`, `RateLimit-Remaining` y
+      `RateLimit-Reset`; al superarlo, `429 TOO_MANY_REQUESTS` con `Retry-After`.
+    - Cuerpos de hasta 16 KB (`413 PAYLOAD_TOO_LARGE`).
+    - En entornos publicados la API se expone sólo por HTTPS (lo termina el proxy o balanceador).
+  contact:
+    name: Grupos 5 y 12 - Desarrollo de Software 2026
+  license:
+    name: Uso académico
+    identifier: UNLICENSED
 servers:
-  - url: http://localhost:3006/api/v1
-    description: Servidor de desarrollo local (Contenedor OCI)
-security:
-  - bearerAuth: []
+  - url: http://localhost:3000
+    description: Implementación del Grupo 5 (desarrollo local)
+  - url: http://localhost:3006
+    description: Implementación del Grupo 12 (desarrollo local)
 tags:
   - name: Trips
-    description: Operaciones del ciclo de vida y consultas de viajes
+    description: Creación y consulta de viajes.
+security:
+  - bearerAuth: []
+
 paths:
   /trips:
     get:
-      tags:
-        - Trips
-      summary: Listar viajes filtrados (Para historial de M2 o consultas de Operador)
+      tags: [Trips]
+      operationId: listTrips
+      summary: Historial resumido de viajes
       description: |
-        Permite a M2 obtener el historial resumido de un cliente (RF-2.4) o filtrar por conductor/estado.
-        Devuelve `TripSummary` (sin coordenadas, RF-4.7 / RNF-19), paginado y ordenado por `createdAt` descendente.
-        Roles permitidos:
-        - `CLIENT` / `CLIENTE`: devuelve únicamente viajes de su propio `clientId`.
-        - `DRIVER` / `CONDUCTOR`: devuelve únicamente viajes de su propio `driverId`.
-        - `SYSTEM` / `SERVICIO` (ej. M2): **requiere obligatoriamente al menos un filtro** (`clientId`, `driverId` o `state`);
-          una llamada sin filtros devuelve `400 Bad Request` (`code: "FILTER_REQUIRED"`) para evitar exponer viajes de todos los usuarios.
-        - `OPERATOR` / `OPERADOR`: acceso administrativo de consulta.
+        Lista paginada de viajes, del más reciente al más antiguo. Es la API que usa **M2** para
+        el historial del cliente (RF-2.4), en lugar de acceder a la base de M6.
+
+        **Roles permitidos y filtros efectivos:**
+        - `CLIENT`: sólo sus viajes (se ignora `clientId` y se usa el del token).
+        - `DRIVER`: sólo sus viajes (se ignora `driverId` y se usa el del token).
+        - `OPERATOR`: todos, con los filtros que indique.
+        - `SYSTEM`: debe indicar `clientId` o `driverId`; sin ninguno de los dos responde
+          `400 VALIDATION` (un servicio no puede listar viajes de todos los clientes).
+      x-allowed-roles: [CLIENT, DRIVER, OPERATOR, SYSTEM]
       parameters:
-        - in: query
-          name: clientId
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: clientId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: driverId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: state
+          in: query
+          description: Filtra por uno o más estados.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/TripState'
+        - name: from
+          in: query
+          description: Viajes creados a partir de esta fecha (inclusive).
           schema:
             type: string
-            format: uuid
-          description: Filtrar por ID del cliente (obligatorio para consultas de historial desde M2 con rol SYSTEM/SERVICIO)
-        - in: query
-          name: driverId
+            format: date-time
+        - name: to
+          in: query
+          description: Viajes creados antes de esta fecha (exclusive).
           schema:
             type: string
-            format: uuid
-          description: Filtrar por ID del conductor
-        - in: query
-          name: state
-          schema:
-            $ref: "#/components/schemas/TripState"
-          description: Filtrar por estado actual del viaje
-        - in: query
-          name: page
+            format: date-time
+        - name: page
+          in: query
           schema:
             type: integer
             minimum: 1
             default: 1
-          description: Número de página (base 1)
-        - in: query
-          name: pageSize
+        - name: pageSize
+          in: query
           schema:
             type: integer
             minimum: 1
             maximum: 100
             default: 20
-          description: Cantidad de elementos por página
       responses:
-        "200":
-          description: Página de viajes resumidos
+        '200':
+          description: Página de viajes.
+          headers:
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TripSummaryPage"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-  /trips/{id}:
+                $ref: '#/components/schemas/TripSummaryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /trips/{tripId}:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/IfNoneMatch'
     get:
-      tags:
-        - Trips
-      summary: Consultar estado actual y resumen de un viaje (RF-6.2)
+      tags: [Trips]
+      operationId: getTrip
+      summary: Estado actual y resumen del viaje
       description: |
-        Accesible por el cliente del viaje (`CLIENT`), el conductor asignado (`DRIVER`), un operador (`OPERATOR`)
-        o un módulo de servicio (`SYSTEM` / `roles: ["SERVICIO"]`, por ejemplo M2 al verificar que el viaje esté
-        `COMPLETED`, pertenezca al `clientId` y obtener el `driverId` para calificar al conductor).
-      parameters:
-        - $ref: "#/components/parameters/TripIdParam"
+        RF-6.2. **Roles permitidos:** el `CLIENT` y el `DRIVER` del viaje, `OPERATOR` y `SYSTEM`.
+        A un cliente o conductor ajeno se le responde `404` para no revelar que el viaje existe.
+      x-allowed-roles: [CLIENT, DRIVER, OPERATOR, SYSTEM]
       responses:
-        "200":
-          description: Detalle y estado actual del viaje
+        '200':
+          description: Viaje encontrado.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            RateLimit-Limit:
+              $ref: '#/components/headers/RateLimitLimit'
+            RateLimit-Remaining:
+              $ref: '#/components/headers/RateLimitRemaining'
+            RateLimit-Reset:
+              $ref: '#/components/headers/RateLimitReset'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Trip"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+                $ref: '#/components/schemas/Trip'
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: |
-        Token JWT emitido por M1 (Identidad y Acceso) con claim `sub` (o `identidad_id`) e información de rol.
-        Soporta tanto `role` string (`CLIENT`, `DRIVER`, `OPERATOR`, `SYSTEM`) como `roles` array
-        (`["CLIENTE"]`, `["CONDUCTOR"]`, `["OPERADOR"]`, `["SERVICIO"]`). El rol `SYSTEM` / `SERVICIO`
-        corresponde a tokens de servicio usados en la comunicación entre módulos (ej. M2 → M6 o M5 → M6, RF-1.4).
+      description: Token emitido por M1 (Identidad y Acceso).
+
   parameters:
-    TripIdParam:
-      name: id
+    TripId:
+      name: tripId
       in: path
       required: true
-      description: Identificador único del viaje (UUID)
+      schema:
+        $ref: '#/components/schemas/Id'
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Identificador para correlacionar logs y eventos entre módulos (RNF-14).
       schema:
         type: string
-        format: uuid
+        maxLength: 100
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: |
+        `ETag` que el cliente ya tiene. Si coincide con la versión actual del viaje, se responde
+        `304 Not Modified` sin cuerpo (GET condicional, RFC 9110).
+      schema:
+        type: string
+        examples: ['"4"']
+
+  headers:
+    ETag:
+      description: Versión actual del viaje.
+      schema:
+        type: string
+    RateLimitLimit:
+      description: Pedidos permitidos por minuto para este usuario o servicio.
+      schema:
+        type: integer
+    RateLimitRemaining:
+      description: Pedidos que todavía se pueden hacer en la ventana actual.
+      schema:
+        type: integer
+    RateLimitReset:
+      description: Segundos hasta que se reinicia la ventana de pedidos.
+      schema:
+        type: integer
+
+  responses:
+    NotModified:
+      description: |
+        El viaje no cambió desde la versión que el cliente ya tiene (`If-None-Match` coincide).
+        No lleva cuerpo.
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+    BadRequest:
+      description: 'Datos de entrada inválidos (cuerpo, query o header `If-Match`). Código: `VALIDATION`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://movilidad.example/errors/validation
+            title: Datos inválidos
+            status: 400
+            code: VALIDATION
+            detail: distanceKm debe ser un número mayor o igual a 0.1
+            message: distanceKm debe ser un número mayor o igual a 0.1
+            timestamp: '2026-10-08T12:22:00Z'
+            errors:
+              - field: distanceKm
+                message: debe ser mayor o igual a 0.1
+    Unauthorized:
+      description: 'Falta el token o es inválido. Código: `UNAUTHENTICATED`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Forbidden:
+      description: 'El rol o el usuario no puede ejecutar la acción. Código: `FORBIDDEN`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://movilidad.example/errors/forbidden
+            title: Acción no permitida
+            status: 403
+            code: FORBIDDEN
+            detail: 'DRIVER no puede ejecutar COMPLETE: no es el conductor asignado al viaje'
+            message: 'DRIVER no puede ejecutar COMPLETE: no es el conductor asignado al viaje'
+            timestamp: '2026-10-08T12:22:00Z'
+    NotFound:
+      description: 'El viaje no existe o no es visible para el usuario. Código: `TRIP_NOT_FOUND`.'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    TooManyRequests:
+      description: |
+        Se superó el límite de pedidos por minuto del usuario. Código: `TOO_MANY_REQUESTS`.
+        `Retry-After` indica en cuántos segundos se puede volver a intentar.
+      headers:
+        Retry-After:
+          description: Segundos hasta que se reinicia el límite.
+          schema:
+            type: integer
+        RateLimit-Limit:
+          $ref: '#/components/headers/RateLimitLimit'
+        RateLimit-Remaining:
+          $ref: '#/components/headers/RateLimitRemaining'
+        RateLimit-Reset:
+          $ref: '#/components/headers/RateLimitReset'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
   schemas:
-    ErrorResponse:
+    Id:
+      type: string
+      format: uuid
+
+    TripState:
+      type: string
+      enum: [PENDING_ARRIVAL, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED]
+
+    CancellationRole:
+      type: string
+      description: |
+        Rol que puede ejecutar una cancelación. Es un subconjunto de `Role`: `SYSTEM` queda afuera
+        porque los módulos de servicio no cancelan viajes.
+      enum: [CLIENT, DRIVER, OPERATOR]
+
+    VehicleType:
+      type: string
+      enum: [CAR, MOTORCYCLE]
+
+    CancellationReason:
+      type: string
+      enum:
+        - CHANGE_OF_PLANS
+        - EXCESSIVE_DELAY
+        - DRIVER_NO_SHOW
+        - CLIENT_NO_SHOW
+        - VEHICLE_PROBLEM
+        - ORIGIN_UNREACHABLE
+        - SECURITY_INCIDENT
+        - ADMINISTRATIVE_BLOCK
+        - OTHER
+
+    Closure:
       type: object
-      required:
-        - code
-        - message
-        - timestamp
+      required: [distanceKm, durationSeconds]
       properties:
-        code:
+        distanceKm:
+          type: number
+          format: float
+          minimum: 0
+        durationSeconds:
+          type: integer
+          minimum: 0
+          description: |
+            Duración exacta, calculada por M6 como `completedAt - startedAt`. Es el valor que **M7 usa
+            para tarifar** (RF-7.1). `durationMinutes` se deriva de este y es solo para mostrar.
+        finalLatitude:
+          type: number
+          format: double
+        finalLongitude:
+          type: number
+          format: double
+
+    Cancellation:
+      type: object
+      required: [cancelledBy, reason, previousState, requiresRedispatch]
+      properties:
+        cancelledBy:
+          $ref: '#/components/schemas/CancellationRole'
+        reason:
+          $ref: '#/components/schemas/CancellationReason'
+        detail:
           type: string
-          example: INVALID_STATE_TRANSITION
-        message:
-          type: string
-          example: No se puede pasar a IN_PROGRESS desde el estado PENDING_ARRIVAL
-        correlationId:
-          type: string
-          description: ID de correlación para trazabilidad en logs (RNF-14)
-        timestamp:
-          type: string
-          format: date-time
+        previousState:
+          $ref: '#/components/schemas/TripState'
+        requiresRedispatch:
+          type: boolean
+          description: Verdadero si la solicitud debe volver a M5 para buscar otro conductor.
+
     Trip:
       type: object
+      required:
+        - id
+        - requestId
+        - reservationId
+        - clientId
+        - driverId
+        - vehicleId
+        - vehicleType
+        - originLatitude
+        - originLongitude
+        - destinationLatitude
+        - destinationLongitude
+        - state
+        - version
+        - createdAt
       properties:
         id:
-          type: string
-          format: uuid
+          $ref: '#/components/schemas/Id'
         requestId:
-          type: string
-          format: uuid
+          $ref: '#/components/schemas/Id'
+        reservationId:
+          oneOf:
+            - $ref: '#/components/schemas/Id'
+            - type: 'null'
         clientId:
-          type: string
-          format: uuid
+          $ref: '#/components/schemas/Id'
         driverId:
-          type: string
-          format: uuid
+          $ref: '#/components/schemas/Id'
         vehicleId:
-          type: string
-          format: uuid
+          $ref: '#/components/schemas/Id'
+        vehicleType:
+          $ref: '#/components/schemas/VehicleType'
         originLatitude:
           type: number
           format: double
+          minimum: -90
+          maximum: 90
         originLongitude:
           type: number
           format: double
+          minimum: -180
+          maximum: 180
         destinationLatitude:
           type: number
           format: double
+          minimum: -90
+          maximum: 90
         destinationLongitude:
           type: number
           format: double
+          minimum: -180
+          maximum: 180
+        originAddress:
+          type: string
+        destinationAddress:
+          type: string
         state:
-          $ref: "#/components/schemas/TripState"
-        distanceKm:
-          type:
-            - number
-            - "null"
-          format: float
-        durationMinutes:
-          type:
-            - integer
-            - "null"
+          $ref: '#/components/schemas/TripState'
+        version:
+          type: integer
+          minimum: 1
+          description: Aumenta en 1 con cada transición. Es el valor del `ETag`.
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-    TripState:
-      type: string
-      enum:
-        - PENDING_ARRIVAL
-        - DRIVER_ARRIVED
-        - IN_PROGRESS
-        - COMPLETED
-        - CANCELLED_BY_CLIENT
-        - CANCELLED_BY_DRIVER
-    TripSummary:
-      type: object
-      description: Vista resumida de un viaje para historiales (sin coordenadas, RF-2.4 / RF-4.7)
-      properties:
-        id:
-          type: string
-          format: uuid
-        state:
-          $ref: "#/components/schemas/TripState"
-        clientId:
-          type: string
-          format: uuid
-        driverId:
-          type: string
-          format: uuid
+          description: Momento de la última transición del viaje.
+        arrivedAt:
+          type: [string, 'null']
+          format: date-time
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelledAt:
+          type: [string, 'null']
+          format: date-time
         distanceKm:
-          type:
-            - number
-            - "null"
+          description: Kilómetros recorridos. `null` hasta que el viaje se completa.
+          type: [number, 'null']
           format: float
         durationMinutes:
-          type:
-            - integer
-            - "null"
+          description: |
+            Duración en minutos, **solo para mostrar**: se calcula como `round(durationSeconds / 60)`
+            (redondeo al más cercano) con un mínimo de 1. El valor exacto, y el que **M7 debe usar para
+            tarifar**, es `closure.durationSeconds`. `null` hasta que el viaje se completa.
+          type: [integer, 'null']
+          minimum: 1
+        closure:
+          description: Presente cuando el estado es `COMPLETED`.
+          oneOf:
+            - $ref: '#/components/schemas/Closure'
+            - type: 'null'
+        cancellation:
+          description: Presente cuando el estado es `CANCELLED`.
+          oneOf:
+            - $ref: '#/components/schemas/Cancellation'
+            - type: 'null'
+      example:
+        id: 7b0e3a8e-4f7c-4d1a-9a52-1f0c2f9d6b11
+        requestId: 0c6a4f0e-8f43-4d3b-a3b7-6a1f2c8e9d10
+        reservationId: null
+        clientId: 3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+        driverId: 9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+        vehicleId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5e
+        vehicleType: CAR
+        originLatitude: -34.6037
+        originLongitude: -58.3816
+        destinationLatitude: -34.5889
+        destinationLongitude: -58.3974
+        originAddress: Av. Corrientes 1000
+        destinationAddress: Av. Santa Fe 3000
+        state: COMPLETED
+        version: 4
+        createdAt: '2026-10-08T12:00:00Z'
+        updatedAt: '2026-10-08T12:22:00Z'
+        arrivedAt: '2026-10-08T12:05:00Z'
+        startedAt: '2026-10-08T12:07:00Z'
+        completedAt: '2026-10-08T12:22:00Z'
+        cancelledAt: null
+        distanceKm: 4.2
+        durationMinutes: 15
+        closure: { distanceKm: 4.2, durationSeconds: 900 }
+        cancellation: null
+
+    TripSummary:
+      type: object
+      required: [id, state, vehicleType, clientId, driverId, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        state:
+          $ref: '#/components/schemas/TripState'
+        vehicleType:
+          $ref: '#/components/schemas/VehicleType'
+        clientId:
+          $ref: '#/components/schemas/Id'
+        driverId:
+          $ref: '#/components/schemas/Id'
+        originAddress:
+          type: string
+        destinationAddress:
+          type: string
         createdAt:
           type: string
           format: date-time
+        completedAt:
+          type: [string, 'null']
+          format: date-time
+        distanceKm:
+          type: [number, 'null']
+          format: float
+          minimum: 0
+        durationMinutes:
+          type: [integer, 'null']
+          minimum: 1
+
     TripSummaryPage:
       type: object
-      required:
-        - items
-        - page
-        - pageSize
-        - total
+      required: [items, page, pageSize, total]
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/TripSummary"
+            $ref: '#/components/schemas/TripSummary'
         page:
           type: integer
-          example: 1
+          minimum: 1
         pageSize:
           type: integer
-          example: 20
+          minimum: 1
         total:
           type: integer
-          description: Cantidad total de viajes que cumplen el filtro
-          example: 42
-  responses:
-    BadRequest:
-      description: Datos de entrada inválidos o faltantes
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    Forbidden:
-      description: El rol o usuario autenticado no tiene permisos para realizar esta acción sobre el viaje
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    NotFound:
-      description: Viaje no encontrado
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    Unauthorized:
-      description: Token JWT ausente, inválido o expirado (M1)
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
+          minimum: 0
+
+    Problem:
+      type: object
+      description: Error en formato RFC 9457 (problem+json), común a todos los módulos.
+      required: [type, title, status, code, message, timestamp]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        message:
+          type: string
+          description: Texto legible del error, equivalente a `detail`.
+        timestamp:
+          type: string
+          format: date-time
+        instance:
+          type: string
+        code:
+          type: string
+          description: Código estable para que los clientes decidan sin leer textos.
+          enum:
+            - VALIDATION
+            - UNAUTHENTICATED
+            - PAYLOAD_TOO_LARGE
+            - FORBIDDEN
+            - TRIP_NOT_FOUND
+            - ROUTE_NOT_FOUND
+            - INVALID_STATE_TRANSITION
+            - CONCURRENCY_CONFLICT
+            - REQUEST_ID_CONFLICT
+            - REQUEST_IN_PROGRESS
+            - PRECONDITION_FAILED
+            - INVALID_VERIFICATION_CODE
+            - REASON_NOT_ALLOWED
+            - IDEMPOTENCY_KEY_REUSED
+            - TOO_MANY_REQUESTS
+            - DEPENDENCY_UNAVAILABLE
+            - INTERNAL_ERROR
+        currentState:
+          $ref: '#/components/schemas/TripState'
+        correlationId:
+          type: string
+        errors:
+          type: array
+          description: Detalle por campo cuando `code` es `VALIDATION`.
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field:
+                type: string
+              message:
+                type: string

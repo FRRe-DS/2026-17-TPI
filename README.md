@@ -144,7 +144,7 @@ node scripts/spec-check.mjs
 
 ## Probar las calificaciones con un M6 simulado
 
-El compose no trae un M6, y las calificaciones y el historial le preguntan por los viajes. Para probarlas a mano alcanza con un contenedor que haga de M6: el servicio apunta por defecto a `http://m6:3006/api/v1`, así que basta darle a un contenedor de la red del compose el nombre de red `m6`. Con el servicio levantado (`docker compose up -d --build --wait`):
+El compose no trae un M6, y las calificaciones y el historial le preguntan por los viajes. Para probarlas a mano alcanza con un contenedor que haga de M6: el servicio apunta por defecto a `http://m6:3006`, así que basta darle a un contenedor de la red del compose el nombre de red `m6`. Con el servicio levantado (`docker compose up -d --build --wait`):
 
 ```bash
 CLIENTE=$(cat /proc/sys/kernel/random/uuid)   # el cliente de la prueba
@@ -234,7 +234,7 @@ M2_PUERTO=9090 docker compose up -d --build --wait
 | `M2_TIEMPO_MODULOS_MS` | no | `2000` | Espera máxima por intento a otro módulo, en milisegundos (de 1 a 2147483647) |
 | `M2_REINTENTOS_MODULOS` | no | `1` | Reintentos de una lectura a otro módulo, de 0 a 5 |
 | `M2_ENCABEZADO_CORRELACION` | no | `X-Request-Id` | Nombre del encabezado de correlación |
-| `M2_URL_M6` | sí | — | URL base de M6 (Viajes), `http://` o `https://`, con su ruta `/api/v1` y sin usuario ni contraseña; el servicio no arranca sin ella |
+| `M2_URL_M6` | sí | — | URL base de M6 (Viajes), `http://` o `https://`, sin usuario ni contraseña. M6 sirve en `/trips`, así que no lleva `/api/v1`; el servicio no arranca sin ella |
 | `M2_AUDIENCIA_M6` | no | `m6-viajes` | Audiencia (`aud`) del token de servicio con el que M2 se presenta ante M6; no puede estar en blanco ni tener espacios al principio o al final |
 | `M2_REINTENTAR_DESPUES_S` | no | `5` | Segundos que sugiere `Retry-After` cuando M6 no está disponible, de 1 a 3600 |
 | `M2_MODO_TOKENS` | no | `hs256` | Cómo se validan los tokens: `hs256` (clave compartida, para desarrollo) o `jwks` (RS256 con las claves públicas de Keycloak, spec 080; ver [`docs/probar-m2.md`](docs/probar-m2.md), sección 9) |

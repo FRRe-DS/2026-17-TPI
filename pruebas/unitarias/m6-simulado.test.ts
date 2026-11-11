@@ -38,23 +38,32 @@ describe('el M6 simulado cumple contrato/dependencias/m6.yml', () => {
   it('el validador distingue: un viaje con el estado mal formado no cumple Trip', () => {
     expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { state: 7 }))).not.toEqual([]);
     expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { driverId: 'conductor-7' }))).not.toEqual([]);
-    expect(errores('ErrorResponse', { code: 'X', message: 'sin timestamp' })).not.toEqual([]);
+    expect(errores('Problem', { code: 'VALIDATION', message: 'sin el resto' })).not.toEqual([]);
+    expect(errores('Problem', errorDeM6(404, 'con un code que no está en la lista', { code: 'NOT_FOUND' }))).not.toEqual([]);
   });
 
-  it('GET /trips/{id}: el viaje completado, y con otro estado o sin conductor, cumple Trip', () => {
+  // Desde la versión `35b3c4d` (ADR 096) el contrato exige `driverId` y no tiene `CANCELLED_BY_*`. M2 igual acepta un viaje
+  // así (RF-2.4.1, RF-2.5): eso lo cubren sus pruebas, que lo arman a propósito fuera del contrato.
+  it('lo que el contrato ya no admite no cumple: sin conductor o con un estado de la versión anterior', () => {
+    expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { driverId: undefined }))).not.toEqual([]);
+    expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { state: 'CANCELLED_BY_CLIENT' }))).not.toEqual([]);
+    expect(errores('TripSummary', resumenDeM6(1, CLIENTE, CONDUCTOR, { driverId: undefined }))).not.toEqual([]);
+  });
+
+  it('GET /trips/{tripId}: el viaje completado, en curso y cancelado cumple Trip', () => {
     expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR))).toEqual([]);
-    expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { state: 'IN_PROGRESS' }))).toEqual([]);
-    expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { state: 'CANCELLED_BY_CLIENT', driverId: undefined }))).toEqual([]);
+    expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { state: 'IN_PROGRESS', distanceKm: null, durationMinutes: null }))).toEqual([]);
+    expect(errores('Trip', viajeDeM6(VIAJE, CLIENTE, CONDUCTOR, { state: 'CANCELLED', distanceKm: null, durationMinutes: null }))).toEqual([]);
   });
 
   it('GET /trips: la página con sus viajes cumple TripSummaryPage', () => {
-    const items = [resumenDeM6(1, CLIENTE, CONDUCTOR), resumenDeM6(2, CLIENTE, CONDUCTOR, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' })];
+    const items = [resumenDeM6(1, CLIENTE, CONDUCTOR), resumenDeM6(2, CLIENTE, CONDUCTOR, { state: 'CANCELLED', distanceKm: null, durationMinutes: null })];
     expect(errores('TripSummaryPage', paginaDeM6(items, 42))).toEqual([]);
     expect(errores('TripSummaryPage', paginaDeM6([], 0))).toEqual([]);
   });
 
-  it.each(['BAD_REQUEST', 'UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'])('un 4xx de M6 (%s) cumple ErrorResponse', (code) => {
-    expect(errores('ErrorResponse', errorDeM6(code))).toEqual([]);
-    expect(errores('ErrorResponse', errorDeM6(code, 'otro mensaje', { correlationId: 'id-de-correlacion' }))).toEqual([]);
+  it.each([400, 401, 403, 404, 409, 422, 429])('un %i de M6 cumple Problem', (estado) => {
+    expect(errores('Problem', errorDeM6(estado))).toEqual([]);
+    expect(errores('Problem', errorDeM6(estado, 'otro mensaje', { correlationId: 'id-de-correlacion' }))).toEqual([]);
   });
 });

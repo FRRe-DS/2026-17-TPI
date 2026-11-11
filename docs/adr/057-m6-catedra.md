@@ -34,3 +34,6 @@ El contrato de M2 (`contrato/openapi.yml`) y `contrato/ORIGEN` no cambian.
 
 ## Actualización 2026-11-08 (ADR 079)
 El PR #9 se mergeó el 2026-10-29 (`69e9481`) sin cambios en el archivo: la extracción sigue siendo copia fiel. El 2026-11-01 la cátedra recibió otra versión (`35b3c4d`, «Contrato confirmado por ambos grupos», Grupos 5 y 12) que cambia estados (`CANCELLED`), roles (`SYSTEM`), correlación (`X-Correlation-Id`) y errores. No se extrae en la rama del ADR 079: obliga a cambiar el M6 simulado y el cliente de M2, y el M6 real del Grupo 12 que se prueba (spec 081) todavía no la sigue. Va en un cambio aparte.
+
+## Actualización 2026-11-10 (ADR 096)
+`contrato/dependencias/m6.yml` pasa a ser la extracción de `35b3c4d`: ver el ADR 096, que actualiza la decisión de este. De este ADR sigue valiendo el criterio (extraer solo lo que M2 consume, sin modificarlo); el detalle del contrato que describe el Contexto es el de `9e720a0` y ya no rige. La actualización anterior decía que el M6 real todavía no seguía la versión nueva: la spec 081 mostró que sí la sigue.

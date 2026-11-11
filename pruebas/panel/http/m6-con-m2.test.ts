@@ -20,7 +20,7 @@ beforeAll(async () => {
   const puerto = await escuchar(app);
   m2 = clienteDeM2({
     ...CONFIG_M6,
-    urlM6: `http://127.0.0.1:${puerto}/api/v1`,
+    urlM6: `http://127.0.0.1:${puerto}`,
     tiempoModulosMs: 2000,
     reintentosModulos: 0,
     encabezadoCorrelacion: 'X-Request-Id',
