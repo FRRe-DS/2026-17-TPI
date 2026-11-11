@@ -25,6 +25,21 @@ export const aPaginaDeM6 = (page: number): number => page + 1;
 // viajes, y su número no se puede mandar a M6 como un entero: `1e21` saldría como `1e+21` (RF-2.4.3; plan 007, Decisiones).
 export const paginaInalcanzable = (page: number, size: number): boolean => page * size > Number.MAX_SAFE_INTEGER;
 
+// El rango en que se acepta el `Retry-After` de M6, en segundos: el mismo de `M2_REINTENTAR_DESPUES_S`.
+const ESPERA_MINIMA_S = 1;
+const ESPERA_MAXIMA_S = 3600;
+const SOLO_DIGITOS = /^[0-9]+$/;
+
+// Los segundos del `Retry-After` con que M2 responde el 503 ante un 429 de M6 (RF-2.4.15): los que informa M6, si `texto` (su
+// `Retry-After` tal como llegó) son solo dígitos y el número va de 1 a 3600; si no, `porDefecto`, el valor configurado. Los
+// ceros a la izquierda valen (`030` es 30). No valen el encabezado ausente o vacío, el `0`, un número mayor, un signo,
+// decimales, una unidad, una fecha HTTP ni el encabezado repetido, que llega como `30, 30`.
+export function segundosDeEspera(texto: string | undefined, porDefecto: number): number {
+  if (texto === undefined || !SOLO_DIGITOS.test(texto)) return porDefecto;
+  const segundos = Number(texto);
+  return segundos >= ESPERA_MINIMA_S && segundos <= ESPERA_MAXIMA_S ? segundos : porDefecto;
+}
+
 // El estado va tal como lo informa M6 (RF-2.4.1). Sin `driverId` (por ejemplo, un viaje cancelado antes de asignar conductor),
 // el viaje va sin `conductorId`.
 export function aViajeResumen(viaje: ViajeM6): ViajeResumen {

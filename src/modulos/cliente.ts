@@ -5,6 +5,10 @@ import { CAMPO_ID_CORRELACION } from '../logs.js';
 export type RespuestaModulo = {
   estado: number;
   cuerpo: unknown;
+  // El `Retry-After` de la respuesta tal como llegó, solo en un 4xx que lo trae: con un 429 el módulo dice cuándo volver a
+  // pedir (RF-2.4.15). El cliente no lo interpreta; qué vale lo decide quien conoce el contrato del módulo. Es el único
+  // encabezado de la respuesta que se entrega (RNF-19).
+  reintentarDespues?: string;
 };
 
 export type ClienteModulo = {
@@ -131,12 +135,15 @@ export function crearClienteModulo({
     const texto = await respuesta.text();
 
     if (respuesta.status >= 500) throw new RespuestaInutil(respuesta.status, `${nombre} respondió ${respuesta.status}`);
-    // Un 4xx es una respuesta del módulo: se devuelve tal cual, sin reintento. Si no es JSON, va el texto.
+    // Un 4xx es una respuesta del módulo: se devuelve tal cual, sin reintento, con su `Retry-After` si lo trae. Si no es JSON,
+    // va el texto.
     if (respuesta.status >= 400) {
+      const reintentarDespues = respuesta.headers.get('retry-after');
+      const espera = reintentarDespues === null ? {} : { reintentarDespues };
       try {
-        return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown };
+        return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown, ...espera };
       } catch {
-        return { estado: respuesta.status, cuerpo: texto };
+        return { estado: respuesta.status, cuerpo: texto, ...espera };
       }
     }
     // Una respuesta que no es un error tiene que ser JSON; si no, el módulo no está bien. El SyntaxError de JSON.parse no

@@ -1,3 +1,4 @@
+import type { FastifyBaseLogger } from 'fastify';
 import { createServer } from 'node:net';
 import { inspect } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -567,6 +568,79 @@ describe('crearClienteModulo', () => {
       await conPropio('x-traza').obtener('/', 'id-de-nueve'.slice(0, 9));
       expect(serv.llamadas).toBe(1);
       expect(serv.valoresDe(0, 'x-traza')).toEqual([]);
+    });
+  });
+
+  // El cliente entrega el encabezado sin interpretarlo: qué vale lo decide quien conoce el contrato del módulo (plan 007).
+  describe('el Retry-After de un 4xx del módulo (RF-2.4.15; 007/T14)', () => {
+    it.each([
+      ['un número de segundos', '30', '30'],
+      ['ceros a la izquierda', '030', '030'],
+      ['una fecha HTTP', 'Wed, 11 Nov 2026 20:00:00 GMT', 'Wed, 11 Nov 2026 20:00:00 GMT'],
+      ['algo que no es un número', '30s', '30s'],
+      ['el encabezado repetido', ['30', '30'], '30, 30'],
+    ])('la respuesta trae reintentarDespues tal como llegó: %s', async (_caso, enviado, recibido) => {
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': enviado } });
+
+      const resultado = await clienteDe(serv.url, 1).obtener('/', 'id');
+
+      expect(resultado).toStrictEqual({ estado: 429, cuerpo: { type: 'about:blank', status: 429 }, reintentarDespues: recibido });
+    });
+
+    it('también si el 4xx no responde con JSON y en un POST', async () => {
+      serv.responderCon({ tipo: 'no-json', estado: 429, encabezados: { 'Retry-After': '12' } });
+
+      const resultado = await clienteDe(serv.url, 1).enviar('POST', '/', { dato: 1 }, 'id');
+
+      expect(resultado).toStrictEqual({ estado: 429, cuerpo: 'no es json', reintentarDespues: '12' });
+    });
+
+    it('si el 4xx no tiene Retry-After, la respuesta no trae reintentarDespues', async () => {
+      serv.responderCon({ tipo: '4xx', estado: 429 });
+
+      const resultado = await clienteDe(serv.url, 1).obtener('/', 'id');
+
+      expect(resultado).toStrictEqual({ estado: 429, cuerpo: { type: 'about:blank', status: 429 } });
+      expect('reintentarDespues' in resultado).toBe(false);
+    });
+
+    it('un 4xx con Retry-After se sigue devolviendo sin reintento, sea un GET o un POST', async () => {
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': '1' } });
+      await clienteDe(serv.url, 1).obtener('/', 'id');
+      expect(serv.llamadas).toBe(1);
+
+      serv.responderCon({ tipo: '4xx', estado: 404, encabezados: { 'Retry-After': '1' } });
+      await clienteDe(serv.url, 1).enviar('POST', '/', { dato: 1 }, 'id');
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('solo en un 4xx: un 200 con Retry-After no trae reintentarDespues', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { dato: 7 }, encabezados: { 'Retry-After': '30' } });
+
+      const resultado = await clienteDe(serv.url, 1).obtener('/', 'id');
+
+      expect(resultado).toStrictEqual({ estado: 200, cuerpo: { dato: 7 } });
+    });
+
+    it('la línea de la llamada no cambia: lleva el estado y no el Retry-After', async () => {
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': '30' } });
+      const lineas: { nivel: string; campos: Record<string, unknown> }[] = [];
+      const anotar = (nivel: string) => (campos: Record<string, unknown>) => void lineas.push({ nivel, campos });
+      const cliente = crearClienteModulo({
+        nombre: 'M6',
+        urlBase: serv.url,
+        tiempoMs: TIEMPO_MS,
+        reintentos: 1,
+        encabezadoCorrelacion: 'X-Request-Id',
+        log: { info: anotar('info'), warn: anotar('warn') } as unknown as FastifyBaseLogger,
+      });
+
+      await cliente.obtener('/', 'id');
+
+      expect(lineas).toHaveLength(1);
+      expect(lineas[0]!.nivel).toBe('info');
+      expect(Object.keys(lineas[0]!.campos).sort()).toEqual(['duracionMs', 'estado', 'idCorrelacion', 'intentos', 'metodo', 'modulo']);
+      expect(lineas[0]!.campos).toMatchObject({ estado: 429, intentos: 1 });
     });
   });
 

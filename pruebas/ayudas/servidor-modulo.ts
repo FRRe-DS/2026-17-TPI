@@ -5,9 +5,10 @@ export type Comportamiento =
   // `encabezados` se suma a los de la respuesta y puede reemplazar el Content-Type (lo usa el panel, spec 071).
   | { tipo: 'ok'; estado?: number; cuerpo?: unknown; encabezados?: Record<string, string> }
   | { tipo: 'demora-cuerpo'; retardoMs: number; estado?: number; cuerpo?: unknown }
-  | { tipo: '4xx'; estado: number; cuerpo?: unknown }
+  // `encabezados` se suma a los de la respuesta; una lista manda el encabezado repetido (lo usa el `Retry-After` de M6, spec 007).
+  | { tipo: '4xx'; estado: number; cuerpo?: unknown; encabezados?: Record<string, string | string[]> }
   | { tipo: '5xx'; estado: number; cuerpo?: unknown }
-  | { tipo: 'no-json'; contenido?: string; estado?: number }
+  | { tipo: 'no-json'; contenido?: string; estado?: number; encabezados?: Record<string, string> }
   | { tipo: 'corta' }
   // No responde nunca: la conexión queda abierta hasta que el cliente se canse o se cierre el servidor.
   | { tipo: 'cuelga' };
@@ -72,14 +73,14 @@ export function crearServidorModulo() {
       timers.push(t);
     } else if (c.tipo === '4xx') {
       const cuerpo = JSON.stringify(c.cuerpo ?? { type: 'about:blank', status: c.estado });
-      res.writeHead(c.estado, { 'Content-Type': 'application/problem+json' });
+      res.writeHead(c.estado, { 'Content-Type': 'application/problem+json', ...c.encabezados });
       res.end(cuerpo);
     } else if (c.tipo === '5xx') {
       const cuerpo = JSON.stringify(c.cuerpo ?? { error: 'error interno' });
       res.writeHead(c.estado, { 'Content-Type': 'application/json' });
       res.end(cuerpo);
     } else if (c.tipo === 'no-json') {
-      res.writeHead(c.estado ?? 200, { 'Content-Type': 'text/plain' });
+      res.writeHead(c.estado ?? 200, { 'Content-Type': 'text/plain', ...c.encabezados });
       res.end(c.contenido ?? 'no es json');
     } else if (c.tipo === 'corta') {
       req.socket.destroy();
