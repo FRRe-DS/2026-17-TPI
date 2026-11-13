@@ -56,6 +56,7 @@ describe('listarHistorialViajes con PostgreSQL real y M6 simulado (007/T5)', () 
   describe('quién puede consultar (RF-2.4, RF-2.4.5)', () => {
     it('un CLIENTE, su propio historial: la página convertida, con lo que pidió', async () => {
       const id = await perfil();
+      // El segundo viaje no trae `driverId`: está fuera del contrato de M6, que lo exige, y M2 lo incluye igual, sin conductor.
       serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id), viaje(2, id, { driverId: undefined })], 42) });
 
       const resultado = await listar({ sub: id, roles: ['CLIENTE'] }, id, 1, 2);
@@ -192,6 +193,7 @@ describe('listarHistorialViajes con PostgreSQL real y M6 simulado (007/T5)', () 
     it('true si el cliente calificó el viaje y false si no, con una sola consulta a la base para toda la página', async () => {
       const id = await perfil();
       await calificar(id, viaje(1, id).id);
+      // El tercer viaje no trae `driverId` (fuera del contrato de M6): igual lleva `calificado`.
       serv.responderCon({ tipo: 'ok', cuerpo: pagina([viaje(1, id), viaje(2, id), viaje(3, id, { driverId: undefined })], 3) });
       const { bd, sentencias } = contando();
 

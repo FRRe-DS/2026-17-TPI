@@ -72,9 +72,10 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
   describe('200 (RF-2.4, RF-2.4.1, RF-2.4.2)', () => {
     it('un CLIENTE ve su historial: página convertida, X-Request-Id y los valores por defecto de page y size', async () => {
       const id = await perfil();
+      // El segundo viaje no trae `driverId`: está fuera del contrato de M6, que lo exige, y M2 lo incluye igual, sin conductor.
       serv.responderCon({
         tipo: 'ok',
-        cuerpo: pagina([viaje(1, id), viaje(2, id, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' })], 42),
+        cuerpo: pagina([viaje(1, id), viaje(2, id, { driverId: undefined, state: 'CANCELLED' })], 42),
       });
       const { pedir } = crear();
 
@@ -90,7 +91,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
         totalPaginas: 3,
         items: [
           { viajeId: viaje(1, id).id, estado: 'COMPLETED', conductorId: CONDUCTOR, calificado: false },
-          { viajeId: viaje(2, id).id, estado: 'CANCELLED_BY_CLIENT', calificado: false },
+          { viajeId: viaje(2, id).id, estado: 'CANCELLED', calificado: false },
         ],
       });
       expect(consultaDeM6()).toEqual({ clientId: id, page: '1', pageSize: '20' });
@@ -242,6 +243,39 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(serv.llamadas).toBe(1);
     });
 
+    // RF-2.4.15: el 429 de M6 es un límite, no un rechazo: M2 responde 503 con el Retry-After de M6 y no reintenta.
+    it('un 429 de M6 con Retry-After: 30 da 503 problem+json que nombra a M6, con Retry-After: 30 (007/T15)', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 429, cuerpo: errorDeM6(429, 'dato-de-m6'), encabezados: { 'Retry-After': '30' } });
+      const { pedir, logs } = crear({ reintentarDespuesS: 7 });
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(respuesta.headers['retry-after']).toBe('30');
+      expect(respuesta.json()).toMatchObject({ status: 503, detail: 'M6 no está disponible' });
+      expect(respuesta.body).not.toContain('dato-de-m6');
+      expect(serv.llamadas).toBe(1);
+      // La línea de la llamada lleva el código de M6 (RNF-14.10) y la causa del 503 queda en el log (RNF-14.8).
+      expect(logs.lineas().filter(({ msg }) => msg === 'llamada a M6')).toEqual([
+        expect.objectContaining({ level: 30, idCorrelacion: respuesta.headers['x-request-id'], estado: 429, intentos: 1 }),
+      ]);
+      expect(logs.texto()).toContain('M6 respondió 429');
+      expect(logs.texto()).not.toContain('dato-de-m6');
+    });
+
+    it('un 429 de M6 sin un Retry-After que valga da 503 con el valor configurado (007/T15)', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': 'Wed, 11 Nov 2026 20:00:00 GMT' } });
+
+      const respuesta = await crear({ reintentarDespuesS: 7 }).pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['retry-after']).toBe('7');
+      expect(serv.llamadas).toBe(1);
+    });
+
     // RF-2.4.7 y RNF-14: el 500 deja en el log la causa (el código de M6) con el id de correlación de la solicitud, que también
     // llegó a M6.
     it('el 500 por un 4xx de M6 se registra con su causa y el id de correlación, que también llegó a M6', async () => {
@@ -329,6 +363,20 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
 
       expect(respuesta.statusCode).toBe(200);
       expect(respuesta.json().items.map(({ viajeId }: { viajeId: string }) => viajeId)).toEqual(viajes.map(({ id: v }) => v));
+    });
+
+    // RNF-14.11: el identificador de la solicitud viaja a M6 en el encabezado que declara su contrato, además del configurado.
+    it('el identificador de un pedido al historial llega a M6 en X-Correlation-Id (007/T13)', async () => {
+      const id = await perfil();
+      const { pedir } = crear();
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      const idCorrelacion = respuesta.headers['x-request-id'];
+      expect(idCorrelacion).toBeTypeOf('string');
+      expect(serv.valoresDe(0, 'x-correlation-id')).toEqual([idCorrelacion]);
+      expect(serv.valoresDe(0, 'x-request-id')).toEqual([idCorrelacion]);
     });
 
     it('la consulta deja una línea de la llamada a M6 con el id de correlación de la solicitud y sin identificadores', async () => {

@@ -1,6 +1,6 @@
 # Spec 007 — Historial resumido de viajes
 
-Estado: aprobada
+Estado: implementada
 Issue: #7
 Etapa: TP1
 Responsable: @sandobaitt

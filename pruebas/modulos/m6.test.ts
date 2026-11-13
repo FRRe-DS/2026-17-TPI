@@ -1,3 +1,4 @@
+import type { FastifyBaseLogger } from 'fastify';
 import { jwtVerify } from 'jose';
 import { inspect } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -44,9 +45,80 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
     it('suma /trips a la URL base de M6, que puede traer un camino', async () => {
       serv.responderCon(ok(pagina([], 0)));
 
-      await m6({ urlM6: `${serv.url}/api/v1` }).listarViajes(CLIENTE, 0, 20, 'id');
+      await m6({ urlM6: `${serv.url}/pasarela/m6` }).listarViajes(CLIENTE, 0, 20, 'id');
 
-      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe('/api/v1/trips');
+      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe('/pasarela/m6/trips');
+    });
+  });
+
+  // El contrato de M6 declara `X-Correlation-Id`, de 100 caracteres como máximo: M2 lo manda además del encabezado configurado
+  // (`X-Request-Id` en estas pruebas) y con el mismo valor.
+  describe('la correlación hacia M6 (RNF-14.11, RNF-14.12; 007/T13)', () => {
+    const ID = 'id-de-correlacion';
+    const listarCon = (idCorrelacion: string, extra: Partial<typeof CONFIG> = {}) =>
+      m6(extra).listarViajes(CLIENTE, 0, 20, idCorrelacion);
+
+    it('cada intento, también el reintento, lleva X-Correlation-Id y el encabezado configurado con el mismo identificador', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, ok(pagina([], 0))]);
+
+      await listarCon(ID);
+
+      expect(serv.llamadas).toBe(2);
+      for (const intento of [0, 1]) {
+        expect(serv.valoresDe(intento, 'x-correlation-id')).toEqual([ID]);
+        expect(serv.valoresDe(intento, 'x-request-id')).toEqual([ID]);
+      }
+    });
+
+    it('un identificador de 100 caracteres exactos va en los dos encabezados', async () => {
+      serv.responderCon(ok(pagina([], 0)));
+      const justo = 'a'.repeat(100);
+
+      await listarCon(justo);
+
+      expect(serv.valoresDe(0, 'x-correlation-id')).toEqual([justo]);
+      expect(serv.valoresDe(0, 'x-request-id')).toEqual([justo]);
+    });
+
+    it('un identificador de 101 caracteres va solo en el encabezado configurado, en cada intento', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, ok(pagina([], 0))]);
+      const largo = 'a'.repeat(101);
+
+      await listarCon(largo);
+
+      expect(serv.llamadas).toBe(2);
+      for (const intento of [0, 1]) {
+        expect(serv.valoresDe(intento, 'x-correlation-id')).toEqual([]);
+        expect(serv.valoresDe(intento, 'x-request-id')).toEqual([largo]);
+      }
+    });
+
+    // `fetch` uniría dos claves que solo difieren en mayúsculas en un solo encabezado con el valor repetido.
+    describe.each(['x-correlation-id', 'X-Correlation-Id', 'X-CORRELATION-ID'])('si el encabezado configurado es %s', (configurado) => {
+      it('sale una sola vez', async () => {
+        serv.responderCon([{ tipo: '5xx', estado: 502 }, ok(pagina([], 0))]);
+
+        await listarCon(ID, { encabezadoCorrelacion: configurado });
+
+        expect(serv.llamadas).toBe(2);
+        for (const intento of [0, 1]) {
+          expect(serv.valoresDe(intento, 'x-correlation-id')).toEqual([ID]);
+          expect(serv.valoresDe(intento, 'x-request-id')).toEqual([]);
+        }
+      });
+
+      it('con 100 caracteres sale y con 101 no sale ninguno: la llamada va sin correlación', async () => {
+        serv.responderCon(ok(pagina([], 0)));
+
+        await listarCon('a'.repeat(100), { encabezadoCorrelacion: configurado });
+        expect(serv.valoresDe(0, 'x-correlation-id')).toEqual(['a'.repeat(100)]);
+
+        serv.responderCon(ok(pagina([], 0)));
+        await listarCon('a'.repeat(101), { encabezadoCorrelacion: configurado });
+        expect(serv.llamadas).toBe(1);
+        expect(serv.valoresDe(0, 'x-correlation-id')).toEqual([]);
+        expect(serv.valoresDe(0, 'x-request-id')).toEqual([]);
+      });
     });
   });
 
@@ -124,7 +196,8 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
 
   describe('un 200 con la forma esperada (RF-2.4, RF-2.4.3)', () => {
     it('devuelve los viajes y el total, en el orden de M6', async () => {
-      const items = [viaje(1), viaje(2, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' })];
+      // El segundo viaje no trae `driverId`: está fuera del contrato de M6, que lo exige, y M2 lo acepta igual.
+      const items = [viaje(1), viaje(2, { driverId: undefined, state: 'CANCELLED' })];
       serv.responderCon(ok(pagina(items, 42)));
 
       const resultado = await listar();
@@ -148,7 +221,7 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
       expect((await listar(0, 2)).items).toHaveLength(2);
     });
 
-    it('un driverId nulo es un viaje sin conductor, no una respuesta inválida', async () => {
+    it('un driverId nulo está fuera del contrato de M6, pero es un viaje sin conductor y no una respuesta inválida', async () => {
       serv.responderCon(ok(pagina([viaje(1, { driverId: null })], 1)));
 
       expect((await listar()).items).toHaveLength(1);
@@ -270,6 +343,105 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
 
       expect(error).toBeInstanceOf(ErrorDeIntegracion);
       expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    // El Retry-After solo cuenta en un 429: en otro 4xx no cambia nada (007/T15).
+    it.each([400, 401, 403, 404])('un %i sigue dando error de integración aunque traiga Retry-After', async (estado) => {
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, DEL_CUERPO), encabezados: { 'Retry-After': '30' } });
+
+      const error = await fallaDe(listar());
+
+      expect(error).toBeInstanceOf(ErrorDeIntegracion);
+      expect(serv.llamadas).toBe(1);
+      expect(aProblema(error).encabezados).toEqual({ 'Content-Type': 'application/problem+json' });
+    });
+  });
+
+  // RF-2.4.15: el 429 es el límite de pedidos de M6, no un rechazo. M2 responde 503 con el Retry-After de M6 si vale (solo
+  // dígitos, de 1 a 3600) y si no, con el configurado, y no reintenta: otro pedido caería en la misma ventana del límite.
+  describe('M6 limita los pedidos: el 429 da 503 con Retry-After (RF-2.4.15; 007/T15)', () => {
+    const limite = (reintentarDespues?: string | string[]): Comportamiento => ({
+      tipo: '4xx',
+      estado: 429,
+      cuerpo: errorDeM6(429, DEL_CUERPO),
+      ...(reintentarDespues === undefined ? {} : { encabezados: { 'Retry-After': reintentarDespues } }),
+    });
+
+    it('con el Retry-After de M6: 503 que nombra a M6, con ese valor y un solo pedido', async () => {
+      serv.responderCon(limite('30'));
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(serv.llamadas).toBe(1);
+      const respuesta = aProblema(error, '/api/v1/clientes/x/viajes');
+      expect(respuesta.codigo).toBe(503);
+      expect(respuesta.cuerpo.detail).toBe('M6 no está disponible');
+      expect(respuesta.encabezados).toEqual({ 'Content-Type': 'application/problem+json', 'Retry-After': '30' });
+      // La causa va al log (RNF-14.8): el código de M6, nunca su cuerpo (RNF-19).
+      expect((error as Error).cause).toMatchObject({ message: 'M6 respondió 429' });
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    it.each([
+      ['el mínimo', '1', '1'],
+      ['el máximo', '3600', '3600'],
+      ['ceros a la izquierda', '030', '30'],
+    ])('vale %s (%s): Retry-After %s', async (_caso, deM6, esperado) => {
+      serv.responderCon(limite(deM6));
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe(esperado);
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it.each([
+      ['falta', undefined],
+      ['es 0', '0'],
+      ['pasa de 3600', '3601'],
+      ['es un número enorme', '99999999999999999999'],
+      ['trae una unidad', '30s'],
+      ['trae decimales', '1.5'],
+      ['es una fecha HTTP', 'Wed, 11 Nov 2026 20:00:00 GMT'],
+      ['viene repetido', ['30', '30']],
+    ])('si el Retry-After de M6 %s: 503 con el valor configurado y un solo pedido', async (_caso, deM6) => {
+      serv.responderCon(limite(deM6));
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('7');
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('también si el 429 no responde con JSON', async () => {
+      serv.responderCon({ tipo: 'no-json', estado: 429, contenido: DEL_CUERPO, encabezados: { 'Retry-After': '12' } });
+
+      const error = await fallaDe(listar(0, 20, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('12');
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    // El reintento es por el corte, no por el 429: con el 429 del segundo intento la llamada termina. Con dos reintentos
+    // permitidos, un 429 que se reintentara haría un tercer pedido, que respondería bien.
+    it('un intento cortado seguido de un 429 da lo mismo, con dos pedidos y sin un tercero', async () => {
+      serv.responderCon([{ tipo: 'corta' }, limite('30'), ok(pagina([], 0))]);
+      const lineas: { nivel: string; campos: Record<string, unknown> }[] = [];
+      const anotar = (nivel: string) => (campos: Record<string, unknown>) => void lineas.push({ nivel, campos });
+      const log = { info: anotar('info'), warn: anotar('warn') } as unknown as FastifyBaseLogger;
+      const conLog = crearM6({ ...CONFIG, urlM6: serv.url, tiempoModulosMs: TIEMPO_MS, reintentosModulos: 2, reintentarDespuesS: 7 }, log);
+
+      const error = await fallaDe(conLog.listarViajes(CLIENTE, 0, 20, 'id-de-correlacion'));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('30');
+      expect(serv.llamadas).toBe(2);
+      // Un 429 es una respuesta de M6: la línea va como `info`, con su código (RNF-14.10).
+      expect(lineas).toEqual([{ nivel: 'info', campos: expect.objectContaining({ modulo: 'M6', estado: 429, intentos: 2 }) }]);
     });
   });
 });

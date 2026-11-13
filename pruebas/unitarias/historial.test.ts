@@ -6,6 +6,7 @@ import {
   conCalificado,
   type ViajeM6,
   paginaInalcanzable,
+  segundosDeEspera,
 } from '../../src/historial/modelo.js';
 
 const CLIENTE = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
@@ -27,10 +28,11 @@ describe('aViajeResumen (007/T3, RF-2.4.1)', () => {
     expect(resumen).toEqual({ viajeId: viaje(1).id, estado: 'COMPLETED', conductorId: CONDUCTOR });
   });
 
-  it('sin driverId, el viaje se incluye sin conductorId (la clave no está)', () => {
-    const resumen = aViajeResumen(viaje(2, { driverId: undefined, state: 'CANCELLED_BY_CLIENT' }));
+  // El contrato de M6 exige `driverId` en todo viaje: uno que no lo trae está fuera de contrato, y M2 lo incluye igual.
+  it('sin driverId, que está fuera del contrato de M6, el viaje se incluye sin conductorId (la clave no está)', () => {
+    const resumen = aViajeResumen(viaje(2, { driverId: undefined, state: 'CANCELLED' }));
 
-    expect(resumen).toEqual({ viajeId: viaje(2).id, estado: 'CANCELLED_BY_CLIENT' });
+    expect(resumen).toEqual({ viajeId: viaje(2).id, estado: 'CANCELLED' });
     expect(Object.keys(resumen)).not.toContain('conductorId');
   });
 
@@ -159,6 +161,48 @@ describe('aPaginaViajes (007/T3, RF-2.4.1, RF-2.4.2, RF-2.4.3, RF-2.4.9)', () =>
     aPaginaViajes(cuerpo, CLIENTE, 0, 20);
 
     expect(cuerpo).toEqual(copia);
+  });
+});
+
+describe('segundosDeEspera (007/T14, RF-2.4.15)', () => {
+  const CONFIGURADO = 5;
+
+  it.each([
+    ['1', 1],
+    ['30', 30],
+    ['3600', 3600],
+    ['030', 30],
+    ['0001', 1],
+  ])('%j vale: son solo dígitos y va de 1 a 3600', (texto, segundos) => {
+    expect(segundosDeEspera(texto, CONFIGURADO)).toBe(segundos);
+  });
+
+  it.each([
+    ['ausente', undefined],
+    ['vacío', ''],
+    ['cero', '0'],
+    ['cero con ceros a la izquierda', '000'],
+    ['mayor que 3600', '3601'],
+    ['tan grande que no es un entero seguro', '99999999999999999999'],
+    ['negativo', '-5'],
+    ['con signo más', '+30'],
+    ['con decimales', '1.5'],
+    ['con unidad', '30s'],
+    ['un texto', 'abc'],
+    ['el encabezado repetido, como lo entrega fetch', '30, 30'],
+    ['una fecha HTTP', 'Wed, 11 Nov 2026 20:00:00 GMT'],
+    ['con espacios', ' 30 '],
+    ['con un salto de línea al final', '30\n'],
+    ['en notación exponencial', '1e2'],
+    ['en hexadecimal', '0x1E'],
+    ['con dígitos que no son ASCII', '３０'],
+  ])('%s: da el valor configurado', (_caso, texto) => {
+    expect(segundosDeEspera(texto, CONFIGURADO)).toBe(CONFIGURADO);
+  });
+
+  it('el valor configurado se devuelve tal cual, sea el que sea', () => {
+    expect(segundosDeEspera(undefined, 3600)).toBe(3600);
+    expect(segundosDeEspera('abc', 1)).toBe(1);
   });
 });
 

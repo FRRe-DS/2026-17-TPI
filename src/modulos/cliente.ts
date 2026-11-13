@@ -5,6 +5,10 @@ import { CAMPO_ID_CORRELACION } from '../logs.js';
 export type RespuestaModulo = {
   estado: number;
   cuerpo: unknown;
+  // El `Retry-After` de la respuesta tal como llegó, solo en un 4xx que lo trae: con un 429 el módulo dice cuándo volver a
+  // pedir (RF-2.4.15). El cliente no lo interpreta; qué vale lo decide quien conoce el contrato del módulo. Es el único
+  // encabezado de la respuesta que se entrega (RNF-19).
+  reintentarDespues?: string;
 };
 
 export type ClienteModulo = {
@@ -19,6 +23,9 @@ type OpcionesCliente = {
   // Cuántas veces se vuelve a intentar un GET que falló. Los demás métodos no se reintentan.
   reintentos: number;
   encabezadoCorrelacion: string;
+  // El encabezado de correlación que declara el contrato del módulo y el largo máximo que admite. Si está, el identificador va
+  // también en él (RNF-14.11), salvo que pase de ese largo (RNF-14.12). Sin ella, solo va el configurado.
+  correlacionDelModulo?: { encabezado: string; largoMaximo: number };
   // Da con qué se presenta M2 ante el módulo, en `Authorization: Bearer`, y se llama en cada intento: un token de servicio
   // de vida corta, nuevo en cada uno (RF-2.4.11). Sin ella no se envía el encabezado. Es un secreto que cambia en cada
   // intento y `secretosDeConfig` no conoce: no va en ningún error ni en el log (RNF-19.1).
@@ -51,10 +58,28 @@ export function crearClienteModulo({
   tiempoMs,
   reintentos,
   encabezadoCorrelacion,
+  correlacionDelModulo,
   credencial,
   reintentarDespuesS,
   log,
 }: OpcionesCliente): ClienteModulo {
+  // Los nombres de encabezado no distinguen mayúsculas: si el del módulo es el configurado, es uno solo, y `fetch` uniría las
+  // dos claves en un encabezado con el valor repetido.
+  const elDelModuloEsElConfigurado =
+    correlacionDelModulo !== undefined && correlacionDelModulo.encabezado.toLowerCase() === encabezadoCorrelacion.toLowerCase();
+
+  // Los encabezados de correlación de un intento. El configurado va siempre (RNF-14.7) y el del módulo se suma con el mismo
+  // valor (RNF-14.11). Un identificador más largo que lo que admite el módulo no va en su encabezado; si ese encabezado es
+  // el configurado, la llamada sale sin correlación (RNF-14.12).
+  function encabezadosDeCorrelacion(idCorrelacion: string): Record<string, string> {
+    if (correlacionDelModulo === undefined) return { [encabezadoCorrelacion]: idCorrelacion };
+    const cabe = idCorrelacion.length <= correlacionDelModulo.largoMaximo;
+    if (elDelModuloEsElConfigurado) return cabe ? { [encabezadoCorrelacion]: idCorrelacion } : {};
+    return cabe
+      ? { [encabezadoCorrelacion]: idCorrelacion, [correlacionDelModulo.encabezado]: idCorrelacion }
+      : { [encabezadoCorrelacion]: idCorrelacion };
+  }
+
   // Una sola línea por llamada, al terminar, salga bien o mal (RNF-14.10): `estado` es el código con el que respondió el
   // módulo en el último intento, también un 4xx o un 5xx, y `null` si en ese intento no respondió (corte o red). Si la llamada
   // falló, va como advertencia. Es una lista cerrada de campos: ni la ruta ni la query, que llevan el clienteId o el viajeId,
@@ -94,7 +119,7 @@ export function crearClienteModulo({
     const senal = AbortSignal.timeout(tiempoMs);
     const encabezados: Record<string, string> = {
       Accept: 'application/json',
-      [encabezadoCorrelacion]: idCorrelacion,
+      ...encabezadosDeCorrelacion(idCorrelacion),
     };
     if (cuerpo !== undefined) encabezados['Content-Type'] = 'application/json';
     if (autorizacion !== undefined) encabezados.Authorization = autorizacion;
@@ -110,12 +135,15 @@ export function crearClienteModulo({
     const texto = await respuesta.text();
 
     if (respuesta.status >= 500) throw new RespuestaInutil(respuesta.status, `${nombre} respondió ${respuesta.status}`);
-    // Un 4xx es una respuesta del módulo: se devuelve tal cual, sin reintento. Si no es JSON, va el texto.
+    // Un 4xx es una respuesta del módulo: se devuelve tal cual, sin reintento, con su `Retry-After` si lo trae. Si no es JSON,
+    // va el texto.
     if (respuesta.status >= 400) {
+      const reintentarDespues = respuesta.headers.get('retry-after');
+      const espera = reintentarDespues === null ? {} : { reintentarDespues };
       try {
-        return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown };
+        return { estado: respuesta.status, cuerpo: JSON.parse(texto) as unknown, ...espera };
       } catch {
-        return { estado: respuesta.status, cuerpo: texto };
+        return { estado: respuesta.status, cuerpo: texto, ...espera };
       }
     }
     // Una respuesta que no es un error tiene que ser JSON; si no, el módulo no está bien. El SyntaxError de JSON.parse no
