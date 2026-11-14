@@ -42,7 +42,7 @@ Orden de dependencia, en tres tramos. Cada tarea es un commit `081/Tn: …`, con
 
 T11 no depende de los cambios de las specs 007 y 008. T12 se hace después de que estén en `main` los cambios de las specs 007 y 008, porque la tabla dice qué quedó resuelto (T13 a T15 de la 007 y T11 de la 008). Las dos, Sonnet.
 
-- [ ] **T11. Correlación contra el M6 real.** RNF-07.14
+- [x] **T11. Correlación contra el M6 real.** RNF-07.14
   - Hecho cuando: `correlacion.test.ts` manda al M6 real un `GET /trips` y un `GET /trips/{tripId}` de un viaje inexistente con un `X-Correlation-Id` nuevo y comprueba que las dos respuestas (`200` y `404`) lo devuelven igual en `X-Correlation-Id` y que el cuerpo del `404` lo trae en `correlationId`, y si no, muestra el valor recibido; corre antes de `resiliencia.test.ts`; `npm run integracion:m6` termina en verde con el contador por debajo de 600, y `npm test` pasa el mismo número de pruebas que antes.
 
 - [ ] **T12. Tabla de diferencias y textos al día.** RNF-20.4
