@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { capturarLogs } from '../../ayudas/logs.js';
+import { construirAppM6 } from '../../../panel/m6-simulado/app-m6.js';
+import { crearEstadoM6 } from '../../../panel/m6-simulado/estado.js';
 import { crearM6 as clienteDeM2 } from '../../../src/historial/m6.js';
 import { escuchar } from '../../ayudas/socket.js';
 import { CLIENTE, CONDUCTOR, CONFIG_M6, crearM6, OTRO_CLIENTE, viaje } from '../ayudas/m6.js';
@@ -53,5 +56,35 @@ describe('M2 entiende al M6 simulado (RNF-13.7)', () => {
   it('calificar: uno ajeno o inexistente es null (M2 responde 404)', async () => {
     expect(await m2.obtenerViaje(AJENO, CLIENTE, 'calificar-3')).toBeNull();
     expect(await m2.obtenerViaje('44444444-4444-4444-8444-444444444444', CLIENTE, 'calificar-4')).toBeNull();
+  });
+});
+
+// RNF-14.13 (071/T37): el identificador con que M2 llama a M6 viaja en `X-Correlation-Id` y queda en el log del simulado.
+describe('la correlación de M2 llega al log del M6 simulado (RNF-14.13)', () => {
+  it('el historial y calificar dejan en el log el identificador con que M2 llamó', async () => {
+    const logs = capturarLogs();
+    const estado = crearEstadoM6();
+    estado.guardar(viaje(COMPLETADO));
+    const simulado = construirAppM6({ config: CONFIG_M6, estado, flujoLog: logs.flujo });
+    const puerto = await escuchar(simulado);
+    const cliente = clienteDeM2({
+      ...CONFIG_M6,
+      urlM6: `http://127.0.0.1:${puerto}`,
+      tiempoModulosMs: 2000,
+      reintentosModulos: 0,
+      encabezadoCorrelacion: 'X-Request-Id',
+      reintentarDespuesS: 5,
+    });
+
+    await cliente.listarViajes(CLIENTE, 0, 20, 'historial-de-m2');
+    await cliente.obtenerViaje(COMPLETADO, CLIENTE, 'calificar-de-m2');
+    await simulado.close();
+
+    expect(
+      logs
+        .lineas()
+        .filter(({ msg }) => msg === 'Pedido terminado')
+        .map((linea) => linea.idCorrelacion),
+    ).toEqual(['historial-de-m2', 'calificar-de-m2']);
   });
 });

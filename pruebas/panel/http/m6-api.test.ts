@@ -233,7 +233,7 @@ describe('logs del M6 simulado', () => {
     abiertas.push(app);
     const encabezados = await comoM2();
 
-    await app.inject({ method: 'GET', url: `/trips/${id(1)}`, headers: { ...encabezados, 'x-request-id': 'de-m2' } });
+    await app.inject({ method: 'GET', url: `/trips/${id(1)}`, headers: { ...encabezados, 'x-correlation-id': 'de-m2' } });
     await app.inject({ method: 'GET', url: `/trips?clientId=${CLIENTE}`, headers: encabezados });
 
     expect(logs.lineas().map((l) => [l['metodo'], l['ruta'], l['estado']])).toEqual([
@@ -243,5 +243,81 @@ describe('logs del M6 simulado', () => {
     expect(logs.lineas()[0]?.idCorrelacion).toBe('de-m2');
     expect(logs.texto()).not.toContain(encabezados.authorization.slice(7));
     expect(logs.texto()).not.toContain(CLIENTE);
+  });
+});
+
+// RNF-14.13 (071/T37): el M6 del Grupo 12 toma la correlación de `X-Correlation-Id` (hasta 100 caracteres) y la devuelve en el mismo
+// encabezado y en `correlationId` de sus errores. El simulado hace lo mismo, y ya no lee `X-Request-Id`.
+describe('correlación por X-Correlation-Id (RNF-14.13; 071/T37)', () => {
+  const GENERADO = /^m6-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const de100 = 'a'.repeat(100);
+
+  it('con un X-Correlation-Id válido, la respuesta lo devuelve en ese encabezado', async () => {
+    const respuesta = await m6([viaje(id(1))]).inject({
+      method: 'GET',
+      url: `/trips/${id(1)}`,
+      headers: { ...(await comoM2()), 'x-correlation-id': 'calificar-7' },
+    });
+
+    expect(respuesta.statusCode).toBe(200);
+    expect(respuesta.headers['x-correlation-id']).toBe('calificar-7');
+  });
+
+  it('un error lo lleva en correlationId y en el encabezado: 404 y 401', async () => {
+    const app = m6([viaje(id(1))]);
+
+    const noExiste = await app.inject({
+      method: 'GET',
+      url: `/trips/${id(2)}`,
+      headers: { ...(await comoM2()), 'x-correlation-id': 'error-404' },
+    });
+    const sinToken = await app.inject({ method: 'GET', url: `/trips/${id(1)}`, headers: { 'x-correlation-id': 'error-401' } });
+
+    expect(noExiste.statusCode).toBe(404);
+    expect(noExiste.headers['x-correlation-id']).toBe('error-404');
+    expect(noExiste.json()).toMatchObject({ code: 'TRIP_NOT_FOUND', correlationId: 'error-404' });
+    expect(sinToken.statusCode).toBe(401);
+    expect(sinToken.headers['x-correlation-id']).toBe('error-401');
+    expect(sinToken.json()).toMatchObject({ code: 'UNAUTHENTICATED', correlationId: 'error-401' });
+  });
+
+  it('la línea de log del pedido lo lleva como idCorrelacion', async () => {
+    const logs = capturarLogs();
+    const estado = crearEstadoM6();
+    estado.guardar(viaje(id(1)));
+    const app = construirAppM6({ config: CONFIG_M6, estado, flujoLog: logs.flujo });
+    abiertas.push(app);
+
+    await app.inject({ method: 'GET', url: `/trips/${id(1)}`, headers: { ...(await comoM2()), 'x-correlation-id': 'en-el-log' } });
+
+    expect(logs.lineas()[0]?.idCorrelacion).toBe('en-el-log');
+  });
+
+  it('uno de 100 caracteres exactos se acepta', async () => {
+    const respuesta = await m6([viaje(id(1))]).inject({
+      method: 'GET',
+      url: `/trips/${id(1)}`,
+      headers: { ...(await comoM2()), 'x-correlation-id': de100 },
+    });
+
+    expect(respuesta.headers['x-correlation-id']).toBe(de100);
+  });
+
+  it.each([
+    ['sin el encabezado', {}],
+    ['con uno de 101 caracteres', { 'x-correlation-id': 'a'.repeat(101) }],
+    ['con uno que tiene espacios', { 'x-correlation-id': 'con espacios' }],
+    ['con uno que tiene una barra', { 'x-correlation-id': 'a/b' }],
+    ['con uno vacío', { 'x-correlation-id': '' }],
+    ['con solo X-Request-Id', { 'x-request-id': 'de-m2' }],
+  ])('%s: genera uno propio y lo devuelve en X-Correlation-Id', async (_caso, extra) => {
+    const respuesta = await m6([viaje(id(1))]).inject({
+      method: 'GET',
+      url: `/trips/${id(2)}`,
+      headers: { ...(await comoM2()), ...extra },
+    });
+
+    expect(respuesta.headers['x-correlation-id']).toMatch(GENERADO);
+    expect(respuesta.json()).toMatchObject({ correlationId: respuesta.headers['x-correlation-id'] });
   });
 });
