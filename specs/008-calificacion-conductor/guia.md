@@ -145,3 +145,8 @@ y que comprueba el token de servicio.
 - Cómo se conecta: no cambia comportamiento. La visión general de la guía sigue dentro de las 30 a 60 líneas de la regla.
 - Tests: `npm test` (5568), lint, build, `npm run contrato:test` (3599 casos pasados, 28 omitidos) y `spec-check` en verde.
 - Para mirar con atención: la fila del `429` del README ya dice que calificar responde `503` sin guardar nada, y la fila de `M2_REINTENTAR_DESPUES_S` nombra el historial y calificar.
+
+### V — Validación del cambio de M6 · commit `008/V`
+- Qué cambió: la spec vuelve a `implementada`. Un revisor independiente (subagente `reviewer`) recorrió T11 y T12 contra RF-2.5.5, RF-2.5.6, RF-2.5.18, RNF-13, RNF-14 y RNF-19: VALIDADO, sin hallazgos que incumplan. `npm test` 5568, `npm run contrato:test` 3599 casos pasados, lint, build y `spec-check` en verde.
+- Por qué así: cada cambio de requisitos mergeado reabre la spec; la validación la cierra.
+- Para mirar con atención: la fila del plan (`plan.md`, pruebas) dice que `calificaciones.test.ts` cubre que el `429` no guarda nada ni gasta la clave, pero esas pruebas quedaron en `calificaciones-http.test.ts` (también con PostgreSQL real). Se corrige en una rama `spec/` si el grupo quiere que coincida al pie de la letra: esta rama no toca la spec. Sigue abierta la decisión del `429` cuyo cuerpo no llega a tiempo (T11).
