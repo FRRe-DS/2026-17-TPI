@@ -301,3 +301,8 @@
 - Cómo se conecta: lo usan `src/historial/m6.ts` (M2 manda el mismo identificador en `X-Correlation-Id` y en el encabezado configurado) y el perfil `panel` de compose; el detalle técnico del panel muestra el identificador de M2, que ahora coincide con el del log del simulado.
 - Tests: `pruebas/panel/http/m6-api.test.ts`, bloque «correlación por X-Correlation-Id»: lo devuelve en el encabezado, lo lleva en `correlationId` de un `404` y de un `401`, lo escribe en el log, acepta 100 caracteres exactos y genera uno propio sin encabezado, con 101, con espacios, con una barra, vacío o con solo `X-Request-Id`. `m6-con-m2.test.ts`: el cliente de M6 de M2 hace un historial y una calificación y el log del simulado trae los dos identificadores.
 - Para mirar con atención: el simulado dejó de leer `X-Request-Id` a propósito: M2 manda los dos y ninguna prueba depende ya del viejo. Las pruebas de navegador del panel no se tocaron.
+
+### V — Validación del cambio de M6 · commit `071/V`
+- Qué cambió: la spec vuelve a `implementada`. Un revisor independiente (subagente `reviewer`) recorrió T37 contra RNF-14.13 y RNF-20.2: VALIDADO, sin hallazgos que obliguen a cambiar. `npm test` 5565, `npm run panel:navegador` 119, lint, build y `spec-check` en verde.
+- Por qué así: cada cambio de requisitos mergeado reabre la spec; la validación la cierra.
+- Para mirar con atención: `tasks.md` (T7) conserva el enunciado histórico con `/api/v1/trips` y `ErrorResponse`; alinearlo iría por `sdd-change` en una rama `spec/`. La prueba de `m6-con-m2.test.ts` por sí sola no distingue si el simulado lee `X-Correlation-Id` o `X-Request-Id`, porque M2 manda los dos con el mismo valor: lo distingue `m6-api.test.ts` («solo X-Request-Id»).
