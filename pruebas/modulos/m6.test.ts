@@ -446,7 +446,7 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
   });
 });
 
-describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
+describe('crearM6: el viaje a calificar, GET /trips/{tripId} (008/T4)', () => {
   const serv = crearServidorModulo();
   beforeAll(() => serv.levantar());
   afterAll(() => serv.cerrar());
@@ -464,7 +464,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   const fallaDe = (promesa: Promise<unknown>) => promesa.catch((motivo: unknown) => motivo);
 
   describe('el pedido (RF-2.5, RNF-14)', () => {
-    it('pide GET /trips/{id} con el id del viaje y el id de correlación', async () => {
+    it('pide GET /trips/{tripId} con el id del viaje y el id de correlación', async () => {
       serv.responderCon(ok(detalle()));
 
       await obtener();
@@ -477,12 +477,12 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
       expect(serv.encabezadosRecibidos.get('x-correlation-id')).toBe('id-de-correlacion');
     });
 
-    it('suma /trips/{id} a la URL base de M6, que puede traer un camino', async () => {
+    it('suma /trips/{tripId} a la URL base de M6, que puede traer un camino', async () => {
       serv.responderCon(ok(detalle()));
 
-      await m6({ urlM6: `${serv.url}/api/v1` }).obtenerViaje(VIAJE, CLIENTE, 'id');
+      await m6({ urlM6: `${serv.url}/m6` }).obtenerViaje(VIAJE, CLIENTE, 'id');
 
-      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe(`/api/v1/trips/${VIAJE}`);
+      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe(`/m6/trips/${VIAJE}`);
     });
   });
 
@@ -555,9 +555,21 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   });
 
   // RF-2.5.2: cualquier estado en texto distinto de COMPLETED, también uno que M2 no conoce. Sin conductor: no hace falta.
+  // Los estados de `TripState` del contrato de M6 son PENDING_ARRIVAL, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED y CANCELLED.
   describe('un viaje del cliente que no está completado (RF-2.5.2)', () => {
-    it.each(['PENDING_ARRIVAL', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'CANCELLED_BY_CLIENT', 'CANCELLED_BY_DRIVER', 'ARCHIVED', 'completed', ''])(
-      'el estado «%s» vuelve tal cual, sin conductor',
+    it.each(['PENDING_ARRIVAL', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'CANCELLED'])(
+      'el estado «%s» del contrato de M6 vuelve tal cual, sin conductor',
+      async (state) => {
+        serv.responderCon(ok(detalle({ state })));
+
+        expect(await obtener()).toEqual({ estado: state });
+      },
+    );
+
+    // Estos no son estados del contrato de M6: son ejemplos de un estado que M2 no conoce (el contrato de M6 usa CANCELLED, y
+    // `completed` en minúscula no es COMPLETED). M2 no los rechaza: solo exige que no sea COMPLETED.
+    it.each(['CANCELLED_BY_CLIENT', 'ARCHIVED', 'completed', ''])(
+      'el estado «%s», que M2 no conoce, vuelve tal cual, sin conductor',
       async (state) => {
         serv.responderCon(ok(detalle({ state })));
 
@@ -589,8 +601,8 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
     it.each([
       ['completado', detalle({ clientId: OTRO_CLIENTE })],
       ['en curso', detalle({ clientId: OTRO_CLIENTE, state: 'IN_PROGRESS' })],
-      ['completado sin conductor', detalle({ clientId: OTRO_CLIENTE, driverId: undefined })],
-      ['completado con un conductor que no es un UUID', detalle({ clientId: OTRO_CLIENTE, driverId: 'conductor-7' })],
+      ['completado sin conductor (fuera del contrato de M6)', detalle({ clientId: OTRO_CLIENTE, driverId: undefined })],
+      ['completado con un conductor que no es un UUID (fuera del contrato de M6)', detalle({ clientId: OTRO_CLIENTE, driverId: 'conductor-7' })],
       ['con un clientId que no es un UUID', detalle({ clientId: 'cliente-7' })],
       ['con un clientId vacío', detalle({ clientId: '' })],
     ])('un viaje de otro cliente, %s, da null', async (_caso, cuerpo) => {
@@ -622,7 +634,9 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
     });
   });
 
-  // RF-2.5.5: un 200 sin la forma que M2 necesita es falta de disponibilidad. No se reintenta: M6 respondió.
+  // RF-2.5.5: un 200 sin la forma que M2 necesita es falta de disponibilidad. No se reintenta: M6 respondió. Los viajes
+  // COMPLETED sin `driverId` o con uno que no es un UUID están fuera del contrato de M6 (`driverId` es obligatorio): M2 los
+  // trata como una respuesta mal formada.
   describe('un 200 que no tiene la forma esperada: 503 con Retry-After (RF-2.5.5)', () => {
     it.each([
       ['nulo', null],
