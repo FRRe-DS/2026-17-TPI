@@ -22,7 +22,7 @@ describe('el token de servicio de M2 ante el M6 real (RNF-07.11)', () => {
     expect(respuesta.estado, describirRespuesta(respuesta)).toBe(200);
   });
 
-  it('GET /trips/{id} no da 401 ni 403', async () => {
+  it('GET /trips/{tripId} no da 401 ni 403', async () => {
     const viaje = await crearViaje(randomUUID(), 'COMPLETED');
     const token = await tokenDeServicioDeM2();
     const respuesta = await pedirM6('GET', `/trips/${viaje.viajeId}`, { token });
