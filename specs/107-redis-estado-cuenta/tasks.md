@@ -6,7 +6,7 @@
 - [x] **T2. Redis en el compose.** RNF-06, RNF-11
   - Hecho cuando: `docker compose up -d --build --wait` levanta `redis` con imagen de versión fija y healthcheck, `m2` espera a que esté sano, `ejemplo.env` trae `M2_URL_REDIS`, y la prueba que compara `ejemplo.env` con la configuración sigue en verde.
 
-- [ ] **T3. Cliente Redis y módulo de caché vacío.** RNF-13
+- [x] **T3. Cliente Redis y módulo de caché vacío.** RNF-13
   - Hecho cuando: con la dependencia `redis` agregada (aprobada por el integrador), `src/cache/redis.ts` se conecta con tiempo máximo por operación, falla de inmediato si no está conectado, se cierra en `detener`, y sin `M2_URL_REDIS` la caché es un no-op; las pruebas unitarias lo comprueban con un servidor que no contesta.
 
 - [ ] **T4. Leer y guardar con TTL y versión.** RF-2.6.5, RF-2.6.5.1, RF-2.6.7, RNF-11, RNF-19

@@ -11,6 +11,7 @@ import { crearCompilador } from './contrato/validacion.js';
 import { idCorrelacion } from './correlacion.js';
 import { crearClientErrorHandler, crearFrameworkErrors, responderProblema } from './errores-fastify.js';
 import { Deteniendose, NoEncontrado } from './errores.js';
+import { crearRedis, type Redis } from './cache/redis.js';
 import { crearM6, type M6 } from './historial/m6.js';
 import { CAMPO_ID_CORRELACION, opcionesLogger, registrarSolicitud, secretosDeConfig } from './logs.js';
 
@@ -35,6 +36,9 @@ declare module 'fastify' {
     m6: M6;
     // Valida los tokens según el modo. La app lo crea con la configuración, y `arrancar` le pide que traiga las claves.
     verificador: Verificador;
+    // El cliente de Redis de la caché del estado de cuenta (spec 107). Sin `M2_URL_REDIS` es una caché apagada (`activo` en false).
+    // Lo crea la app con la configuración y lo cierra con `app.close()`.
+    redis: Redis;
   }
 }
 
@@ -107,6 +111,15 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   app.decorate('pool', pool);
   app.decorate('m6', crearM6(config, app.log));
   app.decorate('verificador', crearVerificador(config));
+  // Redis es solo una copia: que no conteste no detiene el servicio ni cambia ninguna respuesta (RF-2.6.8, RNF-13). Cada fallo deja
+  // una línea de aviso, una por ventana, con la operación y un código y nunca la clave, el valor ni la dirección (RNF-19).
+  const redis = crearRedis(config, {
+    avisar: ({ operacion, codigo }) => app.log.warn({ operacion, codigo }, 'Redis no responde: el estado de cuenta se calcula desde la base'),
+  });
+  app.decorate('redis', redis);
+  app.addHook('onClose', async () => {
+    await redis.cerrar();
+  });
   app.setValidatorCompiler(crearCompilador(contrato));
   app.setErrorHandler(responderProblema);
   // Todas las respuestas pasan por onSend, también las de error y las que un hook onRequest responde, sin depender del orden
