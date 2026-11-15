@@ -15,7 +15,7 @@
 - [x] **T5. `obtenerEstadoCuenta` usa la caché.** RF-2.6.5, RF-2.6.5.2, RF-2.6.5.3, RF-2.6.5.4
   - Hecho cuando: la prueba HTTP muestra que un rol sin permiso recibe `403` aunque exista copia, que un cliente inexistente da `404` sin guardar nada, y que el cuerpo es idéntico con y sin caché.
 
-- [ ] **T6. Invalidar al cambiar un bloqueo.** RF-2.6.6, RF-2.6.6.1, RF-2.6.6.2
+- [x] **T6. Invalidar al cambiar un bloqueo.** RF-2.6.6, RF-2.6.6.1, RF-2.6.6.2
   - Hecho cuando: las pruebas muestran que, tras `201` de `crearBloqueo` y `200` de `levantarBloqueo`, la siguiente consulta lee la base; y que un alta rechazada (`422`, `404`, `409`) no cambia la versión.
 
 - [ ] **T7. Redis caído o lento.** RF-2.6.8, RF-2.6.8.1, RNF-13, RNF-14, RNF-19

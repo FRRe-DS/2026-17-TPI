@@ -160,6 +160,7 @@ export async function obtenerEstadoCuenta(
 // `-infinity`, anterior a cualquier instante. La huella guarda el cuerpo tal como llegó.
 export async function crearBloqueo(
   pool: BaseDeDatos,
+  cache: CacheEstadoCuenta,
   identidad: Identidad,
   clienteId: string,
   clave: string,
@@ -177,10 +178,15 @@ export async function crearBloqueo(
     clave,
     huella: { cuerpo: datos, ruta: { clienteId: cliente } },
   };
-  return conIdempotencia(pool, solicitud, async (consultar) => {
+  const respuesta = await conIdempotencia(pool, solicitud, async (consultar) => {
     const bloqueo = await repositorio.crearBloqueo(consultar, cliente, randomUUID(), enUtc, identidad.sub);
     return { estado: 201, ubicacion: `/api/v1/clientes/${cliente}/bloqueos/${bloqueo.bloqueoId}`, cuerpo: bloqueo };
   });
+  // `conIdempotencia` vuelve después del COMMIT: la base ya confirmó. Un error (404, 422) sale antes y no toca la copia
+  // (RF-2.6.6.2). Una repetición de la misma clave también invalida: no hace daño, y cubre el caso de que la primera haya
+  // confirmado sin llegar a invalidar.
+  await cache.invalidar(cliente);
+  return respuesta;
 }
 
 // Una página del historial de bloqueos de `clienteId` (RF-2.6.2). Solo llega OPERADOR. 404 si no existe el perfil.
@@ -199,18 +205,18 @@ export async function obtenerBloqueo(pool: BaseDeDatos, clienteId: string, bloqu
 
 // Levanta el bloqueo `bloqueoId` de `clienteId` (RF-2.6.3). Solo llega OPERADOR (el contrato), y su sub queda como autor. 404
 // si no es de ese cliente; 409 si ya fue levantado o venció (RF-2.6.3.1).
+// La copia del estado de cuenta se descarta después de que la sentencia confirmó (autocommit) y antes de responder
+// (RF-2.6.6.1); un 404 o un 409 sale antes y no la toca (RF-2.6.6.2).
 export async function levantarBloqueo(
   pool: BaseDeDatos,
+  cache: CacheEstadoCuenta,
   identidad: Identidad,
   clienteId: string,
   bloqueoId: string,
   { motivo }: LevantamientoBloqueo,
 ): Promise<Bloqueo> {
-  return repositorio.levantarBloqueo(
-    delPool(pool),
-    normalizarUuid(clienteId),
-    normalizarUuid(bloqueoId),
-    motivo,
-    identidad.sub,
-  );
+  const cliente = normalizarUuid(clienteId);
+  const bloqueo = await repositorio.levantarBloqueo(delPool(pool), cliente, normalizarUuid(bloqueoId), motivo, identidad.sub);
+  await cache.invalidar(cliente);
+  return bloqueo;
 }

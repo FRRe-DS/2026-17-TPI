@@ -53,6 +53,7 @@ export const crearBloqueo: Manejador = async (request, reply) => {
   const clave = request.headers['idempotency-key'] as string;
   const respuesta = await servicio.crearBloqueo(
     request.server.pool,
+    request.server.cacheEstado,
     identidadDe(request),
     clienteIdDe(request),
     clave,
@@ -79,6 +80,7 @@ export const obtenerBloqueo: Manejador = async (request) =>
 export const levantarBloqueo: Manejador = async (request) =>
   servicio.levantarBloqueo(
     request.server.pool,
+    request.server.cacheEstado,
     identidadDe(request),
     clienteIdDe(request),
     (request.params as { bloqueoId: string }).bloqueoId,

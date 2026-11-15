@@ -8,9 +8,13 @@ import type { Redis } from './redis.js';
 // Dos claves por cliente:
 //  - `m2:estado-cuenta:v:<clienteId>`: un contador entero, la versión; ausente vale 0.
 //  - `m2:estado-cuenta:c:<clienteId>:<versión>`: el JSON de `EstadoCuenta`, con vencimiento.
-// Invalidar es subir la versión (T6): la copia de la versión anterior queda sin uso y vence sola. El lector toma la versión
-// ANTES de leer la base: si un bloqueo se confirma mientras tanto, escribe bajo la versión vieja, que ya nadie lee, y no
-// puede dejar una copia vieja viva.
+// Invalidar es subir la versión: la copia de la versión anterior queda sin uso y vence sola. El lector toma la versión ANTES
+// de leer la base: si un bloqueo se confirma mientras tanto, escribe bajo la versión vieja, que ya nadie lee, y no puede dejar
+// una copia vieja viva.
+// La versión NO vence (desvío del plan, aprobado el 2026-11-15; ver guia.md, T6). Las lecturas siguen guardando copias con la
+// versión vigente mucho después del último cambio; si la versión venciera, el siguiente INCR partiría de 0 y volvería a dar
+// un número ya usado, y una copia de ese número todavía viva pasaría por vigente justo después de un bloqueo. Es una clave
+// chica por cliente que alguna vez cambió; un reinicio o vaciado de Redis borra versiones y copias juntas.
 
 export type OpcionesCache = {
   // Segundos que dura una copia como máximo (`M2_CACHE_TTL_S`).
@@ -23,6 +27,9 @@ export type CacheEstadoCuenta = {
   // El estado de `clienteId`: la copia si hay una vigente y, si no, lo que devuelva `calcular` (la lectura en la base), que
   // además se guarda. Un error de `calcular` sale tal cual y no se guarda nada (el cliente no existe: RF-2.6.5.4).
   leer: (clienteId: string, calcular: () => Promise<EstadoCuenta>) => Promise<EstadoCuenta>;
+  // Descarta las copias de `clienteId`: se llama después de que la base confirmó un alta o un levantamiento de bloqueo, y
+  // antes de responder (RF-2.6.6, RF-2.6.6.1). No lanza: si Redis falla, la respuesta al operador no cambia.
+  invalidar: (clienteId: string) => Promise<void>;
 };
 
 export const claveVersion = (clienteId: string): string => `m2:estado-cuenta:v:${clienteId}`;
@@ -89,6 +96,15 @@ export function crearCacheEstadoCuenta(redis: Redis, { ttlS, ahora = Date.now }:
         }
       }
       return estado;
+    },
+
+    async invalidar(clienteId) {
+      if (!redis.activo) return;
+      try {
+        await redis.incr(claveVersion(clienteId));
+      } catch {
+        // El cliente de Redis ya avisó al log. Qué pasa con las copias de este cliente mientras tanto es la T7 (RF-2.6.8.1).
+      }
     },
   };
 }

@@ -216,3 +216,59 @@ describe('sin caché o con Redis fallando (RF-2.6.8, RNF-06)', () => {
     redis.set = original;
   });
 });
+
+describe('invalidar: subir la versión (RF-2.6.6, RF-2.6.6.1)', () => {
+  it('después de invalidar, la siguiente lectura vuelve a calcular', async () => {
+    const cache = crear();
+    const calcular = vi.fn(async () => estadoCon(CLIENTE));
+    await cache.leer(CLIENTE, calcular);
+    await cache.invalidar(CLIENTE);
+    await cache.leer(CLIENTE, calcular);
+    expect(calcular).toHaveBeenCalledTimes(2);
+    expect(redis.valor(`m2:estado-cuenta:v:${CLIENTE}`)).toBe('1');
+  });
+
+  it('solo invalida al cliente indicado', async () => {
+    const cache = crear();
+    const calcularOtro = vi.fn(async () => estadoCon(OTRO));
+    await cache.leer(OTRO, calcularOtro);
+    await cache.invalidar(CLIENTE);
+    await cache.leer(OTRO, calcularOtro);
+    expect(calcularOtro).toHaveBeenCalledTimes(1);
+  });
+
+  // La versión no vence: si venciera, el siguiente INCR volvería a dar un número ya usado, y una copia guardada con ese número
+  // antes del vencimiento (todavía viva) pasaría por vigente aunque el cliente acabe de cambiar.
+  it('la versión no tiene vencimiento: no se pide PEXPIRE ni se guarda con vencimiento', async () => {
+    await crear().invalidar(CLIENTE);
+    expect(redis.llamadas.pexpire).toBe(0);
+    expect(redis.vencimientoPedido(`m2:estado-cuenta:v:${CLIENTE}`)).toBeUndefined();
+  });
+
+  // El caso que rompería una versión con vencimiento de 2 × TTL (60 s → 120 s): a los 70 s una consulta guarda la copia de la
+  // versión 1, que vive hasta los 130 s; a los 120 s vencería la versión; a los 125 s llega un bloqueo y el INCR volvería a dar 1:
+  // la consulta siguiente encontraría la copia ACTIVA de los 70 s.
+  it('una copia guardada después del último cambio no reaparece tras el bloqueo siguiente', async () => {
+    let reloj = AHORA;
+    redis = crearRedisEnMemoria(() => reloj);
+    const cache = crearCacheEstadoCuenta(redis, { ttlS: TTL_S, ahora: () => reloj });
+    await cache.invalidar(CLIENTE);
+    reloj += 70_000;
+    await cache.leer(CLIENTE, async () => estadoCon(CLIENTE));
+    reloj += 55_000;
+    await cache.invalidar(CLIENTE);
+    const bloqueado = estadoCon(CLIENTE, undefined);
+    await expect(cache.leer(CLIENTE, async () => bloqueado)).resolves.toEqual(bloqueado);
+  });
+
+  it('con la caché apagada no hace nada', async () => {
+    const apagada = { ...crearRedisEnMemoria(), activo: false };
+    await crearCacheEstadoCuenta(apagada, { ttlS: TTL_S }).invalidar(CLIENTE);
+    expect(apagada.llamadas).toEqual({ get: 0, set: 0, incr: 0, pexpire: 0 });
+  });
+
+  it('si Redis falla, no lanza: quien llama responde igual al operador', async () => {
+    redis.fallar = true;
+    await expect(crear().invalidar(CLIENTE)).resolves.toBeUndefined();
+  });
+});
