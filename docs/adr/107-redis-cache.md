@@ -8,7 +8,7 @@ RNF-11 pide que el estado efímero, con TTL e invalidación, lo administre Redis
 
 ## Decisión
 - Redis guarda una copia de la respuesta `EstadoCuenta` por cliente, con un TTL corto (60 s por defecto) y acotado por el primer `hasta` de los bloqueos vigentes.
-- La invalidación sube un contador de versión por cliente en el alta y el levantamiento de bloqueos; la copia va en una clave que incluye esa versión.
+- La invalidación sube un contador de versión por cliente en el alta y el levantamiento de bloqueos; la copia va en una clave que incluye esa versión. El contador no vence: si venciera, el siguiente incremento repetiría un número ya usado por copias todavía vivas (corregido durante la implementación, T6, 2026-11-15).
 - Redis es opcional: sin `M2_URL_REDIS`, o con Redis caído, M2 responde desde su base.
 - Redis corre en el `docker-compose` por defecto, con una imagen de versión fija.
 - Cliente: el paquete oficial `redis` (node-redis), con su versión exacta en `package.json`.
@@ -22,5 +22,6 @@ RNF-11 pide que el estado efímero, con TTL e invalidación, lo administre Redis
 
 ## Consecuencias
 - M2 gana una dependencia opcional de infraestructura y una de npm.
+- Queda en Redis una clave de versión por cliente que alguna vez tuvo un alta o un levantamiento de bloqueo. Es chica, y Redis corre sin desalojo (`noeviction`) para no perderla mientras haya copias.
 - Una invalidación que falla deja una copia vieja hasta su TTL; para acortarlo, M2 deja de servir copias de ese cliente mientras no pueda invalidar.
 - Con más de un proceso de M2, la marca de invalidación pendiente debería vivir en Redis; hoy está en memoria.
