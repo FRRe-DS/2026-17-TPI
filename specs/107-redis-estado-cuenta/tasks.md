@@ -9,7 +9,7 @@
 - [x] **T3. Cliente Redis y módulo de caché vacío.** RNF-13
   - Hecho cuando: con la dependencia `redis` agregada (aprobada por el integrador), `src/cache/redis.ts` se conecta con tiempo máximo por operación, falla de inmediato si no está conectado, se cierra en `detener`, y sin `M2_URL_REDIS` la caché es un no-op; las pruebas unitarias lo comprueban con un servidor que no contesta.
 
-- [ ] **T4. Leer y guardar con TTL y versión.** RF-2.6.5, RF-2.6.5.1, RF-2.6.7, RNF-11, RNF-19
+- [x] **T4. Leer y guardar con TTL y versión.** RF-2.6.5, RF-2.6.5.1, RF-2.6.7, RNF-11, RNF-19
   - Hecho cuando: las pruebas unitarias con un Redis falso muestran que una segunda lectura sale de la copia, que el TTL es el menor entre el configurado y el primer `hasta`, que no se guarda si ya venció, y que las claves solo contienen el `clienteId`.
 
 - [ ] **T5. `obtenerEstadoCuenta` usa la caché.** RF-2.6.5, RF-2.6.5.2, RF-2.6.5.3, RF-2.6.5.4
