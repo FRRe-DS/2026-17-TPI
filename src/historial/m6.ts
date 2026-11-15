@@ -13,7 +13,7 @@ export type M6 = {
   // limita los pedidos con un 429) o `ErrorDeIntegracion` (500).
   listarViajes(clienteId: string, page: number, size: number, idCorrelacion: string): Promise<PaginaM6>;
   // El viaje `viajeId` para que `clienteId` lo califique: `null` si M6 dice que no existe o es de otro cliente (RF-2.5.1).
-  // Lanza `ModuloNoDisponible` (503) o `ErrorDeIntegracion` (500), como `listarViajes`.
+  // Lanza `ModuloNoDisponible` (503, también con un 429) o `ErrorDeIntegracion` (500), como `listarViajes`.
   obtenerViaje(viajeId: string, clienteId: string, idCorrelacion: string): Promise<ViajeACalificar | null>;
 };
 
@@ -76,7 +76,7 @@ const formaInesperada = (estado: number, reintentarDespuesS: number) =>
 // El código con que M6 avisa que M2 pasó su límite de pedidos (contrato de M6, respuesta `TooManyRequests`).
 const LIMITE_DE_PEDIDOS = 429;
 
-// Un 429 no es un rechazo sino un límite: M6 no puede atender ahora y hay que volver a pedir después (RF-2.4.15). Es un 503
+// Un 429 no es un rechazo sino un límite: M6 no puede atender ahora y hay que volver a pedir después (RF-2.4.15, RF-2.5.18). Es un 503
 // con los segundos que informa M6 en su `Retry-After` si valen y, si no, con los configurados. El cliente de módulos no
 // reintenta un 4xx, así que no hay otro pedido dentro de la misma ventana del límite. La causa lleva el código y nunca el
 // cuerpo (RNF-19).
@@ -116,15 +116,17 @@ export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
       return inalcanzable ? { items: [], total: cuerpo.total } : cuerpo;
     },
 
-    // El orden es el del plan 008: el 404, el resto de los 4xx, la forma mínima (`state` y `clientId` en texto), el dueño, el
+    // El orden es el del plan 008: el 404, el 429 (límite de pedidos), el resto de los 4xx, la forma mínima (`state` y `clientId` en texto), el dueño, el
     // estado y, solo si está completado, el conductor. El dueño va antes que el estado y que el conductor: un viaje ajeno da
     // `null` como uno inexistente y nunca revela su estado, aunque su conductor venga mal (RF-2.5.1). El `viajeId` ya es un
     // UUID validado por el contrato; se escapa igual, por si acaso.
     async obtenerViaje(viajeId, clienteId, idCorrelacion) {
       // Puede lanzar ModuloNoDisponible, tras el reintento (RF-2.5.5, RNF-13).
-      const { estado, cuerpo } = await cliente.obtener(`/trips/${encodeURIComponent(viajeId)}`, idCorrelacion);
+      const { estado, cuerpo, reintentarDespues } = await cliente.obtener(`/trips/${encodeURIComponent(viajeId)}`, idCorrelacion);
 
       if (estado === 404) return null;
+      // Como en el historial: el límite de pedidos es un 503, sin reintento (RF-2.5.18).
+      if (estado === LIMITE_DE_PEDIDOS) throw limiteDePedidos(reintentarDespues, config.reintentarDespuesS);
       if (estado >= 400) throw new ErrorDeIntegracion({ cause: new Error(`${NOMBRE} respondió ${estado}`) });
       if (!esObjeto(cuerpo) || typeof cuerpo.state !== 'string' || typeof cuerpo.clientId !== 'string') {
         throw formaInesperada(estado, config.reintentarDespuesS);

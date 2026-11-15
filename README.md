@@ -116,7 +116,7 @@ En cada pedido M2 se presenta con un token de servicio de vida corta (rol `SERVI
 |---|---|
 | No contesta a tiempo, corta la conexión, responde `5xx` o algo que no es JSON | Reintenta a los 200 ms (una vez, salvo que se cambie `M2_REINTENTOS_MODULOS`). Si vuelve a fallar: `503` con `Retry-After` |
 | Responde `200` con una forma que M2 no puede leer | `503` con `Retry-After`, sin reintentar |
-| Limita los pedidos (`429`) | En el historial: `503`, sin reintentar, con el `Retry-After` que informa M6 si va de 1 a 3600 segundos y, si no, con el configurado. Al calificar todavía responde `500`; lo cambia la spec 008 (issue #96) |
+| Limita los pedidos (`429`) | En el historial: `503`, sin reintentar, con el `Retry-After` que informa M6 si va de 1 a 3600 segundos y, si no, con el configurado. Al calificar también: `503` con el mismo `Retry-After`, sin reintentar y sin guardar nada, así que se puede repetir el mismo pedido con la misma clave |
 | Responde `404` al pedirle un viaje | Al calificar: `404`, el viaje no existe |
 | Rechaza el pedido con otro `4xx` | `500`, sin reintentar: es un problema de configuración entre módulos, no del cliente |
 
@@ -301,7 +301,7 @@ Un servicio con una variable obligatoria faltante o inválida no arranca: sale c
 | `M2_AUDIENCIA_M6` | no | `m6-viajes` | Audiencia (`aud`) del token de servicio con el que M2 se presenta ante M6; no puede estar en blanco ni tener espacios al principio o al final |
 | `M2_TIEMPO_MODULOS_MS` | no | `2000` | Espera máxima por intento a otro módulo, en milisegundos (de 1 a 2147483647) |
 | `M2_REINTENTOS_MODULOS` | no | `1` | Reintentos de una lectura a otro módulo, de 0 a 5 |
-| `M2_REINTENTAR_DESPUES_S` | no | `5` | Segundos del `Retry-After` del `503` cuando M6 no está disponible, de 1 a 3600. Si M6 limita los pedidos (`429`) e informa su propio `Retry-After` de 1 a 3600 segundos, el historial responde con el de M6 y no con este |
+| `M2_REINTENTAR_DESPUES_S` | no | `5` | Segundos del `Retry-After` del `503` cuando M6 no está disponible, de 1 a 3600. Si M6 limita los pedidos (`429`) e informa su propio `Retry-After` de 1 a 3600 segundos, el historial y calificar responden con el de M6 y no con este |
 
 Las variables del panel y de los M6 de prueba (`PANEL_*`, `M6_*`) están en `ejemplo.env`, cada una con su explicación.
 

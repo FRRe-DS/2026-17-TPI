@@ -25,7 +25,7 @@ Depende de: las specs #3 (cliente de módulos), #4 (perfiles e idempotencia), #5
 
 T11 y T12 vienen del cambio de 2026-11-11 (M2 se alinea con la versión `35b3c4d` del contrato de M6, #96 y ADR 096). Dependen de T13 a T15 de la spec #7 en `main`. T11 es delicada (llamada a otro módulo e idempotencia): Opus. T12, Sonnet.
 
-- [ ] **T11. Responder `503` ante un `429` de M6 al calificar.** RF-2.5.6, RF-2.5.18, RNF-13, RNF-14
+- [x] **T11. Responder `503` ante un `429` de M6 al calificar.** RF-2.5.6, RF-2.5.18, RNF-13, RNF-14
   - Hecho cuando: pruebas de módulos comprueban que un `429` de `GET /trips/{tripId}` da `ModuloNoDisponible` con el `Retry-After` de M6 o con el configurado y con un solo pedido a M6, que `400`, `401` y `403` siguen dando `ErrorDeIntegracion` y `404`, `null`, y que el pedido lleva `X-Correlation-Id`; pruebas de integración comprueban que, con M6 respondiendo `429`, calificar no deja fila ni respuesta guardada, que el mismo pedido con la misma clave da `201` cuando M6 vuelve a responder, y que un viaje ya calificado da `409` sin llamar a M6; una prueba HTTP comprueba `503` en problem+json, `detail` que nombra a M6 y `Retry-After: 30`.
-- [ ] **T12. Poner al día los textos y la guía.** RNF-20
+- [x] **T12. Poner al día los textos y la guía.** RNF-20
   - Hecho cuando: `guia.md` documenta T11 y, en la visión general, el `429` y los estados del contrato nuevo; los textos de las pruebas de calificaciones (también el bloque de `obtenerViaje` de `pruebas/modulos/m6.test.ts`) y `guia.md` no nombran `/trips/{id}`, `/api/v1` en la dirección de M6 ni `ErrorResponse`, usan `CANCELLED` como estado cancelado (si una prueba conserva `CANCELLED_BY_CLIENT`, es como ejemplo de estado que M2 no conoce y lo dice), y las pruebas que arman un viaje `COMPLETED` sin `driverId` dicen que está fuera del contrato de M6; `npm test`, lint, build, `npm run contrato:test` y `spec-check` en verde.

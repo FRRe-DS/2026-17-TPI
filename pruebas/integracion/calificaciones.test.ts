@@ -846,7 +846,7 @@ describe('calificarConductor con PostgreSQL real y M6 simulado (RF-2.5 a RF-2.5.
       expect(ajeno).toEqual(inexistente);
     });
 
-    it.each(['IN_PROGRESS', 'CANCELLED_BY_CLIENT', 'UN_ESTADO_NUEVO'])('un viaje del cliente en %s: 422, sin calificación ni reserva', async (estado) => {
+    it.each(['IN_PROGRESS', 'CANCELLED', 'UN_ESTADO_NUEVO'])('un viaje del cliente en %s: 422, sin calificación ni reserva', async (estado) => {
       const clienteId = await perfil();
       const viajeId = nuevoId();
       serv.responderCon(responde(viajeId, clienteId, { state: estado, driverId: undefined }));

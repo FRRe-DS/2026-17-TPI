@@ -446,7 +446,7 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
   });
 });
 
-describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
+describe('crearM6: el viaje a calificar, GET /trips/{tripId} (008/T4)', () => {
   const serv = crearServidorModulo();
   beforeAll(() => serv.levantar());
   afterAll(() => serv.cerrar());
@@ -464,7 +464,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   const fallaDe = (promesa: Promise<unknown>) => promesa.catch((motivo: unknown) => motivo);
 
   describe('el pedido (RF-2.5, RNF-14)', () => {
-    it('pide GET /trips/{id} con el id del viaje y el id de correlación', async () => {
+    it('pide GET /trips/{tripId} con el id del viaje y el id de correlación', async () => {
       serv.responderCon(ok(detalle()));
 
       await obtener();
@@ -473,14 +473,16 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
       expect(url.pathname).toBe(`/trips/${VIAJE}`);
       expect(url.search).toBe('');
       expect(serv.encabezadosRecibidos.get('x-request-id')).toBe('id-de-correlacion');
+      // El contrato de M6 declara `X-Correlation-Id`: va con el mismo identificador (RNF-14.11; 008/T11).
+      expect(serv.encabezadosRecibidos.get('x-correlation-id')).toBe('id-de-correlacion');
     });
 
-    it('suma /trips/{id} a la URL base de M6, que puede traer un camino', async () => {
+    it('suma /trips/{tripId} a la URL base de M6, que puede traer un camino', async () => {
       serv.responderCon(ok(detalle()));
 
-      await m6({ urlM6: `${serv.url}/api/v1` }).obtenerViaje(VIAJE, CLIENTE, 'id');
+      await m6({ urlM6: `${serv.url}/m6` }).obtenerViaje(VIAJE, CLIENTE, 'id');
 
-      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe(`/api/v1/trips/${VIAJE}`);
+      expect(new URL(serv.rutaRecibida, serv.url).pathname).toBe(`/m6/trips/${VIAJE}`);
     });
   });
 
@@ -553,9 +555,21 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
   });
 
   // RF-2.5.2: cualquier estado en texto distinto de COMPLETED, también uno que M2 no conoce. Sin conductor: no hace falta.
+  // Los estados de `TripState` del contrato de M6 son PENDING_ARRIVAL, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED y CANCELLED.
   describe('un viaje del cliente que no está completado (RF-2.5.2)', () => {
-    it.each(['PENDING_ARRIVAL', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'CANCELLED_BY_CLIENT', 'CANCELLED_BY_DRIVER', 'ARCHIVED', 'completed', ''])(
-      'el estado «%s» vuelve tal cual, sin conductor',
+    it.each(['PENDING_ARRIVAL', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'CANCELLED'])(
+      'el estado «%s» del contrato de M6 vuelve tal cual, sin conductor',
+      async (state) => {
+        serv.responderCon(ok(detalle({ state })));
+
+        expect(await obtener()).toEqual({ estado: state });
+      },
+    );
+
+    // Estos no son estados del contrato de M6: son ejemplos de un estado que M2 no conoce (el contrato de M6 usa CANCELLED, y
+    // `completed` en minúscula no es COMPLETED). M2 no los rechaza: solo exige que no sea COMPLETED.
+    it.each(['CANCELLED_BY_CLIENT', 'ARCHIVED', 'completed', ''])(
+      'el estado «%s», que M2 no conoce, vuelve tal cual, sin conductor',
       async (state) => {
         serv.responderCon(ok(detalle({ state })));
 
@@ -587,8 +601,8 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
     it.each([
       ['completado', detalle({ clientId: OTRO_CLIENTE })],
       ['en curso', detalle({ clientId: OTRO_CLIENTE, state: 'IN_PROGRESS' })],
-      ['completado sin conductor', detalle({ clientId: OTRO_CLIENTE, driverId: undefined })],
-      ['completado con un conductor que no es un UUID', detalle({ clientId: OTRO_CLIENTE, driverId: 'conductor-7' })],
+      ['completado sin conductor (fuera del contrato de M6)', detalle({ clientId: OTRO_CLIENTE, driverId: undefined })],
+      ['completado con un conductor que no es un UUID (fuera del contrato de M6)', detalle({ clientId: OTRO_CLIENTE, driverId: 'conductor-7' })],
       ['con un clientId que no es un UUID', detalle({ clientId: 'cliente-7' })],
       ['con un clientId vacío', detalle({ clientId: '' })],
     ])('un viaje de otro cliente, %s, da null', async (_caso, cuerpo) => {
@@ -620,7 +634,9 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
     });
   });
 
-  // RF-2.5.5: un 200 sin la forma que M2 necesita es falta de disponibilidad. No se reintenta: M6 respondió.
+  // RF-2.5.5: un 200 sin la forma que M2 necesita es falta de disponibilidad. No se reintenta: M6 respondió. Los viajes
+  // COMPLETED sin `driverId` o con uno que no es un UUID están fuera del contrato de M6 (`driverId` es obligatorio): M2 los
+  // trata como una respuesta mal formada.
   describe('un 200 que no tiene la forma esperada: 503 con Retry-After (RF-2.5.5)', () => {
     it.each([
       ['nulo', null],
@@ -662,7 +678,7 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
 
   // RF-2.5.6: un 4xx distinto de 404 es un problema de configuración o de acuerdo entre módulos: 500, sin reintento.
   describe('M6 rechaza el pedido: error de integración (RF-2.5.6)', () => {
-    it.each([400, 401, 403, 409, 422, 429])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
+    it.each([400, 401, 403, 409, 422])('un %i no se reintenta y da 500 sin datos de M6', async (estado) => {
       serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, DEL_CUERPO) });
 
       const error = await fallaDe(obtener());
@@ -673,6 +689,76 @@ describe('crearM6: el viaje a calificar, GET /trips/{id} (008/T4)', () => {
       expect(respuesta.codigo).toBe(500);
       expect(respuesta.cuerpo.detail).toBe('Ocurrió un error interno');
       expect((error as Error).cause).toMatchObject({ message: `M6 respondió ${estado}` });
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    // El Retry-After solo cuenta en un 429: en otro 4xx no cambia nada (008/T11).
+    it.each([400, 401, 403])('un %i sigue dando error de integración aunque traiga Retry-After', async (estado) => {
+      serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, DEL_CUERPO), encabezados: { 'Retry-After': '30' } });
+
+      const error = await fallaDe(obtener());
+
+      expect(error).toBeInstanceOf(ErrorDeIntegracion);
+      expect(serv.llamadas).toBe(1);
+      expect(aProblema(error).encabezados).toEqual({ 'Content-Type': 'application/problem+json' });
+    });
+
+    it('un 404 con Retry-After sigue dando null', async () => {
+      serv.responderCon({ tipo: '4xx', estado: 404, cuerpo: errorDeM6(404, DEL_CUERPO), encabezados: { 'Retry-After': '30' } });
+
+      expect(await obtener()).toBeNull();
+      expect(serv.llamadas).toBe(1);
+    });
+  });
+
+  // RF-2.5.18: el 429 es el límite de pedidos de M6, no un rechazo. Como en el historial (RF-2.4.15): 503 con el Retry-After
+  // de M6 si vale y si no, con el configurado, y sin reintento.
+  describe('M6 limita los pedidos: el 429 da 503 con Retry-After (RF-2.5.18; 008/T11)', () => {
+    const limite = (reintentarDespues?: string): Comportamiento => ({
+      tipo: '4xx',
+      estado: 429,
+      cuerpo: errorDeM6(429, DEL_CUERPO),
+      ...(reintentarDespues === undefined ? {} : { encabezados: { 'Retry-After': reintentarDespues } }),
+    });
+
+    it('con el Retry-After de M6: 503 que nombra a M6, con ese valor y un solo pedido', async () => {
+      serv.responderCon(limite('30'));
+
+      const error = await fallaDe(obtener(CLIENTE, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(serv.llamadas).toBe(1);
+      const respuesta = aProblema(error, '/api/v1/clientes/x/calificaciones');
+      expect(respuesta.codigo).toBe(503);
+      expect(respuesta.cuerpo.detail).toBe('M6 no está disponible');
+      expect(respuesta.encabezados).toEqual({ 'Content-Type': 'application/problem+json', 'Retry-After': '30' });
+      expect((error as Error).cause).toMatchObject({ message: 'M6 respondió 429' });
+      expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
+    });
+
+    it.each([
+      ['falta', undefined],
+      ['es 0', '0'],
+      ['pasa de 3600', '3601'],
+      ['trae una unidad', '30s'],
+    ])('si el Retry-After de M6 %s: 503 con el valor configurado y un solo pedido', async (_caso, deM6) => {
+      serv.responderCon(limite(deM6));
+
+      const error = await fallaDe(obtener(CLIENTE, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('7');
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('también si el 429 no responde con JSON', async () => {
+      serv.responderCon({ tipo: 'no-json', estado: 429, contenido: DEL_CUERPO, encabezados: { 'Retry-After': '12' } });
+
+      const error = await fallaDe(obtener(CLIENTE, { reintentarDespuesS: 7 }));
+
+      expect(error).toBeInstanceOf(ModuloNoDisponible);
+      expect(aProblema(error).encabezados['Retry-After']).toBe('12');
+      expect(serv.llamadas).toBe(1);
       expect(inspect(error, { depth: 10 })).not.toContain(DEL_CUERPO);
     });
   });

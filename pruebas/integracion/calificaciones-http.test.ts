@@ -435,6 +435,87 @@ describe('calificaciones por HTTP (008/T8)', () => {
       expect(filas.rowCount).toBe(0);
     });
 
+    // RF-2.5.18: el 429 de M6 es un límite, no un rechazo. Como en el historial: 503 con el Retry-After de M6, sin reintento y
+    // sin guardar nada, ni la calificación ni la respuesta: la clave no queda gastada (008/T11).
+    it('un 429 de M6 con Retry-After: 30 da 503 problem+json que nombra a M6, sin reintento ni nada guardado', async () => {
+      const clienteId = await cliente();
+      serv.responderCon({ tipo: '4xx', estado: 429, cuerpo: errorDeM6(429, 'dato-de-m6'), encabezados: { 'Retry-After': '30' } });
+      const { alta, logs } = crear({ reintentarDespuesS: 7 });
+
+      const respuesta = await alta(clienteId, { viajeId: randomUUID(), puntaje: 5 }, 'clave-del-limite');
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA);
+      expect(respuesta.headers['retry-after']).toBe('30');
+      expect(respuesta.json()).toMatchObject({ status: 503, detail: 'M6 no está disponible' });
+      expect(respuesta.body).not.toContain('dato-de-m6');
+      expect(serv.llamadas).toBe(1);
+      expect(logs.texto()).toContain('M6 respondió 429');
+      expect(logs.texto()).not.toContain('dato-de-m6');
+      const filas = await pool.consultar('SELECT 1 FROM calificaciones WHERE cliente_id = $1', [clienteId]);
+      expect(filas.rowCount).toBe(0);
+      const guardadas = await pool.consultar('SELECT 1 FROM idempotencias WHERE clave = $1', ['clave-del-limite']);
+      expect(guardadas.rowCount).toBe(0);
+    });
+
+    it('un 429 de M6 sin un Retry-After que valga da 503 con el valor configurado', async () => {
+      const clienteId = await cliente();
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': 'Wed, 11 Nov 2026 20:00:00 GMT' } });
+
+      const respuesta = await crear({ reintentarDespuesS: 7 }).alta(clienteId, { viajeId: randomUUID(), puntaje: 5 });
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['retry-after']).toBe('7');
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('tras un 429, el mismo pedido con la misma clave da 201 cuando M6 vuelve a responder', async () => {
+      const clienteId = await cliente();
+      const viajeId = randomUUID();
+      const { alta } = crear();
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': '30' } });
+      expect((await alta(clienteId, { viajeId, puntaje: 4 }, 'clave-reintentada')).statusCode).toBe(503);
+      serv.responderCon(viajeDeM6(viajeId, clienteId));
+
+      const respuesta = await alta(clienteId, { viajeId, puntaje: 4 }, 'clave-reintentada');
+
+      expect(respuesta.statusCode).toBe(201);
+      expect(respuesta.json()).toMatchObject({ viajeId, conductorId: CONDUCTOR, puntaje: 4 });
+      expect(serv.llamadas).toBe(1);
+    });
+
+    it('un viaje ya calificado da 409 sin llamar a M6, aunque M6 esté limitando los pedidos', async () => {
+      const clienteId = await cliente();
+      const { viajeId } = await calificada(clienteId);
+      serv.responderCon({ tipo: '4xx', estado: 429, encabezados: { 'Retry-After': '30' } });
+
+      const respuesta = await crear().alta(clienteId, { viajeId, puntaje: 1 });
+
+      expect(respuesta.statusCode).toBe(409);
+      expect(respuesta.json()).toMatchObject({ type: '/errores/calificacion-duplicada', status: 409 });
+      expect(serv.llamadas).toBe(0);
+    });
+
+    // RNF-14.11: el identificador de la solicitud llega a M6 también en el encabezado que declara su contrato.
+    it('el identificador de un pedido de calificación llega a M6 en X-Correlation-Id', async () => {
+      const clienteId = await cliente();
+      const viajeId = randomUUID();
+      serv.responderCon(viajeDeM6(viajeId, clienteId));
+      const { app, tokens } = crear();
+      const token = armarToken({ claims: { sub: clienteId, roles: ['CLIENTE'] } });
+      tokens.push(token);
+
+      const respuesta = await app.inject({
+        method: 'POST',
+        url: coleccion(clienteId),
+        headers: { authorization: `Bearer ${token}`, 'idempotency-key': 'k', 'x-request-id': 'calificar-correlacion' },
+        payload: { viajeId, puntaje: 5 },
+      });
+
+      expect(respuesta.statusCode).toBe(201);
+      expect(serv.encabezadosRecibidos.get('x-correlation-id')).toBe('calificar-correlacion');
+    });
+
     it.each([400, 401, 403])('un %i de M6 no se reintenta y da 500 genérico, sin Retry-After ni datos de M6', async (estado) => {
       const clienteId = await cliente();
       serv.responderCon({ tipo: '4xx', estado, cuerpo: errorDeM6(estado, 'dato-de-m6') });
