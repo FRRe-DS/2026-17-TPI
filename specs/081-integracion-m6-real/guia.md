@@ -20,6 +20,7 @@
 | `historial.test.ts` | los viajes del cliente, `calificado`, la paginación | RNF-07.8 |
 | `calificacion.test.ts` | calificar, conductor tomado de M6, duplicado | RNF-07.9 |
 | `rechazos.test.ts` | inexistente, ajeno, cancelado y en curso | RNF-07.10 |
+| `correlacion.test.ts` | M6 devuelve `X-Correlation-Id` y `correlationId` | RNF-07.14 |
 | `resiliencia.test.ts`, `ayudas/averias.ts`, `orden.ts` | M6 detenido y congelado, y la recuperación | RNF-13.8 |
 | `docker-compose.yml` (`m6-real`, `m6-real-bd`), `.github/workflows/integracion-m6.yml` | el M6 real con su base, y el job de CI | RNF-04.9, RNF-07.7 |
 
@@ -30,7 +31,7 @@
 **Cómo probarlo.** Los comandos, la salida esperada y el recorrido a mano con `curl` están en `docs/probar-m2.md`, sección 8.
 
 **Para comprobar que se entendió.**
-1. ¿Por qué la URL de M6 real no lleva `/api/v1` y la del M6 simulado sí?
+1. ¿De dónde sale que la URL de M6 no lleve `/api/v1`, y qué cambió en el M6 simulado con el ADR 096?
 2. ¿Por qué `resiliencia.test.ts` corre al final, y qué en el repositorio avisa si alguien lo renombra?
 3. Con M6 detenido el `503` tarda unos 300 ms y con M6 congelado, unos 4 s. ¿Por qué?
 4. M6 le muestra cualquier viaje a un token `SYSTEM`. ¿Qué parte del código de M2 hace que calificar el viaje de otro cliente dé `404`?
@@ -38,13 +39,13 @@
 
 ## Diferencias entre el contrato supuesto y el M6 real
 
-Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de los issues del Grupo 12 (A y B, publicados) y las propuestas de `sdd-change` (sin issue todavía) están al final, en la T10.
+Observadas contra el commit `7d3d5af`. «Se consulta a» dice a quién le toca resolverla. Los textos de los issues del Grupo 12 (A y B, publicados) y las propuestas de `sdd-change` (sin issue todavía; implementadas: filas 7 y 8) están al final, en la T10.
 
 La columna «Lo que dice `m6.yml`» habla de `contrato/dependencias/m6.yml`, que desde el cambio del 2026-11-11 es la extracción del contrato de la cátedra en `35b3c4d` (2026-11-01, «Contrato confirmado por ambos grupos»; ADR 096, issue #96). Ese contrato es idéntico byte a byte al `openapi.yaml` de M6 en `107d63c`: las filas 1, 4, 11 y 12 quedaron cerradas por esa extracción, y las 7 y 8, por los cambios de M2 en las specs 007 y 008. Queda una diferencia abierta, la 3.
 
 | # | Comportamiento observado | Lo que dice `m6.yml` | Resolución | Se consulta a |
 |---|---|---|---|---|
-| 1 | M6 sirve en `/trips`, sin `/api/v1` (con `/api/v1` M2 recibe un error). | `servers`: `http://localhost:3006`, sin `/api/v1` (desde `35b3c4d`). | **Cerrada** por la extracción nueva (ADR 096). El real se usa con `M2_URL_M6=http://m6-real:3006`, y el M6 simulado del panel sirve en `/trips` (spec 071). | Nadie. |
+| 1 | M6 sirve en `/trips`, sin `/api/v1` (con `/api/v1` M2 recibe un error). | `servers`: `http://localhost:3000` y `http://localhost:3006`; ninguno lleva `/api/v1` (desde `35b3c4d`). | **Cerrada** por la extracción nueva (ADR 096). El real se usa con `M2_URL_M6=http://m6-real:3006`, y el M6 simulado del panel sirve en `/trips` (spec 071). | Nadie. |
 | 2 | M6 no verifica la firma del JWT: decodifica el payload y mira `role`/`roles` y `exp`. Tampoco revisa `aud` ni `iss`. Su README lo anota como pendiente, a la espera de M1. | `[NECESITA ACLARACIÓN]` qué `aud` e `iss` valida. | Sin cambio en M2: el token de servicio pasa. Cuando M6 verifique, M2 tendrá que firmar con lo que M6 acuerde. | Grupo 12: [#9](https://github.com/FRRe-DS/2026-12-TPI/issues/9) |
 | 3 | M6 acepta el claim `roles` y `SERVICIO` como alias de `SYSTEM` (y `CLIENTE`, `CONDUCTOR`, `OPERADOR`). | El contrato `35b3c4d` solo nombra `SYSTEM`; los alias `SERVICIO`, `CLIENTE`, `CONDUCTOR` y `OPERADOR` no están. | **Diferencia abierta.** Ninguna para M2: manda `SERVICIO` y M6 lo acepta. El Grupo 12 documentó el claim `role`/`roles` y los alias en el `openapi.yaml` de su rama (resuelto el 2026-11-08, su issue #10 cerrado), pero todavía no los subió al contrato de la cátedra. Es un riesgo aceptado: lo vigila RNF-07.11, que usa el token de servicio real de M2 contra M6; si M6 deja de aceptar el alias, esa prueba falla. | Grupo 12: [#10](https://github.com/FRRe-DS/2026-12-TPI/issues/10), cerrado |
 | 4 | `GET /trips` con token `SYSTEM` exige `clientId` o `driverId`; sin ninguno, `400` con `code` `VALIDATION`. (Leído en su `openapi.yaml` y su código; M2 siempre manda `clientId`, no se ejerció.) | `SYSTEM` debe indicar `clientId` o `driverId`; sin ninguno, `400 VALIDATION`. | **Cerrada** por la extracción nueva (ADR 096): M6 coincide con el contrato. M2 siempre manda `clientId`. | Nadie. |
@@ -162,7 +163,7 @@ La columna «Lo que dice `m6.yml`» habla de `contrato/dependencias/m6.yml`, que
 >
 > **Qué pedimos.** Que el contrato documente que se aceptan `roles` y esos alias. Así M2 y cualquier otro módulo que se presente con `SERVICIO` se apoya en algo acordado y no en un detalle del código que podría cambiar. No hace falta cambiar el comportamiento: solo que quede escrito.
 
-#### Propuestas de `sdd-change` (nuestras, sin issue todavía)
+#### Propuestas de `sdd-change` (nuestras, sin issue todavía; implementadas: filas 7 y 8)
 
 **Propuesta 1 — Un `429` de M6 debe ser `503` con `Retry-After`** (fila 7; specs `007-historial` y `008-calificacion-conductor`).
 - Hoy: M6 limita los pedidos por minuto y responde `429` con `Retry-After`. `src/modulos/cliente.ts` devuelve cualquier `4xx` tal cual, sin reintento, y los servicios lo convierten en un `500` (RF-2.4.7: un `4xx` de otro módulo se trata como problema de acuerdo entre módulos). Para el cliente de M2 un límite de velocidad pasajero es indistinguible de un error de configuración.
@@ -194,8 +195,8 @@ RNF-13.8 decía que la calificación vuelve a `200`, y la prueba y el contrato d
 - Para mirar con atención: el `404` de un viaje inexistente se pide con el token `SYSTEM`; con otro rol M6 podría responder `403` antes. El `X-Correlation-Id` del M6 real no se valida de largo (el contrato dice 100): el simulado de la spec 071 (T37) sí.
 
 ### T12 — Tabla de diferencias y textos al día · commit `081/T12`
-- Qué cambió: la tabla «Diferencias entre el contrato supuesto y el M6 real» compara al M6 real con `m6.yml` en `35b3c4d`. Las filas 1, 4, 11 y 12 figuran como cerradas por la extracción nueva (ADR 096); la 7 (`429`) y la 8 (`X-Correlation-Id`), como resueltas por las specs 007 y 008 con sus requisitos (RF-2.4.15, RF-2.5.18, RNF-14.11, RNF-14.12) y sus PR (#106 y #109); la 3 queda como diferencia abierta: el contrato nombra solo `SYSTEM` y el alias `SERVICIO` está solo en el repositorio del Grupo 12. Es un riesgo aceptado que vigila RNF-07.11. El párrafo de arriba de la tabla explica el estado actual y ya no dice que `m6.yml` esté desactualizado ni nombra la rama `contrato/079-…` como pendiente (tampoco la nota de la URL sin `/api/v1`). `docs/probar-m2.md` nombra `correlacion.test.ts` en la tabla de archivos y la salida esperada pasa a 8 archivos y 37 pruebas. Los textos de `pruebas/distribuida/token-servicio.test.ts` y `pruebas/unitarias/distribuida-errores.test.ts` dicen `/trips/{tripId}` y `Problem`, y esta guía usa `/trips/{tripId}`.
+- Qué cambió: la tabla «Diferencias entre el contrato supuesto y el M6 real» compara al M6 real con `m6.yml` en `35b3c4d`. Las filas 1, 4, 11 y 12 figuran como cerradas por la extracción nueva (ADR 096); la 7 (`429`) y la 8 (`X-Correlation-Id`), como resueltas por las specs 007 y 008 con sus requisitos (RF-2.4.15, RF-2.5.18, RNF-14.11, RNF-14.12) y sus PR (#106 y #109); la 3 queda como diferencia abierta: el contrato nombra solo `SYSTEM` y el alias `SERVICIO` está solo en el repositorio del Grupo 12. Es un riesgo aceptado que vigila RNF-07.11. El párrafo de arriba de la tabla explica el estado actual y ya no dice que `m6.yml` esté desactualizado ni nombra la rama `contrato/079-…` como pendiente (tampoco la nota de la URL sin `/api/v1`). `docs/probar-m2.md` nombra `correlacion.test.ts` en la tabla de archivos y la salida esperada pasa a 8 archivos y 37 pruebas. Los textos de `pruebas/distribuida/token-servicio.test.ts` y `pruebas/unitarias/distribuida-errores.test.ts` dicen `/trips/{tripId}` y `Problem`, y esta guía usa `/trips/{tripId}`. La pregunta 1 de la visión general ya no dice que el M6 simulado lleve `/api/v1` (desde el ADR 096 también sirve en `/trips`), el Mapa lista `correlacion.test.ts`, la fila 1 aclara que ninguno de los dos servidores de `m6.yml` lleva `/api/v1`, y las propuestas de `sdd-change` indican que las filas 7 y 8 ya están implementadas.
 - Por qué así: RNF-20.4. Después de los cambios de las specs 007 y 008 y de la extracción nueva, la tabla describía un contrato y un M2 que ya no existen; quien la lea tiene que ver qué quedó resuelto, por quién y qué sigue abierto.
 - Cómo se conecta: solo textos y documentación, sin cambios de código. Las entradas históricas de T1 a T10 conservan lo que se observó en su momento (commit `7d3d5af`).
-- Tests: `npm test` (5554), `npm run integracion:m6` (37), lint, build y `spec-check` en verde.
+- Tests: `npm test` (5579), `npm run integracion:m6` (37), lint, build y `spec-check` en verde.
 - Para mirar con atención: la fila 3 es la única diferencia abierta y depende del Grupo 12: cuando suban los alias al contrato de la cátedra, será otra rama `contrato/`.
