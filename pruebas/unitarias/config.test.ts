@@ -54,6 +54,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       reintentarDespuesS: 5,
       modoTokens: 'hs256',
       urlJwks: undefined,
+      urlRedis: undefined,
+      cacheTtlS: 60,
+      tiempoRedisMs: 200,
     });
   });
 
@@ -71,6 +74,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       M2_REINTENTAR_DESPUES_S: '30',
       M2_MODO_TOKENS: 'jwks',
       M2_URL_JWKS: 'https://keycloak.interno:8443/realms/ds-2026-realm/protocol/openid-connect/certs',
+      M2_URL_REDIS: 'rediss://redis.interno:6380',
+      M2_CACHE_TTL_S: '120',
+      M2_TIEMPO_REDIS_MS: '50',
     };
     expect(cargada(env)).toEqual({
       urlBd: OBLIGATORIAS.M2_URL_BD,
@@ -88,6 +94,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       reintentarDespuesS: 30,
       modoTokens: 'jwks',
       urlJwks: 'https://keycloak.interno:8443/realms/ds-2026-realm/protocol/openid-connect/certs',
+      urlRedis: 'rediss://redis.interno:6380',
+      cacheTtlS: 120,
+      tiempoRedisMs: 50,
     });
   });
 
@@ -115,8 +124,51 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
     ['M2_MODO_TOKENS', 'hs256', 'modoTokens', 'hs256'],
     ['M2_URL_JWKS', 'http://keycloak:8080/realms/r/protocol/openid-connect/certs', 'urlJwks', 'http://keycloak:8080/realms/r/protocol/openid-connect/certs'],
     ['M2_URL_JWKS', 'HTTPS://keycloak.interno/certs/', 'urlJwks', 'HTTPS://keycloak.interno/certs'],
+    ['M2_URL_REDIS', 'redis://redis:6379', 'urlRedis', 'redis://redis:6379'],
+    ['M2_URL_REDIS', 'REDIS://localhost', 'urlRedis', 'REDIS://localhost'],
+    ['M2_URL_REDIS', 'rediss://:clave@redis.interno:6380/2', 'urlRedis', 'rediss://:clave@redis.interno:6380/2'],
+    ['M2_URL_REDIS', '', 'urlRedis', undefined],
+    ['M2_CACHE_TTL_S', '1', 'cacheTtlS', 1],
+    ['M2_CACHE_TTL_S', '3600', 'cacheTtlS', 3600],
+    ['M2_TIEMPO_REDIS_MS', '1', 'tiempoRedisMs', 1],
+    ['M2_TIEMPO_REDIS_MS', '2147483647', 'tiempoRedisMs', 2147483647],
   ])('%s = %j es válida', (variable, valor, campo, esperado) => {
     expect(cargada({ ...OBLIGATORIAS, [variable]: valor })).toMatchObject({ [campo]: esperado });
+  });
+});
+
+describe('cargarConfig: la caché de Redis (spec 107, RNF-06)', () => {
+  it.each<[string, string, string]>([
+    ['M2_URL_REDIS', 'http://redis:6379', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'redis:/redis', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'redis:6379', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'redis://redis:99999', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'esto no es una url', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_CACHE_TTL_S', '0', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', '3601', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', '-1', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', '1.5', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', 'un minuto', 'no es un entero entre 1 y 3600'],
+    ['M2_TIEMPO_REDIS_MS', '0', 'no es un entero entre 1 y 2147483647'],
+    ['M2_TIEMPO_REDIS_MS', '2147483648', 'no es un entero entre 1 y 2147483647'],
+    ['M2_TIEMPO_REDIS_MS', 'rápido', 'no es un entero entre 1 y 2147483647'],
+  ])('%s = %j: el error da el motivo', (variable, valor, motivo) => {
+    expect(erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }))).toEqual([{ variable, motivo }]);
+  });
+
+  // La URL de Redis puede llevar la contraseña: el error nombra la variable y nada más.
+  it.each<[string, string]>([
+    ['M2_URL_REDIS', 'http://:valor-centinela-7f3a@redis:6379'],
+    ['M2_URL_REDIS', 'redis://:valor-centinela-7f3a@redis:99999'],
+    ['M2_CACHE_TTL_S', 'valor-centinela-7f3a'],
+    ['M2_TIEMPO_REDIS_MS', 'valor-centinela-7f3a'],
+  ])('%s inválida: el error no repite el valor recibido', (variable, valor) => {
+    const texto = JSON.stringify(erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor })));
+    expect(texto).not.toContain('valor-centinela-7f3a');
+  });
+
+  it('sin M2_URL_REDIS la configuración carga y la caché queda apagada', () => {
+    expect(cargada(OBLIGATORIAS).urlRedis).toBeUndefined();
   });
 });
 

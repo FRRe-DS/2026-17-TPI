@@ -1,6 +1,6 @@
 # Tareas 107 — Caché del estado de cuenta con Redis
 
-- [ ] **T1. Configuración de la caché.** RNF-06
+- [x] **T1. Configuración de la caché.** RNF-06
   - Hecho cuando: `cargarConfig` lee `M2_URL_REDIS` (opcional, `redis://` o `rediss://`), `M2_CACHE_TTL_S` (entero de 1 a 3600, 60 por defecto) y `M2_TIEMPO_REDIS_MS` (200 por defecto); un valor inválido se informa por nombre sin mostrarlo, y la prueba de configuración está en verde.
 
 - [ ] **T2. Redis en el compose.** RNF-06, RNF-11
