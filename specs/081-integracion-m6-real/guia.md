@@ -200,3 +200,8 @@ RNF-13.8 decía que la calificación vuelve a `200`, y la prueba y el contrato d
 - Cómo se conecta: solo textos y documentación, sin cambios de código. Las entradas históricas de T1 a T10 conservan lo que se observó en su momento (commit `7d3d5af`).
 - Tests: `npm test` (5579), `npm run integracion:m6` (37), lint, build y `spec-check` en verde.
 - Para mirar con atención: la fila 3 es la única diferencia abierta y depende del Grupo 12: cuando suban los alias al contrato de la cátedra, será otra rama `contrato/`.
+
+### V — Validación del cambio de M6 · commit `081/V`
+- Qué cambió: la spec pasa a `implementada`. Un revisor independiente (subagente `reviewer`) recorrió T11 y T12 contra RNF-07.14, RNF-20.4 y la tabla de diferencias cotejada con `m6.yml` y las specs 007 y 008: un solo hallazgo menor (la pregunta 1 de la visión general decía que el M6 simulado lleva `/api/v1`), corregido en `081/T12` junto con tres observaciones opcionales. `npm test` 5579, `npm run integracion:m6` 37 pruebas en 8 archivos contra el M6 real, lint, build y `spec-check` en verde.
+- Por qué así: cada cambio de requisitos mergeado reabre la spec; la validación la cierra.
+- Para mirar con atención: sigue abierta la fila 3 (el contrato de la cátedra nombra solo `SYSTEM`; el alias `SERVICIO` está solo en el repositorio del Grupo 12), con RNF-07.11 como vigía. Y sigue abierta la decisión del `429` de M6 cuyo cuerpo no llega a tiempo (guías 007 V3 y 008 T11).
