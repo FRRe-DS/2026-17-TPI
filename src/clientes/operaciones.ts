@@ -45,7 +45,7 @@ export const actualizarCliente: Manejador = async (request) =>
 
 // GET /api/v1/clientes/{clienteId}/estado-cuenta: 200 con el estado y los bloqueos vigentes.
 export const obtenerEstadoCuenta: Manejador = async (request) =>
-  servicio.obtenerEstadoCuenta(request.server.pool, identidadDe(request), rolesDe(request), clienteIdDe(request));
+  servicio.obtenerEstadoCuenta(request.server.pool, request.server.cacheEstado, identidadDe(request), rolesDe(request), clienteIdDe(request));
 
 // POST /api/v1/clientes/{clienteId}/bloqueos: 201 con el bloqueo y Location, o la respuesta guardada de la misma
 // Idempotency-Key.

@@ -12,7 +12,7 @@
 - [x] **T4. Leer y guardar con TTL y versión.** RF-2.6.5, RF-2.6.5.1, RF-2.6.7, RNF-11, RNF-19
   - Hecho cuando: las pruebas unitarias con un Redis falso muestran que una segunda lectura sale de la copia, que el TTL es el menor entre el configurado y el primer `hasta`, que no se guarda si ya venció, y que las claves solo contienen el `clienteId`.
 
-- [ ] **T5. `obtenerEstadoCuenta` usa la caché.** RF-2.6.5, RF-2.6.5.2, RF-2.6.5.3, RF-2.6.5.4
+- [x] **T5. `obtenerEstadoCuenta` usa la caché.** RF-2.6.5, RF-2.6.5.2, RF-2.6.5.3, RF-2.6.5.4
   - Hecho cuando: la prueba HTTP muestra que un rol sin permiso recibe `403` aunque exista copia, que un cliente inexistente da `404` sin guardar nada, y que el cuerpo es idéntico con y sin caché.
 
 - [ ] **T6. Invalidar al cambiar un bloqueo.** RF-2.6.6, RF-2.6.6.1, RF-2.6.6.2

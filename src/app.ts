@@ -11,6 +11,7 @@ import { crearCompilador } from './contrato/validacion.js';
 import { idCorrelacion } from './correlacion.js';
 import { crearClientErrorHandler, crearFrameworkErrors, responderProblema } from './errores-fastify.js';
 import { Deteniendose, NoEncontrado } from './errores.js';
+import { type CacheEstadoCuenta, crearCacheEstadoCuenta } from './cache/estado-cuenta.js';
 import { crearRedis, type Redis } from './cache/redis.js';
 import { crearM6, type M6 } from './historial/m6.js';
 import { CAMPO_ID_CORRELACION, opcionesLogger, registrarSolicitud, secretosDeConfig } from './logs.js';
@@ -39,6 +40,8 @@ declare module 'fastify' {
     // El cliente de Redis de la caché del estado de cuenta (spec 107). Sin `M2_URL_REDIS` es una caché apagada (`activo` en false).
     // Lo crea la app con la configuración y lo cierra con `app.close()`.
     redis: Redis;
+    // La copia del estado de cuenta en Redis (spec 107): `obtenerEstadoCuenta` la lee y la guarda.
+    cacheEstado: CacheEstadoCuenta;
   }
 }
 
@@ -117,6 +120,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
     avisar: ({ operacion, codigo }) => app.log.warn({ operacion, codigo }, 'Redis no responde: el estado de cuenta se calcula desde la base'),
   });
   app.decorate('redis', redis);
+  app.decorate('cacheEstado', crearCacheEstadoCuenta(redis, { ttlS: config.cacheTtlS }));
   app.addHook('onClose', async () => {
     await redis.cerrar();
   });

@@ -14,6 +14,7 @@ import type {
   LevantamientoBloqueo,
   PaginaBloqueos,
 } from './modelo.js';
+import type { CacheEstadoCuenta } from '../cache/estado-cuenta.js';
 import * as repositorio from './repositorio.js';
 import { actualizarPerfil, crearPerfil, obtenerPerfil, type PedidoHistorial } from './repositorio.js';
 
@@ -134,15 +135,19 @@ export async function actualizarCliente(
 }
 
 // El estado de cuenta de `clienteId` (RF-2.6), si quien llama puede verlo: su dueño, un OPERADOR o un SERVICIO (M5 y M9). La
-// propiedad se exige solo si el único rol efectivo es CLIENTE. 404 si no existe el perfil.
+// propiedad se exige solo si el único rol efectivo es CLIENTE. 404 si no existe el perfil. Los permisos se comprueban antes de
+// mirar la caché: una copia guardada no se entrega a quien no puede verla (RF-2.6.5.3). Después, la copia o la base: si no hay
+// copia vigente, se lee la base y se guarda; un perfil inexistente lanza antes de guardar nada (RF-2.6.5.4).
 export async function obtenerEstadoCuenta(
   pool: BaseDeDatos,
+  cache: CacheEstadoCuenta,
   identidad: Identidad,
   rolesOperacion: readonly string[],
   clienteId: string,
 ): Promise<EstadoCuenta> {
   exigirPropietario(identidad, clienteId, rolesOperacion);
-  return repositorio.obtenerEstadoCuenta(delPool(pool), normalizarUuid(clienteId));
+  const id = normalizarUuid(clienteId);
+  return cache.leer(id, () => repositorio.obtenerEstadoCuenta(delPool(pool), id));
 }
 
 // Bloquea a `clienteId` (RF-2.6.1) con la Idempotency-Key `clave` (RNF-08): 201 con Location, o la respuesta guardada si la
