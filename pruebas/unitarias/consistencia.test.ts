@@ -290,10 +290,11 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   const m2 = compose.services?.['m2'];
   const bd = compose.services?.['bd'];
 
-  it('declara m2 y bd, los del panel (specs 071 y 072) solo bajo el perfil panel, los del M6 real (spec 081) solo bajo m6-real y los de Keycloak (spec 080) bajo el suyo', () => {
-    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'keycloak', 'keycloak-bd', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel']);
+  it('declara m2, bd y redis (spec 107), los del panel (specs 071 y 072) solo bajo el perfil panel, los del M6 real (spec 081) solo bajo m6-real y los de Keycloak (spec 080) bajo el suyo', () => {
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'keycloak', 'keycloak-bd', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel', 'redis']);
     expect(m2?.profiles).toBeUndefined();
     expect(bd?.profiles).toBeUndefined();
+    expect(compose.services?.['redis']?.profiles).toBeUndefined();
     for (const nombre of ['m6', 'panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
     for (const nombre of ['m6-real', 'm6-real-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['m6-real']);
     for (const nombre of ['keycloak', 'keycloak-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['keycloak']);
@@ -321,7 +322,7 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   it('m2 usa init, publica el puerto configurado (8082 por defecto) y espera a que la base esté sana', () => {
     expect(m2?.init).toBe(true);
     expect(m2?.ports).toEqual(['${M2_PUERTO:-8082}:${M2_PUERTO:-8082}']);
-    expect(m2?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
+    expect(m2?.depends_on).toEqual({ bd: { condition: 'service_healthy' }, redis: { condition: 'service_healthy' } });
   });
 
   it('la base no publica ningún puerto y guarda sus datos en el volumen datos-bd; el de Keycloak es otro (spec 080)', () => {
@@ -432,6 +433,33 @@ describe('panel/Dockerfile.dockerignore (spec 071, RNF-04.2)', () => {
 
   it.each(['panel', 'contrato', 'package.json', 'package-lock.json', 'tsconfig.json'])('no deja afuera %s', (ruta) => {
     expect(ignorados.filter((linea) => linea === ruta || linea === `${ruta}/` || linea === '*')).toEqual([]);
+  });
+});
+
+describe('docker-compose.yml: Redis para la caché (spec 107, RNF-06, RNF-11)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const redis = compose.services?.['redis'];
+
+  it('la imagen tiene versión exacta (X.Y.Z), nunca latest', () => {
+    expect(imagenExacta(redis?.image ?? '')).toBe(true);
+    expect(redis?.image).toMatch(/^redis:\d+\.\d+\.\d+/);
+  });
+
+  // Es una copia: sin volumen ni persistencia, un reinicio la vacía y todo se reconstruye desde la base (RNF-05, RF-2.6.8).
+  it('no guarda datos en disco ni publica ningún puerto', () => {
+    expect(redis?.ports).toBeUndefined();
+    expect(redis?.volumes).toBeUndefined();
+    expect(redis?.command).toEqual(['redis-server', '--save', '', '--appendonly', 'no']);
+  });
+
+  it('tiene un chequeo de salud con redis-cli ping, sin $ de compose', () => {
+    expect(redis?.healthcheck?.test).toEqual(['CMD', 'redis-cli', 'ping']);
+    expect(redis?.healthcheck).toMatchObject({ interval: '2s', timeout: '2s', retries: 20 });
+  });
+
+  it('m2 usa Redis por la red de compose', () => {
+    const texto = readFileSync(new URL('ejemplo.env', raiz), 'utf8');
+    expect(texto).toContain('M2_URL_REDIS=${M2_URL_REDIS:-redis://redis:6379}');
   });
 });
 
@@ -547,7 +575,7 @@ describe('docker-compose.yml: perfil m6-real con el M6 del Grupo 12 (spec 081, R
   });
 
   it('m2 no depende de M6: tiene que arrancar y responder aunque M6 no esté (RNF-13)', () => {
-    expect(Object.keys(compose.services?.['m2']?.depends_on ?? {})).toEqual(['bd']);
+    expect(Object.keys(compose.services?.['m2']?.depends_on ?? {})).toEqual(['bd', 'redis']);
   });
 
   it.each([
@@ -567,8 +595,8 @@ describe('docker-compose.yml: puente a la base y variables nuevas del panel (spe
   const panel = compose.services?.['panel'];
   const sinPerfil = Object.entries(compose.services ?? {}).filter(([, servicio]) => servicio?.profiles === undefined);
 
-  it('sin el perfil solo están m2 y bd, y no se publica ningún puerto de la base', () => {
-    expect(sinPerfil.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm2']);
+  it('sin el perfil solo están m2, bd y redis, y no se publica ningún puerto de la base', () => {
+    expect(sinPerfil.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm2', 'redis']);
     expect(compose.services?.['bd']?.ports).toBeUndefined();
     expect(compose.services?.['m2']?.ports).toEqual(['${M2_PUERTO:-8082}:${M2_PUERTO:-8082}']);
   });
@@ -696,7 +724,7 @@ describe('docker-compose.yml: perfil keycloak (spec 080, RNF-04.10, RNF-05.6, RN
   });
 
   it('m2 no depende de Keycloak ni nombra sus variables', () => {
-    expect(compose.services?.['m2']?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
+    expect(compose.services?.['m2']?.depends_on).toEqual({ bd: { condition: 'service_healthy' }, redis: { condition: 'service_healthy' } });
     expect(JSON.stringify(compose.services?.['m2'])).not.toMatch(/KEYCLOAK|keycloak/);
   });
 

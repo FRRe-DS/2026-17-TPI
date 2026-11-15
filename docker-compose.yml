@@ -21,6 +21,8 @@ services:
     depends_on:
       bd:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     # Un GET con Node: la imagen no trae curl, y `wget --spider` manda HEAD, que da 405. El puerto lo lee del entorno del contenedor.
     healthcheck:
       test:
@@ -44,6 +46,19 @@ services:
     # socket la daría por sana antes de tiempo. Con $$, para que las variables las lea el contenedor y no compose.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  # La caché del estado de cuenta (spec 107, RNF-11). Es solo una copia: sin volumen y sin persistencia (`--save ""` y
+  # `--appendonly no`), un reinicio la vacía y M2 la reconstruye desde la base. Sin puerto publicado: solo M2 la ve, por la red de compose.
+  # Sin límite de memoria ni desalojo (`noeviction`, el valor por defecto): desalojar el contador de versión de un cliente dejaría
+  # volver una copia vieja, y un Redis lleno solo hace fallar los guardados, que M2 ignora.
+  redis:
+    image: redis:8.6.8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 2s
       timeout: 2s
       retries: 20
