@@ -24,7 +24,7 @@ const errores = (nombre: string, cuerpo: unknown) => {
 
 const COMPLETADO = '11111111-1111-4111-8111-111111111111';
 const EN_CURSO = '22222222-2222-4222-8222-222222222222';
-const DE_M2 = { 'x-request-id': 'pedido-de-m2' };
+const DE_M2 = { 'x-correlation-id': 'pedido-de-m2' };
 
 const abiertas: ReturnType<typeof crearM6>['app'][] = [];
 function m6(viajes: Parameters<typeof crearM6>[0] = []) {

@@ -15,7 +15,10 @@ import type { EstadoM6 } from './estado.js';
 export type OpcionesAppM6 = { config: ConfigM6; estado: EstadoM6; flujoLog?: Writable };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ID_VALIDO = /^[A-Za-z0-9._-]{1,128}$/;
+// El identificador de correlación que acepta el M6 del Grupo 12: `X-Correlation-Id`, de 1 a 100 caracteres (contrato `35b3c4d`,
+// RNF-14.13). Uno que no cumple se descarta y el simulado genera el suyo; no lee `X-Request-Id`.
+const ENCABEZADO_CORRELACION = 'x-correlation-id';
+const ID_VALIDO = /^[A-Za-z0-9._-]{1,100}$/;
 // Los mismos 30 segundos de tolerancia de reloj que M2 (RNF-12.2).
 const TOLERANCIA_RELOJ_SEGUNDOS = 30;
 
@@ -98,7 +101,7 @@ export function construirAppM6({ config, estado, flujoLog }: OpcionesAppM6): Fas
     exposeHeadRoutes: false,
     requestIdHeader: false,
     genReqId: (req) => {
-      const recibido = req.headers['x-request-id'];
+      const recibido = req.headers[ENCABEZADO_CORRELACION];
       return typeof recibido === 'string' && ID_VALIDO.test(recibido) ? recibido : `m6-${randomUUID()}`;
     },
     logger: { level: 'info', stream: flujoLog },
@@ -111,6 +114,11 @@ export function construirAppM6({ config, estado, flujoLog }: OpcionesAppM6): Fas
       .header('content-type', 'application/problem+json')
       .send(JSON.stringify(errorM6(codigo, mensaje, reply.request.id)));
   const responderError = (reply: FastifyReply, error: ErrorM6) => responder(reply, error.codigo, error.message);
+
+  // Toda respuesta, también un 401 o un 404, devuelve el identificador en `X-Correlation-Id`, como el M6 real.
+  app.addHook('onRequest', async (request, reply) => {
+    reply.header(ENCABEZADO_CORRELACION, request.id);
+  });
 
   // El token antes que todo, también en una ruta que no existe, y después la espera del modo lento: un token que no sirve
   // no hace esperar a nadie.
