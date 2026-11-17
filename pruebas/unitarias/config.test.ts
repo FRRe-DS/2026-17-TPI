@@ -127,6 +127,8 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
     ['M2_URL_REDIS', 'redis://redis:6379', 'urlRedis', 'redis://redis:6379'],
     ['M2_URL_REDIS', 'REDIS://localhost', 'urlRedis', 'REDIS://localhost'],
     ['M2_URL_REDIS', 'rediss://:clave@redis.interno:6380/2', 'urlRedis', 'rediss://:clave@redis.interno:6380/2'],
+    ['M2_URL_REDIS', 'redis://redis:6379/', 'urlRedis', 'redis://redis:6379/'],
+    ['M2_URL_REDIS', 'redis://:clave%25con%40signos@redis/0', 'urlRedis', 'redis://:clave%25con%40signos@redis/0'],
     ['M2_URL_REDIS', '', 'urlRedis', undefined],
     ['M2_CACHE_TTL_S', '1', 'cacheTtlS', 1],
     ['M2_CACHE_TTL_S', '3600', 'cacheTtlS', 3600],
@@ -144,6 +146,13 @@ describe('cargarConfig: la caché de Redis (spec 107, RNF-06)', () => {
     ['M2_URL_REDIS', 'redis:6379', 'no es una URL redis:// o rediss:// válida'],
     ['M2_URL_REDIS', 'redis://redis:99999', 'no es una URL redis:// o rediss:// válida'],
     ['M2_URL_REDIS', 'esto no es una url', 'no es una URL redis:// o rediss:// válida'],
+    // node-redis lanzaría al crear el cliente, y M2 no arrancaría sin nombrar la variable: la base es un entero y la
+    // contraseña o el usuario tienen que venir bien codificados.
+    ['M2_URL_REDIS', 'redis://redis:6379/abc', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'redis://redis:6379/1.5', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'redis://redis:6379/0/otra', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'redis://:%zz@redis', 'no es una URL redis:// o rediss:// válida'],
+    ['M2_URL_REDIS', 'redis://%zz:clave@redis', 'no es una URL redis:// o rediss:// válida'],
     ['M2_CACHE_TTL_S', '0', 'no es un entero entre 1 y 3600'],
     ['M2_CACHE_TTL_S', '3601', 'no es un entero entre 1 y 3600'],
     ['M2_CACHE_TTL_S', '-1', 'no es un entero entre 1 y 3600'],
@@ -160,6 +169,7 @@ describe('cargarConfig: la caché de Redis (spec 107, RNF-06)', () => {
   it.each<[string, string]>([
     ['M2_URL_REDIS', 'http://:valor-centinela-7f3a@redis:6379'],
     ['M2_URL_REDIS', 'redis://:valor-centinela-7f3a@redis:99999'],
+    ['M2_URL_REDIS', 'redis://:%zz-valor-centinela-7f3a@redis'],
     ['M2_CACHE_TTL_S', 'valor-centinela-7f3a'],
     ['M2_TIEMPO_REDIS_MS', 'valor-centinela-7f3a'],
   ])('%s inválida: el error no repite el valor recibido', (variable, valor) => {

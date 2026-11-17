@@ -1,6 +1,6 @@
 # ADR 107 — Redis para la caché del estado de cuenta
 
-Fecha: 2026-11-14 · Estado: propuesta
+Fecha: 2026-11-14 · Estado: aceptada (2026-11-16)
 Issue: #107
 
 ## Contexto

@@ -19,7 +19,7 @@ export async function puertoLibre(): Promise<number> {
 // detener y levantar otro en el mismo lugar: M2 no cambia su configuración y se reconecta solo.
 export async function levantarRedisReal(puerto: number): Promise<StartedTestContainer> {
   return new GenericContainer(IMAGEN_REDIS)
-    .withCommand(['redis-server', '--save', '', '--appendonly', 'no'])
+    .withCommand(['redis-server', '--save', '', '--appendonly', 'no', '--maxmemory-policy', 'noeviction'])
     .withExposedPorts({ container: 6379, host: puerto })
     .withWaitStrategy(Wait.forLogMessage('Ready to accept connections'))
     .start();

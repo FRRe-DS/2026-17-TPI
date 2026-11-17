@@ -56,7 +56,7 @@ services:
   # volver una copia vieja, y un Redis lleno solo hace fallar los guardados, que M2 ignora.
   redis:
     image: redis:8.6.8-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s

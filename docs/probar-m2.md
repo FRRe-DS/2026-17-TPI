@@ -414,4 +414,3 @@ docker compose start redis
 ```
 
 Las pruebas: `pruebas/unitarias/redis-cliente.test.ts` y `cache-estado-cuenta.test.ts` (reglas, con Redis falsos), `pruebas/http/estado-cuenta-cache.test.ts` (permisos antes de la copia), y en `pruebas/integracion/`, `estado-cuenta-invalidacion.test.ts`, `estado-cuenta-redis-caido.test.ts` y `estado-cuenta-cache.test.ts` (este último con Redis y PostgreSQL reales en contenedor). El detalle, tarea por tarea, en `specs/107-redis-estado-cuenta/guia.md`.
-

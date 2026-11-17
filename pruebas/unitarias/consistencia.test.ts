@@ -452,7 +452,7 @@ describe('docker-compose.yml: Redis para la caché (spec 107, RNF-06, RNF-11)', 
   it('no guarda datos en disco ni publica ningún puerto', () => {
     expect(redis?.ports).toBeUndefined();
     expect(redis?.volumes).toBeUndefined();
-    expect(redis?.command).toEqual(['redis-server', '--save', '', '--appendonly', 'no']);
+    expect(redis?.command).toEqual(['redis-server', '--save', '', '--appendonly', 'no', '--maxmemory-policy', 'noeviction']);
   });
 
   it('tiene un chequeo de salud con redis-cli ping, sin $ de compose', () => {
