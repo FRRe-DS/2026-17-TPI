@@ -18,7 +18,7 @@
 - [x] **T6. Invalidar al cambiar un bloqueo.** RF-2.6.6, RF-2.6.6.1, RF-2.6.6.2
   - Hecho cuando: las pruebas muestran que, tras `201` de `crearBloqueo` y `200` de `levantarBloqueo`, la siguiente consulta lee la base; y que un alta rechazada (`422`, `404`, `409`) no cambia la versión.
 
-- [ ] **T7. Redis caído o lento.** RF-2.6.8, RF-2.6.8.1, RNF-13, RNF-14, RNF-19
+- [x] **T7. Redis caído o lento.** RF-2.6.8, RF-2.6.8.1, RNF-13, RNF-14, RNF-19
   - Hecho cuando: con Redis cortado y con un servidor que no contesta, `obtenerEstadoCuenta` responde `200` dentro del tiempo máximo más lo que cuesta la base; una invalidación que falla deja al cliente sin copias hasta que se confirma; `/health` responde `200`; y el log tiene un aviso sin `clienteId` ni valores.
 
 - [ ] **T8. Prueba de integración con Redis y PostgreSQL reales.** RF-2.6.5 a RF-2.6.8.1, RNF-05, RNF-07

@@ -28,7 +28,8 @@ export type CacheEstadoCuenta = {
   // además se guarda. Un error de `calcular` sale tal cual y no se guarda nada (el cliente no existe: RF-2.6.5.4).
   leer: (clienteId: string, calcular: () => Promise<EstadoCuenta>) => Promise<EstadoCuenta>;
   // Descarta las copias de `clienteId`: se llama después de que la base confirmó un alta o un levantamiento de bloqueo, y
-  // antes de responder (RF-2.6.6, RF-2.6.6.1). No lanza: si Redis falla, la respuesta al operador no cambia.
+  // antes de responder (RF-2.6.6, RF-2.6.6.1). No lanza: si Redis falla, la respuesta al operador no cambia, y el cliente queda
+  // sin copias hasta que el descarte se confirme (RF-2.6.8.1).
   invalidar: (clienteId: string) => Promise<void>;
 };
 
@@ -61,6 +62,25 @@ function vencimientoMs(estado: EstadoCuenta, ttlS: number, ahoraMs: number): num
 }
 
 export function crearCacheEstadoCuenta(redis: Redis, { ttlS, ahora = Date.now }: OpcionesCache): CacheEstadoCuenta {
+  // Los clientes cuyo descarte no se pudo confirmar en Redis (RF-2.6.8.1). Mientras un cliente esté acá, no se sirven ni se
+  // guardan copias suyas: la copia de antes del cambio podría seguir viva. Cada lectura reintenta el descarte una vez, y lo
+  // saca de acá cuando sale. Vive en memoria: con más de un proceso de M2 debería vivir en Redis (ADR 107, Consecuencias), y
+  // si el proceso se reinicia con un cliente pendiente, su copia vieja dura como máximo el TTL.
+  const pendientes = new Set<string>();
+
+  // Sube la versión de `clienteId`. Si sale, el descarte quedó confirmado; si no, queda pendiente. Devuelve si salió.
+  async function descartar(clienteId: string): Promise<boolean> {
+    try {
+      await redis.incr(claveVersion(clienteId));
+      pendientes.delete(clienteId);
+      return true;
+    } catch {
+      // El cliente de Redis ya avisó al log, sin el clienteId (RNF-19).
+      pendientes.add(clienteId);
+      return false;
+    }
+  }
+
   // La versión actual del cliente. Un fallo de Redis, o un valor que no es un entero, lanza: quien llama sigue por la base.
   async function versionDe(clienteId: string): Promise<number> {
     const texto = await redis.get(claveVersion(clienteId));
@@ -72,6 +92,8 @@ export function crearCacheEstadoCuenta(redis: Redis, { ttlS, ahora = Date.now }:
   return {
     async leer(clienteId, calcular) {
       if (!redis.activo) return calcular();
+      // Un descarte pendiente se reintenta; si sigue sin salir, la respuesta sale de la base y no se guarda nada.
+      if (pendientes.has(clienteId) && !(await descartar(clienteId))) return calcular();
 
       let version: number;
       let copia: EstadoCuenta | undefined;
@@ -100,11 +122,7 @@ export function crearCacheEstadoCuenta(redis: Redis, { ttlS, ahora = Date.now }:
 
     async invalidar(clienteId) {
       if (!redis.activo) return;
-      try {
-        await redis.incr(claveVersion(clienteId));
-      } catch {
-        // El cliente de Redis ya avisó al log. Qué pasa con las copias de este cliente mientras tanto es la T7 (RF-2.6.8.1).
-      }
+      await descartar(clienteId);
     },
   };
 }

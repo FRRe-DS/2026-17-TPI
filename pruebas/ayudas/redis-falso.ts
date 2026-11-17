@@ -10,8 +10,10 @@ export type RedisFalso = {
   comandos: string[][];
   // Los vencimientos pedidos, en milisegundos, por clave.
   vencimientos: Map<string, number>;
-  // Con `true`, acepta conexiones pero no contesta nada: un Redis colgado.
+  // Con `true`, acepta conexiones pero no contesta nada: un Redis colgado. Las órdenes se guardan y, con `soltar()`, se
+  // ejecutan y se contestan en orden, como haría un Redis congelado que vuelve.
   colgado: boolean;
+  soltar: () => void;
   cerrar: () => Promise<void>;
 };
 
@@ -49,7 +51,13 @@ export async function levantarRedisFalso(puerto = 0): Promise<RedisFalso> {
     comandos: [],
     vencimientos: new Map(),
     colgado: false,
+    soltar: () => soltar(),
     cerrar: () => cerrar(),
+  };
+  const retenidas: [Socket, string[]][] = [];
+  const soltar = () => {
+    falso.colgado = false;
+    for (const [socket, comando] of retenidas.splice(0)) if (!socket.destroyed) responder(socket, comando);
   };
 
   const responder = (socket: Socket, [nombre = '', clave = '', valor = '', ...opciones]: string[]) => {
@@ -90,7 +98,10 @@ export async function levantarRedisFalso(puerto = 0): Promise<RedisFalso> {
         // Lo que manda el cliente al conectar no es de la prueba: no se cuenta ni se cuelga.
         const deLaConexion = ['CLIENT', 'HELLO', 'SELECT', 'AUTH'].includes(nombre.toUpperCase());
         if (!deLaConexion) falso.comandos.push(comando);
-        if (falso.colgado && !deLaConexion) continue;
+        if ((falso.colgado || retenidas.length > 0) && !deLaConexion) {
+          retenidas.push([socket, comando]);
+          continue;
+        }
         responder(socket, comando);
       }
     });

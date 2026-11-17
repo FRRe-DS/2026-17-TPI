@@ -272,3 +272,58 @@ describe('invalidar: subir la versión (RF-2.6.6, RF-2.6.6.1)', () => {
     await expect(crear().invalidar(CLIENTE)).resolves.toBeUndefined();
   });
 });
+
+describe('invalidación que falla (RF-2.6.8.1)', () => {
+  it('mientras no se confirma el descarte, no sirve la copia de ese cliente ni guarda otra', async () => {
+    const cache = crear();
+    await cache.leer(CLIENTE, async () => estadoCon(CLIENTE));
+    redis.fallarEn.add('incr');
+    await cache.invalidar(CLIENTE);
+
+    const bloqueado = estadoCon(CLIENTE, undefined);
+    const calcular = vi.fn(async () => bloqueado);
+    await expect(cache.leer(CLIENTE, calcular)).resolves.toEqual(bloqueado);
+    await expect(cache.leer(CLIENTE, calcular)).resolves.toEqual(bloqueado);
+    expect(calcular).toHaveBeenCalledTimes(2);
+    // La copia ACTIVA sigue en Redis, pero nadie la sirve; y no se guardó otra.
+    expect(redis.llamadas.set).toBe(1);
+  });
+
+  it('en la lectura siguiente reintenta el descarte; cuando sale, vuelve a usar la caché', async () => {
+    const cache = crear();
+    await cache.leer(CLIENTE, async () => estadoCon(CLIENTE));
+    redis.fallarEn.add('incr');
+    await cache.invalidar(CLIENTE);
+    redis.fallarEn.delete('incr');
+
+    const bloqueado = estadoCon(CLIENTE, undefined);
+    const calcular = vi.fn(async () => bloqueado);
+    await expect(cache.leer(CLIENTE, calcular)).resolves.toEqual(bloqueado);
+    expect(redis.valor(`m2:estado-cuenta:v:${CLIENTE}`)).toBe('1');
+    await expect(cache.leer(CLIENTE, calcular)).resolves.toEqual(bloqueado);
+    expect(calcular).toHaveBeenCalledTimes(1);
+  });
+
+  it('una invalidación posterior que sale bien también la confirma', async () => {
+    const cache = crear();
+    redis.fallarEn.add('incr');
+    await cache.invalidar(CLIENTE);
+    redis.fallarEn.delete('incr');
+    await cache.invalidar(CLIENTE);
+    const calcular = vi.fn(async () => estadoCon(CLIENTE));
+    await cache.leer(CLIENTE, calcular);
+    await cache.leer(CLIENTE, calcular);
+    expect(calcular).toHaveBeenCalledTimes(1);
+    expect(redis.llamadas.incr).toBe(2);
+  });
+
+  it('solo afecta al cliente cuya invalidación falló', async () => {
+    const cache = crear();
+    redis.fallarEn.add('incr');
+    await cache.invalidar(CLIENTE);
+    const calcularOtro = vi.fn(async () => estadoCon(OTRO));
+    await cache.leer(OTRO, calcularOtro);
+    await cache.leer(OTRO, calcularOtro);
+    expect(calcularOtro).toHaveBeenCalledTimes(1);
+  });
+});
