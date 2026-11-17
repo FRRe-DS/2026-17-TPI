@@ -25,6 +25,9 @@ export const CONFIG: Config = {
   reintentarDespuesS: 5,
   modoTokens: 'hs256',
   urlJwks: undefined,
+  urlRedis: undefined,
+  cacheTtlS: 60,
+  tiempoRedisMs: 200,
 };
 
 // Un contrato armado en la prueba, para los casos que el contrato de prueba no tiene.

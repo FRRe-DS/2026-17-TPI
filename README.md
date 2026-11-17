@@ -24,13 +24,13 @@ Hace falta:
 Desde un clon limpio, sin crear ningún archivo:
 
 ```bash
-docker compose up -d --build --wait      # levanta M2 y su base PostgreSQL; termina cuando los dos están sanos
+docker compose up -d --build --wait      # levanta M2, su base PostgreSQL y Redis; termina cuando los tres están sanos
 curl -fsS http://localhost:8082/health   # responde {"estado":"ok"}
 node scripts/demo.mjs                    # recorre las 20 operaciones y comprueba cada respuesta
 docker compose down                      # al terminar
 ```
 
-La demostración imprime una línea por paso, con ✔ o ✘, y termina con «Todo en orden» y la cantidad de pasos comprobados (hoy, 51). Levanta por su cuenta un M6 simulado para el historial y las calificaciones, y lo borra al terminar.
+La demostración imprime una línea por paso, con ✔ o ✘, y termina con «Todo en orden» y la cantidad de pasos comprobados (hoy, 61). Levanta por su cuenta un M6 simulado para el historial y las calificaciones, y lo borra al terminar.
 
 Si algo no anda:
 
@@ -53,7 +53,7 @@ Todas las rutas cuelgan de `/api/v1`, salvo `GET /health`, que no pide token. La
 | `crearCliente` | `POST /clientes` | Crea el perfil del cliente autenticado | CLIENTE | 004 |
 | `obtenerCliente` | `GET /clientes/{clienteId}` | Consulta el perfil | CLIENTE, OPERADOR | 004 |
 | `actualizarCliente` | `PATCH /clientes/{clienteId}` | Actualiza el perfil | CLIENTE | 004 |
-| `obtenerEstadoCuenta` | `GET /clientes/{clienteId}/estado-cuenta` | Estado del perfil y bloqueos vigentes; lo consultan otros módulos | CLIENTE, OPERADOR, SERVICIO | 004 |
+| `obtenerEstadoCuenta` | `GET /clientes/{clienteId}/estado-cuenta` | Estado del perfil y bloqueos vigentes; lo consultan otros módulos. Guarda una copia en Redis | CLIENTE, OPERADOR, SERVICIO | 004, 107 |
 | `listarBloqueos` | `GET /clientes/{clienteId}/bloqueos` | Historial de bloqueos, vigentes y levantados | OPERADOR | 004 |
 | `crearBloqueo` | `POST /clientes/{clienteId}/bloqueos` | Bloquea administrativamente al cliente | OPERADOR | 004 |
 | `obtenerBloqueo` | `GET /clientes/{clienteId}/bloqueos/{bloqueoId}` | Consulta un bloqueo | OPERADOR | 004 |
@@ -71,6 +71,8 @@ Todas las rutas cuelgan de `/api/v1`, salvo `GET /health`, que no pide token. La
 | `obtenerCalificacion` | `GET /clientes/{clienteId}/calificaciones/{calificacionId}` | Consulta una calificación | CLIENTE, OPERADOR | 008 |
 
 El contrato es la fuente de verdad de rutas, esquemas, roles y errores; esta tabla lo resume. Cada spec está en `specs/NNN-…/` y tiene una `guia.md` que explica lo hecho, tarea por tarea.
+
+El estado de cuenta, que M5 y M9 consultan en cada operación, guarda una copia en Redis (spec 107, RNF-11): dura como máximo `M2_CACHE_TTL_S` o hasta el primer `hasta` de los bloqueos vigentes, se descarta al registrar o levantar un bloqueo, y si Redis no está M2 responde desde su base. Cómo comprobarlo: [`docs/probar-m2.md`](docs/probar-m2.md), sección 10.
 
 Detrás de las operaciones está la base del servicio (spec 003): configuración por variables de entorno, base PostgreSQL propia con migraciones, errores en `application/problem+json`, autenticación por token, identificador de correlación en los logs, cliente HTTP para llamar a otros módulos con tiempo máximo y reintento, imágenes de contenedor y CI.
 
@@ -302,6 +304,14 @@ Un servicio con una variable obligatoria faltante o inválida no arranca: sale c
 | `M2_TIEMPO_MODULOS_MS` | no | `2000` | Espera máxima por intento a otro módulo, en milisegundos (de 1 a 2147483647) |
 | `M2_REINTENTOS_MODULOS` | no | `1` | Reintentos de una lectura a otro módulo, de 0 a 5 |
 | `M2_REINTENTAR_DESPUES_S` | no | `5` | Segundos del `Retry-After` del `503` cuando M6 no está disponible, de 1 a 3600. Si M6 limita los pedidos (`429`) e informa su propio `Retry-After` de 1 a 3600 segundos, el historial y calificar responden con el de M6 y no con este |
+
+**La caché del estado de cuenta (Redis, spec 107)**
+
+| Variable | Obligatoria | Por defecto | Qué es |
+|---|---|---|---|
+| `M2_URL_REDIS` | no | sin caché (`redis://redis:6379` en `ejemplo.env`) | URL de Redis, `redis://` o `rediss://`. Sin ella, M2 funciona sin caché; con Redis caído, responde desde su base |
+| `M2_CACHE_TTL_S` | no | `60` | Segundos que dura una copia del estado de cuenta como máximo, de 1 a 3600. Un bloqueo con `hasta` más cercano la acorta |
+| `M2_TIEMPO_REDIS_MS` | no | `200` | Espera máxima por operación a Redis, en milisegundos (de 1 a 2147483647); pasado ese tiempo, la consulta sale de la base |
 
 Las variables del panel y de los M6 de prueba (`PANEL_*`, `M6_*`) están en `ejemplo.env`, cada una con su explicación.
 

@@ -7,6 +7,7 @@
 // --detalle: muestra además el curl equivalente de cada paso y la respuesta completa.
 // --dejar-m6: no borra el M6 simulado al terminar (se borra con `docker rm -f m6-simulado`).
 // Con el perfil `panel` levantado, detiene el M6 del panel mientras corre y lo vuelve a arrancar al terminar (#104).
+// La sección 9 (caché, spec 107) detiene Redis un momento para mostrar que M2 sigue sin él, y lo vuelve a arrancar.
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -83,12 +84,22 @@ async function apartarM6DelPanel() {
   console.log(gris('El M6 del panel (servicio m6 de compose) se detiene mientras dura la demostración.'));
 }
 
-// Deja todo como estaba: borra el M6 de la demostración y vuelve a arrancar el del panel si se lo había detenido.
-// Una sola vez, aunque la pidan el final de la demostración y una interrupción a la vez.
+// La sección 9 detiene Redis para mostrar que M2 sigue sin él; si la demostración se corta en el medio, se vuelve a arrancar.
+let redisDetenido = false;
+
+// Deja todo como estaba: vuelve a arrancar Redis si se lo detuvo, borra el M6 de la demostración y vuelve a arrancar el del
+// panel si se lo había detenido. Una sola vez, aunque la pidan el final de la demostración y una interrupción a la vez.
 let restauracion;
 const restaurar = () => (restauracion ??= dejarComoEstaba());
 
 async function dejarComoEstaba() {
+  if (redisDetenido) {
+    await compose('start', 'redis')
+      .then(() => {
+        redisDetenido = false;
+      })
+      .catch(() => console.error(rojo('No se pudo volver a arrancar Redis. Arrancalo con: docker compose start redis')));
+  }
   if (!opciones['dejar-m6']) await ejecutar('docker', ['rm', '-f', NOMBRE_M6]).catch(() => undefined);
   if (!m6DelPanelDetenido) return;
   const comando = `docker compose start ${SERVICIO_M6_PANEL}`;
@@ -126,6 +137,29 @@ async function levantarM6(clienteId) {
 }
 
 let pasos = 0;
+
+// Un paso que no es un pedido HTTP: `comprobar()` devuelve un texto con lo que no coincide, o nada si está bien. `muestra` es lo
+// que se imprime debajo cuando está bien.
+async function verificar(descripcion, comprobar, muestra = '') {
+  pasos++;
+  let motivo;
+  try {
+    motivo = await comprobar();
+  } catch (error) {
+    motivo = error instanceof Error ? error.message : String(error);
+  }
+  console.log(`  ${motivo === undefined ? verde('✔') : rojo('✘')} ${String(pasos).padStart(2)}. ${descripcion}`);
+  if (motivo === undefined && muestra) console.log(gris(`       ${typeof muestra === 'function' ? muestra() : muestra}`));
+  if (motivo !== undefined) {
+    console.log(rojo(`       ${motivo}`));
+    fallas.push(`${pasos}. ${descripcion}: ${motivo}`);
+  }
+}
+
+// Un comando de redis-cli dentro del contenedor de compose, y su salida sin el salto final.
+const redisCli = async (...argumentos) => (await compose('exec', '-T', 'redis', 'redis-cli', ...argumentos)).stdout.trim();
+// Cuántas lecturas de Redis encontraron la clave desde que arrancó (INFO stats, keyspace_hits).
+const aciertosRedis = async () => Number(/keyspace_hits:(\d+)/.exec(await redisCli('INFO', 'stats'))?.[1] ?? NaN);
 const fallas = [];
 
 function seccion(titulo) {
@@ -335,6 +369,47 @@ async function main() {
   });
   await paso('Las lecturas propias de M2 siguen respondiendo: 200', { metodo: 'GET', ruta: miPerfil, tk: tkCliente, esperado: 200 });
   await paso('Y también las calificaciones ya guardadas: 200', { metodo: 'GET', ruta: calificaciones, tk: tkCliente, esperado: 200 });
+
+  seccion('9. Caché del estado de cuenta en Redis (RNF-11, spec 107)');
+  // Un cliente nuevo, para empezar sin copia ni versión.
+  const nuevo = randomUUID();
+  const tkNuevo = await token(nuevo, 'CLIENTE');
+  const estadoNuevo = `/clientes/${nuevo}/estado-cuenta`;
+  const copia = (version) => `m2:estado-cuenta:c:${nuevo}:${version}`;
+  await paso('Un cliente nuevo crea su perfil: 201', { metodo: 'POST', ruta: '/clientes', tk: tkNuevo, clave: 'perfil-cache', cuerpo: alta, esperado: 201 });
+  const fria = await paso('Consulta fría: sale de la base y queda una copia en Redis', { metodo: 'GET', ruta: estadoNuevo, tk: tkServicio, esperado: 200, revisar: igual('estado', 'ACTIVO') });
+  let vence = 0;
+  await verificar(
+    'La copia está en Redis, con la clave solo con el clienteId y un vencimiento de hasta 60 s',
+    async () => {
+      vence = Number(await redisCli('PTTL', copia(0)));
+      return vence > 0 && vence <= 60_000 ? undefined : `esperaba ${copia(0)} con PTTL entre 1 y 60000 y vino ${vence}`;
+    },
+    () => `${copia(0)} · vence en ${vence} ms`,
+  );
+  const aciertosAntes = await aciertosRedis();
+  await paso('Consulta caliente: el mismo cuerpo, leído de la copia', {
+    metodo: 'GET', ruta: estadoNuevo, tk: tkServicio, esperado: 200,
+    revisar: (json) => (JSON.stringify(json) === JSON.stringify(fria.json) ? undefined : 'el cuerpo de la copia no es el de la base'),
+  });
+  await verificar('Redis registró la lectura de la copia (keyspace_hits subió)', async () => {
+    const aciertos = await aciertosRedis();
+    return aciertos > aciertosAntes ? undefined : `keyspace_hits no subió (${aciertosAntes} → ${aciertos})`;
+  });
+  await paso('Un OPERADOR bloquea la cuenta: 201, y la copia se descarta antes de responder', {
+    metodo: 'POST', ruta: `/clientes/${nuevo}/bloqueos`, tk: tkOperador, clave: 'bloqueo-cache', cuerpo: { motivo: 'Deuda pendiente' }, esperado: 201,
+  });
+  await verificar('La versión del cliente subió a 1: la copia ACTIVA ya no se lee', async () => {
+    const version = await redisCli('GET', `m2:estado-cuenta:v:${nuevo}`);
+    return version === '1' ? undefined : `esperaba la versión 1 y vino ${JSON.stringify(version)}`;
+  });
+  await paso('Consulta siguiente: BLOQUEADO, desde la base', { metodo: 'GET', ruta: estadoNuevo, tk: tkServicio, esperado: 200, revisar: igual('estado', 'BLOQUEADO') });
+  redisDetenido = true;
+  await compose('stop', 'redis');
+  await paso('Con Redis detenido, el estado de cuenta sigue respondiendo desde la base: 200', { metodo: 'GET', ruta: estadoNuevo, tk: tkServicio, esperado: 200, revisar: igual('estado', 'BLOQUEADO') });
+  await paso('Y /health sigue en 200: no depende de Redis', { metodo: 'GET', ruta: '/health', ruta_base: SERVICIO, esperado: 200 });
+  await compose('start', 'redis');
+  redisDetenido = false;
 }
 
 // Ctrl+C no pasa por el `finally`: sin esto, cortar la demostración dejaría detenido el M6 del panel.

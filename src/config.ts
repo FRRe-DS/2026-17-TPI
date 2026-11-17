@@ -31,6 +31,11 @@ export type Config = ConfigTokens & {
   // públicas que publica `urlJwks`. Esa URL es obligatoria en `jwks`; en `hs256` puede faltar.
   modoTokens: ModoTokens;
   urlJwks: string | undefined;
+  // Caché del estado de cuenta (spec 107, RNF-06): la URL de Redis, que puede faltar (sin ella el servicio funciona sin caché),
+  // los segundos que dura una copia como máximo y la espera máxima por operación a Redis.
+  urlRedis: string | undefined;
+  cacheTtlS: number;
+  tiempoRedisMs: number;
 };
 
 export type ModoTokens = 'hs256' | 'jwks';
@@ -80,6 +85,26 @@ const urlHttp: Regla<string> = {
     if (!/^https?:\/\//i.test(texto) || !URL.canParse(texto)) return undefined;
     const url = new URL(texto);
     return url.username === '' && url.password === '' ? texto.replace(/\/+$/, '') : undefined;
+  },
+};
+
+// La URL de Redis: `redis://` o `rediss://` (con TLS), con una dirección válida. Puede llevar la contraseña (`redis://:clave@host`),
+// como la URL de la base, así que el error nunca repite el valor (RNF-06.2, RNF-19). Se rechaza también lo que node-redis
+// rechazaría al crear el cliente, porque ese error sale de `construirApp` sin nombrar la variable: una ruta que no sea vacía,
+// `/` o `/<entero>` (el número de base), y un usuario o una contraseña con un `%` mal codificado.
+const urlRedis: Regla<string> = {
+  motivo: 'no es una URL redis:// o rediss:// válida',
+  convertir: (texto) => {
+    if (!/^rediss?:\/\//i.test(texto) || !URL.canParse(texto)) return undefined;
+    const url = new URL(texto);
+    if (!/^\/?(\d+)?$/.test(url.pathname)) return undefined;
+    try {
+      decodeURIComponent(url.username);
+      decodeURIComponent(url.password);
+    } catch {
+      return undefined;
+    }
+    return texto;
   },
 };
 
@@ -181,5 +206,8 @@ export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
     reintentarDespuesS: lector.opcional('M2_REINTENTAR_DESPUES_S', 5, enteroEntre(1, 3600)),
     modoTokens,
     urlJwks,
+    urlRedis: lector.opcional<string | undefined>('M2_URL_REDIS', undefined, urlRedis),
+    cacheTtlS: lector.opcional('M2_CACHE_TTL_S', 60, enteroEntre(1, 3600)),
+    tiempoRedisMs: lector.opcional('M2_TIEMPO_REDIS_MS', 200, tiempoEnMs),
   });
 }
