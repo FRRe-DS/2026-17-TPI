@@ -7,7 +7,7 @@ Guía para quien evalúa el módulo y para el grupo. Dice cómo ver cada funcion
 Hace falta Node.js 24 (desde la 24.2) y Docker con compose v2, usable sin `sudo`.
 
 ```bash
-docker compose up -d --build --wait     # servicio M2 y su base PostgreSQL propia
+docker compose up -d --build --wait     # servicio M2, su base PostgreSQL propia y Redis
 node scripts/demo.mjs                   # recorre todas las funcionalidades y comprueba cada respuesta
 docker compose down                     # al terminar (agrega -v para borrar también los datos)
 ```
@@ -28,6 +28,7 @@ Lo que recorre, por requisito de la cátedra:
 | RF-2.6 Estado de cuenta | Bloquear (OPERADOR), consultar el estado como otro módulo (SERVICIO), levantar el bloqueo | 5 |
 | Seguridad y errores (RNF-03) | Sin token (401), token de otro cliente o con el rol equivocado (403), errores `application/problem+json` | 1 |
 | Resiliencia (RNF-13) | Con M6 caído, calificar y el historial dan 503 con `Retry-After`; lo que no depende de M6 sigue respondiendo | 8 |
+| Caché del estado de cuenta (RNF-11, spec 107) | Consulta fría que deja una copia con vencimiento, consulta caliente con el mismo cuerpo leída de Redis, bloqueo que la descarta, y Redis detenido sin cambiar la respuesta ni `/health` | 9 |
 
 ## 2. Probar a mano
 
@@ -103,6 +104,7 @@ Cada funcionalidad sale de una spec y vive en una carpeta de `src/`:
 | Preferencias | 006 | `src/preferencias/` | `preferencias_cliente` |
 | Historial de viajes | 007 | `src/historial/` (lee de M6, no de la base) | ninguna |
 | Calificaciones | 008 | `src/calificaciones/` | `calificaciones` |
+| Caché del estado de cuenta | 107 | `src/cache/` (Redis: `redis.ts` el cliente, `estado-cuenta.ts` la copia) | ninguna (en Redis) |
 
 Dentro de cada carpeta el recorrido es siempre el mismo: `operaciones.ts` recibe la solicitud HTTP, `servicio.ts` aplica las reglas, `repositorio.ts` hace el SQL y `modelo.ts` define los tipos. El historial reemplaza el repositorio por `m6.ts`, que llama a M6. `src/operaciones/index.ts` une cada ruta con su manejador por el `operationId` del contrato.
 
@@ -123,6 +125,7 @@ Para entender una funcionalidad, el orden recomendado es: su `spec.md` (qué pid
 
 - **En el modo `hs256` (el de estas secciones) no hay M1.** Los tokens los firma el servicio con la clave, el emisor y la audiencia de `ejemplo.env` (ADR 009). Con Keycloak haciendo de M1, M2 valida en modo `jwks`: sección 9 (ADR 080).
 - **M6 (Viajes) tiene dos formas de probarse.** Por defecto, M2 se prueba contra un M6 simulado que cumple `contrato/dependencias/m6.yml` (lo verifica `pruebas/unitarias/m6-simulado.test.ts`). Contra el M6 real del Grupo 12, M2 se probó con la prueba distribuida de la spec 081: sección 8. Lo que difiere entre el contrato supuesto y el M6 real está en `specs/081-integracion-m6-real/guia.md`. El servicio le pide a M6 con un token de servicio firmado en cada intento.
+- **Redis es real**, el del compose (`redis:8.6.8-alpine`, sin persistencia). Es solo una copia del estado de cuenta: la base sigue siendo la fuente de verdad (sección 10).
 - **M5 y M9** consultan el estado de cuenta con el rol `SERVICIO`. M2 no los llama, y en la demo ese rol lo hace un token propio.
 - **Los datos de ejemplo:** el servicio arranca con la base vacía. No hay datos cargados de antemano.
 
@@ -376,3 +379,39 @@ Levanta todo por su cuenta en un proyecto de compose aparte (`m2-keycloak`, con 
 | `caido.test.ts` | Keycloak detenido: con la clave ya guardada M2 atiende (200); reiniciado, arranca y da 503 con `Retry-After`; y al volver Keycloak da 200 sin reiniciar M2 | RNF-13.9 a RNF-13.13 |
 
 Con `M2_DEJAR_LEVANTADO=1 npm run keycloak:test` el entorno queda levantado al terminar, para mirar los logs (`docker compose -p m2-keycloak --env-file ejemplo-keycloak.env logs`); se baja con `docker compose -p m2-keycloak --env-file ejemplo-keycloak.env down -v`. En CI corre en cada PR: el job `keycloak` de `.github/workflows/ci.yml`.
+
+## 10. La caché del estado de cuenta (Redis, spec 107)
+
+M5 y M9 consultan `obtenerEstadoCuenta` en cada operación. Para no recalcular cada vez los bloqueos en la base, M2 guarda la respuesta en Redis (RNF-11). La base sigue siendo la única fuente de verdad: Redis solo tiene copias que se pueden tirar.
+
+**Qué se guarda.** Dos claves por cliente, que lo identifican solo por su `clienteId` (ni nombre, ni motivo, ni token):
+
+- `m2:estado-cuenta:v:<clienteId>`: la versión del cliente, un entero. Sube cada vez que se registra o se levanta un bloqueo. No vence.
+- `m2:estado-cuenta:c:<clienteId>:<versión>`: la respuesta `EstadoCuenta` tal cual, en JSON, con vencimiento.
+
+**Cuánto dura.** Lo menor entre `M2_CACHE_TTL_S` (60 s) y lo que falta para el primer `hasta` de los bloqueos vigentes: una copia nunca dice BLOQUEADO por un bloqueo que ya venció.
+
+**Cuándo se descarta.** Cuando la base confirma un alta (`201`) o un levantamiento (`200`) de bloqueo, antes de responder: sube la versión y la copia anterior queda sin uso. Si la base rechaza el cambio (`404`, `409`, `422`), la copia queda como estaba. Si Redis no contesta al descartar, el operador recibe la misma respuesta y M2 no sirve copias de ese cliente hasta poder descartarlas.
+
+**Si Redis falla.** Cada operación espera como máximo `M2_TIEMPO_REDIS_MS` (200 ms); sin conexión, falla en el acto. La consulta sale de la base con la misma respuesta, `/health` no mira a Redis y el log deja un aviso con la operación y un código, sin datos del cliente. Cuando Redis vuelve, M2 se reconecta solo.
+
+**Comprobarlo.** La sección 9 de la demo lo recorre entero. A mano, con el servicio levantado, `$TOKEN` (sección 2) y un `$CLIENTE` con perfil:
+
+```bash
+# 1. Una consulta deja la copia, con la versión 0 y su vencimiento.
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/clientes/$CLIENTE/estado-cuenta
+docker compose exec redis redis-cli --scan --pattern "m2:estado-cuenta:*$CLIENTE*"
+docker compose exec redis redis-cli PTTL "m2:estado-cuenta:c:$CLIENTE:0"     # milisegundos que le quedan
+
+# 2. Después de un bloqueo (OPERADOR), la versión es 1 y la consulta siguiente sale de la base.
+docker compose exec redis redis-cli GET "m2:estado-cuenta:v:$CLIENTE"
+
+# 3. Sin Redis, todo sigue respondiendo igual.
+docker compose stop redis
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8082/api/v1/clientes/$CLIENTE/estado-cuenta   # 200, el mismo estado
+docker compose logs m2 | grep "Redis no responde"                             # el aviso, sin datos del cliente
+docker compose start redis
+```
+
+Las pruebas: `pruebas/unitarias/redis-cliente.test.ts` y `cache-estado-cuenta.test.ts` (reglas, con Redis falsos), `pruebas/http/estado-cuenta-cache.test.ts` (permisos antes de la copia), y en `pruebas/integracion/`, `estado-cuenta-invalidacion.test.ts`, `estado-cuenta-redis-caido.test.ts` y `estado-cuenta-cache.test.ts` (este último con Redis y PostgreSQL reales en contenedor). El detalle, tarea por tarea, en `specs/107-redis-estado-cuenta/guia.md`.
+

@@ -24,5 +24,5 @@
 - [x] **T8. Prueba de integración con Redis y PostgreSQL reales.** RF-2.6.5 a RF-2.6.8.1, RNF-05, RNF-07
   - Hecho cuando: con Testcontainers, vaciar Redis no pierde ningún dato (todo se reconstruye desde la base), dos consultas seguidas hacen una sola lectura de estado en la base, un bloqueo con `hasta` cercano deja de informarse al vencer, y detener y volver a levantar Redis no cambia ninguna respuesta.
 
-- [ ] **T9. Demostración, guía y documentos.** RNF-20
+- [x] **T9. Demostración, guía y documentos.** RNF-20
   - Hecho cuando: `scripts/demo.mjs` muestra una consulta fría, una caliente, una invalidada por un bloqueo y otra con Redis detenido; `guia.md` y `docs/probar-m2.md` explican qué se guarda, cuánto dura y cómo comprobarlo; y el README suma la fila de Redis.

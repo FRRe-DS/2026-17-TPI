@@ -2,9 +2,41 @@
 
 ## Visión general
 
-M2 va a guardar en Redis la respuesta de `obtenerEstadoCuenta` de cada cliente, porque otros módulos la consultan seguido y la base la recalcula en cada pedido. Redis es solo una copia: si falta, está caído o contesta tarde, M2 responde desde la base y nada cambia para quien consulta. Esta guía crece con cada tarea; el mapa y el recorrido completos se escriben en la T9.
+**Qué se construyó.** M2 guarda en Redis la respuesta de `obtenerEstadoCuenta` de cada cliente, porque M5 y M9 la consultan en cada operación y la base la recalculaba en cada pedido (RNF-11). Redis es solo una copia: si falta, está caído o contesta tarde, M2 responde desde la base con la misma respuesta. Un alta o un levantamiento de bloqueo confirmado descarta la copia antes de responder, así que la consulta siguiente ya ve el cambio. No cambia el contrato ni la base de datos: suma Redis al compose, tres variables de entorno y la dependencia `redis` (node-redis).
 
-**Decisiones clave** (el porqué está en `plan.md` y en el ADR 107): la copia lleva una versión por cliente en la clave, en lugar de borrarse; el vencimiento es el menor entre el tiempo configurado y el primer `hasta` de los bloqueos vigentes; solo se guardan respuestas `200`; los permisos se comprueban antes de mirar la caché.
+**Recorrido de una consulta** (`GET /api/v1/clientes/{clienteId}/estado-cuenta`):
+1. El contrato resuelve token, rol y scope; `servicio.obtenerEstadoCuenta` comprueba la propiedad. Un rechazo sale acá y ni siquiera mira Redis (RF-2.6.5.3).
+2. `cache.leer` (`src/cache/estado-cuenta.ts`): si el cliente tiene un descarte pendiente, lo reintenta; si sigue sin salir, va a la base sin guardar (RF-2.6.8.1).
+3. Lee la versión (`m2:estado-cuenta:v:<id>`) y la copia de esa versión (`m2:estado-cuenta:c:<id>:<versión>`). Si hay una copia válida de ese cliente, la devuelve (RF-2.6.5).
+4. Si no, lee la base (`repositorio.obtenerEstadoCuenta`): un cliente inexistente lanza `404` sin guardar nada (RF-2.6.5.4). Si no, guarda la copia con vencimiento = menor entre `M2_CACHE_TTL_S` y el primer `hasta` (RF-2.6.7) y responde.
+5. Cualquier falla de Redis en 2 a 4 (tiempo agotado, sin conexión) se vuelve «sin copia» y se sigue por la base (RF-2.6.8). Cada operación tarda como máximo `M2_TIEMPO_REDIS_MS`.
+
+**Recorrido de un alta o un levantamiento de bloqueo:** la base confirma (el `COMMIT` de `conIdempotencia`, o la sentencia del levantamiento); `cache.invalidar` sube la versión del cliente (`INCR`, sin vencimiento); recién después se responde. Si el `INCR` falla, el cliente queda pendiente.
+
+**Mapa.**
+| Archivo | Responsabilidad | Requisito |
+|---|---|---|
+| `src/config.ts`, `ejemplo.env`, `docker-compose.yml` | `M2_URL_REDIS`, `M2_CACHE_TTL_S`, `M2_TIEMPO_REDIS_MS`; servicio `redis` sin persistencia ni puerto | RNF-06, RNF-11 |
+| `src/cache/redis.ts` | Cliente de Redis: tiempo máximo por operación, falla inmediata sin conexión, reconexión en segundo plano, avisos sin datos | RNF-13, RNF-19 |
+| `src/cache/estado-cuenta.ts` | `leer` e `invalidar`: versión en la clave, vencimiento, descartes pendientes | RF-2.6.5 a RF-2.6.8.1 |
+| `src/app.ts` | Crea `app.redis` y `app.cacheEstado`; cierra Redis en `onClose` | RNF-11, RNF-13 |
+| `src/clientes/servicio.ts`, `operaciones.ts` | Permisos antes de la copia; invalidar tras confirmar | RF-2.6.5.3, RF-2.6.6, RF-2.6.6.1 |
+| `pruebas/ayudas/redis-falso.ts`, `redis-memoria.ts`, `redis-real.ts` | Redis por TCP falso, en memoria y real (Testcontainers) | RNF-07 |
+| `pruebas/**/redis-*.test.ts`, `**/estado-cuenta-*.test.ts`, `cache-estado-cuenta.test.ts` | Unitarias, HTTP e integración con PostgreSQL y Redis reales | RNF-07 |
+| `scripts/demo.mjs` (sección 9), `docs/probar-m2.md` (sección 10), `README.md` | Demostración y documentación | RNF-20 |
+
+**Decisiones clave** (el porqué está en `plan.md` y en el ADR 107): la copia lleva una versión por cliente en la clave, en lugar de borrarse, para que un lector lento no reviva una copia vieja; **la versión no vence** (desvío del plan aprobado en la T6); el vencimiento es el menor entre el tiempo configurado y el primer `hasta`; los permisos se comprueban antes de mirar la caché; `/health` no consulta Redis; el tiempo máximo se hace con una carrera contra un temporizador y no con `AbortSignal` (T3); los descartes pendientes viven en memoria (con más de una réplica habría que llevarlos a Redis).
+
+**Conceptos que conviene entender.** *Caché de lectura*: una copia de una respuesta para no recalcularla; la fuente de verdad sigue siendo la base. *TTL*: el tiempo de vida de una clave en Redis; al vencer, Redis la borra. *Invalidar*: hacer que una copia deje de usarse; acá, subiendo la versión, sin borrar nada. *Versión en la clave*: cada copia se guarda bajo el número de versión que había al empezar a leer; subir la versión deja todas las anteriores sin uso. *Falla abierta*: si la caché no anda, el servicio sigue sin ella.
+
+**Cómo probarlo.** La sección 9 de `node scripts/demo.mjs` y el recorrido a mano con `redis-cli` están en `docs/probar-m2.md`, sección 10.
+
+**Para comprobar que se entendió.**
+1. ¿Por qué `leer` toma la versión antes de consultar la base y no después?
+2. ¿Qué pasaría si la versión venciera a los 120 s, con un TTL de 60 s y un cliente consultado seguido?
+3. Un CLIENTE pide el estado de cuenta de otro que tiene una copia guardada. ¿Por qué recibe `403` y Redis no recibe ningún comando?
+4. Con Redis colgado, ¿cuánto tarda como máximo una consulta, y por qué no `503`?
+5. Si el `INCR` de una invalidación falla, ¿qué hace la consulta siguiente de ese cliente, y cuándo vuelve a usar la caché?
 
 ## Tareas
 
@@ -63,4 +95,11 @@ M2 va a guardar en Redis la respuesta de `obtenerEstadoCuenta` de cada cliente, 
 - Cómo se conecta: cubre de punta a punta lo que hicieron T3 a T7, sin cambiar código del servicio. Por eso estas pruebas pasaron a la primera: la tarea es la verificación y no hubo fase en rojo.
 - Tests: dos consultas seguidas hacen una sola lectura en la base y dan el mismo cuerpo; la única clave del cliente es `m2:estado-cuenta:c:<clienteId>:0`, con vencimiento de hasta 60 s; un alta y un levantamiento se ven en la consulta siguiente; `FLUSHALL` no cambia el cuerpo y la consulta siguiente reconstruye la copia desde la base; un bloqueo con `hasta` a 3 s deja una copia con vencimiento de hasta 3 s y, pasado el `hasta`, la consulta da ACTIVO leyendo la base; con Redis detenido el cuerpo no cambia y `/health` da `200`, y con un Redis nuevo en el mismo puerto el cliente se reconecta solo y la caché vuelve a usarse. Corrida tres veces sin fallas. `npm test` 5679 en verde.
 - Para mirar con atención: la prueba del `hasta` espera unos 3 s reales; si se vuelve lenta en CI, es la candidata a acortar.
+
+### T9 — Demostración, guía y documentos · commit `107/T9`
+- Qué cambió: `scripts/demo.mjs` suma la sección 9: un cliente nuevo; consulta fría que deja una copia (se comprueba con `redis-cli PTTL` que vence en hasta 60 s); consulta caliente con el mismo cuerpo, y `keyspace_hits` de Redis que sube; un bloqueo que sube la versión a 1; la consulta siguiente, BLOQUEADO desde la base; Redis detenido sin cambiar la respuesta ni `/health`, y Redis arrancado de nuevo. Si la demo se corta con Redis detenido, lo vuelve a arrancar al terminar. `docs/probar-m2.md` suma la fila de la demo, la carpeta `src/cache/` en el mapa, Redis en «Qué está simulado y qué no» y la sección 10 (qué se guarda, cuánto dura, cuándo se descarta, qué pasa si falla y cómo comprobarlo a mano). `README.md` suma la tabla de variables de Redis, la spec 107 en `obtenerEstadoCuenta`, un párrafo sobre la caché, Redis en el arranque y los 61 pasos de la demo. La visión general de esta guía queda completa.
+- Por qué así: RNF-20 pide documentar qué se guarda, cuánto dura, cuándo se invalida y cómo comprobarlo. La demo lo muestra desde afuera, sin tocar el código: lo único observable de que una consulta salió de la copia es Redis (sus claves, su `PTTL` y sus aciertos).
+- Cómo se conecta: cierra la spec. La demo corre contra el compose por defecto, que ya trae Redis desde la T2.
+- Tests: `node scripts/demo.mjs` contra `docker compose up -d --build --wait`: «Todo en orden: 61 pasos comprobados», y Redis queda arriba. `npm test`, lint, build y `spec-check` en verde.
+- Para mirar con atención: la sección 9 corre después de la 8 (M6 caído) porque no depende de M6.
 
