@@ -21,7 +21,7 @@
 - [x] **T7. Redis caído o lento.** RF-2.6.8, RF-2.6.8.1, RNF-13, RNF-14, RNF-19
   - Hecho cuando: con Redis cortado y con un servidor que no contesta, `obtenerEstadoCuenta` responde `200` dentro del tiempo máximo más lo que cuesta la base; una invalidación que falla deja al cliente sin copias hasta que se confirma; `/health` responde `200`; y el log tiene un aviso sin `clienteId` ni valores.
 
-- [ ] **T8. Prueba de integración con Redis y PostgreSQL reales.** RF-2.6.5 a RF-2.6.8.1, RNF-05, RNF-07
+- [x] **T8. Prueba de integración con Redis y PostgreSQL reales.** RF-2.6.5 a RF-2.6.8.1, RNF-05, RNF-07
   - Hecho cuando: con Testcontainers, vaciar Redis no pierde ningún dato (todo se reconstruye desde la base), dos consultas seguidas hacen una sola lectura de estado en la base, un bloqueo con `hasta` cercano deja de informarse al vencer, y detener y volver a levantar Redis no cambia ninguna respuesta.
 
 - [ ] **T9. Demostración, guía y documentos.** RNF-20

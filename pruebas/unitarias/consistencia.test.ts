@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { IMAGEN_POSTGRES } from '../ayudas/global.js';
+import { IMAGEN_REDIS } from '../ayudas/redis-real.js';
 import configuracionDeVitest from '../../vitest.config.js';
 import { ARCHIVO_ULTIMO, ARCHIVO_ULTIMO_KEYCLOAK, OrdenDeArchivos } from '../distribuida/ayudas/orden.js';
 
@@ -442,6 +443,8 @@ describe('docker-compose.yml: Redis para la caché (spec 107, RNF-06, RNF-11)', 
 
   it('la imagen tiene versión exacta (X.Y.Z), nunca latest', () => {
     expect(imagenExacta(redis?.image ?? '')).toBe(true);
+    // La misma que levantan las pruebas de integración (T8).
+    expect(redis?.image).toBe(IMAGEN_REDIS);
     expect(redis?.image).toMatch(/^redis:\d+\.\d+\.\d+/);
   });
 
