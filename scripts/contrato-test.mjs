@@ -125,7 +125,10 @@ async function main(argumentos) {
     try {
       token = await pedirToken();
     } catch (error) {
-      console.error(`No se pudo pedir un token al contenedor m2. ${LEVANTAR}\n${error.stderr?.trim() || error.message}`);
+      const detalle = error?.killed ? ' (no respondió en 15 s)' : '';
+      console.error(
+        `No se pudo pedir un token al contenedor m2${detalle}. ${LEVANTAR}\n${error.stderr?.trim() || error.message}`,
+      );
       return 1;
     }
 
