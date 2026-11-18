@@ -44,7 +44,7 @@ async function pedirToken() {
   const { stdout } = await promisify(execFile)(
     'docker',
     ['compose', 'exec', '-T', 'm2', 'node', 'dist/herramientas/token.js', '--sub', SUB_PRUEBA, '--roles', ROLES_PRUEBA],
-    { cwd: RAIZ },
+    { cwd: RAIZ, timeout: 15000 },
   );
   return stdout.trim();
 }
