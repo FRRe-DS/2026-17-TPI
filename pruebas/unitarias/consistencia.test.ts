@@ -743,3 +743,22 @@ describe('docker-compose.yml: perfil keycloak (spec 080, RNF-04.10, RNF-05.6, RN
   });
 });
 
+describe('scripts/contrato-test.mjs y job contract-test (RNF-04.1, RNF-07)', () => {
+  const script = readFileSync(new URL('scripts/contrato-test.mjs', raiz), 'utf8');
+  const ci = parseYaml(readFileSync(new URL('.github/workflows/ci.yml', raiz), 'utf8')) as {
+    jobs?: { [nombre: string]: { 'timeout-minutes'?: number } | undefined };
+  };
+
+  it('fija la versión exacta de la imagen de Schemathesis, nunca latest', () => {
+    const imagen = /const SCHEMATHESIS = '([^']+)'/.exec(script)?.[1] ?? '';
+    expect(imagen).toMatch(/^schemathesis\/schemathesis:/);
+    expect(imagenExacta(imagen)).toBe(true);
+  });
+
+  it('acota el tiempo de pedirToken y del job contract-test en CI', () => {
+    const funcionPedirToken = /async function pedirToken\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+    expect(funcionPedirToken).toBeDefined();
+    expect(funcionPedirToken).toMatch(/timeout:\s*\d+/);
+    expect(ci.jobs?.['contract-test']?.['timeout-minutes']).toBeGreaterThan(0);
+  });
+});
