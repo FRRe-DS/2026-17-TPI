@@ -1,8 +1,11 @@
 name: Publicar imagen en GHCR
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
+  push:
     tags: ["v*"]
   workflow_dispatch:
 
@@ -12,17 +15,30 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository }}-api
 
 jobs:
-  publicar:
-    runs-on: ubuntu-24.04
+  publicar-api:
+    name: Build y push de la API
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
+      - name: Resolver rama y commit
+        id: vars
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout del código
         uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ steps.vars.outputs.sha }}
 
       - name: Login en GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4.8.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -30,16 +46,17 @@ jobs:
 
       - name: Generar etiquetas y metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=sha-
+            type=raw,value=sha-${{ steps.vars.outputs.short_sha }}
+            type=raw,value=${{ steps.vars.outputs.branch }},enable=${{ github.event_name != 'push' }}
+            type=raw,value=latest,enable=${{ steps.vars.outputs.branch == github.event.repository.default_branch }}
             type=ref,event=tag
-            type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build y push de la imagen
-        uses: docker/build-push-action@v6
+      - name: Build y push de la API
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           push: true
