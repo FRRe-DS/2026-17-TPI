@@ -1641,7 +1641,10 @@ describe('el repositorio de perfiles (RF-2.1, RF-2.1.1, RF-2.1.2, RF-2.1.3, RF-2
   describe('actualizarPerfil', () => {
     it('cambia solo los campos enviados, conserva los demás y mueve actualizadoEn (RF-2.1.2)', async () => {
       const clienteId = nuevoId();
-      const antes = await crearPerfil(consultar, clienteId, ANA);
+      await crearPerfil(consultar, clienteId, ANA);
+      // Una fecha anterior conocida evita depender del tiempo entre la creación y la actualización.
+      await consultar("UPDATE clientes SET actualizado_en = '2000-01-01T00:00:00Z' WHERE cliente_id = $1", [clienteId]);
+      const antes = await obtenerPerfil(consultar, clienteId);
 
       const despues = await actualizarPerfil(consultar, clienteId, { telefono: '+5493624111111' });
 
