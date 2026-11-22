@@ -20,17 +20,18 @@ env:
 jobs:
   publicar-api:
     name: Build y push de la API
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') }}
     steps:
       - name: Resolver rama y commit
         id: vars
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
         run: |
-          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
-          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
-          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${HEAD_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "branch=${HEAD_BRANCH}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout del código
         uses: actions/checkout@v7.0.1
@@ -62,3 +63,4 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          
