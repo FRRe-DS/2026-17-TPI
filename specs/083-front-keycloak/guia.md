@@ -2,7 +2,7 @@
 
 ## Estado de trabajo
 
-T1 implementada y validada en `impl/083-front-keycloak`. T2 a T26 siguen pendientes y la spec conserva el estado aprobada. El inicio de sesión real todavía no está implementado.
+T1 y T2 implementadas y validadas en `impl/083-front-keycloak`. T3 a T26 siguen pendientes y la spec conserva el estado aprobada. El inicio de sesión real todavía no está implementado.
 
 ## Tareas
 
@@ -15,7 +15,18 @@ T1 implementada y validada en `impl/083-front-keycloak`. T2 a T26 siguen pendien
 - Cómo se conecta: `app.ts` y `arranque.ts` rechazan por ahora el modo OIDC antes de registrar herramientas o abrir puertos, hasta conectar las rutas de sesión. Esta protección temporal se reemplaza al conectar el servidor OIDC. No hay acceso real ni sustitución por una identidad simulada.
 - Tests: `pruebas/panel/unitarias/config-oidc.test.ts` comprueba configuración mínima, ausencia de secretos heredados, retornos propios, URLs inválidas, plazo y modo. `config.test.ts` y `tokens.test.ts` conservan la regresión de desarrollo. `pruebas/panel/http/arranque.test.ts` verifica que OIDC no abra el servidor de desarrollo mientras falta implementar sesión.
 
-## Validación del 2026-11-23
+### T2 — Almacenes acotados de sesiones y transacciones · commit `083/T2`
+
+- Qué cambió: `panel/servidor/auth/almacen.ts` implementa el almacenamiento común con hasta 1000 registros por instancia. Genera identificadores de 32 bytes aleatorios y guarda solo su SHA256 como clave; copia los datos al entrar y salir para evitar cambios por referencias compartidas.
+- `auth/sesiones.ts:crearAlmacenSesiones` guarda identidad, permisos, credenciales y versión inicial. Vence por el primero de estos límites: ocho horas absolutas, treinta minutos sin actividad explícita o vencimiento del refresh token de Keycloak. La consulta no extiende la inactividad. Un access token vencido conserva la sesión para la renovación posterior de T7; el almacén no decide reenviar esa credencial a M2.
+- `auth/transacciones.ts:crearAlmacenTransacciones` conserva transacciones de ingreso y salida durante cinco minutos. Genera state y vínculo independientes; guarda el hash del vínculo y lo compara en tiempo constante antes de consumir. Un navegador con otro vínculo no obtiene los datos ni elimina la transacción del propietario. El consumo es síncrono y único; si vence durante la comprobación, tampoco se devuelve.
+- Por qué así: RNF-12.83.2 y el plan de datos de sesión. No se crean tablas ni se reutiliza Redis. La capacidad agotada devuelve un error tipado de mensaje fijo, sin expulsar entradas activas ni incluir datos personales o credenciales.
+- Limpieza: al acceder se eliminan registros vencidos y se revisan también cada minuto. El temporizador no mantiene vivo el proceso; `cerrar` lo cancela, borra datos y rechaza nuevas admisiones. `cantidad` informa los registros retenidos sin disparar limpieza, para comprobar también la limpieza sin solicitudes.
+- Cómo se conecta: por ahora son módulos internos del servidor, todavía sin rutas ni cookies. T3 construirá las cookies y las tareas de sesión conectarán los almacenes y su cierre al ciclo de vida del servidor. Los errores internos deberán traducirse al problema HTTP correspondiente al conectar las rutas.
+- Tests: `pruebas/panel/unitarias/almacenes-auth.test.ts`, 24 casos con reloj controlado: identificadores y desconocidos, aislamiento, límites exactos, sondeo sin actividad, tope absoluto, vencimiento de Keycloak, logout, copias defensivas, consumo único, capacidad y recuperación de espacio, limpieza periódica y cierre idempotente de temporizadores.
+- Límites: memoria de un solo proceso; reiniciar requiere reingreso y no permite compartir sesión entre réplicas. Son límites aceptados en el plan; los datos se borran al cerrar y no se persisten. Renovación concurrente, diagnóstico por sesión y acceso real corresponden a tareas posteriores.
+
+## Validación de T1 del 2026-11-23
 
 - Rojo inicial de T1: 26 fallas de 29 casos nuevos antes de implementar la configuración. La comprobación posterior de configuración, tokens, arranque y proxy pasó sus 196 pruebas.
 - Al validar toda la suite aparecieron ocho fallas previas de Windows y 43 pruebas que no ejecutaban por preparación fallida. Se reprodujeron en el commit original `29fc6ca`. La corrección se documenta aparte en [083-pruebas-windows](../../docs/guias/083-pruebas-windows.md) y se registra en su propio commit de validación.
@@ -24,6 +35,13 @@ T1 implementada y validada en `impl/083-front-keycloak`. T2 a T26 siguen pendien
 - El entorno de desarrollo se conserva levantado: seis servicios sanos, panel en http://localhost:8083 y M2 en http://localhost:8082. `node scripts/panel-humo.mjs` pasó sus seis comprobaciones. No se realizó revisión visual en navegador ni se afirma que el login o el rediseño estén implementados.
 - Comprobación adicional anterior: `npx tsc --noEmit` global tenía 42 diagnósticos, iguales a los del commit original en una comparación en memoria. Los builds de API y panel usan sus configuraciones propias y pasan; no se amplió T1 para modificar esas pruebas ajenas.
 
+## Validación de T2 del 2026-11-23
+
+- Rojo inicial: el archivo de pruebas no pudo importar los módulos, que todavía no existían.
+- `npm test`: 152 archivos y 5746 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL real en Docker.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan.
+- No se modificaron dependencias, opciones de Vitest, contrato, servicio M2 ni migraciones. No se afirma que el login ya funcione ni se amplía el alcance a las rutas de T3 a T11.
+
 ## Siguiente tarea
 
-T2: almacenes acotados de sesiones y transacciones en memoria. Empezar por pruebas de vencimiento, consumo único, capacidad, limpieza y cierre de temporizadores; no conectar aún el login de las tareas siguientes.
+T3: vincular cookies y solicitudes al origen del frontend. Empezar por pruebas HTTP de HttpOnly, SameSite, Path, Secure según origen, limpieza de cookie y rechazo de POST ajeno o de una sesión fijada desde el cliente.
