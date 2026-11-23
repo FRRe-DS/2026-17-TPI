@@ -43,6 +43,17 @@ describe('arrancarPanel', () => {
     return { panel, salir, logs };
   }
 
+  it('no inicia las herramientas de desarrollo al configurar OIDC antes de implementar sesión (083/T1)', async () => {
+    const { panel, salir } = await arrancar({
+      PANEL_MODO_AUTH: 'oidc',
+      PANEL_ORIGEN_PUBLICO: 'http://localhost:8083',
+      PANEL_OIDC_EMISOR: 'http://localhost:8080/realms/movilidad',
+      PANEL_OIDC_URL_INTERNA: 'http://keycloak:8080/realms/movilidad',
+    });
+    expect(panel).toBeUndefined();
+    expect(salir).toHaveBeenCalledWith(1);
+  });
+
   it('escucha en PANEL_ESCUCHA y PANEL_PUERTO y sirve la salud y el cliente', async () => {
     const env = await entorno();
 

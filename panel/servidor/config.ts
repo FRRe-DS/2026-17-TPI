@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 
 // El panel tiene su propio lector de configuración, con la misma forma que el de M2 (src/config.ts): no puede importarlo porque
-// se compila aparte, con `panel/` como raíz (plan, Estructura). Todas las variables nuevas tienen valor por defecto (RNF-06.4).
+// se compila aparte, con `panel/` como raíz (plan, Estructura). Desarrollo conserva sus valores por defecto; OIDC exige sus URLs.
 
 export type Entorno = Readonly<Record<string, string | undefined>>;
 
@@ -18,12 +18,16 @@ export type ConfigTokens = {
   campoRoles: string;
 };
 
-export type ConfigPanel = ConfigTokens & {
+type ConfigPanelComun = {
   puerto: number;
   escucha: string;
   // Dónde está M2 para el servidor del panel, y dónde lo ve quien copia el `curl` del detalle técnico (RNF-14.9).
   urlM2: string;
   urlM2Publica: string;
+};
+
+export type ConfigPanelDesarrollo = ConfigPanelComun & ConfigTokens & {
+  modoAuth: 'desarrollo';
   urlM6Control: string;
   // Vista de demostración (spec 072). Sin `urlBd`, las acciones de base se deshabilitan con su motivo; `docker` y `servicioBd`
   // dicen si el panel puede apagar y encender la base, y cuál es el servicio de compose.
@@ -31,6 +35,20 @@ export type ConfigPanel = ConfigTokens & {
   docker: boolean;
   servicioBd: string;
 };
+
+export type ConfigPanelOidc = ConfigPanelComun & {
+  modoAuth: 'oidc';
+  origenPublico: string;
+  oidcEmisor: string;
+  oidcUrlInterna: string;
+  oidcCliente: string;
+  tiempoIdentidadMs: number;
+  m6Simulado: boolean;
+  urlRetorno: string;
+  urlSalida: string;
+};
+
+export type ConfigPanel = ConfigPanelDesarrollo | ConfigPanelOidc;
 
 export type ConfigM6 = ConfigTokens & {
   puerto: number;
@@ -111,6 +129,48 @@ const textoSinEspaciosAlBorde: Regla<string> = {
   convertir: (texto) => (texto.trim() === texto && texto !== '' ? texto : undefined),
 };
 
+const modoAuth: Regla<ConfigPanel['modoAuth']> = {
+  motivo: 'no es «desarrollo» ni «oidc»',
+  convertir: (texto) => texto === 'desarrollo' || texto === 'oidc' ? texto : undefined,
+};
+
+// Las URLs de identidad no admiten credenciales, destinos ambiguos ni parámetros que puedan convertirse en retornos.
+function urlDeIdentidad(texto: string): URL | undefined {
+  if (texto.trim() !== texto || /[\\\s*]/.test(texto) || !/^https?:\/\//.test(texto) || !URL.canParse(texto)) return undefined;
+  const url = new URL(texto);
+  return url.username || url.password || texto.includes('?') || texto.includes('#') ? undefined : url;
+}
+
+function esOrigenSeguro(url: URL): boolean {
+  return url.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+}
+
+const origenPublico: Regla<string> = {
+  motivo: 'no es un origen exacto HTTPS o HTTP de loopback, sin credenciales, ruta ni parámetros',
+  convertir: (texto) => {
+    const url = urlDeIdentidad(texto);
+    return url && esOrigenSeguro(url) && texto === url.origin ? url.origin : undefined;
+  },
+};
+
+function realmKeycloak(publico: boolean): Regla<string> {
+  return {
+    motivo: 'no es una URL de realm Keycloak válida, sin credenciales ni parámetros',
+    convertir: (texto) => {
+      const url = urlDeIdentidad(texto);
+      if (!url || (publico && !esOrigenSeguro(url))) return undefined;
+      // Se permite un prefijo de despliegue, pero los endpoints se derivan de una base de realm fija.
+      if (!/^\/(?:[A-Za-z0-9_-]+\/)*realms\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(url.pathname)) return undefined;
+      return texto === `${url.origin}${url.pathname}` ? texto : undefined;
+    },
+  };
+}
+
+const clienteOidc: Regla<string> = {
+  motivo: 'no es un identificador de cliente OIDC válido',
+  convertir: (texto) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(texto) ? texto : undefined,
+};
+
 // Lee las variables de a una y junta los errores, para informar todos juntos. Una variable vacía cuenta como no definida.
 function crearLector(env: Entorno) {
   const errores: ErrorConfig[] = [];
@@ -155,11 +215,32 @@ function leerTokens(lector: Lector): ConfigTokens {
 
 export function cargarConfigPanel(env: Entorno): ResultadoConfig<ConfigPanel> {
   const lector = crearLector(env);
-  return lector.resultado({
+  const modo = lector.opcional('PANEL_MODO_AUTH', 'desarrollo', modoAuth);
+  const comun: ConfigPanelComun = {
     puerto: lector.opcional('PANEL_PUERTO', 8083, puerto),
     escucha: lector.opcional('PANEL_ESCUCHA', '127.0.0.1', direccionIp),
     urlM2: lector.opcional('PANEL_URL_M2', 'http://localhost:8082', urlHttp),
     urlM2Publica: lector.opcional('PANEL_URL_M2_PUBLICA', 'http://localhost:8082', urlHttp),
+  };
+  if (modo === 'oidc') {
+    const origen = lector.obligatoria('PANEL_ORIGEN_PUBLICO', origenPublico);
+    const emisor = lector.obligatoria('PANEL_OIDC_EMISOR', realmKeycloak(true));
+    const interna = lector.obligatoria('PANEL_OIDC_URL_INTERNA', realmKeycloak(false));
+    if (emisor && interna && new URL(emisor).pathname !== new URL(interna).pathname) {
+      lector.rechazar('PANEL_OIDC_URL_INTERNA', 'no corresponde al realm del emisor público', undefined);
+    }
+    return lector.resultado({
+      ...comun, modoAuth: 'oidc', origenPublico: origen, oidcEmisor: emisor, oidcUrlInterna: interna,
+      oidcCliente: lector.opcional('PANEL_OIDC_CLIENTE', 'm2-front', clienteOidc),
+      tiempoIdentidadMs: lector.opcional('PANEL_TIEMPO_IDENTIDAD_MS', 2000, tiempoEnMs),
+      m6Simulado: lector.opcional('PANEL_M6_SIMULADO', true, siONo),
+      // Nunca se aceptan retornos del entorno o del navegador hacia otro host.
+      urlRetorno: `${origen}/auth/retorno`, urlSalida: `${origen}/auth/salida`,
+    });
+  }
+  return lector.resultado({
+    ...comun,
+    modoAuth: 'desarrollo',
     urlM6Control: lector.opcional('PANEL_URL_M6_CONTROL', 'http://localhost:3007', urlHttp),
     urlBd: lector.opcional<string | undefined>('PANEL_URL_BD', undefined, urlPostgres),
     docker: lector.opcional('PANEL_DOCKER', true, siONo),

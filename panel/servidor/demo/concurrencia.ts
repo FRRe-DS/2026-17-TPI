@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ConfigPanel, ConfigTokens } from '../config.js';
+import type { ConfigPanelDesarrollo, ConfigTokens } from '../config.js';
 import { ControlM6NoResponde, pedirControlM6, type PedidoControl } from '../m6-control.js';
 import type { BaseDemo, ConteoFilas } from './base.js';
 import { idDePedido, m2Directo, type RespuestaDirecta } from './m2-directo.js';
@@ -29,7 +29,7 @@ export type ResultadoSimultaneo = {
 };
 
 export type DependenciasConcurrencia = {
-  config: Pick<ConfigPanel, 'urlM2' | 'urlM6Control'> & ConfigTokens;
+  config: Pick<ConfigPanelDesarrollo, 'urlM2' | 'urlM6Control'> & ConfigTokens;
   base: Pick<BaseDemo, 'contarClientes' | 'contarCalificaciones'>;
   // Cuánto se espera a cada pedido; por defecto, el de `m2Directo` (10 s).
   esperaMs?: number;

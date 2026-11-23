@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ConfigPanel } from './config.js';
+import type { ConfigPanelDesarrollo } from './config.js';
 import { type RegistroDePedidos } from './pedidos.js';
 import { responderProblema, type Problema } from './problemas.js';
 import { firmarToken, TokenInvalido } from './tokens.js';
@@ -68,7 +68,7 @@ const identidadInvalida = (motivo: string): Problema => ({
 
 // La identidad de prueba que pide el navegador (X-Panel-Rol y X-Panel-Sub), ya firmada. Sin ninguno de los dos, el pedido va
 // sin token y M2 responde lo que responda (por ejemplo, 401): también eso se quiere poder ver.
-async function tokenDelPedido(request: FastifyRequest, config: ConfigPanel): Promise<string | undefined> {
+async function tokenDelPedido(request: FastifyRequest, config: ConfigPanelDesarrollo): Promise<string | undefined> {
   const rol = request.headers['x-panel-rol'];
   const sub = request.headers['x-panel-sub'];
   if (rol === undefined && sub === undefined) return undefined;
@@ -82,7 +82,7 @@ export function causaDe(error: unknown): { tipo: string; codigo?: string } {
   return typeof codigo === 'string' ? { tipo: name, codigo } : { tipo: name };
 }
 
-export type OpcionesReenvio = { config: ConfigPanel; esperaMs: number; pedidos: RegistroDePedidos };
+export type OpcionesReenvio = { config: ConfigPanelDesarrollo; esperaMs: number; pedidos: RegistroDePedidos };
 
 // Se registra como plugin: así el lector de cuerpos crudos vale solo para estas rutas.
 export async function registrarReenvio(app: FastifyInstance, { config, esperaMs, pedidos }: OpcionesReenvio): Promise<void> {

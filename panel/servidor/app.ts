@@ -45,6 +45,8 @@ function estadoDe(error: unknown): number {
 // La app del panel: seguridad de acceso, salud, logs, reenvío a M2, detalle técnico de sus pedidos y reenvío al canal de control del
 // M6 simulado y, si se le da la carpeta, los archivos del cliente. No escucha en ningún puerto; eso lo hace el arranque.
 export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente, demo }: OpcionesApp): FastifyInstance {
+  // Hasta conectar las rutas de sesión, OIDC no puede activar por accidente las herramientas de desarrollo.
+  if (config.modoAuth !== 'desarrollo') throw new Error('El servidor de sesión OIDC todavía no está implementado');
   const app = Fastify({
     // El cuerpo se pasa tal cual a M2, que es quien lo valida; el límite de 1 MiB es el de M2 (RNF-03.2).
     bodyLimit: 1024 * 1024,
