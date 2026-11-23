@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import type { ConfigPanelOidc } from './config.js';
 
 // Los archivos del cliente que compila Vite (plan, Estructura): el `index.html`, lo que carga de `/assets/` y las rutas de las
 // pantallas, que devuelven el mismo `index.html`. Es una lista cerrada, como el reenvío: nada de servir una carpeta entera.
@@ -23,16 +24,36 @@ export const RUTAS_DEL_CLIENTE = [
 ] as const;
 
 // Todo sale del propio origen (RNF-19.3): ni scripts ni estilos en línea, ni de terceros, ni `eval`; el panel no se puede
-// embeber en otra página ni cambiar su base, y los formularios solo van a sí mismo.
+// embeber en otra página ni cambiar su base. OIDC agrega solo el origen público de Keycloak al destino de formularios.
 export const POLITICA_DE_SEGURIDAD = "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'";
 
+type ConfigPolitica = Pick<ConfigPanelOidc, 'modoAuth' | 'oidcEmisor'> | { modoAuth: 'desarrollo' };
+
+function politicaDeSeguridad(config?: ConfigPolitica): string {
+  if (config?.modoAuth !== 'oidc') return POLITICA_DE_SEGURIDAD;
+  // Defensa adicional al lector de configuración: nunca interpolar credenciales, comodines ni un emisor arbitrario en CSP.
+  let emisor: URL;
+  try { emisor = new URL(config.oidcEmisor); } catch { throw new Error('Emisor OIDC inválido para CSP'); }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(emisor.hostname);
+  if (config.oidcEmisor.trim() !== config.oidcEmisor || config.oidcEmisor.includes('*') || emisor.username || emisor.password
+    || emisor.search || emisor.hash || (emisor.protocol !== 'https:' && !(emisor.protocol === 'http:' && local))) {
+    throw new Error('Emisor OIDC inválido para CSP');
+  }
+  return `${POLITICA_DE_SEGURIDAD} ${emisor.origin}`;
+}
+
 // Los tres encabezados salen en toda respuesta del panel, no solo en los archivos: también en la de un 404 o un error.
-export function registrarEncabezadosDeSeguridad(app: FastifyInstance): void {
-  app.addHook('onSend', async (_request, reply) => {
+export function registrarEncabezadosDeSeguridad(app: FastifyInstance, config?: ConfigPolitica): void {
+  const politica = politicaDeSeguridad(config);
+  app.addHook('onSend', async (request, reply) => {
+    // no-referrer convertiría en null el Origin de formularios nativos. same-origin permite el POST propio
+    // sin enviar Referer a otros sitios; las redirecciones/callbacks de autenticación conservan no-referrer.
+    const autenticacion = request.url.split('?', 1)[0].startsWith('/auth/');
+    const referencia = config?.modoAuth === 'oidc' && !autenticacion ? 'same-origin' : 'no-referrer';
     reply
-      .header('content-security-policy', POLITICA_DE_SEGURIDAD)
+      .header('content-security-policy', politica)
       .header('x-content-type-options', 'nosniff')
-      .header('referrer-policy', 'no-referrer');
+      .header('referrer-policy', referencia);
   });
 }
 

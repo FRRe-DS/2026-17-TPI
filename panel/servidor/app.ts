@@ -10,6 +10,8 @@ import { crearRegistroDePedidos, registrarPedidos } from './pedidos.js';
 import { responderProblema } from './problemas.js';
 import { ESPERA_M2_MS, registrarReenvio } from './proxy.js';
 import { registrarSeguridad } from './seguridad.js';
+import { crearAlmacenTransacciones } from './auth/transacciones.js';
+import { registrarInicioAuth } from './auth/rutas.js';
 
 export type OpcionesApp = {
   config: ConfigPanel;
@@ -42,11 +44,9 @@ function estadoDe(error: unknown): number {
   return typeof estado === 'number' && estado >= 400 && estado < 500 ? estado : 500;
 }
 
-// La app del panel: seguridad de acceso, salud, logs, reenvío a M2, detalle técnico de sus pedidos y reenvío al canal de control del
-// M6 simulado y, si se le da la carpeta, los archivos del cliente. No escucha en ningún puerto; eso lo hace el arranque.
+// Seguridad, salud, logs y archivos del cliente para ambos modos. Desarrollo agrega reenvío y evaluación;
+// OIDC registra solo las rutas reales implementadas hasta ahora. No escucha en puertos; eso lo hace el arranque.
 export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente, demo }: OpcionesApp): FastifyInstance {
-  // Hasta conectar las rutas de sesión, OIDC no puede activar por accidente las herramientas de desarrollo.
-  if (config.modoAuth !== 'desarrollo') throw new Error('El servidor de sesión OIDC todavía no está implementado');
   const app = Fastify({
     // El cuerpo se pasa tal cual a M2, que es quien lo valida; el límite de 1 MiB es el de M2 (RNF-03.2).
     bodyLimit: 1024 * 1024,
@@ -62,8 +62,8 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   });
 
   // Antes que toda ruta: el 403 va primero, también en una ruta que no existe.
-  registrarSeguridad(app, config.puerto);
-  registrarEncabezadosDeSeguridad(app);
+  registrarSeguridad(app, config.modoAuth === 'oidc' ? config : config.puerto);
+  registrarEncabezadosDeSeguridad(app, config);
 
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);
@@ -94,6 +94,14 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   });
 
   app.get('/salud-panel', async () => ({ estado: 'ok' }));
+  if (config.modoAuth === 'oidc') {
+    const transacciones = crearAlmacenTransacciones();
+    app.addHook('onClose', async () => transacciones.cerrar());
+    app.register(registrarInicioAuth, { config, transacciones });
+    if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
+    // T4 inicia autorización. Cuenta, retorno y sesión siguen cerrados hasta conectar las tareas siguientes.
+    return app;
+  }
   const pedidos = crearRegistroDePedidos();
   registrarPedidos(app, pedidos, config.urlM2Publica);
   app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos });

@@ -43,15 +43,24 @@ describe('arrancarPanel', () => {
     return { panel, salir, logs };
   }
 
-  it('no inicia las herramientas de desarrollo al configurar OIDC antes de implementar sesión (083/T1)', async () => {
+  it('arranca OIDC con salud e inicio y conserva cerradas las herramientas de desarrollo (083/T4)', async () => {
+    const puerto = await puertoLibre();
+    const origen = `http://127.0.0.1:${puerto}`;
     const { panel, salir } = await arrancar({
       PANEL_MODO_AUTH: 'oidc',
-      PANEL_ORIGEN_PUBLICO: 'http://localhost:8083',
+      PANEL_PUERTO: String(puerto),
+      PANEL_ORIGEN_PUBLICO: origen,
       PANEL_OIDC_EMISOR: 'http://localhost:8080/realms/movilidad',
       PANEL_OIDC_URL_INTERNA: 'http://keycloak:8080/realms/movilidad',
     });
-    expect(panel).toBeUndefined();
-    expect(salir).toHaveBeenCalledWith(1);
+    expect(panel).toBeDefined();
+    expect(salir).not.toHaveBeenCalled();
+    expect((await fetch(`${origen}/salud-panel`)).status).toBe(200);
+    const inicio = await fetch(`${origen}/auth/iniciar`, { method: 'POST', headers: { origin: origen }, redirect: 'manual' });
+    expect(inicio.status).toBe(303);
+    for (const ruta of ['/panel/demo/estado', '/panel/m6/estado', '/api/v1/clientes']) {
+      expect((await fetch(`${origen}${ruta}`)).status).toBe(404);
+    }
   });
 
   it('escucha en PANEL_ESCUCHA y PANEL_PUERTO y sirve la salud y el cliente', async () => {

@@ -36,11 +36,6 @@ export async function arrancarPanel(
     return undefined;
   }
 
-  if (config.modoAuth === 'oidc') {
-    registrarErroresDeConfig([{ variable: 'PANEL_MODO_AUTH', motivo: 'el servidor de sesión OIDC todavía no está implementado' }], 'panel', flujoLog);
-    salir(1);
-    return undefined;
-  }
   const app = construirApp({ config, flujoLog, directorioCliente, demo });
   try {
     await app.listen({ host: config.escucha, port: config.puerto });
