@@ -9,11 +9,11 @@ Responsable: @DrazenPavicich (Drazen Pavicich)
 
 El panel actual firma tokens HS256 de desarrollo y no permite usar sus pantallas con M2 en modo jwks. Esta spec conecta el acceso y cierre de sesión con Keycloak, conserva los permisos del contrato y mantiene el modo de desarrollo para evaluación.
 
-La revisión de @sandobaitt en el PR #118 divide el trabajo en tres: sesión en #83; nueva interfaz y entrega integral en dos issues de continuación. Sus textos propuestos están en issue-interfaz.md e issue-entrega.md. El compose de la app real y el entorno de navegador con Keycloak pertenecen a sesión: son necesarios para probar el login, no se postergan a entrega.
+La revisión de @sandobaitt en el PR #118 divide el trabajo en tres: sesión en #83, nueva interfaz en [#119](https://github.com/FRRe-DS/2026-17-TPI/issues/119) y entrega integral en [#120](https://github.com/FRRe-DS/2026-17-TPI/issues/120). El compose de la app real y el entorno de navegador con Keycloak pertenecen a sesión: son necesarios para probar el login, no se postergan a entrega.
 
 Los tokens viven en el servidor del frontend y el navegador recibe solo una sesión opaca. Se usan usuarios de ejemplo del realm, sin registro nuevo, y cada CLIENTE completa su perfil M2 al primer ingreso. M6 sigue simulado, con viajes precargados por configuración para que sea posible calificar en modo real sin herramientas de desarrollo.
 
-La identidad bordó y marfil está acordada para el issue de interfaz. Esta spec adapta las pantallas existentes al acceso real y no implementa el rediseño completo. La referencia de la maqueta y el estado de su adjunto se encuentran en maqueta.md.
+La identidad bordó y marfil está acordada para #119. Esta spec adapta las pantallas existentes al acceso real y no implementa el rediseño completo. La maqueta se comparte y revisa en #119; @sandobaitt confirmó los colores, no la maqueta. Esa revisión no bloquea el login de #83.
 
 El estado aprobada identifica al candidato de PR. La aprobación efectiva es el merge por el integrador; hasta entonces no se implementa.
 
@@ -47,7 +47,7 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 - RNF-02.83.3: CUANDO se habilita la precarga de desarrollo del M6 simulado, EL SISTEMA carga al arrancar un viaje completado y otro en curso para cada sub configurado, incluidos cliente1 y cliente2; sin la variable conserva el arranque vacío y repetir la carga usa los mismos identificadores sin duplicar viajes.
 - RNF-03.83.1: SI M2 devuelve un error, ENTONCES EL SISTEMA conserva su código, type, title, detail y X-Request-Id, ofrece un mensaje comprensible y no lo reemplaza por éxito ni expone credenciales.
 - RNF-04.83.1: CUANDO se levanta el entorno real documentado, EL SISTEMA ejecuta frontend, M2 en jwks, base de M2, Keycloak y base de Keycloak con imágenes de versión fija y salud verificable, más Redis y M6 simulado como auxiliares.
-- RNF-04.83.2: CUANDO se levanta el entorno real o el perfil panel sin habilitar explícitamente el puente de desarrollo, EL SISTEMA no inicia bd-puente ni publica puertos de la base de M2; el puente solo se activa mediante un perfil propio documentado.
+- RNF-04.83.2: CUANDO se levanta el entorno real con front,keycloak, EL SISTEMA no inicia bd-puente ni publica puertos de la base de M2.
 - RNF-06.83.1: EL SISTEMA toma de configuración externa el modo, las direcciones de frontend, M2 y Keycloak, realm, cliente OIDC, retornos autorizados y precarga del simulador, sin incluir secretos en archivos del navegador.
 - RNF-07.83.1: EL SISTEMA prueba sesión, permisos, primer ingreso, concurrencia, errores y aislamiento con unitarias e integración y un recorrido en Chrome con Keycloak real y M6 simulado precargado, conservando las pruebas de desarrollo.
 - RNF-12.83.1: CUANDO una persona inicia sesión real, EL SISTEMA usa OpenID Connect Authorization Code con PKCE S256 y m2-front, valida la transacción y obtiene roles, scopes y sub de la identidad autenticada, sin recopilar contraseñas en formularios propios.
@@ -66,7 +66,8 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 - RNF-15.83.2: EL SISTEMA conserva en las vistas de acceso, primer perfil, selector y reingreso controles de 44 por 44 píxeles, contraste 4,5:1, foco visible, teclado, errores asociados y respeto de prefers-reduced-motion.
 - RNF-15.83.3: EL SISTEMA representa carga, cancelación, rechazo, error y recuperación de sesión y primer perfil sin romper las vistas existentes entre 360 y 1440 píxeles ni descartar formularios ante una falla recuperable.
 - RNF-19.83.1: EL SISTEMA excluye tokens, cookies, contraseñas y códigos de autorización de logs, almacenamiento del navegador y diagnóstico y muestra Authorization enmascarado.
-- RNF-20.83.1: EL SISTEMA documenta modos, comandos, versiones, usuarios, precarga M6, perfil del puente, variables y pruebas verificadas de sesión; el rediseño documental de PRODUCT.md y DESIGN.md corresponde al issue de interfaz.
+- RNF-19.83.2: EL SISTEMA ejecuta el frontend real con una lista explícita de variables necesarias y sin heredar env_file de desarrollo, M2_CLAVE_TOKENS, PANEL_URL_BD, M2_URL_BD ni credenciales de PostgreSQL, y no publica el puerto de control del M6 simulado.
+- RNF-20.83.1: EL SISTEMA documenta modos, comandos, versiones, usuarios, precarga M6, variables y pruebas verificadas de sesión; el rediseño documental de PRODUCT.md y DESIGN.md corresponde a #119 y el cierre integral a #120.
 
 ## Contrato y dependencias
 
@@ -76,7 +77,7 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 - M6: M2 consume GET /trips y GET /trips/{tripId}. La precarga ocurre dentro del simulador antes de atender, sin exponer su canal de control en modo real ni precargar la base de M2.
 - Depende de 071, 072, 080 y el contrato de scopes de #79. M6 real y la integración #81 quedan fuera.
 - Cambia la sesión simulada de RF-2.1.5 a RF-2.1.7 y RNF-12.6, RNF-12.7 y RNF-12.9 de la 071 solo en modo real; desarrollo conserva esos comportamientos.
-- Reemplaza para el puente el disparador de RNF-04.8 de la 072: ya no basta panel para publicar la base; el uso local del panel requiere habilitar explícitamente el perfil del puente. Se actualizan comandos y pruebas de consistencia en la implementación de #83, sin editar otra carpeta de spec desde esta rama.
+- La configuración de desarrollo de bd-puente sigue en el perfil panel según la spec 072, sin cambiar sus requisitos. El override real usa front,keycloak y no activa panel.
 
 ## Casos límite
 
@@ -90,13 +91,13 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 - Precarga apagada: simulador vacío como antes. UUID inválido configurado: no arranca e informa el nombre de variable sin imprimir su contenido.
 - Precarga repetida: mismos IDs. No crea calificaciones ni perfiles M2 y no incluye viajes ajenos en el historial propio.
 - CSP en Chrome: permitir solo el destino público exacto de Keycloak; no relajar default-src, frame-ancestors, script-src ni style-src para resolver el login.
-- Arranque con panel o real: bd-puente ausente sin perfil explícito; la base no publica puertos.
+- Arranque real con front,keycloak: bd-puente ausente y base sin puertos publicados. El arranque de desarrollo con panel conserva su configuración actual.
 - La maqueta no habilita fechas o precios inexistentes: calificado no equivale a conocer un puntaje.
 
 ## Fuera de alcance
 
-- Rediseño bordó y marfil de todas las pantallas, Inicio nuevo, composición final, temas y revisión visual completa: issue de interfaz.
-- Entrega visual integral, documentación final de producto y recorrido completo de todas las funciones rediseñadas: issue de entrega.
+- Rediseño bordó y marfil de todas las pantallas, Inicio nuevo, composición final, temas y revisión visual completa: #119 (interfaz).
+- Entrega visual integral, documentación final de producto y recorrido completo de todas las funciones rediseñadas: #120 (entrega).
 - Registro, recuperación y revocación de credenciales, HTTPS, límite de pedidos y despliegue público.
 - Modificar contrato/, src/, migraciones/ o la validación JWT de M2.
 - Imagen M6 real, mapas, reservas, pagos, saldos y búsqueda de clientes por nombre.
@@ -109,16 +110,16 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 - Un usuario de doble rol del realm recorre los dos espacios sin modificar identidad; operador puede bloquear y cliente no.
 - Chrome completa el POST de login y redirección con la CSP real y sin violaciones.
 - El entorno de prueba arranca con viajes propios de cliente1 y cliente2 y permite comprobar historial y calificación sin herramientas de evaluación.
-- bd-puente no arranca con panel o real salvo perfil explícito; su comando de desarrollo se documenta y prueba.
+- El entorno real no inicia bd-puente ni publica la base o el control M6; la configuración resuelta y el contenedor del frontend no contienen variables ni credenciales de base o firma HS256.
 - Tokens solo en servidor, aislamiento de sesiones y rutas de desarrollo, renovación y recuperación comprobados.
 - npm test, lint, build, panel:build, navegador de sesión con Keycloak real, contrato:test y spec-check pasan antes de marcar implementada.
-- Los issues de interfaz y entrega conservan el alcance retirado; no se presenta el rediseño como implementado.
+- #119 y #120 conservan el alcance de interfaz y entrega; no se presenta el rediseño como implementado.
 
 ## Decisiones
 
-- Acuerdo de DRAZEN y confirmación de @sandobaitt en el PR #118: bordó y marfil; su implementación se lleva al issue de interfaz.
+- Acuerdo de DRAZEN y confirmación de @sandobaitt en el PR #118: colores bordó y marfil; su implementación y la revisión de la maqueta corresponden a #119.
 - Evaluación en proceso y espacio separados reemplaza el criterio de una sola app con igual protagonismo de cliente y evaluador de la spec 071 y de panel/PRODUCT.md. La separación de rutas y modo es de sesión; el rediseño de ambos espacios es de interfaz.
-- #83 conserva sesión, compose real y entorno de navegador (antiguas T31 y T33). Interfaz y entrega se separan en dos issues, con textos en esta carpeta para su publicación.
+- #83 conserva sesión, compose real y entorno de navegador (antiguas T31 y T33). #119 contiene interfaz y #120 entrega; las dependencias quedan en esos issues.
 - Tokens en servidor con cookie opaca; usuarios de ejemplo sin registro; SERVICIO sin login.
 - Selector para doble rol y aviso/copia antes de reingreso confirmados por DRAZEN.
 - Incorporar precarga del simulador por variable y usuario de doble rol para que las pruebas de sesión sean reproducibles, conforme a la revisión.
@@ -126,4 +127,4 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 
 ## Dudas abiertas
 
-Ninguna decisión funcional pendiente. La publicación de los dos issues y el adjunto compartido de la maqueta quedan como pasos de revisión, indicados en sus documentos.
+Ninguna. La referencia visual se comparte y revisa en #119, sin bloquear la sesión.

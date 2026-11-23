@@ -13,9 +13,9 @@ El servidor del frontend completa Authorization Code con PKCE S256 usando el cli
 
 Modo real y modo HS256 de demostración son configuraciones de procesos distintos. El proceso real no registra rutas de suplantación, Docker, base o control del simulador. Las herramientas de desarrollo se ejecutan contra su instancia M2 en HS256, nunca contra la instancia real en jwks.
 
-No se crean tablas, no se usa Redis de estado de cuenta como almacén de sesiones y no se agregan dependencias. M6 permanece simulado, precargado por configuración en desarrollo y conectable al servicio real en otro trabajo. La estética bordó y marfil corresponde al issue de interfaz separado de #83.
+No se crean tablas, no se usa Redis de estado de cuenta como almacén de sesiones y no se agregan dependencias. M6 permanece simulado, precargado por configuración en desarrollo y conectable al servicio real en otro trabajo. Los colores bordó y marfil corresponden a [#119](https://github.com/FRRe-DS/2026-17-TPI/issues/119), separado de #83; la maqueta fue elegida por DRAZEN y sigue su revisión en #119, sin atribuir su aprobación al integrador.
 
-La separación de evaluación reemplaza el criterio de una sola app de la spec 071 y de panel/PRODUCT.md. El PR #118 conserva sesión, compose real y entorno Keycloak; interfaz y entrega continúan en dos issues propios, según la revisión del integrador.
+La separación de evaluación reemplaza el criterio de una sola app de la spec 071 y de panel/PRODUCT.md. El PR #118 conserva sesión, compose real y entorno Keycloak; interfaz continúa en #119 y entrega integral en [#120](https://github.com/FRRe-DS/2026-17-TPI/issues/120).
 
 ## Alternativas descartadas
 
@@ -33,5 +33,6 @@ La separación de evaluación reemplaza el criterio de una sola app de la spec 0
 - Una sesión vencida no dispara escrituras pendientes. El formulario queda visible para copiar antes de reingresar y puede perderse con la redirección, como confirmó el usuario.
 - La CSP real debe permitir form-action hacia el origen público exacto de Keycloak para el POST de acceso y su redirección, conservando las demás restricciones y comprobándolo en Chrome.
 - La prueba reproducible requiere precargar viajes del simulador para cliente1/cliente2 y agregar cliente-operador1 al realm con ambos roles. Estas son fixtures de desarrollo, no datos de otros módulos en la base M2.
-- bd-puente se activa solo con panel-bd; panel y el entorno real no publican la base por activar el simulador. Esto cambia el disparador de RNF-04.8 de la 072 y exige actualizar los comandos de desarrollo.
+- bd-puente conserva el perfil panel. El entorno real usa front,keycloak y no inicia el puente ni publica la base; el desarrollo conserva sus requisitos y comandos actuales.
+- El override real elimina env_file con !reset [], reemplaza environment con !override y una lista explícita sin credenciales de base/firma ni PANEL_URL_BD, y elimina la publicación de control M6 con ports: !reset []. Se prueba la configuración resuelta y el entorno efectivo del contenedor sin registrar sus valores.
 - El plan 083 define rutas internas, tiempos, límites, pruebas y configuración. Su aprobación exige PR y merge del integrador; este archivo todavía no cambia el comportamiento del sistema.

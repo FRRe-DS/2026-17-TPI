@@ -2,7 +2,7 @@
 
 ## Alcance y arquitectura
 
-#83 implementa sesión en servidor, adaptación funcional de las vistas existentes, primer perfil, permisos, recuperación, compose real y entorno de pruebas con Keycloak. El rediseño integral y la entrega completa se trasladan a los issues propuestos en issue-interfaz.md e issue-entrega.md. La partición sigue el comentario de @sandobaitt en PR #118.
+#83 implementa sesión en servidor, adaptación funcional de las vistas existentes, primer perfil, permisos, recuperación, compose real y entorno de pruebas con Keycloak. El rediseño integral se desarrolla en [#119](https://github.com/FRRe-DS/2026-17-TPI/issues/119) y la entrega completa en [#120](https://github.com/FRRe-DS/2026-17-TPI/issues/120). La partición sigue el comentario de @sandobaitt en PR #118.
 
 Se conserva React, Vite, CSS Modules y Fastify del panel. En modo real el servidor completa OIDC y reenvía a M2 solo el access token de cada sesión. El navegador permanece en el mismo origen; no se agrega CORS ni se modifica contrato/, src/ o migraciones/. Se usan crypto, fetch y jose ya instalado, sin nuevas dependencias.
 
@@ -107,19 +107,54 @@ Agregar al realm de desarrollo cliente-operador1, con UUID fijo d0b00000-0000-40
 
 Mantener el cliente m2-front público, PKCE S256, audiencias y scopes existentes. Los tokens del nuevo usuario deben contener ambos roles y únicamente los scopes solicitados. Actualizar pruebas de realm y ayudas tipadas sin imprimir su contraseña o token. Probar con login real, sin inyectar roles en sessionStorage. Tras crear el perfil propio, el selector cambia entre Mi cuenta y Operación sin cambiar sub, cookie o credencial; un usuario operador-only entra a Operación sin crear perfil.
 
-### Compose y aislamiento de bd-puente
+### Compose real sin herencia de secretos
 
-El cambio de infraestructura mínimo es parte de sesión, incluidas las antiguas T31 y T33. Reutilizar imagen m2-panel:0.1.0 y versiones base existentes; crear ejemplo-front-keycloak.env y docker-compose.front.yml para activar modo oidc, M2 jwks, Keycloak y M6 precargado.
+El compose y el entorno de pruebas con Keycloak pertenecen a #83. Reutilizar m2-panel:0.1.0 y las imágenes base de versión fija; crear ejemplo-front-keycloak.env y docker-compose.front.yml. Los perfiles reales son front,keycloak; el ejemplo no activa panel.
 
-Mover bd-puente del perfil panel al perfil exclusivo panel-bd en docker-compose.yml. El override real activa los perfiles front y keycloak para panel y m6; no activa panel-bd, no publica el puerto de control M6, no expone la base y no entrega al frontend URL_BD, clave HS256 ni permisos Docker.
+bd-puente permanece sin modificaciones en profiles: [panel], según la spec 072. El override sustituye únicamente los perfiles de panel y m6 por [front]. front,keycloak no selecciona bd-puente y no publica la base. El modo de desarrollo y sus comandos actuales con panel conservan el puente y no requieren otro perfil. No se modifica RNF-04.8 ni se agrega una tarea para moverlo.
+
+No basta con declarar algunas variables de environment: Compose fusiona el mapa anterior y conserva PANEL_URL_BD, y también hereda env_file: ejemplo.env. El override debe eliminar env_file y reemplazar el mapa environment por una lista permitida completa. Se requiere Compose 2.24.4 o posterior para !override, según su documentación oficial.
+
+Esquema del override previsto (valores de desarrollo; puerto y direcciones se parametrizan mediante las variables públicas del ejemplo):
+
+```yaml
+services:
+  panel:
+    profiles: !override [front]
+    env_file: !reset []
+    environment: !override
+      PANEL_MODO_AUTH: oidc
+      PANEL_ESCUCHA: 0.0.0.0
+      PANEL_PUERTO: "8083"
+      PANEL_URL_M2: http://m2:8082
+      PANEL_URL_M2_PUBLICA: http://localhost:8082
+      PANEL_ORIGEN_PUBLICO: http://localhost:8083
+      PANEL_OIDC_EMISOR: http://localhost:8080/realms/ds-2026-realm
+      PANEL_OIDC_URL_INTERNA: http://keycloak:8080/realms/ds-2026-realm
+      PANEL_OIDC_CLIENTE: m2-front
+      PANEL_TIEMPO_IDENTIDAD_MS: "2000"
+      PANEL_M6_SIMULADO: "si"
+  m6:
+    profiles: !override [front]
+    ports: !reset []
+    environment:
+      M6_CLIENTES_PRECARGA: c1e00000-0000-4000-8000-000000000001,c1e00000-0000-4000-8000-000000000002,d0b00000-0000-4000-8000-000000000001
+```
+
+No se declara PANEL_URL_BD ni PANEL_DOCKER, PANEL_SERVICIO_BD, PANEL_URL_M6_CONTROL, M2_CLAVE_TOKENS, M2_URL_BD, POSTGRES_USER, POSTGRES_PASSWORD o POSTGRES_DB para panel real. La configuración oidc no carga ni necesita esas variables. M2 y el simulador mantienen su configuración propia; no se cambia su autenticación de salida ni se propagan sus secretos al frontend. No montar socket Docker ni archivos de credenciales en panel.
+
+env_file: !reset [] evita inyectar ejemplo.env en el contenedor del frontend; el --env-file de la CLI se usa para interpolar el modelo de Compose y no constituye una autorización para copiar todo su contenido a environment. Los puertos del frontend se mantienen en loopback. ports: !reset [] elimina la publicación heredada del control M6, sin cerrar su API interna para M2.
 
 Arranque real previsto a verificar:
 docker compose -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env up -d --build --wait
 El ejemplo define COMPOSE_PROFILES=front,keycloak. Las cinco piezas principales se suman a Redis y M6 simulado.
 
-El comando de desarrollo en contenedor sigue usando panel y llega a bd por la red interna, sin necesitar puente. El panel como proceso en la máquina necesita explícitamente panel,panel-bd para llegar por 127.0.0.1:5433. Actualizar README, docs/probar-m2.md y ayudas de prueba que levantaban solo m6 bd-puente. Esto reemplaza el disparador de RNF-04.8 de la 072, declarado en Decisiones de la 083, sin editar otra spec desde esta rama.
-
-Verificar la configuración renderizada y contenedores efectivos: real y panel sin panel-bd no seleccionan bd-puente; bd no tiene ports; ningún 5433 está publicado; la ejecución opt-in panel,panel-bd publica solo loopback. Una prueba que mire solo el nombre del perfil no alcanza. No montar socket Docker en el frontend real.
+Pruebas obligatorias de composición, sin imprimir secretos:
+- Capturar programáticamente el modelo de docker compose config --format json con front,keycloak y afirmar que no selecciona bd-puente, bd no publica puertos y m6 no conserva puertos de control publicados.
+- Usar valores centinela de prueba para los secretos del archivo de ejemplo y del entorno del proceso. Comprobar que panel.environment solo contiene las claves permitidas y ninguna variable o valor de firma/base/control; no aceptar asignarlas vacías como sustituto de quitarlas.
+- Comprobar también el entorno efectivo del contenedor panel mediante inspección capturada, sin volcarlo al log: los valores centinela y las claves prohibidas deben estar ausentes. Tener en cuenta solo las variables base no sensibles aportadas por la imagen Node al verificar la lista permitida.
+- Mantener una regresión del modo de desarrollo con panel: bd-puente sigue perteneciendo a panel y conserva la publicación loopback prevista por la 072.
+- Fallar la prueba si reaparece env_file o si una fusión normal de environment hereda una clave prohibida. No se valida solo buscando !reset en el texto del YAML.
 
 ## Cliente y archivos previstos
 
@@ -132,7 +167,7 @@ Verificar la configuración renderizada y contenedores efectivos: real y panel s
 | Acceso, alta y selector mínimo | pantallas/ingresar.tsx, completar-perfil.tsx, app.tsx, rutas.ts, logica/menu.ts |
 | Sesión expirada | aviso de reingreso y hook de formulario, conservando componentes existentes |
 | Fixtures para probar | keycloak/ds-2026-realm-realm.json, panel/m6-simulado/arranque.ts y ayudas de pruebas |
-| Entorno real | docker-compose.front.yml, ejemplo-front-keycloak.env y perfil panel-bd en compose base |
+| Entorno real | docker-compose.front.yml y ejemplo-front-keycloak.env; compose base conserva bd-puente en panel |
 
 Sesion expone roles y scopes efectivos y un espacio activo. Mi cuenta usa sub; Operación admite UUID de cliente, sin mutar la identidad. No bloquear Operación por un perfil propio inexistente. No ofrecer SERVICIO como persona; CONDUCTOR sin otro rol obtiene un rechazo claro.
 
@@ -147,14 +182,14 @@ Al detectar sesión vencida se mantiene el formulario React montado y enviar des
 - Modos por proceso frente a un selector de suplantación: la app real no registra las rutas peligrosas.
 - Sin dependencias nuevas; si hace falta biblioteca OIDC adicional se solicita autorización antes de incorporarla.
 - Logout con client_id y confirmación frente a token en URL: no se entrega id_token_hint al navegador.
-- Evaluación separada reemplaza la app única de la 071; la separación funcional se hace aquí, su rediseño en el issue de interfaz.
-- La revisión dividió #83: sesión retiene compose y entorno de navegador, interfaz retiene diseño de pantallas y entrega retiene cierre visual integral. Los borradores preservan el alcance retirado y el origen de las tareas.
+- Evaluación separada reemplaza la app única de la 071; la separación funcional se hace aquí, su rediseño en el #119 (interfaz).
+- La revisión divide #83 en sesión; #119 conserva diseño de pantallas y #120 cierre visual integral. Los dos issues contienen el alcance retirado y sus dependencias.
 
 ## Pruebas y validación
 
 Por tarea: test en rojo, cambio acotado, test en verde, guía y commit cuando el entorno lo permita. Mantener las puertas existentes; no desactivar checks por ausencia de dependencias.
 
-Unitarias y HTTP: vínculo de state al navegador, PKCE, nonce, claims, cookies, expiración, límites, refresh concurrente, logout durante refresh, errores sanitizados, proxy y aislamiento de registros. Añadir pruebas de la CSP por modo, realm con doble rol, precarga y composición sin puente.
+Unitarias y HTTP: vínculo de state al navegador, PKCE, nonce, claims, cookies, expiración, límites, refresh concurrente, logout durante refresh, errores sanitizados, proxy y aislamiento de registros. Añadir pruebas de la CSP por modo, realm con doble rol, precarga y composición real sin puente ni secretos heredados.
 
 Integración M2 con PostgreSQL por Testcontainers: perfil propio, alta simultánea y permisos por identidad. No precargar la base M2 mediante SQL: perfiles se crean a través de su API.
 
@@ -165,9 +200,9 @@ Chrome de sesión prueba:
 2. cliente1 y cliente2 completan su perfil y encuentran sus viajes precargados; uno califica sin canal de control.
 3. cliente-operador1 entra y alterna sus dos espacios; operador-only administra bloqueo; cliente-only no puede.
 4. Refresh, sesión inválida, aviso/copia, rechazo y logout real con confirmación de Keycloak.
-5. Las vistas mínimas nuevas funcionan a 360 y 1280 píxeles, teclado y foco, sin overflow; el recorrido visual completo 360/768/1280/1440 y ambos temas pasa al issue de entrega.
+5. Las vistas mínimas nuevas funcionan a 360 y 1280 píxeles, teclado y foco, sin overflow; el recorrido visual completo 360/768/1280/1440 y ambos temas pasa al #120 (entrega).
 
-La antigua T34, que recorría todas las funciones rediseñadas, pertenece a entrega. La prueba de sesión anterior es un subconjunto suficiente y ejecutable para aprobar #83 antes del rediseño. CI incorpora el recorrido de sesión en el job de Keycloak o un job dedicado, sin omitirlo silenciosamente si falta Chrome.
+La antigua T34, que recorría todas las funciones rediseñadas, pertenece a #120. La prueba de sesión anterior es un subconjunto suficiente y ejecutable para aprobar #83 antes del rediseño. CI incorpora el recorrido de sesión en el job de Keycloak o un job dedicado, sin omitirlo silenciosamente si falta Chrome.
 
 Puerta de implementación: npm test, npm run lint, npm run build, npm run panel:build, npm run front:keycloak, npm run keycloak:test, contrato:test con servicio y node scripts/spec-check.mjs. Las pruebas son objetivos de la implementación, no resultados ya obtenidos por editar esta spec.
 
@@ -178,35 +213,38 @@ Puerta de implementación: npm test, npm run lint, npm run build, npm run panel:
 | RF-2.1.83.1 | Login real | T4, T6, T14 |
 | RF-2.1.83.2 | Primer perfil | T15 |
 | RF-2.1.83.3 | Alta idempotente | T16 |
-| RNF-02.83.1 | Límites y proxy | T10, T21 |
-| RNF-02.83.2 | M6 configurable | T18, T21 |
-| RNF-02.83.3 | Precarga del simulador | T18, T24 |
+| RNF-02.83.1 | Límites y proxy | T10, T20 |
+| RNF-02.83.2 | M6 configurable | T18, T20 |
+| RNF-02.83.3 | Precarga del simulador | T18, T23 |
 | RNF-03.83.1 | Proxy y errores | T10, T11 |
-| RNF-04.83.1 | Compose real | T21 |
-| RNF-04.83.2 | Perfil exclusivo del puente | T20, T21 |
+| RNF-04.83.1 | Compose real | T20 |
+| RNF-04.83.2 | Aislamiento del entorno real | T20 |
 | RNF-06.83.1 | Configuración | T1, T18 |
-| RNF-07.83.1 | Matriz de pruebas | T22, T23, T24, T25, T27 |
+| RNF-07.83.1 | Matriz de pruebas | T21, T22, T23, T24, T26 |
 | RNF-12.83.1 | OIDC y JWT | T4, T5, T6 |
 | RNF-12.83.2 | Almacenes y cookies | T2, T3 |
 | RNF-12.83.3 | Proxy real | T10 |
 | RNF-12.83.4 | Refresh | T7, T8 |
-| RNF-12.83.4.1 | Aviso y copia | T19, T25 |
+| RNF-12.83.4.1 | Aviso y copia | T19, T24 |
 | RNF-12.83.5 | Logout | T9 |
 | RNF-12.83.6 | Identidad y navegación | T12, T13 |
-| RNF-12.83.6.1 | Selector de espacio | T13, T17, T25 |
-| RNF-12.83.7 | Evaluación separada | T11, T21 |
-| RNF-12.83.8 | Usuario doble rol | T17, T25 |
-| RNF-12.83.9 | CSP por modo | T4, T24 |
+| RNF-12.83.6.1 | Selector de espacio | T13, T17, T24 |
+| RNF-12.83.7 | Evaluación separada | T11, T20 |
+| RNF-12.83.8 | Usuario doble rol | T17, T24 |
+| RNF-12.83.9 | CSP por modo | T4, T23 |
 | RNF-13.83.1 | Plazos Keycloak | T4, T7, T8 |
 | RNF-14.83.1 | Registros por sesión | T11 |
-| RNF-15.83.2 | Accesibilidad mínima | T14, T19, T25 |
-| RNF-15.83.3 | Estados del acceso | T14, T15, T19, T25 |
-| RNF-19.83.1 | Ausencia de secretos | T3, T6, T9, T11, T22 |
-| RNF-20.83.1 | Documentación de sesión | T26, T27 |
+| RNF-15.83.2 | Accesibilidad mínima | T14, T19, T24 |
+| RNF-15.83.3 | Estados del acceso | T14, T15, T19, T24 |
+| RNF-19.83.1 | Ausencia de secretos | T3, T6, T9, T11, T21 |
+| RNF-19.83.2 | Override con variables permitidas y sin herencia | T20, T21 |
+| RNF-20.83.1 | Documentación de sesión | T25, T26 |
 
 ## Referencias
 
 - Revisión: https://github.com/FRRe-DS/2026-17-TPI/pull/118#issuecomment-7115292956
 - OpenID Connect Core: https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
 - Keycloak: https://www.keycloak.org/docs/latest/server_admin/index.html
-- Maqueta y pendientes de adjunto: maqueta.md.
+- Interfaz y maqueta adjunta por DRAZEN: https://github.com/FRRe-DS/2026-17-TPI/issues/119#issuecomment-7115741664
+- Entrega integral: https://github.com/FRRe-DS/2026-17-TPI/issues/120
+- Semántica de !reset y !override de Compose: https://docs.docker.com/reference/compose-file/merge/
