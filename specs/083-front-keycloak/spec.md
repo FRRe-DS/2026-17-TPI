@@ -1,4 +1,4 @@
-# Spec 083 — Inicio de sesión real y nueva interfaz de M2
+# Spec 083 — Sesión real del frontend con Keycloak
 
 Estado: aprobada
 Issue: #83
@@ -7,129 +7,123 @@ Responsable: @DrazenPavicich (Drazen Pavicich)
 
 ## Contexto y objetivo
 
-El panel actual cubre las operaciones de M2, pero firma tokens HS256 de desarrollo y no permite usar sus pantallas con M2 en modo jwks. El issue #83 pide inicio y cierre de sesión con Keycloak, permisos obtenidos del token, conservación de la demostración de desarrollo y una nueva interfaz responsiva. Su título, descripción, estado y ausencia de comentarios se consultaron mediante el complemento GitHub en esta sesión.
+El panel actual firma tokens HS256 de desarrollo y no permite usar sus pantallas con M2 en modo jwks. Esta spec conecta el acceso y cierre de sesión con Keycloak, conserva los permisos del contrato y mantiene el modo de desarrollo para evaluación.
 
-Se construirá la app principal de cliente y operador con la dirección visual bordó y marfil elegida por DRAZEN. Las herramientas de evaluación tendrán un espacio aparte. Los tokens vivirán en el servidor del frontend y el navegador recibirá solo una sesión opaca. Se utilizarán los usuarios de ejemplo del realm y cada cliente completará su perfil en M2 al primer ingreso.
+La revisión de @sandobaitt en el PR #118 divide el trabajo en tres: sesión en #83; nueva interfaz y entrega integral en dos issues de continuación. Sus textos propuestos están en issue-interfaz.md e issue-entrega.md. El compose de la app real y el entorno de navegador con Keycloak pertenecen a sesión: son necesarios para probar el login, no se postergan a entrega.
 
-M6 seguirá simulado durante este trabajo. La futura imagen del grupo de M6 se conectará por configuración en otro trabajo, sin reescribir las pantallas. La maqueta es una referencia de composición y estilo: sus fechas de viaje y puntajes ilustrativos no justifican inventar campos que la API no entregue.
+Los tokens viven en el servidor del frontend y el navegador recibe solo una sesión opaca. Se usan usuarios de ejemplo del realm, sin registro nuevo, y cada CLIENTE completa su perfil M2 al primer ingreso. M6 sigue simulado, con viajes precargados por configuración para que sea posible calificar en modo real sin herramientas de desarrollo.
 
-El estado aprobada corresponde al candidato del PR de spec, según la convención del repositorio. La aprobación efectiva es el merge por el integrador; hasta entonces este documento no habilita implementación.
+La identidad bordó y marfil está acordada para el issue de interfaz. Esta spec adapta las pantallas existentes al acceso real y no implementa el rediseño completo. La referencia de la maqueta y el estado de su adjunto se encuentran en maqueta.md.
+
+El estado aprobada identifica al candidato de PR. La aprobación efectiva es el merge por el integrador; hasta entonces no se implementa.
 
 ## Usuarios
 
-- Cliente: usa exclusivamente su perfil, direcciones, preferencias, viajes, calificaciones y estado de cuenta.
-- Operador: consulta un cliente por UUID y administra sus bloqueos según el contrato.
-- Integrante o evaluador: usa las herramientas de diagnóstico y demostración en el entorno de desarrollo.
-- SERVICIO: identidad de integración, sin inicio de sesión interactivo en la app principal.
-- CONDUCTOR: usuario autenticable del realm sin operaciones de M2 autorizadas por ese rol solamente.
+- CLIENTE: opera sobre el perfil identificado por su sub.
+- OPERADOR: consulta clientes por UUID y administra bloqueos según el contrato.
+- Integrante o evaluador: utiliza un proceso de desarrollo separado con firma HS256.
+- SERVICIO: cuenta de integración sin login interactivo.
+- CONDUCTOR: usuario de ejemplo sin acceso a operaciones de M2 por ese rol solamente.
+- CLIENTE y OPERADOR: una identidad con dos espacios de navegación y sus permisos reales.
 
 ## Historias de usuario
 
-- HU-1. Como cliente, quiero iniciar sesión con mi cuenta de ejemplo de Keycloak para usar mi cuenta de M2 sin elegir ni copiar una identidad.
-- HU-2. Como cliente sin perfil, quiero completar mis datos después de autenticarme para comenzar a usar M2.
-- HU-3. Como cliente, quiero gestionar mis datos y calificar mis viajes desde el teléfono o la computadora.
-- HU-4. Como operador, quiero consultar un cliente y gestionar sus bloqueos sin atribuirme otro rol.
-- HU-5. Como evaluador, quiero conservar la demostración y las pruebas de fallas en un espacio separado del uso normal.
-- HU-6. Como integrante, quiero reemplazar más adelante el M6 simulado por el real mediante configuración.
+- HU-1. Como cliente, quiero iniciar sesión con Keycloak sin elegir manualmente identidad o rol.
+- HU-2. Como cliente sin perfil, quiero completar mis datos al primer ingreso.
+- HU-3. Como operador o persona con doble rol, quiero acceder al espacio permitido sin suplantar usuarios.
+- HU-4. Como integrante, quiero ejecutar un login real comprobable en Chrome con viajes simulados y sin publicar la base.
+- HU-5. Como evaluador, quiero conservar el proceso de desarrollo sin que sus herramientas se habiliten desde una sesión real.
 
 ## Requisitos funcionales
 
-- RF-2.1.83.1: CUANDO una persona sin sesión abre la app principal, EL SISTEMA ofrece iniciar sesión con Keycloak y no permite elegir rol, sub ni clienteId manualmente.
-- RF-2.1.83.2: CUANDO un CLIENTE vuelve de Keycloak con sesión válida, EL SISTEMA consulta obtenerCliente usando su sub como clienteId; si obtiene 200 abre su cuenta y si obtiene 404 ofrece completar el perfil, sin interpretar 401, 403 ni 503 como ausencia de perfil.
-- RF-2.1.83.3: CUANDO un CLIENTE confirma su primer perfil, EL SISTEMA llama a crearCliente con los campos del contrato y una Idempotency-Key conservada en los reintentos del mismo envío; abre su cuenta tras 201 y, ante 409 de perfil ya existente, vuelve a consultar su propio perfil antes de continuar.
-- RF-2.1.83.4: CUANDO el cliente abre Inicio, EL SISTEMA muestra su nombre, su estado de cuenta, accesos a sus tareas y una página de viajes obtenida mediante listarHistorialViajes, con estados independientes por sección y sin exigir que M6 esté disponible para acceder al perfil.
-- RF-2.1.83.5: CUANDO el cliente edita su perfil, EL SISTEMA conserva los campos no modificados, envía solo los cambios admitidos por actualizarCliente y advierte antes de descartar cambios sin guardar al navegar dentro de la app.
-- RF-2.2.83.1: CUANDO el cliente abre Direcciones, EL SISTEMA permite listar y paginar, consultar, crear, editar y eliminar sus direcciones FAVORITA o RECIENTE con los campos y límites del contrato, solicitando confirmación antes de eliminar.
-- RF-2.3.83.1: CUANDO el cliente abre Preferencias, EL SISTEMA permite consultar y reemplazar tipos de vehículo, canales y necesidades de accesibilidad, explicando el significado de las selecciones vacías según el contrato.
-- RF-2.4.83.1: CUANDO el cliente abre Mis viajes, EL SISTEMA muestra la página recibida de M2, identifica los viajes simulados y ofrece Calificar únicamente para viajes COMPLETED no calificados; omite fechas, origen, destino, precios y tipo de vehículo si M2 no los informa.
-- RF-2.4.83.2: SI M6 no está disponible y M2 devuelve 503 con Retry-After, ENTONCES EL SISTEMA conserva la navegación de cuenta y ofrece reintentar la consulta después del plazo informado, sin presentar una página vacía como resultado exitoso.
-- RF-2.5.83.1: CUANDO el cliente califica un viaje, EL SISTEMA permite puntaje entero de 1 a 5 y comentario opcional dentro del contrato, evita envíos simultáneos desde el mismo formulario y reutiliza la Idempotency-Key del mismo envío al reintentar.
-- RF-2.5.83.2: SI M2 rechaza una calificación, ENTONCES EL SISTEMA distingue 404, 409 con type /errores/calificacion-duplicada, 422 con type /errores/viaje-no-completado, 422 con type /errores/idempotencia-reutilizada y 503, conserva el formulario cuando corresponde y nunca informa éxito.
-- RF-2.5.83.3: CUANDO el cliente abre Calificaciones, EL SISTEMA lista sus calificaciones paginadas y permite consultar su detalle; solo muestra puntajes en Inicio o Mis viajes si se obtuvieron de una calificación propia mediante la API.
-- RF-2.6.83.1: CUANDO el cliente abre Estado de cuenta, EL SISTEMA muestra ACTIVO o BLOQUEADO y los bloqueos vigentes entregados por obtenerEstadoCuenta, sin inventar saldos ni pagos y sin impedir la edición del perfil por estar bloqueado.
-- RF-2.6.83.2: CUANDO un OPERADOR consulta un UUID, EL SISTEMA muestra los datos permitidos del cliente y sus bloqueos, permite crear o levantar bloqueos con confirmación y motivo, y actualiza el estado mostrado tras una operación exitosa.
+- RF-2.1.83.1: CUANDO una persona sin sesión abre la app real, EL SISTEMA ofrece iniciar sesión con Keycloak y no permite elegir rol, sub ni clienteId manualmente.
+- RF-2.1.83.2: CUANDO un CLIENTE vuelve de Keycloak con sesión válida, EL SISTEMA consulta obtenerCliente usando su sub como clienteId; con 200 abre la cuenta y con 404 ofrece completar el perfil, sin interpretar 401, 403 ni 503 como perfil inexistente.
+- RF-2.1.83.3: CUANDO un CLIENTE confirma su primer perfil, EL SISTEMA llama a crearCliente con los campos del contrato y una Idempotency-Key conservada en los reintentos del mismo envío; abre la cuenta tras 201 y ante 409 consulta de nuevo el perfil propio antes de continuar.
 
 ## Requisitos no funcionales
 
-- RNF-02.83.1: EL SISTEMA utiliza las operaciones existentes de M2 sin modificar contrato/, src/ ni migraciones/, y mantiene los datos de viajes en M6, sin consultar su base ni acceder a la base de M2 desde la app principal.
-- RNF-02.83.2: EL SISTEMA mantiene M6 simulado durante esta entrega, muestra esa condición en las vistas que dependen de viajes y permite cambiar la dirección de M6 por configuración de M2 sin modificar las pantallas.
-- RNF-03.83.1: SI M2 devuelve un error, ENTONCES EL SISTEMA muestra un mensaje comprensible y permite consultar el código, type, title, detail y X-Request-Id recibidos sin exponer credenciales ni reemplazar el error por éxito.
-- RNF-04.83.1: CUANDO se levanta el entorno de app real documentado, EL SISTEMA ejecuta frontend, M2 en modo jwks, base de M2, Keycloak y base de Keycloak con imágenes de versión fija y chequeos de salud; mantiene el simulador M6 y Redis como servicios auxiliares necesarios para esta configuración.
-- RNF-06.83.1: EL SISTEMA toma de configuración externa el modo de autenticación, direcciones de frontend, M2 y Keycloak, realm, cliente OIDC y retornos autorizados, sin incluir secretos en los archivos enviados al navegador.
-- RNF-07.83.1: EL SISTEMA cubre con pruebas unitarias e integración la sesión, permisos, primer ingreso, idempotencia y errores; incluye un recorrido de navegador con Keycloak real y M6 simulado para cliente y operador, además de conservar las pruebas del modo de desarrollo.
-- RNF-12.83.1: CUANDO una persona inicia sesión en modo real, EL SISTEMA la autentica mediante OpenID Connect con Authorization Code y PKCE S256 usando m2-front, valida la transacción de autorización y obtiene los roles, scopes y sub de la identidad autenticada, sin recopilar su contraseña en formularios propios.
-- RNF-12.83.2: EL SISTEMA conserva access token y refresh token únicamente en el servidor del frontend, entrega al navegador una sesión opaca mediante cookie HttpOnly, limita su uso al origen previsto y exige protección contra solicitudes de cambio originadas desde otros sitios.
-- RNF-12.83.3: MIENTRAS la app funciona en modo real, EL SISTEMA usa la credencial de la sesión para reenviar solicitudes a M2 y no firma tokens HS256 ni acepta X-Panel-Rol o X-Panel-Sub como identidad; los permisos definitivos siguen siendo comprobados por M2.
-- RNF-12.83.4: CUANDO la credencial necesita renovación, EL SISTEMA intenta renovarla sin duplicar operaciones de negocio; si la sesión ya no puede renovarse, termina la sesión local y ofrece volver a ingresar sin ejecutar automáticamente escrituras pendientes.
-- RNF-12.83.5: CUANDO la persona cierra sesión, EL SISTEMA invalida su sesión local, inicia el cierre de sesión en Keycloak y vuelve al acceso de la app; si Keycloak falla, mantiene cerrada la sesión local e informa que no se pudo confirmar el cierre remoto.
-- RNF-12.83.6: EL SISTEMA ofrece navegación según los roles efectivos y scopes de la identidad, mantiene la propiedad del CLIENTE y muestra acceso no permitido a un CONDUCTOR sin otro rol habilitado; no permite inicio interactivo como SERVICIO ni cambiar de rol arbitrariamente en modo real.
-- RNF-12.83.6.1: CUANDO una identidad tiene CLIENTE y OPERADOR, EL SISTEMA ofrece el selector Mi cuenta / Operación, conserva ambos roles y sus scopes al cambiar de espacio y limita el perfil propio al sub de esa identidad.
-- RNF-12.83.4.1: SI la sesión termina con cambios sin guardar, ENTONCES EL SISTEMA conserva el formulario visible mientras la página siga abierta, avisa antes de volver al login y permite copiar lo escrito; no persiste el borrador, advierte que puede perderse durante la redirección y no reenvía escrituras al reingresar.
-- RNF-12.83.7: EL SISTEMA mantiene la firma HS256 y las herramientas de las specs 071 y 072 en modo de desarrollo explícito, separa Evaluación de la navegación cotidiana y no habilita en modo real las rutas de suplantación de identidad, control de M6, acceso directo a base ni comandos Docker por el solo hecho de ocultar sus enlaces.
-- RNF-13.83.1: SI Keycloak no responde durante acceso o renovación, ENTONCES EL SISTEMA termina la espera dentro del plazo externo configurado, informa el problema y ofrece recuperación sin usar una identidad simulada como alternativa automática.
-- RNF-14.83.1: EL SISTEMA conserva X-Request-Id en las solicitudes reenviadas y en los detalles de error, y no comparte entre usuarios autenticados el historial técnico de pedidos y respuestas.
-- RNF-15.83.1: EL SISTEMA aplica en todas las pantallas de la app y de evaluación la nueva identidad bordó y marfil, con temas claro y oscuro, navegación lateral en escritorio y navegación compacta en móvil, sin desplazamiento horizontal entre 360 y 1440 píxeles.
-- RNF-15.83.2: EL SISTEMA ofrece controles de al menos 44 por 44 píxeles, contraste de texto de al menos 4,5:1, foco visible, uso completo por teclado, mensajes de campo asociados y respeto de prefers-reduced-motion.
-- RNF-15.83.3: EL SISTEMA representa carga, vacío, éxito, confirmación, cancelación, rechazo, error y recuperación, conserva datos de formularios ante fallas recuperables y respeta los límites máximos de texto del contrato sin romper la presentación.
-- RNF-19.83.1: EL SISTEMA excluye tokens, contraseñas, cookies de sesión y códigos de autorización de logs, almacenamiento del navegador, respuestas de diagnóstico y detalle técnico, y muestra Authorization siempre enmascarado.
-- RNF-20.83.1: EL SISTEMA documenta los modos real y de desarrollo, variables, comandos de compose, usuarios de ejemplo, M6 simulado y pruebas verificadas; actualiza PRODUCT.md y DESIGN.md con la dirección elegida al implementar, conservando la trazabilidad de las specs reemplazadas.
+- RNF-02.83.1: EL SISTEMA consume la API existente sin modificar contrato/, src/ ni migraciones/, sin consultar bases ajenas desde la app real.
+- RNF-02.83.2: EL SISTEMA mantiene M6 simulado, identifica esa condición en las pantallas de viajes y permite cambiar la dirección del servicio por configuración de M2 sin reescribir pantallas.
+- RNF-02.83.3: CUANDO se habilita la precarga de desarrollo del M6 simulado, EL SISTEMA carga al arrancar un viaje completado y otro en curso para cada sub configurado, incluidos cliente1 y cliente2; sin la variable conserva el arranque vacío y repetir la carga usa los mismos identificadores sin duplicar viajes.
+- RNF-03.83.1: SI M2 devuelve un error, ENTONCES EL SISTEMA conserva su código, type, title, detail y X-Request-Id, ofrece un mensaje comprensible y no lo reemplaza por éxito ni expone credenciales.
+- RNF-04.83.1: CUANDO se levanta el entorno real documentado, EL SISTEMA ejecuta frontend, M2 en jwks, base de M2, Keycloak y base de Keycloak con imágenes de versión fija y salud verificable, más Redis y M6 simulado como auxiliares.
+- RNF-04.83.2: CUANDO se levanta el entorno real o el perfil panel sin habilitar explícitamente el puente de desarrollo, EL SISTEMA no inicia bd-puente ni publica puertos de la base de M2; el puente solo se activa mediante un perfil propio documentado.
+- RNF-06.83.1: EL SISTEMA toma de configuración externa el modo, las direcciones de frontend, M2 y Keycloak, realm, cliente OIDC, retornos autorizados y precarga del simulador, sin incluir secretos en archivos del navegador.
+- RNF-07.83.1: EL SISTEMA prueba sesión, permisos, primer ingreso, concurrencia, errores y aislamiento con unitarias e integración y un recorrido en Chrome con Keycloak real y M6 simulado precargado, conservando las pruebas de desarrollo.
+- RNF-12.83.1: CUANDO una persona inicia sesión real, EL SISTEMA usa OpenID Connect Authorization Code con PKCE S256 y m2-front, valida la transacción y obtiene roles, scopes y sub de la identidad autenticada, sin recopilar contraseñas en formularios propios.
+- RNF-12.83.2: EL SISTEMA conserva access token y refresh token solo en el servidor y entrega una cookie de sesión opaca HttpOnly con protección contra cambios originados desde otros sitios.
+- RNF-12.83.3: MIENTRAS el modo es real, EL SISTEMA reenvía a M2 la credencial de la sesión, no firma HS256 ni acepta X-Panel-Rol o X-Panel-Sub como identidad, y mantiene la autorización definitiva en M2.
+- RNF-12.83.4: CUANDO hace falta renovar la credencial, EL SISTEMA intenta renovarla sin duplicar operaciones; si la sesión no puede renovarse la termina y ofrece reingreso sin ejecutar escrituras pendientes.
+- RNF-12.83.4.1: SI termina la sesión con un formulario sin guardar, ENTONCES EL SISTEMA lo mantiene visible mientras la página siga abierta, permite copiar antes de volver al login y advierte que el borrador puede perderse al redirigir, sin persistirlo ni autoenviarlo.
+- RNF-12.83.5: CUANDO se cierra sesión, EL SISTEMA invalida primero la sesión local y solicita el cierre remoto; si Keycloak falla, la sesión local permanece cerrada y se informa que el cierre remoto no está confirmado.
+- RNF-12.83.6: EL SISTEMA ofrece las pantallas existentes según roles y scopes, conserva la propiedad del CLIENTE, muestra acceso no permitido a CONDUCTOR sin otro rol admitido y no ofrece login interactivo como SERVICIO.
+- RNF-12.83.6.1: CUANDO una identidad tiene CLIENTE y OPERADOR, EL SISTEMA ofrece Mi cuenta / Operación conservando sub, roles y scopes, sin exigir perfil propio para usar Operación.
+- RNF-12.83.7: EL SISTEMA conserva firma HS256 y evaluación en un proceso de desarrollo separado; el proceso real no registra rutas de suplantación, control de M6, consulta directa de base ni comandos Docker.
+- RNF-12.83.8: EL SISTEMA incluye en el realm de desarrollo un usuario de ejemplo con CLIENTE y OPERADOR, sub UUID fijo y los scopes de M2 que solicite la app, para probar el selector con una identidad real.
+- RNF-12.83.9: MIENTRAS el modo es real, EL SISTEMA permite en form-action de su CSP únicamente self y el origen público configurado de Keycloak, conserva las demás restricciones y permite completar en Chrome el POST de login y su redirección; en desarrollo mantiene form-action self.
+- RNF-13.83.1: SI Keycloak no responde en acceso o renovación, ENTONCES EL SISTEMA agota un plazo configurado, informa el problema y ofrece recuperación sin sustituir la identidad por una simulada.
+- RNF-14.83.1: EL SISTEMA conserva X-Request-Id en el proxy y los errores y no comparte el historial técnico entre sesiones.
+- RNF-15.83.2: EL SISTEMA conserva en las vistas de acceso, primer perfil, selector y reingreso controles de 44 por 44 píxeles, contraste 4,5:1, foco visible, teclado, errores asociados y respeto de prefers-reduced-motion.
+- RNF-15.83.3: EL SISTEMA representa carga, cancelación, rechazo, error y recuperación de sesión y primer perfil sin romper las vistas existentes entre 360 y 1440 píxeles ni descartar formularios ante una falla recuperable.
+- RNF-19.83.1: EL SISTEMA excluye tokens, cookies, contraseñas y códigos de autorización de logs, almacenamiento del navegador y diagnóstico y muestra Authorization enmascarado.
+- RNF-20.83.1: EL SISTEMA documenta modos, comandos, versiones, usuarios, precarga M6, perfil del puente, variables y pruebas verificadas de sesión; el rediseño documental de PRODUCT.md y DESIGN.md corresponde al issue de interfaz.
 
 ## Contrato y dependencias
 
-- Se consumen las 20 operaciones de contrato/openapi.yml: verificarSalud; crearCliente, obtenerCliente, actualizarCliente; listarDirecciones, crearDireccion, obtenerDireccion, actualizarDireccion, eliminarDireccion; obtenerPreferencias, guardarPreferencias; listarHistorialViajes; listarCalificaciones, calificarConductor, obtenerCalificacion; obtenerEstadoCuenta, listarBloqueos, crearBloqueo, obtenerBloqueo y levantarBloqueo.
-- Keycloak: realm y cliente público m2-front de la spec 080, con scopes clientes:read, clientes:write y clientes.estado:read según la operación. Acceso, retorno, renovación y cierre pertenecen al frontend, no son nuevas operaciones del servicio M2.
-- M6 simulado: M2 consume GET /trips y GET /trips/{tripId}; el frontend consulta viajes solo por M2. El control del simulador corresponde exclusivamente al entorno de evaluación de desarrollo.
-- Dependencias existentes: specs 071, 072 y 080, scopes del contrato acordados en #79. La integración real con M6 del #81 no se incorpora a esta entrega.
-- Este borrador propone reemplazar el comportamiento de sesión simulada de RF-2.1.5 a RF-2.1.7 y RNF-12.6, RNF-12.7 y RNF-12.9 de la spec 071 solo en modo real; esos comportamientos permanecen en desarrollo. RNF-19.3 de la 071 se conserva al mantener tokens en servidor.
-- La selección visual aprobada reemplaza la estética anterior de PRODUCT.md y DESIGN.md al implementar, sin cambiar las reglas de negocio. No se modifican otras carpetas de specs en esta propuesta.
+- El proxy conserva las 20 operaciones de contrato/openapi.yml, sin agregar rutas a M2. Las pantallas existentes siguen consumiéndolas; esta spec cambia identidad y sesión, no sus reglas de negocio.
+- El primer ingreso consume obtenerCliente y crearCliente. La prueba real usa además obtenerEstadoCuenta, actualizarCliente, listarHistorialViajes, calificarConductor y operaciones de bloqueos para comprobar permisos.
+- Keycloak: cliente público m2-front y realm de la 080, con clientes:read, clientes:write y clientes.estado:read según operación. La 083 añade solo un usuario de desarrollo de doble rol y las direcciones exactas de prueba necesarias.
+- M6: M2 consume GET /trips y GET /trips/{tripId}. La precarga ocurre dentro del simulador antes de atender, sin exponer su canal de control en modo real ni precargar la base de M2.
+- Depende de 071, 072, 080 y el contrato de scopes de #79. M6 real y la integración #81 quedan fuera.
+- Cambia la sesión simulada de RF-2.1.5 a RF-2.1.7 y RNF-12.6, RNF-12.7 y RNF-12.9 de la 071 solo en modo real; desarrollo conserva esos comportamientos.
+- Reemplaza para el puente el disparador de RNF-04.8 de la 072: ya no basta panel para publicar la base; el uso local del panel requiere habilitar explícitamente el perfil del puente. Se actualizan comandos y pruebas de consistencia en la implementación de #83, sin editar otra carpeta de spec desde esta rama.
 
 ## Casos límite
 
-- Cancelación del login, retorno repetido, código vencido, state o nonce inválidos: no abren sesión ni crean perfiles.
-- Usuario autenticado sin scopes o sin un rol admitido: no se interpreta como usuario nuevo y no se le asignan permisos desde el frontend.
-- Identidad con CLIENTE y OPERADOR: ofrece Mi cuenta / Operación sin modificar roles ni identidad; inicialmente abre Mi cuenta y no exige crear un perfil para usar el espacio Operación.
-- Dos pestañas completan el perfil: una creación y una recuperación del perfil existente, sin duplicados.
-- Cookie vencida o servidor del frontend reiniciado: se ofrece reingreso. Con formulario sin guardar se muestra el aviso y la posibilidad de copiar antes de redirigir; no se promete recuperarlo tras la redirección.
-- M6 caído y cuenta disponible: Inicio puede mostrar error solo en viajes; perfil, direcciones, preferencias y estado de cuenta siguen funcionando.
-- Viaje ya calificado desde otra pestaña: 409 visible y actualización del listado, sin una segunda calificación.
-- Un cliente bloqueado conserva las operaciones que el contrato permite sobre su propia cuenta.
-- Una fecha o un precio dibujado en la maqueta no se muestra si no proviene de la API; calificado no equivale a conocer el puntaje.
-- Parámetros de retorno ajenos al origen permitido, cambio de usuario y solicitudes de otro origen no revelan sesiones ni registros de otras personas.
-- Entorno de desarrollo sin Docker en el servidor del panel: conserva los botones de control de base deshabilitados con su explicación, como en la spec 072.
+- Callback cancelado, repetido, expirado, con state o nonce inválidos o desde otro navegador: no abre sesión.
+- 401, 403 y 503 al consultar perfil no crean un perfil nuevo.
+- Dos pestañas crean perfil: 201 o recuperación del existente tras 409, sin duplicados.
+- Doble rol: inicia en Mi cuenta, puede abrir Operación sin perfil propio y no cambia identidad.
+- Sesión vencida: formulario visible para copiar antes de redirigir; sin almacenamiento persistente ni reenvío.
+- Logout concurrente con refresh: el refresh no recrea la sesión invalidada.
+- M6 caído: conserva los errores y reintentos de las pantallas existentes, sin bloquear el resto de la cuenta.
+- Precarga apagada: simulador vacío como antes. UUID inválido configurado: no arranca e informa el nombre de variable sin imprimir su contenido.
+- Precarga repetida: mismos IDs. No crea calificaciones ni perfiles M2 y no incluye viajes ajenos en el historial propio.
+- CSP en Chrome: permitir solo el destino público exacto de Keycloak; no relajar default-src, frame-ancestors, script-src ni style-src para resolver el login.
+- Arranque con panel o real: bd-puente ausente sin perfil explícito; la base no publica puertos.
+- La maqueta no habilita fechas o precios inexistentes: calificado no equivale a conocer un puntaje.
 
 ## Fuera de alcance
 
-- Registro de nuevas credenciales en Keycloak: se usan los usuarios de ejemplo, por decisión del usuario.
-- Recuperación y revocación de credenciales, HTTPS, límite de pedidos y despliegue público.
-- Cambiar validación JWT de M2, el contrato público, el esquema de datos o la lógica de negocio del backend.
-- Integrar, descargar o publicar la futura imagen de M6; la conexión se realizará en otro trabajo.
-- Mapas, solicitud o reserva de viajes, pagos, saldos, búsqueda de clientes por nombre o listado general de clientes: el contrato actual de M2 no los ofrece.
-- Una interfaz de inicio de sesión para cuentas SERVICIO y la obtención de sus tokens en modo real.
-- Caché o persistencia de viajes en el frontend como sustituto de consultar M2.
-- Nuevas dependencias sin autorización; su necesidad se evalúa en el plan.
+- Rediseño bordó y marfil de todas las pantallas, Inicio nuevo, composición final, temas y revisión visual completa: issue de interfaz.
+- Entrega visual integral, documentación final de producto y recorrido completo de todas las funciones rediseñadas: issue de entrega.
+- Registro, recuperación y revocación de credenciales, HTTPS, límite de pedidos y despliegue público.
+- Modificar contrato/, src/, migraciones/ o la validación JWT de M2.
+- Imagen M6 real, mapas, reservas, pagos, saldos y búsqueda de clientes por nombre.
+- Inicio interactivo de SERVICIO o nuevos permisos para probar la app.
+- Dependencias nuevas sin aprobación.
 
 ## Criterios de finalización
 
-- Cliente de ejemplo inicia sesión en Keycloak, completa su perfil si falta, usa las pantallas de cuenta y cierra sesión con M2 en jwks.
-- Operador de ejemplo consulta un cliente por UUID, crea un bloqueo y lo levanta; un cliente no puede realizar esas acciones ni acceder a otro perfil.
-- La sesión y sus tokens cumplen RNF-12.83.2 y RNF-19.83.1; en modo real no se puede recuperar la suplantación mediante rutas o encabezados de desarrollo.
-- Las pantallas conservan las operaciones del contrato, el tratamiento de errores e idempotencia y cumplen los estados y medidas de RNF-15.
-- M6 sigue simulado y su condición es visible; su indisponibilidad no inutiliza el resto de M2.
-- El entorno de desarrollo conserva demostración y control del simulador sin exponerlos desde la app real.
-- Compose permite ejecutar el recorrido real con las cinco piezas principales y los auxiliares; imágenes y dependencias quedan versionadas.
-- npm test, npm run lint, npm run build, npm run panel:build, pruebas de navegador con Keycloak real, npm run contrato:test y node scripts/spec-check.mjs terminan en verde antes de declarar implementada la spec.
-- Se completa el plan con trazabilidad, tareas de 20 a 30 minutos, guía de implementación y documentación de arranque; no se confunde la aprobación visual con el merge de la spec.
+- Cliente de ejemplo completa login real, consulta o crea su perfil propio y cierra sesión con M2 en jwks.
+- Un usuario de doble rol del realm recorre los dos espacios sin modificar identidad; operador puede bloquear y cliente no.
+- Chrome completa el POST de login y redirección con la CSP real y sin violaciones.
+- El entorno de prueba arranca con viajes propios de cliente1 y cliente2 y permite comprobar historial y calificación sin herramientas de evaluación.
+- bd-puente no arranca con panel o real salvo perfil explícito; su comando de desarrollo se documenta y prueba.
+- Tokens solo en servidor, aislamiento de sesiones y rutas de desarrollo, renovación y recuperación comprobados.
+- npm test, lint, build, panel:build, navegador de sesión con Keycloak real, contrato:test y spec-check pasan antes de marcar implementada.
+- Los issues de interfaz y entrega conservan el alcance retirado; no se presenta el rediseño como implementado.
 
 ## Decisiones
 
-- Confirmadas por DRAZEN: rediseño completo, dirección visual bordó y marfil de la maqueta, prioridad de cliente y operador y evaluación en un espacio aparte.
-- Confirmado por DRAZEN: M6 simulado por ahora; integración futura por configuración cuando esté la imagen del otro grupo.
-- Confirmado por DRAZEN: tokens guardados en servidor y cookie de sesión para el navegador. Se descarta la propuesta inicial de tokens en memoria del navegador para preservar RNF-19.3 y aprovechar el proxy existente; no se propone instalar keycloak-js para esta arquitectura.
-- Confirmado por DRAZEN: acceso con usuarios de ejemplo; no habilitar registro de nuevas credenciales en este trabajo. Completar el perfil en M2 sigue siendo parte del primer ingreso.
-- Confirmado por DRAZEN: una identidad CLIENTE y OPERADOR utiliza selector Mi cuenta / Operación conservando sus permisos reales.
-- Confirmado por DRAZEN: sesión vencida con formulario abierto permite avisar y copiar antes del reingreso; no se almacena el borrador ni se reenvía automáticamente. La redirección puede perderlo.
-- El modo de desarrollo firmado se conserva conforme al issue #83; su separación de despliegue y acceso se detalla en el plan y debe impedir que se active desde una sesión real.
+- Acuerdo de DRAZEN y confirmación de @sandobaitt en el PR #118: bordó y marfil; su implementación se lleva al issue de interfaz.
+- Evaluación en proceso y espacio separados reemplaza el criterio de una sola app con igual protagonismo de cliente y evaluador de la spec 071 y de panel/PRODUCT.md. La separación de rutas y modo es de sesión; el rediseño de ambos espacios es de interfaz.
+- #83 conserva sesión, compose real y entorno de navegador (antiguas T31 y T33). Interfaz y entrega se separan en dos issues, con textos en esta carpeta para su publicación.
+- Tokens en servidor con cookie opaca; usuarios de ejemplo sin registro; SERVICIO sin login.
+- Selector para doble rol y aviso/copia antes de reingreso confirmados por DRAZEN.
+- Incorporar precarga del simulador por variable y usuario de doble rol para que las pruebas de sesión sean reproducibles, conforme a la revisión.
+- Mantener la numeración 83.x de los requisitos para evitar colisiones, como pidió el integrador.
 
 ## Dudas abiertas
 
-Ninguna.
+Ninguna decisión funcional pendiente. La publicación de los dos issues y el adjunto compartido de la maqueta quedan como pasos de revisión, indicados en sus documentos.

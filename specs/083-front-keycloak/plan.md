@@ -1,40 +1,29 @@
-# Plan — Spec 083: frontend con sesión real y nueva interfaz
+# Plan — Spec 083: sesión real del frontend
 
-Estado: propuesta para revisión; no habilita implementación.
+## Alcance y arquitectura
 
-## Arquitectura y límites
+#83 implementa sesión en servidor, adaptación funcional de las vistas existentes, primer perfil, permisos, recuperación, compose real y entorno de pruebas con Keycloak. El rediseño integral y la entrega completa se trasladan a los issues propuestos en issue-interfaz.md e issue-entrega.md. La partición sigue el comentario de @sandobaitt en PR #118.
 
-Se conserva React, Vite, CSS Modules y el servidor Fastify del panel. En modo real, este servidor actúa como intermediario de la sesión: el navegador solo usa su propio origen, el servidor mantiene los tokens y reenvía a M2 el access token de cada sesión. La autenticación no requiere CORS en M2 ni cambios en src/, contrato/ o migraciones/. Se propone no agregar dependencias: crypto y fetch de Node, jose ya fijado en package.json, componentes y utilidades existentes. Si durante la implementación surge una necesidad distinta, se consulta antes de instalar.
+Se conserva React, Vite, CSS Modules y Fastify del panel. En modo real el servidor completa OIDC y reenvía a M2 solo el access token de cada sesión. El navegador permanece en el mismo origen; no se agrega CORS ni se modifica contrato/, src/ o migraciones/. Se usan crypto, fetch y jose ya instalado, sin nuevas dependencias.
 
-La separación es por proceso y configuración, no por una casilla que habilite el modo de desarrollo desde la app real. El proceso real no registra control de M6, comandos Docker, consulta directa de base ni demostraciones con roles inventados. Otro proceso, en un entorno de compose de desarrollo independiente, conserva las herramientas existentes y la firma HS256. No se usa un panel HS256 contra la misma instancia M2 configurada en jwks.
+Modo real y demostración son procesos configurados por separado, con instancias M2 separadas cuando se ejecutan a la vez: M2 jwks para la app real y M2 HS256 para desarrollo. La app real no registra rutas de suplantación, Docker, base, control de M6 o Demostración. Una cookie o un enlace no pueden cambiar el modo del proceso.
 
-La decisión de sesión se propone en docs/adr/083-front-sesion-servidor.md. El diseño aprobado es Ciudad editorial: bordó y marfil, orientación a tareas, contenido real y herramientas de evaluación separadas. Las fechas de viajes y puntajes de la maqueta no forman parte del contrato consumido por defecto.
+La decisión de sesión se registra en docs/adr/083-front-sesion-servidor.md. La separación de evaluación reemplaza el criterio de una sola app de la 071; su rediseño final pertenece a interfaz. Las vistas de negocio existentes se reutilizan: esta spec no las vuelve a diseñar.
 
-## Contrato y superficies
+## Contrato y rutas internas
 
-| Área | Operaciones existentes | Implementación prevista |
-|---|---|---|
-| Acceso y primer perfil | obtenerCliente, crearCliente | Fuente de sesión real, acceso y completar-perfil |
-| Inicio y perfil | obtenerCliente, actualizarCliente, obtenerEstadoCuenta, listarHistorialViajes | Inicio con cargas independientes y perfil existente adaptado |
-| Direcciones | listarDirecciones, crearDireccion, obtenerDireccion, actualizarDireccion, eliminarDireccion | Reutilizar lógica y rehacer presentación |
-| Preferencias | obtenerPreferencias, guardarPreferencias | Grupos con significado de selecciones vacías |
-| Viajes y calificar | listarHistorialViajes, calificarConductor | Listado paginado, confirmaciones y errores de dominio |
-| Calificaciones | listarCalificaciones, obtenerCalificacion | Listado y detalle con datos propios |
-| Estado y operador | obtenerEstadoCuenta, obtenerCliente, listarBloqueos, crearBloqueo, obtenerBloqueo, levantarBloqueo | Consulta por UUID y gestión de bloqueos |
-| Salud | verificarSalud | Salud pública, sin dependencia de sesión ni M6 |
+El proxy mantiene las 20 operaciones existentes de M2 y sus errores. El alta inicial usa obtenerCliente y crearCliente; los recorridos de permisos usan perfil, estado, bloqueos y calificaciones ya disponibles. La lógica de negocio de las specs 004 a 008 no cambia.
 
-Las siguientes rutas son internas del frontend; no se agregan al contrato público de M2:
-
-| Ruta propuesta | Comportamiento |
+| Ruta del frontend | Resultado |
 |---|---|
-| POST /auth/iniciar | Exige origen propio, crea transacción y devuelve 303 al acceso de Keycloak |
-| GET /auth/retorno | Comprueba correlación, intercambia código, valida tokens y redirige a una URL local limpia |
-| GET /auth/sesion | 200 con identidad mínima o 401; nunca devuelve tokens; Cache-Control: no-store |
-| POST /auth/cerrar | Invalida sesión, limpia cookie y prepara cierre remoto; exige origen propio |
-| GET /auth/salida | Comprueba state de cierre y devuelve al acceso sin credenciales en URL |
-| /api/v1/clientes y descendientes | Proxy con cookie en modo real o identidad simulada solo en desarrollo |
+| POST /auth/iniciar | Origen propio, transacción vinculada al navegador y 303 a Keycloak |
+| GET /auth/retorno | Validación OIDC, cookie nueva y redirección a URL local limpia |
+| GET /auth/sesion | Identidad mínima o 401, sin tokens y con Cache-Control: no-store |
+| POST /auth/cerrar | Invalida primero la sesión local y prepara el cierre remoto |
+| GET /auth/salida | Verifica state de cierre y vuelve al acceso |
+| /api/v1/clientes y descendientes | Proxy autenticado; sin identidad elegida desde el navegador |
 
-Los errores de autenticación del frontend usan application/problem+json, X-Request-Id y types internos: /panel/errores/sesion-requerida (401), /panel/errores/retorno-invalido (400), /panel/errores/identidad-no-admitida (403), /panel/errores/identidad-no-disponible (503 con Retry-After). Los errores de M2 mantienen su cuerpo y código. Una pantalla de app explica el error sin imprimir el código de autorización ni el error remoto crudo.
+Estas rutas pertenecen al servidor del frontend y no alteran el OpenAPI público de M2. Los errores del frontend usan application/problem+json y X-Request-Id: /panel/errores/sesion-requerida (401), /panel/errores/retorno-invalido (400), /panel/errores/identidad-no-admitida (403), /panel/errores/identidad-no-disponible (503 con Retry-After). Los errores de M2 pasan sin reemplazarlos por éxitos.
 
 ## Datos y sesión
 
@@ -89,108 +78,135 @@ El proxy real ignora y rechaza los encabezados de suplantación, no acepta Autho
 
 POST propio invalida primero la sesión local y su cookie. Prepara una transacción de salida y redirige al endpoint público de cierre con client_id, post_logout_redirect_uri registrada y state. No se envía id_token_hint por URL ni se entrega un token al navegador. Keycloak puede pedir confirmación; el recorrido de navegador debe incluirla. El retorno valida state y limpia la transacción. Si el cierre remoto no se completa, se mantiene cerrada la sesión local y se explica que el cierre en Keycloak no está confirmado. No se promete detectar desde el servidor todos los cierres iniciados en otras aplicaciones; se detectan al renovar o vencer.
 
-### M6 y compose
+### CSP y redirección de login
 
-Crear ejemplo-front-keycloak.env y un override docker-compose.front.yml para el arranque real. Reutilizar las imágenes y servicios existentes; el frontend usa la imagen m2-panel:0.1.0 con nuevo modo oidc y se mantiene solo en loopback. El override elimina las variables de base/control que el frontend real no necesita; no monta socket Docker ni publica bd-puente. M2 sigue apuntando al M6 simulado mediante M2_URL_M6. No modificar su lógica de autenticación de salida.
+La política actual de panel/servidor/estaticos.ts permite form-action 'self'. Convertir registrarEncabezadosDeSeguridad en una política construida desde el modo y la configuración validada.
 
-Comando previsto a verificar: docker compose -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env up -d --build --wait. Desarrollo conserva su comando actual en un proyecto independiente; se documentan puertos y volúmenes separados si se quieren usar ambos al mismo tiempo. La futura imagen M6 no se añade ni descarga en este trabajo.
+- En desarrollo conservar la política actual.
+- En modo oidc, form-action permite 'self' y exactamente new URL(PANEL_OIDC_EMISOR).origin, el origen público de Keycloak, nunca la URL interna de Docker.
+- No usar comodines, unsafe-inline ni relajar default-src, base-uri, object-src o frame-ancestors. Mantener recursos y llamadas del navegador en self; el código OIDC corre en servidor.
+- Una prueba HTTP comprueba los encabezados en ambos modos, que un origen no configurado no se añade y que la configuración rechaza emisores con credenciales.
+- La prueba Chrome pulsa el botón real de acceso, envía POST /auth/iniciar, atraviesa su 303 y el formulario de Keycloak y vuelve a la app. Captura securitypolicyviolation y errores de consola: debe completar sin violaciones CSP. No se sustituye el POST por goto directo a Keycloak porque ocultaría el defecto señalado por revisión.
 
-## Lógica de experiencia y estructura de archivos
+### Precarga del M6 simulado
 
-| Responsabilidad | Destinos previstos |
+Agregar M6_CLIENTES_PRECARGA a ConfigM6, como lista separada por comas de UUID; ausencia o cadena vacía significa no precargar. Validar toda la lista antes de abrir puertos, eliminar duplicados y no registrar valores de configuración en errores.
+
+En panel/m6-simulado/arranque.ts, tras crearEstadoM6 y antes de api.abrir, ejecutar estado.cargarEjemplo por cada UUID. Se reutilizan idsDeEjemplo y derivarUuid de ids.ts: cargar dos veces conserva exactamente los mismos viajes, un COMPLETED y un IN_PROGRESS por cliente, más el escenario ajeno existente. No se crean perfiles ni calificaciones de M2 ni se necesita llamar al canal de control.
+
+El ejemplo real activa la precarga para los IDs del realm:
+- cliente1: c1e00000-0000-4000-8000-000000000001.
+- cliente2: c1e00000-0000-4000-8000-000000000002.
+- cliente-operador1: d0b00000-0000-4000-8000-000000000001.
+
+La aplicación solo recibe viajes por M2 y conserva la etiqueta M6 simulado. La variable pertenece al simulador: no apunta a una imagen M6 real ni cambia el contrato. Pruebas unitarias y HTTP: lista vacía, UUID inválido, mayúsculas, duplicados, dos clientes sin viajes cruzados y arranque con precarga antes del primer GET. En navegador se entra como cliente1 y cliente2, se crea su perfil si falta y se comprueba que hay un viaje calificable sin usar /control.
+
+### Usuario con doble rol
+
+Agregar al realm de desarrollo cliente-operador1, con UUID fijo d0b00000-0000-4000-8000-000000000001 y realmRoles CLIENTE y OPERADOR. Cuenta habilitada y credenciales solo de ejemplo, siguiendo el formato de los usuarios actuales. No modificar cliente1, cliente2 ni operador1 para que las pruebas de un solo rol sigan siendo válidas.
+
+Mantener el cliente m2-front público, PKCE S256, audiencias y scopes existentes. Los tokens del nuevo usuario deben contener ambos roles y únicamente los scopes solicitados. Actualizar pruebas de realm y ayudas tipadas sin imprimir su contraseña o token. Probar con login real, sin inyectar roles en sessionStorage. Tras crear el perfil propio, el selector cambia entre Mi cuenta y Operación sin cambiar sub, cookie o credencial; un usuario operador-only entra a Operación sin crear perfil.
+
+### Compose y aislamiento de bd-puente
+
+El cambio de infraestructura mínimo es parte de sesión, incluidas las antiguas T31 y T33. Reutilizar imagen m2-panel:0.1.0 y versiones base existentes; crear ejemplo-front-keycloak.env y docker-compose.front.yml para activar modo oidc, M2 jwks, Keycloak y M6 precargado.
+
+Mover bd-puente del perfil panel al perfil exclusivo panel-bd en docker-compose.yml. El override real activa los perfiles front y keycloak para panel y m6; no activa panel-bd, no publica el puerto de control M6, no expone la base y no entrega al frontend URL_BD, clave HS256 ni permisos Docker.
+
+Arranque real previsto a verificar:
+docker compose -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env up -d --build --wait
+El ejemplo define COMPOSE_PROFILES=front,keycloak. Las cinco piezas principales se suman a Redis y M6 simulado.
+
+El comando de desarrollo en contenedor sigue usando panel y llega a bd por la red interna, sin necesitar puente. El panel como proceso en la máquina necesita explícitamente panel,panel-bd para llegar por 127.0.0.1:5433. Actualizar README, docs/probar-m2.md y ayudas de prueba que levantaban solo m6 bd-puente. Esto reemplaza el disparador de RNF-04.8 de la 072, declarado en Decisiones de la 083, sin editar otra spec desde esta rama.
+
+Verificar la configuración renderizada y contenedores efectivos: real y panel sin panel-bd no seleccionan bd-puente; bd no tiene ports; ningún 5433 está publicado; la ejecución opt-in panel,panel-bd publica solo loopback. Una prueba que mire solo el nombre del perfil no alcanza. No montar socket Docker en el frontend real.
+
+## Cliente y archivos previstos
+
+| Responsabilidad | Archivos previstos |
 |---|---|
-| Cliente OIDC y validación | panel/servidor/auth/oidc.ts, validacion.ts |
-| Almacenes y renovación | panel/servidor/auth/sesiones.ts, transacciones.ts, renovacion.ts |
-| Cookies y rutas de sesión | panel/servidor/auth/cookies.ts, rutas.ts |
-| Selección por modo | panel/servidor/app.ts, config.ts, proxy.ts, seguridad.ts, pedidos.ts |
-| Fuente de sesión real y estados | panel/cliente/src/fuentes/sesion-real.ts, fuente-de-sesion.ts |
-| API de sesión y cliente M2 | panel/cliente/src/api/sesion.ts, m2.ts |
-| Navegación por espacios | app.tsx, rutas.ts, logica/menu.ts, usar-ruta.ts |
-| Acceso, primer perfil e inicio | pantallas/ingresar.tsx, completar-perfil.tsx, inicio.tsx |
-| Formularios sin guardar | hooks/usar-cambios-pendientes.ts y diálogo de reingreso |
-| Nuevo sistema visual | estilos/variables.css, base.css, componentes y CSS Modules existentes |
-| Pantallas de cuenta y evaluación | pantallas existentes y marco separado para Evaluación en desarrollo |
+| OIDC, JWT, cookies y sesión | panel/servidor/auth/oidc.ts, validacion.ts, cookies.ts, sesiones.ts, transacciones.ts, renovacion.ts, rutas.ts |
+| Configuración, CSP y selección por modo | panel/servidor/config.ts, app.ts, estaticos.ts, seguridad.ts |
+| Proxy y diagnóstico por sesión | panel/servidor/proxy.ts, pedidos.ts |
+| Sesión real y API | panel/cliente/src/fuentes/sesion-real.ts, fuente-de-sesion.ts, api/sesion.ts, api/m2.ts |
+| Acceso, alta y selector mínimo | pantallas/ingresar.tsx, completar-perfil.tsx, app.tsx, rutas.ts, logica/menu.ts |
+| Sesión expirada | aviso de reingreso y hook de formulario, conservando componentes existentes |
+| Fixtures para probar | keycloak/ds-2026-realm-realm.json, panel/m6-simulado/arranque.ts y ayudas de pruebas |
+| Entorno real | docker-compose.front.yml, ejemplo-front-keycloak.env y perfil panel-bd en compose base |
 
-La interfaz Sesion deja de depender de un único rol elegido: expone roles efectivos, scopes y espacio activo. En desarrollo se adapta la fuente anterior sin cambiar su propósito de pruebas. Cambiar espacio no cambia cookie, sub ni token. Mi cuenta es el destino inicial del doble rol; Operación sigue accesible aunque ese usuario aún no haya creado su propio perfil.
+Sesion expone roles y scopes efectivos y un espacio activo. Mi cuenta usa sub; Operación admite UUID de cliente, sin mutar la identidad. No bloquear Operación por un perfil propio inexistente. No ofrecer SERVICIO como persona; CONDUCTOR sin otro rol obtiene un rechazo claro.
 
-Pseudocódigo del acceso de cliente: si no hay sesión, mostrar acceso; si falta permiso de lectura, mostrar rechazo; pedir perfil propio; con 200 entrar; con 404 mostrar completar perfil; con otro error ofrecer recuperación. Crear conserva la clave mientras el cuerpo es el mismo; si se corrige el cuerpo después de un envío incierto, resolver primero si el perfil se creó antes de generar una clave nueva. Ante 409 consultar propio perfil.
+Primer ingreso: pedir perfil propio; 200 entra, 404 muestra completar-perfil y cualquier otro error conserva su causa. Crear perfil conserva la clave del mismo envío; ante 409 consulta el perfil existente. Si cambia el cuerpo después de una respuesta incierta, primero se comprueba si se creó, para no reutilizar indebidamente la clave con otro cuerpo.
 
-Inicio pide perfil, cuenta y primera página de viajes por separado. La sección de viajes falla independientemente. No añade puntajes ni fechas de viaje si M2 no los entrega. Los componentes compartidos muestran tipo y detalle de error detrás de Detalles; no muestran tokens ni un curl con credenciales reales. La cuenta bloqueada permite seguir usando las operaciones de M2 que el contrato admite.
-
-El aviso de sesión expirada se presenta sobre la pantalla actual, conserva el formulario montado y deshabilita enviar. Incluye Copiar datos y Volver a ingresar. Si Clipboard no funciona, deja texto seleccionable para copia manual. No limpia el contenido hasta que la persona abandona o cierra la sesión voluntariamente. Una navegación interna con cambios pide confirmación; beforeunload usa el aviso nativo del navegador, sin prometer un texto personalizado.
-
-## Diseño y accesibilidad
-
-- Paleta inicial de referencia: bordó #602639, marfil #F6F3EE, tinta #24232A, superficies blancas y acento cálido #E8C3A2. No son pares de contraste aprobados por sí mismos: cada combinación se verifica antes de cerrar tokens.
-- Escritorio: menú lateral, nombre y espacio activo en encabezado, contenido con ancho de lectura; estado de cuenta y lista de viajes, sin filas de métricas inventadas. Móvil: menú compacto con foco contenido y devolución del foco al cerrarlo; acciones de 44 píxeles y formularios en una columna.
-- Tipografía del sistema y recursos locales; CSS Modules sin estilos inline, sin recursos remotos ni fuentes nuevas. Tema oscuro con pares medidos; preferencia de tema puede persistirse porque no contiene datos personales.
-- Identificadores completos copiables en detalles y truncados solo visualmente en filas. Motivos y textos máximos se envuelven; no se recortan datos de negocio en un tooltip como única forma de leerlos.
-- Evaluación conserva resultados y pruebas existentes, pero usa navegación propia y la etiqueta de entorno de desarrollo. La franja técnica deja de ocupar siempre el pie de la app cotidiana.
-- Actualizar PRODUCT.md, DESIGN.md, design.json y el brief de superficie al implementar: merge del sistema aprobado, conservando trazabilidad de la identidad anterior. Revisar maqueta contra campos reales y registrar sus diferencias, sin tratar imagen generada como resultado funcional.
+Al detectar sesión vencida se mantiene el formulario React montado y enviar deshabilitado; se avisa y ofrece Copiar datos y Volver a ingresar. Si Clipboard falla, dejar texto seleccionable para copia manual. No persistir borradores ni reenviar una escritura tras login. No hay redirección automática que borre lo escrito antes de que la persona confirme.
 
 ## Decisiones y alternativas
 
-1. Sesión en servidor frente a tokens en navegador: decisión confirmada por el usuario; conserva RNF-19.3, proxy y origen único.
-2. Memoria acotada frente a tabla nueva o Redis compartido: entorno local de un proceso sin cambio de esquema; reinicio exige reingreso, replicación queda fuera de esta spec.
-3. Modos por proceso frente a un selector de suplantación en la app real: conserva la demo sin habilitar controles privilegiados por rutas ocultas.
-4. Sin keycloak-js ni librería nueva: no se ejecuta el protocolo en el navegador; jose existente valida JWT. Alternativa de una biblioteca OIDC de servidor requiere autorización si las comprobaciones previstas no pueden implementarse de forma acotada.
-5. Logout con client_id y confirmación frente a id_token_hint en URL: cumple la restricción de no entregar tokens al navegador; se prueba el retorno real.
-6. Sin autoenvío tras autenticación: evita ejecutar una intención anterior a un cambio de sesión o duplicar una operación incierta.
-7. Mantener una spec 083 por trazabilidad del issue actual: se propone al grupo dividir ejecución en issues de sesión, experiencia visual y entrega si el tamaño dificulta revisar; no se crean issues ni se inventan números en este trabajo.
+- Tokens en servidor frente a navegador: elección confirmada; mantiene RNF-19.3 y proxy sin CORS.
+- Memoria acotada frente a base o Redis nuevo: no se cambia esquema; reinicio requiere reingreso. Replicación queda fuera.
+- Modos por proceso frente a un selector de suplantación: la app real no registra las rutas peligrosas.
+- Sin dependencias nuevas; si hace falta biblioteca OIDC adicional se solicita autorización antes de incorporarla.
+- Logout con client_id y confirmación frente a token en URL: no se entrega id_token_hint al navegador.
+- Evaluación separada reemplaza la app única de la 071; la separación funcional se hace aquí, su rediseño en el issue de interfaz.
+- La revisión dividió #83: sesión retiene compose y entorno de navegador, interfaz retiene diseño de pantallas y entrega retiene cierre visual integral. Los borradores preservan el alcance retirado y el origen de las tareas.
 
 ## Pruebas y validación
 
-Pruebas primero por tarea, guía y commit solo cuando la rama y aprobación lo permitan. Reutilizar Vitest y los servidores JWKS de pruebas. Unitarias: state/nonce/PKCE, cookies, expiración, sesiones acotadas, JWT válidos e inválidos, refresh concurrente y logout durante refresh. HTTP: retorno inválido sin sesión, rechazo de origen, rutas no registradas por modo, suplantación por encabezados, separación de diagnósticos y ausencia de secretos incluso en errores.
+Por tarea: test en rojo, cambio acotado, test en verde, guía y commit cuando el entorno lo permita. Mantener las puertas existentes; no desactivar checks por ausencia de dependencias.
 
-Integración con M2 y PostgreSQL por Testcontainers: primer perfil concurrente, errores sin perder cuerpo, idempotencia, permisos reales y recuperación de dependencia. Para navegar con Keycloak real, agregar proyecto de Vitest front-keycloak y comando propuesto npm run front:keycloak que primero compile el panel. Entorno aislado con puertos permitidos por redirectUris o realm efímero derivado que cambie solo retornos para esos puertos; no desactivar PKCE, audience, roles o scopes para facilitar la prueba.
+Unitarias y HTTP: vínculo de state al navegador, PKCE, nonce, claims, cookies, expiración, límites, refresh concurrente, logout durante refresh, errores sanitizados, proxy y aislamiento de registros. Añadir pruebas de la CSP por modo, realm con doble rol, precarga y composición sin puente.
 
-Recorrido Chrome: login de persona a través del formulario real de Keycloak, primer perfil, edición, dirección, preferencias, historial simulado, calificación, doble rol, operador y logout con confirmación. Pruebas de caída y renovación usando tiempos y servidor controlados; probar aviso y copia con formulario montado. Revisar 360, 768, 1280 y 1440 píxeles, ambos temas, foco, axe, textos máximos y estados vacío/error. Revisar almacenamiento y tráfico al origen del frontend para comprobar que no hay tokens; excluir de esta comprobación el formulario y cookies propias del proveedor Keycloak.
+Integración M2 con PostgreSQL por Testcontainers: perfil propio, alta simultánea y permisos por identidad. No precargar la base M2 mediante SQL: perfiles se crean a través de su API.
 
-CI mantiene sus checks existentes, agrega el recorrido real al job de Keycloak o uno dedicado y no permite omitirlo silenciosamente si falta Chrome. Comandos de cierre: npm test, npm run lint, npm run build, npm run panel:build, npm run panel:navegador, npm run front:keycloak, npm run keycloak:test, contrato:test con servicio levantado y node scripts/spec-check.mjs. La lista es una puerta futura, no una afirmación de ejecución en este borrador.
+Agregar proyecto Vitest front-keycloak y comando npm run front:keycloak que compila el panel y prepara un compose aislado con Keycloak real y M6 precargado, con puertos y volúmenes propios. Si se ajustan retornos en un realm efímero para los puertos de prueba, mantener PKCE, audiencias, roles y scopes; no volverlos permisivos.
+
+Chrome de sesión prueba:
+1. POST real de login y 303 bajo CSP; retorno limpio y sesión sin tokens en navegador.
+2. cliente1 y cliente2 completan su perfil y encuentran sus viajes precargados; uno califica sin canal de control.
+3. cliente-operador1 entra y alterna sus dos espacios; operador-only administra bloqueo; cliente-only no puede.
+4. Refresh, sesión inválida, aviso/copia, rechazo y logout real con confirmación de Keycloak.
+5. Las vistas mínimas nuevas funcionan a 360 y 1280 píxeles, teclado y foco, sin overflow; el recorrido visual completo 360/768/1280/1440 y ambos temas pasa al issue de entrega.
+
+La antigua T34, que recorría todas las funciones rediseñadas, pertenece a entrega. La prueba de sesión anterior es un subconjunto suficiente y ejecutable para aprobar #83 antes del rediseño. CI incorpora el recorrido de sesión en el job de Keycloak o un job dedicado, sin omitirlo silenciosamente si falta Chrome.
+
+Puerta de implementación: npm test, npm run lint, npm run build, npm run panel:build, npm run front:keycloak, npm run keycloak:test, contrato:test con servicio y node scripts/spec-check.mjs. Las pruebas son objetivos de la implementación, no resultados ya obtenidos por editar esta spec.
 
 ## Trazabilidad
 
 | Requisito | Parte del plan | Tareas |
 |---|---|---|
-| RF-2.1.83.1 | Inicio OIDC, acceso | T4, T6, T14 |
+| RF-2.1.83.1 | Login real | T4, T6, T14 |
 | RF-2.1.83.2 | Primer perfil | T15 |
 | RF-2.1.83.3 | Alta idempotente | T16 |
-| RF-2.1.83.4 | Inicio independiente | T21 |
-| RF-2.1.83.5 | Perfil y cambios | T20, T22 |
-| RF-2.2.83.1 | Direcciones | T23 |
-| RF-2.3.83.1 | Preferencias | T24 |
-| RF-2.4.83.1 | Viajes con campos reales | T25 |
-| RF-2.4.83.2 | Error M6 por sección | T21, T25 |
-| RF-2.5.83.1 | Envío de calificación | T26 |
-| RF-2.5.83.2 | Errores de calificar | T26 |
-| RF-2.5.83.3 | Listado y detalle | T27 |
-| RF-2.6.83.1 | Estado | T28 |
-| RF-2.6.83.2 | Operador | T29 |
-| RNF-02.83.1 | Límites y proxy | T10, T31 |
-| RNF-02.83.2 | Simulador y configuración | T25, T31 |
-| RNF-03.83.1 | Error y diagnóstico | T10, T11, T19 |
-| RNF-04.83.1 | Imagen y compose | T31 |
-| RNF-06.83.1 | Configuración por modo | T1 |
-| RNF-07.83.1 | Matriz de pruebas | T32, T33, T34, T35, T39 |
+| RNF-02.83.1 | Límites y proxy | T10, T21 |
+| RNF-02.83.2 | M6 configurable | T18, T21 |
+| RNF-02.83.3 | Precarga del simulador | T18, T24 |
+| RNF-03.83.1 | Proxy y errores | T10, T11 |
+| RNF-04.83.1 | Compose real | T21 |
+| RNF-04.83.2 | Perfil exclusivo del puente | T20, T21 |
+| RNF-06.83.1 | Configuración | T1, T18 |
+| RNF-07.83.1 | Matriz de pruebas | T22, T23, T24, T25, T27 |
 | RNF-12.83.1 | OIDC y JWT | T4, T5, T6 |
-| RNF-12.83.2 | Sesiones y cookies | T2, T3 |
-| RNF-12.83.3 | Proxy de sesión | T10 |
-| RNF-12.83.4 | Renovación | T7, T8 |
-| RNF-12.83.5 | Cierre local/remoto | T9 |
-| RNF-12.83.6 | Navegación por permisos | T12, T13 |
-| RNF-12.83.6.1 | Selector de espacio | T13 |
-| RNF-12.83.4.1 | Copia antes de reingreso | T20 |
-| RNF-12.83.7 | Aislamiento de evaluación | T11, T30, T31 |
-| RNF-13.83.1 | Tiempo de Keycloak | T4, T7, T8 |
-| RNF-14.83.1 | Correlación por sesión | T11 |
-| RNF-15.83.1 | Sistema visual y navegación | T17, T18, T30 |
-| RNF-15.83.2 | Accesibilidad | T17, T18, T36 |
-| RNF-15.83.3 | Estados y formularios | T19, T20, T34, T35, T36 |
-| RNF-19.83.1 | Sesión, logs y diagnóstico | T3, T6, T9, T11, T32 |
-| RNF-20.83.1 | Guía y documentación | T37, T38, T39 |
+| RNF-12.83.2 | Almacenes y cookies | T2, T3 |
+| RNF-12.83.3 | Proxy real | T10 |
+| RNF-12.83.4 | Refresh | T7, T8 |
+| RNF-12.83.4.1 | Aviso y copia | T19, T25 |
+| RNF-12.83.5 | Logout | T9 |
+| RNF-12.83.6 | Identidad y navegación | T12, T13 |
+| RNF-12.83.6.1 | Selector de espacio | T13, T17, T25 |
+| RNF-12.83.7 | Evaluación separada | T11, T21 |
+| RNF-12.83.8 | Usuario doble rol | T17, T25 |
+| RNF-12.83.9 | CSP por modo | T4, T24 |
+| RNF-13.83.1 | Plazos Keycloak | T4, T7, T8 |
+| RNF-14.83.1 | Registros por sesión | T11 |
+| RNF-15.83.2 | Accesibilidad mínima | T14, T19, T25 |
+| RNF-15.83.3 | Estados del acceso | T14, T15, T19, T25 |
+| RNF-19.83.1 | Ausencia de secretos | T3, T6, T9, T11, T22 |
+| RNF-20.83.1 | Documentación de sesión | T26, T27 |
 
-## Referencias verificadas
+## Referencias
 
-- OpenID Connect Core 1.0, validación del ID token: https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
-- Keycloak, endpoints y cierre OIDC: https://www.keycloak.org/docs/latest/server_admin/index.html
-- Contrato local de M2, spec 080 y realm local: fuentes del formato de identidad y de los scopes de esta app. Las páginas externas sustentan el protocolo, no sustituyen el contrato del grupo ni la prueba contra la versión fija de Keycloak.
+- Revisión: https://github.com/FRRe-DS/2026-17-TPI/pull/118#issuecomment-7115292956
+- OpenID Connect Core: https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
+- Keycloak: https://www.keycloak.org/docs/latest/server_admin/index.html
+- Maqueta y pendientes de adjunto: maqueta.md.
