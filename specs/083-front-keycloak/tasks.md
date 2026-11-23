@@ -1,6 +1,6 @@
 # Tareas — Spec 083: sesión real del frontend
 
-T1 y T2 están implementadas y validadas (ver guia.md). T3 a T26 siguen pendientes. Se ejecutan después del merge de la spec, una por vez: prueba en rojo, cambio acotado, prueba en verde, entrada de guía y commit 083/Tn. Cada paso se estima en 20 a 30 minutos y se divide antes de implementar si excede ese tiempo.
+T1, T2 y T3 están implementadas y validadas (ver guia.md). T4 a T26 siguen pendientes. Se ejecutan después del merge de la spec, una por vez: prueba en rojo, cambio acotado, prueba en verde, entrada de guía y commit 083/Tn. Cada paso se estima en 20 a 30 minutos y se divide antes de implementar si excede ese tiempo.
 
 El PR #118 se dividió en sesión, interfaz y entrega por pedido del integrador. Esta lista conserva solo sesión y la infraestructura necesaria para probarla. Las antiguas T31 (compose) y T33 (entorno Keycloak) permanecen aquí como T20 y T22. El recorrido completo antiguo T34 se traslada a entrega; aquí se agrega un recorrido acotado de sesión que no depende del rediseño.
 
@@ -12,7 +12,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: pruebas de cargarConfigPanel aceptan oidc sin clave HS256, rechazan retornos ajenos y conservan el comportamiento de desarrollo, sin imprimir valores sensibles.
 - [x] **T2. Crear almacenes acotados de sesiones y transacciones en memoria.** RNF-12.83.2
   - Hecho cuando: reloj de prueba verifica vencimiento, consumo único, máximos, limpieza y cierre de temporizadores; un identificador desconocido no obtiene sesión.
-- [ ] **T3. Vincular cookies y solicitudes al origen del frontend.** RNF-12.83.2, RNF-19.83.1
+- [x] **T3. Vincular cookies y solicitudes al origen del frontend.** RNF-12.83.2, RNF-19.83.1
   - Hecho cuando: pruebas HTTP comprueban HttpOnly, SameSite, Path, Secure según origen, limpieza de cookie y rechazo de POST de origen ajeno o sesión fijada por el cliente.
 - [ ] **T4. Iniciar autorización y permitir su destino en la CSP real.** RF-2.1.83.1, RNF-12.83.1, RNF-12.83.9, RNF-13.83.1
   - Hecho cuando: POST propio genera 303 con parámetros correctos, verifier solo en servidor y retorno local permitido; la CSP oidc permite solo self y el origen público de Keycloak, desarrollo conserva self y las pruebas rechazan comodines y no usan contraseñas ni tokens en navegador.

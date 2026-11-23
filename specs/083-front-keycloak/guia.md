@@ -2,7 +2,7 @@
 
 ## Estado de trabajo
 
-T1 y T2 implementadas y validadas en `impl/083-front-keycloak`. T3 a T26 siguen pendientes y la spec conserva el estado aprobada. El inicio de sesión real todavía no está implementado.
+T1, T2 y T3 implementadas y validadas en `impl/083-front-keycloak`. T4 a T26 siguen pendientes y la spec conserva el estado aprobada. El inicio de sesión real todavía no está implementado.
 
 ## Tareas
 
@@ -22,9 +22,19 @@ T1 y T2 implementadas y validadas en `impl/083-front-keycloak`. T3 a T26 siguen 
 - `auth/transacciones.ts:crearAlmacenTransacciones` conserva transacciones de ingreso y salida durante cinco minutos. Genera state y vínculo independientes; guarda el hash del vínculo y lo compara en tiempo constante antes de consumir. Un navegador con otro vínculo no obtiene los datos ni elimina la transacción del propietario. El consumo es síncrono y único; si vence durante la comprobación, tampoco se devuelve.
 - Por qué así: RNF-12.83.2 y el plan de datos de sesión. No se crean tablas ni se reutiliza Redis. La capacidad agotada devuelve un error tipado de mensaje fijo, sin expulsar entradas activas ni incluir datos personales o credenciales.
 - Limpieza: al acceder se eliminan registros vencidos y se revisan también cada minuto. El temporizador no mantiene vivo el proceso; `cerrar` lo cancela, borra datos y rechaza nuevas admisiones. `cantidad` informa los registros retenidos sin disparar limpieza, para comprobar también la limpieza sin solicitudes.
-- Cómo se conecta: por ahora son módulos internos del servidor, todavía sin rutas ni cookies. T3 construirá las cookies y las tareas de sesión conectarán los almacenes y su cierre al ciclo de vida del servidor. Los errores internos deberán traducirse al problema HTTP correspondiente al conectar las rutas.
+- Cómo se conecta: son módulos internos del servidor. Las cookies de T3 utilizan estos almacenes; las tareas de sesión conectarán las rutas y su cierre al ciclo de vida del servidor. Los errores internos deberán traducirse al problema HTTP correspondiente al conectar las rutas.
 - Tests: `pruebas/panel/unitarias/almacenes-auth.test.ts`, 24 casos con reloj controlado: identificadores y desconocidos, aislamiento, límites exactos, sondeo sin actividad, tope absoluto, vencimiento de Keycloak, logout, copias defensivas, consumo único, capacidad y recuperación de espacio, limpieza periódica y cierre idempotente de temporizadores.
 - Límites: memoria de un solo proceso; reiniciar requiere reingreso y no permite compartir sesión entre réplicas. Son límites aceptados en el plan; los datos se borran al cerrar y no se persisten. Renovación concurrente, diagnóstico por sesión y acceso real corresponden a tareas posteriores.
+
+### T3 — Cookies y solicitudes vinculadas al origen público · commit `083/T3`
+
+- Qué cambió: `panel/servidor/auth/cookies.ts:crearCookiesAuth` emite y lee las cookies `m2_sesion` y `m2_transaccion`, ambas HttpOnly, SameSite=Lax, Path=/ y sin Domain. Usa Secure según el origen público validado, sin confiar en encabezados reenviados. Las vidas máximas de navegador son ocho horas y cinco minutos; el almacén del servidor puede vencer antes la sesión.
+- Identidad: `emitirSesion` genera siempre una entrada nueva en el almacén y no acepta un identificador elegido por el navegador. `leerSesion` solo reconoce una cookie válida cuyo identificador exista en el almacén; no usa query, cuerpo, Authorization ni encabezados de desarrollo. Las cookies duplicadas, codificadas o mal formadas se rechazan. Ninguna cookie contiene tokens, roles ni datos personales.
+- Vínculo: la cookie de transacción contiene únicamente el vínculo aleatorio generado por T2; el retorno necesita también el state y consume la transacción del servidor una sola vez. Sin cookie, con otra cookie o con cookies repetidas no se obtienen los datos ni se consume la transacción del propietario.
+- Borrado: se emite una cookie vacía con Max-Age=0, fecha de expiración pasada y los mismos atributos. Fastify acumula los Set-Cookie individuales, por lo que se pueden emitir o borrar ambas cookies juntas. Borrar la cookie no invalida por sí solo el registro: T9 invalidará primero la sesión del servidor.
+- Origen: `panel/servidor/seguridad.ts:registrarSeguridad` conserva el modo de desarrollo por puerto y añade un modo por origen público. Exige Host propio en todas las rutas y Origin exacto en métodos que cambian datos, antes de leer el cuerpo. No reemplaza esos encabezados con Referer o X-Forwarded-Host/Proto, no habilita CORS y permite los retornos GET sin Origin.
+- Tests: `pruebas/panel/http/cookies-auth.test.ts` contiene 40 pruebas HTTP sobre Fastify y los almacenes reales en memoria: atributos HTTP/HTTPS/IPv6, borrado, cookies simultáneas, identificadores nuevos y desconocidos, duplicados, aislamiento de transacción y rechazo de solicitudes ajenas incluso en rutas inexistentes. Sus rutas son ayudas de prueba, sin validación OIDC simulada en producción.
+- Cómo se conecta: son herramientas internas preparadas para las rutas de T4 y T6. El arranque real sigue cerrado hasta conectar el flujo OIDC. La validación de identidad y la invalidación de la sesión previa al completar login se hacen en T5/T6; no se presentan como implementadas por estas pruebas de transporte.
 
 ## Validación de T1 del 2026-11-23
 
@@ -42,6 +52,13 @@ T1 y T2 implementadas y validadas en `impl/083-front-keycloak`. T3 a T26 siguen 
 - `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan.
 - No se modificaron dependencias, opciones de Vitest, contrato, servicio M2 ni migraciones. No se afirma que el login ya funcione ni se amplía el alcance a las rutas de T3 a T11.
 
+## Validación de T3 del 2026-11-23
+
+- Rojo inicial: faltaba el módulo de cookies. Las pruebas posteriores detectaron además la duplicación de Set-Cookie al acumular manualmente los valores que Fastify ya agrega; se corrigió la emisión sin relajar las expectativas.
+- `npm test`: 153 archivos y 5786 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL en Docker.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Las pruebas existentes de seguridad de desarrollo conservan sus resultados.
+- No se agregaron dependencias ni se modificaron contrato, servicio M2 o migraciones. Los helpers no registran credenciales ni incluyen valores inválidos en los errores.
+
 ## Siguiente tarea
 
-T3: vincular cookies y solicitudes al origen del frontend. Empezar por pruebas HTTP de HttpOnly, SameSite, Path, Secure según origen, limpieza de cookie y rechazo de POST ajeno o de una sesión fijada desde el cliente.
+T4: iniciar autorización OIDC por POST propio, crear state/nonce/verifier y redirigir con 303 a Keycloak. Preparar la CSP por modo con form-action limitado a self y al origen público de Keycloak; no abrir aún rutas privilegiadas de desarrollo en modo real.
