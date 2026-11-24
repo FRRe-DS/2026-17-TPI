@@ -13,6 +13,8 @@ export default defineConfig({
   test: {
     sequence: { sequencer: OrdenDeArchivos },
     projects: [
+      { test: { name: 'front-keycloak', include: ['pruebas/front-keycloak/**/*.test.ts'], globalSetup: ['pruebas/front-keycloak/global.ts'],
+        fileParallelism: false, testTimeout: 120_000, hookTimeout: 600_000 } },
       {
         test: {
           name: 'unitarias',

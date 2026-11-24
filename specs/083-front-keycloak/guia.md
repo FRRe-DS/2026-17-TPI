@@ -161,3 +161,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T21 — Comprobaciones negativas · commit 083/T21
 - Pruebas de cookies, retorno, renovación y proxy cubren fijación, state/vínculo ajenos, logout concurrente, retorno externo, suplantación y diagnóstico cruzado. Se agregan comprobaciones de logs sin code/state/cookie/verifier/tokens y JWKS compartido con reintento GET, sin reintentar POST. Se actualiza el cierre temporal de T4 a los nuevos 401/303, manteniendo 404 de herramientas. El entorno efectivo se comprueba en el proyecto Chrome de T22.
 
+
+### T22 — Entorno Chrome real · commit 083/T22
+- Proyecto front-keycloak levanta stack aislado m2-front-keycloak, puertos 28080/28082/28083 y volúmenes propios; realm efímero conserva PKCE y usa retornos exactos. Limpia contenedores y temporales también al fallar. npm run front:keycloak compila antes de correr; CI lo ejecuta en job Keycloak sin omitir Chrome. Prueba de salud, Chrome y entorno efectivo del contenedor pasó. El healthcheck real usa localhost igual al origen configurado, evitando 403 por Host sin relajar seguridad.
+
