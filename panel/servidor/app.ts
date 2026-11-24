@@ -17,6 +17,7 @@ import { crearClienteOidc, type ClienteOidc } from './auth/oidc.js';
 import { registrarRetornoAuth } from './auth/retorno.js';
 import { crearRenovacion } from './auth/renovacion.js';
 import { registrarEstadoAuth } from './auth/estado.js';
+import { registrarSalidaAuth } from './auth/salida.js';
 
 export type OpcionesApp = {
   auth?: { sesiones?: ReturnType<typeof crearAlmacenSesiones>; transacciones?: ReturnType<typeof crearAlmacenTransacciones>; pedir?: typeof fetch; oidc?: ClienteOidc };
@@ -109,6 +110,7 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
     app.register(registrarInicioAuth, { config, transacciones });
     app.register(registrarRetornoAuth, { config, sesiones, transacciones, oidc });
     app.register(registrarEstadoAuth, { config, sesiones, transacciones, oidc, renovacion });
+    app.register(registrarSalidaAuth, { config, sesiones, transacciones, oidc });
     if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
     // T4 inicia autorización. Cuenta, retorno y sesión siguen cerrados hasta conectar las tareas siguientes.
     return app;

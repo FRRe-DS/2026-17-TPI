@@ -24,7 +24,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: varios pedidos concurrentes causan un refresh, los tokens se actualizan atómicamente y una renovación que termina después de logout no recrea la sesión.
 - [x] **T8. Clasificar fallas de renovación y exponer sesión mínima.** RNF-12.83.4, RNF-13.83.1
   - Hecho cuando: /auth/sesion no entrega tokens ni prolonga la inactividad; credencial válida, sesión rechazada y dependencia caída producen resultados distintos y ningún fallo reenvía una escritura por sí solo.
-- [ ] **T9. Cerrar sesión local y completar salida remota.** RNF-12.83.5, RNF-19.83.1
+- [x] **T9. Cerrar sesión local y completar salida remota.** RNF-12.83.5, RNF-19.83.1
   - Hecho cuando: logout invalida primero, verifica retorno con state, admite la confirmación de Keycloak y no envía id_token_hint en URL; fallo remoto no restaura la sesión local.
 - [ ] **T10. Adaptar el proxy real al access token de la sesión.** RNF-02.83.1, RNF-03.83.1, RNF-12.83.3
   - Hecho cuando: tests confirman ausencia de firma HS256 en modo real, rechazo de encabezados de suplantación, respuesta M2 preservada, clave de idempotencia intacta y ningún reenvío automático de escritura tras 401.

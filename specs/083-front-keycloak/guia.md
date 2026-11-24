@@ -109,3 +109,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T8 — Consulta de sesión y fallas · commit 083/T8
 - estado.ts expone sub, roles y scopes con no-store; no registra actividad ni entrega credenciales. Diferencia 401 de 503 y Retry-After. sesion-real.test.ts cubre consulta mínima y fallas de renovación. Compilación verificada.
 
+
+### T9 — Salida local y remota · commit 083/T9
+- salida.ts invalida antes de redirigir, borra cookie y vincula retorno a transacción única. Usa client_id y state, nunca id_token_hint. Fallar el cierre remoto deja la sesión local cerrada y muestra salida no confirmada. Prueba HTTP incluye retorno único y token ausente en URL; compilación pasa.
+

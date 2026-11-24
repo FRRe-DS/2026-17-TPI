@@ -8,6 +8,23 @@ const config = cargarConfigPanel({ PANEL_MODO_AUTH: 'oidc', PANEL_ORIGEN_PUBLICO
   PANEL_OIDC_EMISOR: 'http://localhost:8080/realms/prueba', PANEL_OIDC_URL_INTERNA: 'http://localhost:8080/realms/prueba' }).config!;
 const headers = { host: 'localhost:8083', origin: 'http://localhost:8083' };
 describe('consulta y cierre de sesión real', () => {
+  it('invalida primero y completa salida con state, sin token en URL', async () => {
+    const sesiones = crearAlmacenSesiones(); const ahora = Date.now();
+    const id = sesiones.crear({ sub: 'usuario', roles: [], scopes: [], credenciales: { accessToken: 'secreto', refreshToken: 'secreto',
+      accessTokenVenceEn: ahora + 60_000, refreshTokenVenceEn: ahora + 300_000 } });
+    const app = construirApp({ config, auth: { sesiones } });
+    try {
+      const salida = await app.inject({ method: 'POST', url: '/auth/cerrar', headers: { ...headers, cookie: `m2_sesion=${id}` } });
+      expect(salida.statusCode).toBe(303); expect(sesiones.obtener(id)).toBeUndefined();
+      const destino = new URL(salida.headers.location!); expect(destino.pathname).toContain('/logout');
+      expect(destino.searchParams.has('id_token_hint')).toBe(false);
+      const vinculo = salida.cookies.find(c => c.name === 'm2_transaccion')!.value;
+      const url = `/auth/salida?state=${destino.searchParams.get('state')}`;
+      const retorno = await app.inject({ url, headers: { ...headers, cookie: `m2_transaccion=${vinculo}` } });
+      expect(retorno.headers.location).toBe('/?salida=completa');
+      expect((await app.inject({ url, headers })).headers.location).toBe('/?salida=no-confirmada');
+    } finally { await app.close(); }
+  });
   it('expone identidad mínima, no credenciales, sin prolongar actividad', async () => {
     const sesiones = crearAlmacenSesiones(); const ahora = Date.now();
     const id = sesiones.crear({ sub: 'usuario', roles: ['CLIENTE'], scopes: ['clientes:read'], credenciales: {
