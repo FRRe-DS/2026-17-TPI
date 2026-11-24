@@ -165,3 +165,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T22 — Entorno Chrome real · commit 083/T22
 - Proyecto front-keycloak levanta stack aislado m2-front-keycloak, puertos 28080/28082/28083 y volúmenes propios; realm efímero conserva PKCE y usa retornos exactos. Limpia contenedores y temporales también al fallar. npm run front:keycloak compila antes de correr; CI lo ejecuta en job Keycloak sin omitir Chrome. Prueba de salud, Chrome y entorno efectivo del contenedor pasó. El healthcheck real usa localhost igual al origen configurado, evitando 403 por Host sin relajar seguridad.
 
+
+### T23 — Recorrido Chrome de ingreso y viajes · commit 083/T23
+- viajes.test.ts ejecutó POST real, 303, formulario Keycloak, perfil inicial, viajes de cliente1 y cliente2 y una calificación 201, sin canales de control ni violaciones CSP/JavaScript. Comprueba cookie HttpOnly opaca, ausencia de tokens y almacenamientos vacíos. Chrome detectó y motivó corregir la ruta de ingreso al cargar sesión; vuelve al espacio propio. El entorno y recorrido pasan; T24 se verifica por separado.
+

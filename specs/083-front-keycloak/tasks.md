@@ -61,7 +61,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: pruebas negativas cubren callback ajeno, state/cookie incorrectos, retorno externo, sesión fijada, logout concurrente, suplantación y diagnóstico entre sesiones, sin tokens, cookies o códigos en registros; configuración resuelta y entorno efectivo de panel no contienen claves prohibidas ni valores centinela de base/firma/control, sin imprimirlos.
 - [x] **T22. Preparar entorno Chrome con Keycloak real y M6 precargado.** RNF-07.83.1
   - Hecho cuando: proyecto front-keycloak y comando de ejecución compilan y levantan entorno aislado con retornos exactos, datos para los dos clientes y usuario doble rol, sin relajar PKCE ni claims; bajan sus recursos también al fallar.
-- [ ] **T23. Probar en Chrome el POST de login, CSP y datos de viaje del modo real.** RNF-07.83.1, RNF-12.83.9, RNF-02.83.3
+- [x] **T23. Probar en Chrome el POST de login, CSP y datos de viaje del modo real.** RNF-07.83.1, RNF-12.83.9, RNF-02.83.3
   - Hecho cuando: Chrome pulsa acceso, ejecuta el POST y atraviesa 303 y login de Keycloak sin securitypolicyviolation; cliente1 y cliente2 consultan viajes propios y uno califica sin tocar herramientas ni canal de control.
 - [ ] **T24. Probar doble rol, operador, expiración y cierre real.** RNF-07.83.1, RNF-12.83.6.1, RNF-12.83.8, RNF-12.83.4.1, RNF-15.83.2, RNF-15.83.3
   - Hecho cuando: usuario doble rol recorre ambos espacios con el mismo sub, operador-only actúa sin perfil propio, cliente-only recibe rechazo, formulario vencido permite copiar y logout invalida sesión; vistas mínimas de sesión pasan teclado/foco y no desbordan a 360/1280.

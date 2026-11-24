@@ -35,6 +35,7 @@ export function AppReal({ m6Simulado = true }: { m6Simulado?: boolean }) {
   const espacio = espacios.includes(elegido) ? elegido : espacios[0] ?? 'CLIENTE';
   const sesion = estado.sesion && { sub: estado.sesion.sub, rol: espacios.length ? espacio : 'CONDUCTOR' as const };
   const { ruta } = usarRuta(sesion);
+  useEffect(() => { if (sesion && ruta.pantalla === 'ingresar') window.location.hash = enlace(inicioDe(espacio)); }, [sesion?.sub, espacio, ruta.pantalla]);
   const ultimo = useSyncExternalStore(ultimoPedido.suscribir, ultimoPedido.actual);
   useEffect(() => { void fuente.actualizar(); const temporizador = setInterval(() => void fuente.actualizar(), 60_000); return () => clearInterval(temporizador); }, []);
   const cerrar = () => { const formulario = document.createElement('form'); formulario.method = 'post'; formulario.action = '/auth/cerrar'; document.body.append(formulario); formulario.submit(); };
