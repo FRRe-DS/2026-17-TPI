@@ -121,3 +121,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T11 — Diagnóstico aislado · commit 083/T11
 - Cada sesión guarda hasta 50 metadatos de pedidos, sin cuerpos, query ni UUID de rutas. Se eliminan con ella y no prolongan actividad. /panel/pedidos exige cookie válida y solo devuelve su registro. Modo real no registra evaluación. proxy-real.test.ts comprueba dos sesiones y rutas ausentes; compilación pasa.
 
+
+### T12 — Fuente real de sesión · commit 083/T12
+- sesion-real.ts consulta exclusivamente /auth/sesion con plazo de 15 s, conserva solo sub/roles/scopes y distingue carga, sesión, 401 y dependencia caída. Suscripciones y petición compartida evitan cargas duplicadas. /panel/config expone solo modo y etiqueta M6. Prueba de estados pasa; cliente compila.
+

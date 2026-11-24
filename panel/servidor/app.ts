@@ -103,6 +103,10 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   });
 
   app.get('/salud-panel', async () => ({ estado: 'ok' }));
+  app.get('/panel/config', async (_request, reply) => {
+    reply.header('cache-control', 'no-store');
+    return { modoAuth: config.modoAuth, m6Simulado: config.modoAuth === 'oidc' ? config.m6Simulado : true };
+  });
   if (config.modoAuth === 'oidc') {
     const transacciones = auth?.transacciones ?? crearAlmacenTransacciones();
     const sesiones = auth?.sesiones ?? crearAlmacenSesiones();
