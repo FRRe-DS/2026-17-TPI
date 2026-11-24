@@ -61,8 +61,8 @@ export function AppReal({ m6Simulado = true }: { m6Simulado?: boolean }) {
     return <Titulo>Pantalla no encontrada</Titulo>;
   };
   return <Marco modoReal sesion={sesion} ruta={ruta} etiquetas={m6Simulado ? [{ de: 'Viajes', texto: 'M6 simulado' }] : []} ultimo={ultimo} alCerrarSesion={cerrar}>
-    {espacios.length > 1 && <label>Espacio <select value={espacio} onChange={evento => { const nuevo = evento.target.value as Espacio; elegir(nuevo); window.location.hash = enlace(inicioDe(nuevo)); }}>
-      <option value="CLIENTE">Mi cuenta</option><option value="OPERADOR">Operación</option></select></label>}
+    {espacios.length > 1 && <div><label htmlFor="espacio-real">Espacio</label> <select id="espacio-real" value={espacio} onChange={evento => { const nuevo = evento.target.value as Espacio; elegir(nuevo); window.location.hash = enlace(inicioDe(nuevo)); }}>
+      <option value="CLIENTE">Mi cuenta</option><option value="OPERADOR">Operación</option></select></div>}
     {sesion && estado.estado !== 'activa' && <AvisoReingreso dependenciaCaida={estado.estado === 'no-disponible'} reintentar={() => void fuente.actualizar()} />}
     <ContextoSesionEditable.Provider value={estado.estado === 'activa'}>
       {sesion && espacio === 'CLIENTE' && estado.sesion?.roles.includes('CLIENTE')

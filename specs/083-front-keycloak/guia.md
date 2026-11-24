@@ -169,3 +169,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T23 — Recorrido Chrome de ingreso y viajes · commit 083/T23
 - viajes.test.ts ejecutó POST real, 303, formulario Keycloak, perfil inicial, viajes de cliente1 y cliente2 y una calificación 201, sin canales de control ni violaciones CSP/JavaScript. Comprueba cookie HttpOnly opaca, ausencia de tokens y almacenamientos vacíos. Chrome detectó y motivó corregir la ruta de ingreso al cargar sesión; vuelve al espacio propio. El entorno y recorrido pasan; T24 se verifica por separado.
 
+
+### T24 — Permisos, renovación y salida real · commit 083/T24
+- sesion.test.ts recorre doble rol con cookie/sub invariables, operador-only bloqueando sin perfil propio, cliente rechazado y cierre desde otra pestaña conservando campos. Verifica copia manual, selección, teclado, 360/1280 sin overflow y logout con confirmación Keycloak. Un caso espera 42 s para renovar después del access de 40 s, conservando cookie/sub. Cinco pruebas Chrome en tres archivos pasan; captura móvil revisada. Se corrige etiqueta explícita del selector y se da espacio táctil al aviso y acceso.
+

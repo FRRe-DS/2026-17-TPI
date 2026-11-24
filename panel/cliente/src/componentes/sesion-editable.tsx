@@ -1,4 +1,5 @@
 import { createContext, useState } from 'react';
+import estilos from './sesion-editable.module.css';
 export const ContextoSesionEditable = createContext(true);
 export function AvisoReingreso({ dependenciaCaida, reintentar }: { dependenciaCaida: boolean; reintentar: () => void }) {
   const [copia, guardarCopia] = useState<string | undefined>();
@@ -11,7 +12,7 @@ export function AvisoReingreso({ dependenciaCaida, reintentar }: { dependenciaCa
     try { await navigator.clipboard.writeText(texto); informar('Datos copiados.'); }
     catch { informar('Seleccioná el texto para copiarlo manualmente.'); }
   };
-  return <section role="alert" aria-label="Sesión y datos del formulario">
+  return <section className={estilos.aviso} role="alert" aria-label="Sesión y datos del formulario">
     <h2>{dependenciaCaida ? 'Identidad no disponible' : 'Tu sesión venció'}</h2>
     <p>Conservamos lo escrito en esta pantalla. El envío está deshabilitado.</p>
     <button type="button" onClick={() => void copiar()}>Copiar datos</button>

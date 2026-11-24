@@ -63,7 +63,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: proyecto front-keycloak y comando de ejecución compilan y levantan entorno aislado con retornos exactos, datos para los dos clientes y usuario doble rol, sin relajar PKCE ni claims; bajan sus recursos también al fallar.
 - [x] **T23. Probar en Chrome el POST de login, CSP y datos de viaje del modo real.** RNF-07.83.1, RNF-12.83.9, RNF-02.83.3
   - Hecho cuando: Chrome pulsa acceso, ejecuta el POST y atraviesa 303 y login de Keycloak sin securitypolicyviolation; cliente1 y cliente2 consultan viajes propios y uno califica sin tocar herramientas ni canal de control.
-- [ ] **T24. Probar doble rol, operador, expiración y cierre real.** RNF-07.83.1, RNF-12.83.6.1, RNF-12.83.8, RNF-12.83.4.1, RNF-15.83.2, RNF-15.83.3
+- [x] **T24. Probar doble rol, operador, expiración y cierre real.** RNF-07.83.1, RNF-12.83.6.1, RNF-12.83.8, RNF-12.83.4.1, RNF-15.83.2, RNF-15.83.3
   - Hecho cuando: usuario doble rol recorre ambos espacios con el mismo sub, operador-only actúa sin perfil propio, cliente-only recibe rechazo, formulario vencido permite copiar y logout invalida sesión; vistas mínimas de sesión pasan teclado/foco y no desbordan a 360/1280.
 - [ ] **T25. Documentar el arranque y los límites de sesión.** RNF-20.83.1
   - Hecho cuando: README, docs/probar-m2.md y guia.md tienen comandos verificados, nuevos usuarios, CSP, precarga, lista de variables permitidas, fallas y separación de modos; no afirman que el nuevo diseño o entrega completa estén implementados.
