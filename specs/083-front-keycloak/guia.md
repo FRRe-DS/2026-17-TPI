@@ -2,7 +2,7 @@
 
 ## Estado de trabajo
 
-T1 a T4 implementadas y validadas en `impl/083-front-keycloak`. T5 a T26 siguen pendientes y la spec conserva el estado aprobada. Se puede iniciar autorización; validar los tokens y completar la sesión real todavía está pendiente.
+T1 a T5 implementadas y validadas en `impl/083-front-keycloak`. T6 a T26 siguen pendientes y la spec conserva el estado aprobada. Se puede iniciar autorización y validar tokens en el servidor; completar el retorno y abrir la sesión real todavía está pendiente.
 
 ## Tareas
 
@@ -47,6 +47,15 @@ T1 a T4 implementadas y validadas en `impl/083-front-keycloak`. T5 a T26 siguen 
 - Tests: `pruebas/panel/http/inicio-auth.test.ts`, 21 casos de parámetros, PKCE, secreto del verifier, aleatoriedad, retorno, formularios, capacidad, CSP, arranque y logs; `arranque.test.ts` comprueba el proceso real en un puerto propio. `pruebas/panel/navegador/inicio-auth.test.ts` prueba en Chrome un formulario nativo, POST propio, 303, CSP y ausencia de Referer, con un destino de identidad mínimo.
 - Límites: T4 no pide contraseñas, intercambia códigos ni obtiene tokens. La verificación de firma y claims es T5 y el callback con plazos HTTP es T6. El login completo con Keycloak real y su interfaz se prueba en T23; la prueba de Chrome de esta tarea no lo sustituye.
 
+### T5 — Validación separada de credenciales · commit `083/T5`
+
+- Qué cambió: `panel/servidor/auth/validacion.ts:crearValidadorTokens` recibe configuración, proveedor de claves JWKS de jose y reloj. Verifica firma RS256, emisor público, audiencia, identidad no vacía, fechas enteras representables y vigencia. No admite otros algoritmos ni usa un secreto HS256. Rechaza tipos incompatibles del encabezado JWT.
+- Identidad: `validarIdToken` exige audiencia del cliente del frontend sin audiencias ajenas, nonce exacto y azp del cliente si está presente. El tipo del payload puede ser ID u omitirse según OIDC; los tipos Bearer, Refresh y Offline no se admiten. Sigue las comprobaciones de [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation).
+- Acceso: `validarAccessToken` exige audiencia m2-clientes, tipo Bearer del realm y el mismo sub que la identidad validada. `validarPar` verifica ambos por separado; si el ID token incluye at_hash, comprueba también su vínculo criptográfico con el access token concreto. Los roles y scopes provienen exclusivamente del access token firmado; descarta roles desconocidos y duplicados, rechaza formatos inválidos y no inventa permisos ausentes.
+- Salida: solo devuelve identidad, fechas y permisos normalizados; no devuelve el JWT ni claims arbitrarios. `CredencialInvalida` e `IdentidadNoDisponible` distinguen rechazo de credencial de caída del proveedor de claves, con mensajes fijos y sin causa, tokens o respuestas remotas adjuntas.
+- Tests: `pruebas/panel/unitarias/validacion-auth.test.ts`, 94 casos con claves RSA generadas y un JWKS local. Incluyen alteración, firma ajena, kid desconocido, algoritmos no permitidos antes de resolver claves, emisor, audiencias, nonce, azp, fechas, sub incoherente, tipos intercambiados, permisos, at_hash y fallas del proveedor. Los tokens se firman con las ayudas crypto existentes, independientemente del verificador jose.
+- Cómo se conecta: T5 no registra rutas ni hace solicitudes de red. T6 conectará el proveedor JWKS remoto con sus plazos y reintento GET, el intercambio de código y la creación de sesión. La consulta de sesión y renovación siguen en sus tareas posteriores.
+
 ## Validación de T1 del 2026-11-23
 
 - Rojo inicial de T1: 26 fallas de 29 casos nuevos antes de implementar la configuración. La comprobación posterior de configuración, tokens, arranque y proxy pasó sus 196 pruebas.
@@ -77,6 +86,13 @@ T1 a T4 implementadas y validadas en `impl/083-front-keycloak`. T5 a T26 siguen 
 - `npm test`: 154 archivos y 5807 pruebas pasan, sin omisiones ni errores. La prueba de Chrome se ejecuta aparte de este comando.
 - `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Sin dependencias nuevas ni cambios en contrato, M2 o migraciones.
 
+## Validación de T5 del 2026-11-23
+
+- Rojo inicial: la suite nueva falló al importar el módulo todavía inexistente. Tras implementarlo, pasan sus 94 casos con JWKS local.
+- `npm test`: 155 archivos y 5901 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL en Docker.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Persisten los avisos conocidos sobre cantidad de tareas y el commit heredado de portabilidad Windows.
+- Sin dependencias nuevas ni cambios en contrato, M2, migraciones o rutas. Esta tarea valida credenciales; no afirma haber probado un login completo ni un JWKS remoto.
+
 ## Siguiente tarea
 
-T5: validar por separado ID token y access token con JWKS de prueba. Cubrir firma, algoritmo, emisor, audiencias, nonce, sub y tipo; nunca aceptar un ID token como credencial de M2. Mantener el callback y las operaciones de cuenta cerrados hasta conectar T6 y las tareas siguientes.
+T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, intercambiar el código y validar las credenciales antes de emitir una sesión nueva y redirigir a una URL limpia. Conectar JWKS remoto con timeout, reintento GET acotado y refresco compartido; no reintentar el POST de intercambio.
