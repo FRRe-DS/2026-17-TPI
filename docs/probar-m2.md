@@ -414,3 +414,63 @@ docker compose start redis
 ```
 
 Las pruebas: `pruebas/unitarias/redis-cliente.test.ts` y `cache-estado-cuenta.test.ts` (reglas, con Redis falsos), `pruebas/http/estado-cuenta-cache.test.ts` (permisos antes de la copia), y en `pruebas/integracion/`, `estado-cuenta-invalidacion.test.ts`, `estado-cuenta-redis-caido.test.ts` y `estado-cuenta-cache.test.ts` (este último con Redis y PostgreSQL reales en contenedor). El detalle, tarea por tarea, en `specs/107-redis-estado-cuenta/guia.md`.
+
+## Frontend con Keycloak (spec 083)
+
+Requiere Docker Compose 2.24.4 o posterior. El override elimina la herencia de variables del panel de evaluación; no basta con sumar un mapa environment. Las claves de M2 y las bases permanecen en sus propios servicios. No se publica PostgreSQL ni el canal de control de M6 en este modo.
+
+```bash
+docker compose -p m2-front -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env up -d --build --wait
+# Frontend: http://localhost:8083 · Identidad: http://localhost:8080
+docker compose -p m2-front -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env down
+```
+
+Usar puertos libres y un proyecto separado del desarrollo. El `down` anterior conserva datos. El realm se importa en una base nueva: los cambios del archivo no se aplican a un volumen ya importado. Para probarlo desde cero sin tocar volúmenes personales, usar el comando automatizado siguiente.
+
+| Usuario local | Acceso | Perfil y viajes |
+|---|---|---|
+| cliente1, cliente2 | Mi cuenta | Completan su perfil al primer ingreso; dos viajes propios precargados |
+| cliente-operador1 | Mi cuenta y Operación | UUID d0b00000-0000-4000-8000-000000000001; cambia espacio sin cambiar identidad |
+| operador1 | Operación | No necesita crear un perfil propio |
+| conductor1 | Rechazo claro | El rol CONDUCTOR por sí solo no habilita operaciones de M2 |
+
+Contraseña de cada cuenta local: nombre de usuario seguido de `-contrasena-de-desarrollo`. Son exclusivamente ejemplos locales. La app no pide ni almacena esas contraseñas: se ingresan en Keycloak.
+
+El navegador solo conserva una cookie de sesión opaca HttpOnly, SameSite=Lax y Secure con HTTPS. Los tokens quedan en memoria del servidor. El reinicio requiere reingreso; no hay sesión compartida entre réplicas. La sesión vence a las ocho horas, treinta minutos sin actividad de API o antes si vence el refresh token. La consulta `/auth/sesion` no prolonga inactividad. Se renueva el acceso con menos de treinta segundos restantes y una operación compartida por sesión; no se repiten escrituras automáticamente.
+
+Al vencer la sesión o fallar identidad, el formulario permanece montado, con enviar deshabilitado. Copiar datos ofrece también texto seleccionable si Clipboard falla. Volver a ingresar es voluntario y avisa que puede perderse lo escrito; no guarda borradores ni reenvía el formulario tras login. Logout cierra primero la sesión local; Keycloak puede solicitar confirmación. Si no se completa, la sesión local continúa cerrada y la app informa que el cierre remoto no está confirmado.
+
+Con 404 de perfil se ofrece completar datos; 401, 403 y 503 conservan su causa. Alta reintenta con la misma clave y recupera el perfil propio ante 409. M6 simulado precarga viajes por `M6_CLIENTES_PRECARGA`, lista de UUID separada por comas; vacío conserva el comportamiento previo. No crea perfiles ni calificaciones en M2. La etiqueta de viajes sigue indicando que M6 es simulado.
+
+Variables admitidas en el contenedor frontend real:
+
+| Variable | Función |
+|---|---|
+| PANEL_MODO_AUTH | oidc |
+| PANEL_ESCUCHA, PANEL_PUERTO | Escucha del proceso |
+| PANEL_URL_M2, PANEL_URL_M2_PUBLICA | API interna y enlace público del diagnóstico |
+| PANEL_ORIGEN_PUBLICO | Origen exacto del frontend, HTTPS o HTTP loopback local |
+| PANEL_OIDC_EMISOR | Emisor público del realm; sirve para redirecciones y validación |
+| PANEL_OIDC_URL_INTERNA | Mismo realm accesible desde el contenedor; token y JWKS |
+| PANEL_OIDC_CLIENTE | m2-front, cliente público PKCE S256 |
+| PANEL_TIEMPO_IDENTIDAD_MS | 2000 por operación HTTP completa |
+| PANEL_M6_SIMULADO | Etiqueta de viajes; no habilita herramientas |
+
+La imagen aporta además sus variables base de Node. No inyectar variables M2_*, POSTGRES_*, PANEL_URL_BD, PANEL_DOCKER, PANEL_SERVICIO_BD ni PANEL_URL_M6_CONTROL. El emisor sigue siendo público aunque JWKS se consulte por la red interna. La CSP permite form-action solo a self y al origen público de Keycloak. Host y Origin se verifican; no se aceptan URLs de retorno elegidas por el navegador. Las páginas reales usan Referrer-Policy=same-origin y las respuestas de autenticación no-referrer.
+
+Para las pruebas automatizadas, Node 24, dependencias del lockfile y Chrome instalado:
+
+```bash
+npm test
+npm run front:keycloak
+npm run keycloak:test
+npm run lint
+npm run build
+npm run panel:build
+npm run contrato:test
+node scripts/spec-check.mjs --rama impl/083-front-keycloak --base origin/main
+```
+
+`front:keycloak` compila y usa el proyecto aislado `m2-front-keycloak`, puertos 28080/28082/28083, realm temporal con retornos exactos y volúmenes propios. Los baja también al fallar; no omite Chrome cuando falta. Prueba POST/303/CSP, perfiles, viajes, calificación, doble rol, operador, formulario vencido, copia y logout con confirmación. El access token de ese realm temporal dura 40 s para comprobar la renovación. El test de contrato usa el servicio de desarrollo en localhost:8082 y Docker; levantar ese entorno antes de ejecutarlo. El proceso de evaluación sigue arrancando con el perfil panel y su puente de base anterior.
+
+La implementación se explica en [guia.md de #83](../specs/083-front-keycloak/guia.md). Este recorrido verifica sesión y reutiliza las pantallas actuales; no declara terminados el rediseño #119 ni la entrega integral #120.

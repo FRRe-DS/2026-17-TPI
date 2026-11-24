@@ -65,7 +65,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: Chrome pulsa acceso, ejecuta el POST y atraviesa 303 y login de Keycloak sin securitypolicyviolation; cliente1 y cliente2 consultan viajes propios y uno califica sin tocar herramientas ni canal de control.
 - [x] **T24. Probar doble rol, operador, expiración y cierre real.** RNF-07.83.1, RNF-12.83.6.1, RNF-12.83.8, RNF-12.83.4.1, RNF-15.83.2, RNF-15.83.3
   - Hecho cuando: usuario doble rol recorre ambos espacios con el mismo sub, operador-only actúa sin perfil propio, cliente-only recibe rechazo, formulario vencido permite copiar y logout invalida sesión; vistas mínimas de sesión pasan teclado/foco y no desbordan a 360/1280.
-- [ ] **T25. Documentar el arranque y los límites de sesión.** RNF-20.83.1
+- [x] **T25. Documentar el arranque y los límites de sesión.** RNF-20.83.1
   - Hecho cuando: README, docs/probar-m2.md y guia.md tienen comandos verificados, nuevos usuarios, CSP, precarga, lista de variables permitidas, fallas y separación de modos; no afirman que el nuevo diseño o entrega completa estén implementados.
 - [ ] **T26. Ejecutar las puertas de validación de sesión.** RNF-07.83.1, RNF-20.83.1
   - Hecho cuando: comandos del plan y recorrido de sesión pasan con resultados registrados; no se desactivan checks ni se declara verde una prueba bloqueada.

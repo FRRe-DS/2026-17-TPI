@@ -2,7 +2,7 @@
 
 ## Estado de trabajo
 
-T1 a T5 implementadas y validadas en `impl/083-front-keycloak`. T6 a T26 siguen pendientes y la spec conserva el estado aprobada. Se puede iniciar autorización y validar tokens en el servidor; completar el retorno y abrir la sesión real todavía está pendiente.
+T1 a T25 implementadas en impl/083-front-keycloak. T26 concentra la validación final. La sesión real funciona en Chrome con Keycloak; el rediseño y la entrega integral pertenecen a #119 y #120.
 
 ## Tareas
 
@@ -55,47 +55,6 @@ T1 a T5 implementadas y validadas en `impl/083-front-keycloak`. T6 a T26 siguen 
 - Salida: solo devuelve identidad, fechas y permisos normalizados; no devuelve el JWT ni claims arbitrarios. `CredencialInvalida` e `IdentidadNoDisponible` distinguen rechazo de credencial de caída del proveedor de claves, con mensajes fijos y sin causa, tokens o respuestas remotas adjuntas.
 - Tests: `pruebas/panel/unitarias/validacion-auth.test.ts`, 94 casos con claves RSA generadas y un JWKS local. Incluyen alteración, firma ajena, kid desconocido, algoritmos no permitidos antes de resolver claves, emisor, audiencias, nonce, azp, fechas, sub incoherente, tipos intercambiados, permisos, at_hash y fallas del proveedor. Los tokens se firman con las ayudas crypto existentes, independientemente del verificador jose.
 - Cómo se conecta: T5 no registra rutas ni hace solicitudes de red. T6 conectará el proveedor JWKS remoto con sus plazos y reintento GET, el intercambio de código y la creación de sesión. La consulta de sesión y renovación siguen en sus tareas posteriores.
-
-## Validación de T1 del 2026-11-23
-
-- Rojo inicial de T1: 26 fallas de 29 casos nuevos antes de implementar la configuración. La comprobación posterior de configuración, tokens, arranque y proxy pasó sus 196 pruebas.
-- Al validar toda la suite aparecieron ocho fallas previas de Windows y 43 pruebas que no ejecutaban por preparación fallida. Se reprodujeron en el commit original `29fc6ca`. La corrección se documenta aparte en [083-pruebas-windows](../../docs/guias/083-pruebas-windows.md) y se registra en su propio commit de validación.
-- Tras instalar Docker y actualizar Node a 24.22.0: `npm test` pasa con 151 archivos y 5722 pruebas, sin omisiones ni errores de procesos. Incluye unitarias e integración con PostgreSQL real en Docker.
-- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `node scripts/spec-check.mjs --rama impl/083-front-keycloak --base origin/main` pasan.
-- El entorno de desarrollo se conserva levantado: seis servicios sanos, panel en http://localhost:8083 y M2 en http://localhost:8082. `node scripts/panel-humo.mjs` pasó sus seis comprobaciones. No se realizó revisión visual en navegador ni se afirma que el login o el rediseño estén implementados.
-- Comprobación adicional anterior: `npx tsc --noEmit` global tenía 42 diagnósticos, iguales a los del commit original en una comparación en memoria. Los builds de API y panel usan sus configuraciones propias y pasan; no se amplió T1 para modificar esas pruebas ajenas.
-
-## Validación de T2 del 2026-11-23
-
-- Rojo inicial: el archivo de pruebas no pudo importar los módulos, que todavía no existían.
-- `npm test`: 152 archivos y 5746 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL real en Docker.
-- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan.
-- No se modificaron dependencias, opciones de Vitest, contrato, servicio M2 ni migraciones. No se afirma que el login ya funcione ni se amplía el alcance a las rutas de T3 a T11.
-
-## Validación de T3 del 2026-11-23
-
-- Rojo inicial: faltaba el módulo de cookies. Las pruebas posteriores detectaron además la duplicación de Set-Cookie al acumular manualmente los valores que Fastify ya agrega; se corrigió la emisión sin relajar las expectativas.
-- `npm test`: 153 archivos y 5786 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL en Docker.
-- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Las pruebas existentes de seguridad de desarrollo conservan sus resultados.
-- No se agregaron dependencias ni se modificaron contrato, servicio M2 o migraciones. Los helpers no registran credenciales ni incluyen valores inválidos en los errores.
-
-## Validación de T4 del 2026-11-23
-
-- Rojo inicial: faltaba el módulo de rutas. Tras implementar el POST, sus 21 pruebas HTTP pasan.
-- Regresión de navegador: se reprodujo en Chrome el 403 del formulario nativo y se corrigió la política de referencia sin relajar Origin ni CSP. `npx vitest run --project navegador pruebas/panel/navegador/inicio-auth.test.ts` pasa en Chrome instalado, sin descargar navegadores. Se cierran los recursos temporales también al fallar.
-- `npm test`: 154 archivos y 5807 pruebas pasan, sin omisiones ni errores. La prueba de Chrome se ejecuta aparte de este comando.
-- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Sin dependencias nuevas ni cambios en contrato, M2 o migraciones.
-
-## Validación de T5 del 2026-11-23
-
-- Rojo inicial: la suite nueva falló al importar el módulo todavía inexistente. Tras implementarlo, pasan sus 94 casos con JWKS local.
-- `npm test`: 155 archivos y 5901 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL en Docker.
-- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Persisten los avisos conocidos sobre cantidad de tareas y el commit heredado de portabilidad Windows.
-- Sin dependencias nuevas ni cambios en contrato, M2, migraciones o rutas. Esta tarea valida credenciales; no afirma haber probado un login completo ni un JWKS remoto.
-
-## Siguiente tarea
-
-T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, intercambiar el código y validar las credenciales antes de emitir una sesión nueva y redirigir a una URL limpia. Conectar JWKS remoto con timeout, reintento GET acotado y refresco compartido; no reintentar el POST de intercambio.
 
 ### T6 — Retorno y cliente OIDC · commit 083/T6
 - auth/oidc.ts obtiene JWKS con límite de cuerpo, timeout completo, un reintento GET y carga compartida; intercambia códigos sin reintentar POST. auth/retorno.ts consume state vinculado una sola vez, valida tokens y crea cookie nueva, con URL limpia y errores fijos.
@@ -172,4 +131,46 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 
 ### T24 — Permisos, renovación y salida real · commit 083/T24
 - sesion.test.ts recorre doble rol con cookie/sub invariables, operador-only bloqueando sin perfil propio, cliente rechazado y cierre desde otra pestaña conservando campos. Verifica copia manual, selección, teclado, 360/1280 sin overflow y logout con confirmación Keycloak. Un caso espera 42 s para renovar después del access de 40 s, conservando cookie/sub. Cinco pruebas Chrome en tres archivos pasan; captura móvil revisada. Se corrige etiqueta explícita del selector y se da espacio táctil al aviso y acceso.
+
+
+## Validación de T1 del 2026-11-23
+
+- Rojo inicial de T1: 26 fallas de 29 casos nuevos antes de implementar la configuración. La comprobación posterior de configuración, tokens, arranque y proxy pasó sus 196 pruebas.
+- Al validar toda la suite aparecieron ocho fallas previas de Windows y 43 pruebas que no ejecutaban por preparación fallida. Se reprodujeron en el commit original `29fc6ca`. La corrección se documenta aparte en [083-pruebas-windows](../../docs/guias/083-pruebas-windows.md) y se registra en su propio commit de validación.
+- Tras instalar Docker y actualizar Node a 24.22.0: `npm test` pasa con 151 archivos y 5722 pruebas, sin omisiones ni errores de procesos. Incluye unitarias e integración con PostgreSQL real en Docker.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `node scripts/spec-check.mjs --rama impl/083-front-keycloak --base origin/main` pasan.
+- El entorno de desarrollo se conserva levantado: seis servicios sanos, panel en http://localhost:8083 y M2 en http://localhost:8082. `node scripts/panel-humo.mjs` pasó sus seis comprobaciones. No se realizó revisión visual en navegador ni se afirma que el login o el rediseño estén implementados.
+- Comprobación adicional anterior: `npx tsc --noEmit` global tenía 42 diagnósticos, iguales a los del commit original en una comparación en memoria. Los builds de API y panel usan sus configuraciones propias y pasan; no se amplió T1 para modificar esas pruebas ajenas.
+
+## Validación de T2 del 2026-11-23
+
+- Rojo inicial: el archivo de pruebas no pudo importar los módulos, que todavía no existían.
+- `npm test`: 152 archivos y 5746 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL real en Docker.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan.
+- No se modificaron dependencias, opciones de Vitest, contrato, servicio M2 ni migraciones. No se afirma que el login ya funcione ni se amplía el alcance a las rutas de T3 a T11.
+
+## Validación de T3 del 2026-11-23
+
+- Rojo inicial: faltaba el módulo de cookies. Las pruebas posteriores detectaron además la duplicación de Set-Cookie al acumular manualmente los valores que Fastify ya agrega; se corrigió la emisión sin relajar las expectativas.
+- `npm test`: 153 archivos y 5786 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL en Docker.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Las pruebas existentes de seguridad de desarrollo conservan sus resultados.
+- No se agregaron dependencias ni se modificaron contrato, servicio M2 o migraciones. Los helpers no registran credenciales ni incluyen valores inválidos en los errores.
+
+## Validación de T4 del 2026-11-23
+
+- Rojo inicial: faltaba el módulo de rutas. Tras implementar el POST, sus 21 pruebas HTTP pasan.
+- Regresión de navegador: se reprodujo en Chrome el 403 del formulario nativo y se corrigió la política de referencia sin relajar Origin ni CSP. `npx vitest run --project navegador pruebas/panel/navegador/inicio-auth.test.ts` pasa en Chrome instalado, sin descargar navegadores. Se cierran los recursos temporales también al fallar.
+- `npm test`: 154 archivos y 5807 pruebas pasan, sin omisiones ni errores. La prueba de Chrome se ejecuta aparte de este comando.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Sin dependencias nuevas ni cambios en contrato, M2 o migraciones.
+
+## Validación de T5 del 2026-11-23
+
+- Rojo inicial: la suite nueva falló al importar el módulo todavía inexistente. Tras implementarlo, pasan sus 94 casos con JWKS local.
+- `npm test`: 155 archivos y 5901 pruebas pasan, sin omisiones ni errores, incluida integración con PostgreSQL en Docker.
+- `npm run build`, `npm run panel:build`, ESLint, `git diff --check` y `spec-check` pasan. Persisten los avisos conocidos sobre cantidad de tareas y el commit heredado de portabilidad Windows.
+- Sin dependencias nuevas ni cambios en contrato, M2, migraciones o rutas. Esta tarea valida credenciales; no afirma haber probado un login completo ni un JWKS remoto.
+
+
+### T25 — Arranque y límites documentados · commit 083/T25
+- README y docs/probar-m2.md describen arranque aislado, usuarios, permisos, renovación, expiración, copia, CSP, variables permitidas y precarga. Diferencian pantallas existentes del rediseño #119 y entrega #120. Comandos de prueba ejecutados con puertos propios; contrato usa servicio de desarrollo existente. Keycloak real pasa 24 casos y Chrome cinco; validación general se registra en T26.
 
