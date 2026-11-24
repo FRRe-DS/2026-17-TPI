@@ -22,7 +22,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: retorno válido crea cookie nueva y redirige; retorno repetido, cancelado, expirado o de otro navegador no crea sesión ni deja códigos en logs o diagnósticos.
 - [x] **T7. Renovar credenciales con una operación compartida por sesión.** RNF-12.83.4, RNF-13.83.1
   - Hecho cuando: varios pedidos concurrentes causan un refresh, los tokens se actualizan atómicamente y una renovación que termina después de logout no recrea la sesión.
-- [ ] **T8. Clasificar fallas de renovación y exponer sesión mínima.** RNF-12.83.4, RNF-13.83.1
+- [x] **T8. Clasificar fallas de renovación y exponer sesión mínima.** RNF-12.83.4, RNF-13.83.1
   - Hecho cuando: /auth/sesion no entrega tokens ni prolonga la inactividad; credencial válida, sesión rechazada y dependencia caída producen resultados distintos y ningún fallo reenvía una escritura por sí solo.
 - [ ] **T9. Cerrar sesión local y completar salida remota.** RNF-12.83.5, RNF-19.83.1
   - Hecho cuando: logout invalida primero, verifica retorno con state, admite la confirmación de Keycloak y no envía id_token_hint en URL; fallo remoto no restaura la sesión local.

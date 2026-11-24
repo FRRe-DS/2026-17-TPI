@@ -13,11 +13,13 @@ import { registrarSeguridad } from './seguridad.js';
 import { crearAlmacenTransacciones } from './auth/transacciones.js';
 import { registrarInicioAuth } from './auth/rutas.js';
 import { crearAlmacenSesiones } from './auth/sesiones.js';
-import { crearClienteOidc } from './auth/oidc.js';
+import { crearClienteOidc, type ClienteOidc } from './auth/oidc.js';
 import { registrarRetornoAuth } from './auth/retorno.js';
+import { crearRenovacion } from './auth/renovacion.js';
+import { registrarEstadoAuth } from './auth/estado.js';
 
 export type OpcionesApp = {
-  auth?: { sesiones?: ReturnType<typeof crearAlmacenSesiones>; transacciones?: ReturnType<typeof crearAlmacenTransacciones>; pedir?: typeof fetch };
+  auth?: { sesiones?: ReturnType<typeof crearAlmacenSesiones>; transacciones?: ReturnType<typeof crearAlmacenTransacciones>; pedir?: typeof fetch; oidc?: ClienteOidc };
   config: ConfigPanel;
   // Adonde van los logs; sin él, a la salida estándar.
   flujoLog?: Writable;
@@ -101,10 +103,12 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   if (config.modoAuth === 'oidc') {
     const transacciones = auth?.transacciones ?? crearAlmacenTransacciones();
     const sesiones = auth?.sesiones ?? crearAlmacenSesiones();
-    const oidc = crearClienteOidc(config, auth?.pedir);
+    const oidc = auth?.oidc ?? crearClienteOidc(config, auth?.pedir);
+    const renovacion = crearRenovacion(sesiones, oidc);
     app.addHook('onClose', async () => { transacciones.cerrar(); sesiones.cerrar(); });
     app.register(registrarInicioAuth, { config, transacciones });
     app.register(registrarRetornoAuth, { config, sesiones, transacciones, oidc });
+    app.register(registrarEstadoAuth, { config, sesiones, transacciones, oidc, renovacion });
     if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
     // T4 inicia autorización. Cuenta, retorno y sesión siguen cerrados hasta conectar las tareas siguientes.
     return app;

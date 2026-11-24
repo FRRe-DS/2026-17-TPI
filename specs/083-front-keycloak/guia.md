@@ -105,3 +105,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T7 — Renovación atómica · commit 083/T7
 - renovacion.ts comparte promesa por sesión y sesiones.ts actualiza con versión y sub coherente. Logout o expiración impiden recreación. Rechazo invalida; caída transitoria conserva solo acceso vigente. renovacion-auth.test.ts prueba concurrencia, versión, logout y clasificación; servidor compila.
 
+
+### T8 — Consulta de sesión y fallas · commit 083/T8
+- estado.ts expone sub, roles y scopes con no-store; no registra actividad ni entrega credenciales. Diferencia 401 de 503 y Retry-After. sesion-real.test.ts cubre consulta mínima y fallas de renovación. Compilación verificada.
+
