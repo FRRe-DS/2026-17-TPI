@@ -234,4 +234,3 @@ Preguntas para estudiar: ¿por qué el ID token no sirve para M2? ¿Qué impide 
 Las 26 tareas están marcadas y la spec figura implementada. Las puertas de T26 se ejecutaron con Docker y Chrome disponibles; los resultados y las dos advertencias del generador de contrato están registrados arriba. No hay pruebas bloqueadas declaradas verdes. El entorno temporal de sesión fue eliminado y el desarrollo habitual se conserva.
 
 La revisión y aprobación del integrador requieren un PR posterior. No se hizo push. El rediseño #119 y la entrega integral #120 siguen separados; sesión permanece en memoria de un solo proceso y el reinicio requiere reingreso.
-
