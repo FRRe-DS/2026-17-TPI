@@ -117,3 +117,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T10 — Proxy con sesión · commit 083/T10
 - proxy.ts conserva transporte y lista cerrada existentes; OIDC obtiene token solo de sesión renovada, rechaza Authorization y suplantación. Preserva bytes, idempotencia, respuesta y no reenvía tras 401. Registro real omite cuerpos y rutas personales. proxy-real.test.ts prueba estos invariantes; servidor compila.
 
+
+### T11 — Diagnóstico aislado · commit 083/T11
+- Cada sesión guarda hasta 50 metadatos de pedidos, sin cuerpos, query ni UUID de rutas. Se eliminan con ella y no prolongan actividad. /panel/pedidos exige cookie válida y solo devuelve su registro. Modo real no registra evaluación. proxy-real.test.ts comprueba dos sesiones y rutas ausentes; compilación pasa.
+

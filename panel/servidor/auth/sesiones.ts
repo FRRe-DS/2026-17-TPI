@@ -1,4 +1,5 @@
 import { crearAlmacen, type Reloj } from './almacen.js';
+import type { Pedido } from '../pedidos.js';
 
 const MAXIMO_ABSOLUTO_MS = 8 * 60 * 60_000;
 const INACTIVIDAD_MS = 30 * 60_000;
@@ -20,6 +21,7 @@ export type DatosSesion = {
 };
 
 export type Sesion = DatosSesion & {
+  pedidos?: Pedido[];
   creadaEn: number;
   ultimaActividadEn: number;
   venceEn: number;
@@ -44,6 +46,10 @@ export function crearAlmacenSesiones(ahora: Reloj = Date.now) {
     },
     // Leer (por ejemplo /auth/sesion) nunca cuenta como actividad de la API autenticada.
     obtener: almacen.obtener,
+    registrarPedido(id: string, pedido: Pedido): void {
+      const sesion = almacen.obtener(id);
+      if (sesion) almacen.actualizar(id, { ...sesion, pedidos: [pedido, ...(sesion.pedidos ?? [])].slice(0, 50) });
+    },
     actualizarCredenciales(id: string, version: number, datos: DatosSesion): boolean {
       const sesion = almacen.obtener(id);
       if (!sesion || sesion.version !== version || sesion.sub !== datos.sub) return false;

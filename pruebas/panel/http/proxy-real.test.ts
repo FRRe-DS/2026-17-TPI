@@ -6,6 +6,21 @@ const config = cargarConfigPanel({ PANEL_MODO_AUTH: 'oidc', PANEL_ORIGEN_PUBLICO
   PANEL_OIDC_EMISOR: 'http://localhost:8080/realms/prueba', PANEL_OIDC_URL_INTERNA: 'http://localhost:8080/realms/prueba' }).config!;
 afterEach(() => vi.unstubAllGlobals());
 describe('proxy real', () => {
+  it('aísla diagnósticos entre sesiones y no registra rutas de evaluación', async () => {
+    const sesiones = crearAlmacenSesiones(); const ahora = Date.now();
+    const crear = () => sesiones.crear({ sub: 'usuario', roles: [], scopes: [], credenciales: { accessToken: 'secreto', refreshToken: 'secreto',
+      accessTokenVenceEn: ahora + 100_000, refreshTokenVenceEn: ahora + 300_000 } });
+    const uno = crear(); const dos = crear(); vi.stubGlobal('fetch', async () => Response.json({ ok: true }));
+    const app = construirApp({ config, auth: { sesiones } });
+    const encabezados = (id: string) => ({ host: 'localhost:8083', cookie: `m2_sesion=${id}` });
+    try {
+      await app.inject({ url: '/api/v1/clientes/dato-personal?nombre=privado', headers: encabezados(uno) });
+      const propio = await app.inject({ url: '/panel/pedidos', headers: encabezados(uno) });
+      expect(propio.json().pedidos).toHaveLength(1); expect(propio.body).not.toMatch(/dato-personal|privado|secreto/);
+      expect((await app.inject({ url: '/panel/pedidos', headers: encabezados(dos) })).json().pedidos).toEqual([]);
+      for (const url of ['/panel/demo', '/panel/m6', '/panel/docker']) expect((await app.inject({ url, headers: encabezados(uno) })).statusCode).toBe(404);
+    } finally { await app.close(); }
+  });
   it('usa solo token servidor, preserva bytes/idempotencia/401 y nunca repite escritura', async () => {
     const sesiones = crearAlmacenSesiones(); const ahora = Date.now();
     const id = sesiones.crear({ sub: 'usuario', roles: ['CLIENTE'], scopes: [], credenciales: {

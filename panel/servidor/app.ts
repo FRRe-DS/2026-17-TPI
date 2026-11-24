@@ -6,7 +6,8 @@ import type { ConfigPanel } from './config.js';
 import { registrarEncabezadosDeSeguridad, registrarEstaticos } from './estaticos.js';
 import { ESPERA_CONTROL_MS, registrarControlM6 } from './m6-control.js';
 import { crearDependenciasDemo, registrarDemo, type DependenciasDemo } from './demo/rutas.js';
-import { crearRegistroDePedidos, registrarPedidos } from './pedidos.js';
+import { crearRegistroDePedidos, registrarPedidos, presentarPedido } from './pedidos.js';
+import { responderFallaSesion } from './auth/estado.js';
 import { responderProblema } from './problemas.js';
 import { ESPERA_M2_MS, registrarReenvio } from './proxy.js';
 import { registrarSeguridad } from './seguridad.js';
@@ -113,7 +114,17 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
     app.register(registrarEstadoAuth, { config, sesiones, transacciones, oidc, renovacion });
     app.register(registrarSalidaAuth, { config, sesiones, transacciones, oidc });
     const cookies = crearCookiesAuth(config);
+    app.get('/panel/pedidos', async (request, reply) => {
+      reply.header('cache-control', 'no-store');
+      const encontrada = cookies.leerSesion(request, sesiones);
+      if (!encontrada) return responderFallaSesion(reply, new SesionRechazada());
+      return { pedidos: (encontrada.sesion.pedidos ?? []).map(pedido => presentarPedido(pedido, config.urlM2Publica)) };
+    });
     app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos: crearRegistroDePedidos(),
+      registroPara: (request) => {
+        const encontrada = cookies.leerSesion(request, sesiones);
+        return { registrar: pedido => { if (encontrada) sesiones.registrarPedido(encontrada.id, pedido); }, recientes: () => [] };
+      },
       autenticar: async (request) => {
         const encontrada = cookies.leerSesion(request, sesiones);
         if (!encontrada) throw new SesionRechazada();
