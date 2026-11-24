@@ -149,3 +149,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T18 — Precarga determinista M6 · commit 083/T18
 - M6_CLIENTES_PRECARGA valida hasta 1000 UUID antes de abrir puertos, normaliza y deduplica. arranque ejecuta precargarM6 antes de api.abrir; estado reutiliza los IDs deterministas existentes. Vacío mantiene simulador sin precarga. 70 pruebas de configuración/precarga pasan y servidor compila; recorrido HTTP real se cubre en T23.
 
+
+### T19 — Conservación del formulario · commit 083/T19
+- ContextoSesionEditable bloquea enviar/reintentar sin desmontar campos. AvisoReingreso permite copiar controles visibles, ofrece texto seleccionable si Clipboard falla y avisa pérdida antes del POST voluntario. No persiste datos ni repite escrituras al reingresar. Prueba de botón bloqueado pasa y cliente compila; comportamiento Chrome en T24.
+
