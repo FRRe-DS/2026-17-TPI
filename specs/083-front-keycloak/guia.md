@@ -137,3 +137,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T15 — Primer perfil por identidad · commit 083/T15
 - consultarPerfilPropio distingue únicamente 404 de éxito y propaga 401/403/503. PuertaPerfil consulta sub firmado antes de Mi cuenta y no bloquea Operación por perfil inexistente. Prueba de cinco estados pasa y cliente compila. Alta se conecta en T16.
 
+
+### T16 — Alta recuperable · commit 083/T16
+- crearAltaPropia conserva clave por cuerpo y comparte envío; ante 409 consulta sub propio y ante cuerpo cambiado tras resultado incierto comprueba primero si existe. CompletarPerfil reutiliza campos y errores existentes, sin UUID inventado. Unitarias y prueba con M2/PostgreSQL real pasan: dos pestañas terminan con un perfil. Cliente compila.
+

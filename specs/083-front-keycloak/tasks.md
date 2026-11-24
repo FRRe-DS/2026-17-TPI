@@ -41,7 +41,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: la pantalla real ofrece Keycloak y el aviso de errores, sin selector de rol, y los botones llaman a las rutas propias con origen protegido; desarrollo conserva su acceso anterior.
 - [x] **T15. Distinguir perfil existente y primer ingreso.** RF-2.1.83.2
   - Hecho cuando: 200 entra, 404 ofrece completar perfil y 401/403/503 mantienen sus estados; siempre se consulta el sub autenticado y no un UUID generado por el navegador.
-- [ ] **T16. Completar perfil con reintentos y concurrencia.** RF-2.1.83.3
+- [x] **T16. Completar perfil con reintentos y concurrencia.** RF-2.1.83.3
   - Hecho cuando: tests con M2 y base real comprueban 201, reintento con misma clave, fallo recuperable y dos pestañas; 409 recupera el perfil propio sin duplicarlo.
 
 ## Datos y entorno reproducible
