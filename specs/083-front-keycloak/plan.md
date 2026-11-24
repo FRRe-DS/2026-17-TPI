@@ -23,7 +23,9 @@ El proxy mantiene las 20 operaciones existentes de M2 y sus errores. El alta ini
 | GET /auth/salida | Verifica state de cierre y vuelve al acceso |
 | /api/v1/clientes y descendientes | Proxy autenticado; sin identidad elegida desde el navegador |
 
-Estas rutas pertenecen al servidor del frontend y no alteran el OpenAPI público de M2. Los errores del frontend usan application/problem+json y X-Request-Id: /panel/errores/sesion-requerida (401), /panel/errores/retorno-invalido (400), /panel/errores/identidad-no-admitida (403), /panel/errores/identidad-no-disponible (503 con Retry-After). Los errores de M2 pasan sin reemplazarlos por éxitos.
+Estas rutas pertenecen al servidor del frontend y no alteran el OpenAPI público de M2. Los errores del frontend usan application/problem+json y X-Request-Id: /panel/errores/sesion-requerida (401), /panel/errores/identidad-no-admitida (403), /panel/errores/identidad-no-disponible (503 con Retry-After). Los errores de M2 pasan sin reemplazarlos por éxitos.
+
+Algunas rutas las abre directamente el navegador de la persona, así que estas fallas redirigen al acceso en lugar de mostrar un problem+json. En GET /auth/retorno, un retorno inválido (transacción ausente, vencida, repetida o de otro navegador, cancelación, parámetros ambiguos, o código o credencial rechazados) responde 303 a /?acceso=invalido, sin abrir sesión; si Keycloak no está disponible durante el intercambio, 303 a /?acceso=no-disponible. Si Keycloak no responde antes de redirigir, POST /auth/iniciar responde 303 a /?acceso=no-disponible y POST /auth/cerrar, con la sesión local ya invalidada, 303 a /?salida=no-confirmada. El acceso muestra el aviso y permite reintentar (RNF-15.83.3). La implementación corresponde a T4, T6 y T9.
 
 ## Datos y sesión
 
