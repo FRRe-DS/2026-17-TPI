@@ -1,6 +1,6 @@
 # Spec 083 — Sesión real del frontend con Keycloak
 
-Estado: aprobada
+Estado: implementada
 Issue: #83
 Etapa: TP3
 Responsable: @DrazenPavicich (Drazen Pavicich)

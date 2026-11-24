@@ -1,6 +1,6 @@
 # Tareas — Spec 083: sesión real del frontend
 
-T1 a T5 están implementadas y validadas (ver guia.md). T6 a T26 siguen pendientes. Se ejecutan después del merge de la spec, una por vez: prueba en rojo, cambio acotado, prueba en verde, entrada de guía y commit 083/Tn. Cada paso se estima en 20 a 30 minutos y se divide antes de implementar si excede ese tiempo.
+T1 a T26 están implementadas y validadas (ver guia.md). Se conservaron pruebas, documentación y commits por tarea. El usuario autorizó completar las pendientes en una misma sesión; no se realizó push ni PR. La interfaz #119 y la entrega integral #120 conservan su alcance separado.
 
 El PR #118 se dividió en sesión, interfaz y entrega por pedido del integrador. Esta lista conserva solo sesión y la infraestructura necesaria para probarla. Las antiguas T31 (compose) y T33 (entorno Keycloak) permanecen aquí como T20 y T22. El recorrido completo antiguo T34 se traslada a entrega; aquí se agrega un recorrido acotado de sesión que no depende del rediseño.
 
@@ -67,7 +67,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: usuario doble rol recorre ambos espacios con el mismo sub, operador-only actúa sin perfil propio, cliente-only recibe rechazo, formulario vencido permite copiar y logout invalida sesión; vistas mínimas de sesión pasan teclado/foco y no desbordan a 360/1280.
 - [x] **T25. Documentar el arranque y los límites de sesión.** RNF-20.83.1
   - Hecho cuando: README, docs/probar-m2.md y guia.md tienen comandos verificados, nuevos usuarios, CSP, precarga, lista de variables permitidas, fallas y separación de modos; no afirman que el nuevo diseño o entrega completa estén implementados.
-- [ ] **T26. Ejecutar las puertas de validación de sesión.** RNF-07.83.1, RNF-20.83.1
+- [x] **T26. Ejecutar las puertas de validación de sesión.** RNF-07.83.1, RNF-20.83.1
   - Hecho cuando: comandos del plan y recorrido de sesión pasan con resultados registrados; no se desactivan checks ni se declara verde una prueba bloqueada.
 
 ## Continuidad del alcance

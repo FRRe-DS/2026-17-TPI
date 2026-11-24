@@ -2,7 +2,51 @@
 
 ## Estado de trabajo
 
-T1 a T25 implementadas en impl/083-front-keycloak. T26 concentra la validación final. La sesión real funciona en Chrome con Keycloak; el rediseño y la entrega integral pertenecen a #119 y #120.
+T1 a T26 implementadas y validadas en impl/083-front-keycloak. La sesión real funciona en Chrome con Keycloak; el rediseño y la entrega integral pertenecen a #119 y #120. Commits locales sin push ni PR. El usuario autorizó completar las tareas pendientes sin detenerse entre ellas.
+
+## Visión general
+
+El frontend conserva las pantallas existentes y ofrece un modo real de sesión con Keycloak.
+El navegador recibe una cookie opaca; las credenciales permanecen en memoria del servidor.
+Desarrollo sigue siendo un proceso separado que permite evaluación con HS256.
+El rediseño y la entrega integral continúan en #119 y #120.
+
+Recorrido de un ingreso:
+
+1. main.tsx pide /panel/config y carga únicamente la aplicación correspondiente al modo.
+2. IngresarReal envía un formulario POST al mismo origen.
+3. auth/rutas.ts valida transporte, guarda transacción y redirige con PKCE S256.
+4. Keycloak autentica y vuelve a /auth/retorno con código y state.
+5. auth/retorno.ts consume una transacción vigente vinculada al navegador.
+6. auth/oidc.ts intercambia el código y obtiene claves por la red interna.
+7. auth/validacion.ts verifica por separado identidad y acceso de M2.
+8. La sesión nueva reemplaza la anterior y el navegador vuelve a una URL limpia.
+9. PuertaPerfil consulta siempre el sub autenticado: 404 conduce al alta.
+10. Cada pedido de API obtiene el acceso de la sesión, con renovación compartida si hace falta.
+11. M2 conserva la autorización y la validación del contrato.
+12. Logout invalida localmente antes de solicitar confirmación remota.
+
+| Archivo | Responsabilidad | Requisito |
+|---|---|---|
+| config.ts, seguridad.ts, estaticos.ts | Modo, origen, Host/Origin y CSP | RNF-06.83.1, RNF-12.83.9 |
+| auth/almacen.ts, sesiones.ts, transacciones.ts | Memoria acotada, expiración y consumo único | RNF-12.83.2 |
+| auth/oidc.ts, validacion.ts | Intercambio, plazos y verificación criptográfica | RNF-12.83.1, RNF-13.83.1 |
+| auth/renovacion.ts, estado.ts, salida.ts | Renovación, consulta y cierre | RNF-12.83.4, RNF-12.83.5 |
+| proxy.ts, pedidos.ts | Transporte preservado y diagnóstico por sesión | RNF-03.83.1, RNF-14.83.1 |
+| app-real.tsx, fuentes/sesion-real.ts | Sesión mínima y espacios por permisos | RNF-12.83.6 |
+| logica/primer-perfil.ts, completar-perfil.tsx | Alta idempotente y recuperación de concurrencia | RF-2.1.83.3 |
+| componentes/sesion-editable.tsx | Conservación y copia antes de reingresar | RNF-12.83.4.1 |
+| m6-simulado/precarga.ts | Viajes deterministas sin crear perfiles | RNF-02.83.3 |
+| docker-compose.front.yml | Entorno real sin secretos heredados | RNF-19.83.2 |
+
+Memoria por proceso evita agregar base o Redis para sesión; reinicio requiere reingreso.
+El transporte no repite escrituras automáticamente; un timeout no prueba que una escritura no ocurrió.
+El diagnóstico guarda metadatos sin cuerpos, query ni identidad en rutas y desaparece con la sesión.
+Los comandos y usuarios para repetir el recorrido están en docs/probar-m2.md, sección Frontend con Keycloak.
+La prueba front-keycloak usa puertos y volúmenes propios y limpia recursos incluso al fallar.
+
+Preguntas para estudiar: ¿por qué el ID token no sirve para M2? ¿Qué impide recrear sesión tras logout concurrente?
+¿Por qué /auth/sesion no cuenta como actividad? ¿Qué conserva la clave de idempotencia cuando la respuesta es incierta?
 
 ## Tareas
 
@@ -173,4 +217,14 @@ T1 a T25 implementadas en impl/083-front-keycloak. T26 concentra la validación 
 
 ### T25 — Arranque y límites documentados · commit 083/T25
 - README y docs/probar-m2.md describen arranque aislado, usuarios, permisos, renovación, expiración, copia, CSP, variables permitidas y precarga. Diferencian pantallas existentes del rediseño #119 y entrega #120. Comandos de prueba ejecutados con puertos propios; contrato usa servicio de desarrollo existente. Keycloak real pasa 24 casos y Chrome cinco; validación general se registra en T26.
+
+
+### T26 — Puertas finales · commit 083/T26
+- Validación del 2026-11-23: npm test pasa 169 archivos y 5928 pruebas, sin omisiones ni errores. npm run build, npm run panel:build y npm run lint pasan.
+- npm run front:keycloak pasa tres archivos y cinco pruebas Chrome con Keycloak real: POST/303/CSP, perfil, viajes, calificación, doble rol, permisos, conservación/copia, cierre y renovación después de expirar el acceso. Última corrida sobre el manejo final de fallas. Recursos aislados eliminados al terminar.
+- npm run keycloak:test pasa tres archivos y 24 pruebas, incluido token real de identidad doble con scopes solicitados. npm run panel:navegador pasa cinco archivos y 120 pruebas de regresión del desarrollo.
+- npm run contrato:test termina con código 0: Schemathesis informa 3579 generados y aprobados, 34 omitidos y dos advertencias: datos faltantes (404 en 13 operaciones) y rechazo predominante de datos generados en una operación. No equivale a cobertura funcional integral; perfiles, concurrencia y flujos reales tienen pruebas específicas adicionales.
+- spec-check y git diff --check pasan. Avisos de cantidad de tareas y del commit heredado de portabilidad Windows siguen presentes, sin desactivar controles ni reescribir historia.
+- La verificación detectó expectativas antiguas de 404, el control de cinco proyectos y una demora para bloquear envíos ante 503 de identidad. Se adaptaron los controles a seis proyectos y el cliente notifica el error tipado inmediatamente, manteniendo sesión y campos. Prueba negativa en rojo y luego verde, más suite completa y Chrome posteriores.
+- Sin dependencias nuevas, cambios de contrato, servicio M2 ni migraciones. El entorno habitual conserva seis servicios sanos. La spec se marca implementada; aprobación de PR y publicación siguen pendientes fuera de esta ejecución.
 

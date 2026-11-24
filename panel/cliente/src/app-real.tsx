@@ -23,7 +23,12 @@ import { enlace, inicioDe } from './rutas.js';
 
 const fuente = crearSesionReal();
 const ultimoPedido = crearUltimoPedido();
-const api = crearApiM2({ tiempoMaximoMs: 15_000, alTerminar: pedido => { ultimoPedido.publicar(pedido); if (pedido.estado === 401) fuente.vencer(); } });
+const api = crearApiM2({ tiempoMaximoMs: 15_000, alTerminar: ultimoPedido.publicar,
+  alFallar: error => {
+    if (error.estado === 401) fuente.vencer();
+    if (error.type === '/panel/errores/identidad-no-disponible') fuente.noDisponible();
+  },
+});
 const apiPanel = crearApiPanel();
 const AVISOS: Record<string, string> = { invalido: 'No se pudo completar el ingreso. Volvé a intentarlo.', 'no-disponible': 'Identidad no disponible. Intentá más tarde.',
   completa: 'Cerraste la sesión.', 'no-confirmada': 'La sesión local está cerrada. No se confirmó el cierre en Keycloak.' };

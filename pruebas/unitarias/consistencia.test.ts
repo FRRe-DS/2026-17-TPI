@@ -76,8 +76,8 @@ const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd
 const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
 describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y keycloak (RNF-07.1, RNF-07.5, RNF-07.7, RNF-07.13)', () => {
-  it('declara los cinco proyectos, en ese orden', () => {
-    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida', 'keycloak']);
+  it('declara los seis proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida', 'keycloak', 'front-keycloak']);
   });
 
   // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
@@ -103,6 +103,12 @@ describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y key
     expect(keycloak?.test.globalSetup).toEqual(['pruebas/keycloak/global.ts']);
     expect(existsSync(new URL('pruebas/keycloak/global.ts', raiz))).toBe(true);
     expect(archivosDe(keycloak ?? { test: { name: '', include: [] } }).length).toBeGreaterThan(0);
+  });
+  it('front:keycloak compila y ejecuta Chrome con preparación aislada, sin mezclarlo con npm test', () => {
+    expect(paquete.scripts?.['front:keycloak']).toBe('npm run panel:build && vitest run --project front-keycloak');
+    const front = proyectos.find(proyecto => proyecto.test.name === 'front-keycloak');
+    expect(front?.test.include).toEqual(['pruebas/front-keycloak/**/*.test.ts']);
+    expect(front?.test.globalSetup).toEqual(['pruebas/front-keycloak/global.ts']);
   });
 
   it('hay pruebas en unitarias y en integracion', () => {
@@ -131,17 +137,19 @@ describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y key
   });
 
   it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, las de distribuida/ de distribuida, las de keycloak/ de keycloak, y las demás, de unitarias', () => {
-    const [unitarias, integracion, navegador, distribuida, keycloak] = proyectos;
+    const [unitarias, integracion, navegador, distribuida, keycloak, frontKeycloak] = proyectos;
     const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
     const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
     const deNavegador = new Set(navegador ? archivosDe(navegador) : []);
     const deDistribuida = new Set(distribuida ? archivosDe(distribuida) : []);
     const deKeycloak = new Set(keycloak ? archivosDe(keycloak) : []);
+    const deFrontKeycloak = new Set(frontKeycloak ? archivosDe(frontKeycloak) : []);
     const alReves = todasLasPruebas.filter((archivo) => {
       if (/^pruebas\/(panel\/)?integracion\//.test(archivo)) return !deIntegracion.has(archivo);
       if (archivo.startsWith('pruebas/panel/navegador/')) return !deNavegador.has(archivo);
       if (archivo.startsWith('pruebas/distribuida/')) return !deDistribuida.has(archivo);
       if (archivo.startsWith('pruebas/keycloak/')) return !deKeycloak.has(archivo);
+      if (archivo.startsWith('pruebas/front-keycloak/')) return !deFrontKeycloak.has(archivo);
       return !deUnitarias.has(archivo);
     });
     expect(alReves).toEqual([]);

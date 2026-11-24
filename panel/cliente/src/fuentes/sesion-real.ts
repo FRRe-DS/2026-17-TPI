@@ -9,6 +9,7 @@ export function crearSesionReal(pedir: typeof fetch = fetch) {
     actual: () => actual,
     suscribir(avisar: () => void) { oyentes.add(avisar); return () => { oyentes.delete(avisar); }; },
     vencer() { publicar({ ...actual, estado: 'sin-sesion' }); },
+    noDisponible() { publicar({ ...actual, estado: 'no-disponible' }); },
     actualizar(): Promise<void> {
       if (!pendiente) pendiente = (async () => {
         try {
