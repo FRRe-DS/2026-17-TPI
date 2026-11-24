@@ -129,3 +129,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T13 — Espacios y permisos · commit 083/T13
 - permisos-reales.ts deriva espacios de roles verificados, controla rutas y scopes y rechaza herramientas reales o CONDUCTOR-only. Marco y menú admiten modo real sin evaluación. Las funciones no mutan identidad. Prueba cubre doble rol, acceso directo y scopes faltantes; cliente compila. Selector se conecta en T14.
 
+
+### T14 — Acceso y aplicación real · commit 083/T14
+- main.tsx carga dinámicamente el modo decidido por el servidor. app-real.tsx conecta sesión y pantallas sin suplantación ni herramientas; selector cambia espacio y mantiene sub. IngresarReal usa POST nativo; encabezado cierra por POST propio. Perfil sin fuente de control no ofrece carga de ejemplo. Prueba del formulario pasa; cliente compila. Chrome completo corresponde a T23/T24.
+

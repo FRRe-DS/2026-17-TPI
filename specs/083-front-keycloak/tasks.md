@@ -37,7 +37,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: cliente solo consulta /auth/sesion, no conserva tokens, distingue 401 de 503 y expone roles y scopes a la navegación sin aceptar un rol escrito manualmente.
 - [x] **T13. Adaptar rutas y selector Mi cuenta / Operación.** RNF-12.83.6, RNF-12.83.6.1
   - Hecho cuando: pruebas cubren cliente, operador, doble rol, CONDUCTOR y acceso directo a rutas; cambiar espacio no cambia sub ni token ni exige perfil para usar Operación.
-- [ ] **T14. Construir acceso real y cierre desde el encabezado.** RF-2.1.83.1
+- [x] **T14. Construir acceso real y cierre desde el encabezado.** RF-2.1.83.1
   - Hecho cuando: la pantalla real ofrece Keycloak y el aviso de errores, sin selector de rol, y los botones llaman a las rutas propias con origen protegido; desarrollo conserva su acceso anterior.
 - [ ] **T15. Distinguir perfil existente y primer ingreso.** RF-2.1.83.2
   - Hecho cuando: 200 entra, 404 ofrece completar perfil y 401/403/503 mantienen sus estados; siempre se consulta el sub autenticado y no un UUID generado por el navegador.
