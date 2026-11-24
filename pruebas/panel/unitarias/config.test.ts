@@ -184,6 +184,7 @@ describe('cargarConfigM6 (RNF-06.4, RNF-13.5)', () => {
   it('aplica los valores por defecto del plan', () => {
     expect(cargarConfigM6(M6)).toEqual({
       config: {
+        clientesPrecarga: [],
         puerto: 3006,
         puertoControl: 3007,
         retardoLentoMs: 5000,

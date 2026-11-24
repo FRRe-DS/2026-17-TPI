@@ -145,3 +145,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T17 — Identidad doble de ejemplo · commit 083/T17
 - Realm agrega cliente-operador1 con UUID fijo y dos roles; ayudas tipadas separan identidad doble de fixtures de rol único. PKCE y usuarios anteriores sin cambios. 23 pruebas estáticas pasan; pkce.test.ts agrega comprobación real de roles/scopes, que se ejecuta con la puerta Keycloak de T26.
 
+
+### T18 — Precarga determinista M6 · commit 083/T18
+- M6_CLIENTES_PRECARGA valida hasta 1000 UUID antes de abrir puertos, normaliza y deduplica. arranque ejecuta precargarM6 antes de api.abrir; estado reutiliza los IDs deterministas existentes. Vacío mantiene simulador sin precarga. 70 pruebas de configuración/precarga pasan y servidor compila; recorrido HTTP real se cubre en T23.
+

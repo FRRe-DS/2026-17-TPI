@@ -51,6 +51,7 @@ export type ConfigPanelOidc = ConfigPanelComun & {
 export type ConfigPanel = ConfigPanelDesarrollo | ConfigPanelOidc;
 
 export type ConfigM6 = ConfigTokens & {
+  clientesPrecarga?: string[];
   puerto: number;
   puertoControl: number;
   retardoLentoMs: number;
@@ -252,6 +253,15 @@ export function cargarConfigPanel(env: Entorno): ResultadoConfig<ConfigPanel> {
 export function cargarConfigM6(env: Entorno): ResultadoConfig<ConfigM6> {
   const lector = crearLector(env);
   const config: ConfigM6 = {
+    clientesPrecarga: lector.opcional('M6_CLIENTES_PRECARGA', [], {
+      motivo: 'debe ser una lista de UUID separados por comas',
+      convertir: texto => {
+        if (texto === '') return [];
+        const ids = texto.split(',').map(id => id.trim().toLowerCase());
+        return ids.length <= 1000 && ids.every(id => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))
+          ? [...new Set(ids)] : undefined;
+      },
+    }),
     puerto: lector.opcional('M6_PUERTO', 3006, puerto),
     puertoControl: lector.opcional('M6_PUERTO_CONTROL', 3007, puerto),
     retardoLentoMs: lector.opcional('M6_RETARDO_LENTO_MS', RETARDO_LENTO_MS, tiempoEnMs),
