@@ -125,3 +125,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T12 — Fuente real de sesión · commit 083/T12
 - sesion-real.ts consulta exclusivamente /auth/sesion con plazo de 15 s, conserva solo sub/roles/scopes y distingue carga, sesión, 401 y dependencia caída. Suscripciones y petición compartida evitan cargas duplicadas. /panel/config expone solo modo y etiqueta M6. Prueba de estados pasa; cliente compila.
 
+
+### T13 — Espacios y permisos · commit 083/T13
+- permisos-reales.ts deriva espacios de roles verificados, controla rutas y scopes y rechaza herramientas reales o CONDUCTOR-only. Marco y menú admiten modo real sin evaluación. Las funciones no mutan identidad. Prueba cubre doble rol, acceso directo y scopes faltantes; cliente compila. Selector se conecta en T14.
+
