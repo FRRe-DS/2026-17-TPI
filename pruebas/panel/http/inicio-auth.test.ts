@@ -154,12 +154,16 @@ describe('CSP e integración del modo real (083/T4)', () => {
     expect((await app.inject('/')).headers['content-security-policy']).toBe(POLITICA_DE_SEGURIDAD);
   });
 
-  it('la app real expone salud e inicio, mantiene cerradas cuenta y herramientas y no registra credenciales', async () => {
+  it('la app real protege cuenta y sesión, mantiene cerradas herramientas y no registra credenciales', async () => {
     const logs = capturarLogs(); const app = construirApp({ config: CONFIG, flujoLog: logs.flujo }); abiertas.push(app);
     expect((await app.inject({ url: '/salud-panel', headers: { host: HEADERS.host } })).statusCode).toBe(200);
     const inicio = await app.inject({ method: 'POST', url: '/auth/iniciar', headers: HEADERS });
     expect(inicio.statusCode).toBe(303);
-    for (const ruta of ['/api/v1/clientes', '/auth/retorno', '/auth/sesion', '/panel/demo/estado', '/panel/m6/estado', '/panel/pedidos']) {
+    for (const ruta of ['/api/v1/clientes', '/auth/sesion', '/panel/pedidos']) {
+      expect((await app.inject({ url: ruta, headers: { host: HEADERS.host } })).statusCode).toBe(401);
+    }
+    expect((await app.inject({ url: '/auth/retorno', headers: { host: HEADERS.host } })).headers.location).toBe('/?acceso=invalido');
+    for (const ruta of ['/panel/demo/estado', '/panel/m6/estado']) {
       expect((await app.inject({ url: ruta, headers: { host: HEADERS.host } })).statusCode).toBe(404);
     }
     expect(logs.texto()).not.toContain(vinculoDe(inicio));

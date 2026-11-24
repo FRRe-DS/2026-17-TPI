@@ -58,7 +58,8 @@ describe('arrancarPanel', () => {
     expect((await fetch(`${origen}/salud-panel`)).status).toBe(200);
     const inicio = await fetch(`${origen}/auth/iniciar`, { method: 'POST', headers: { origin: origen }, redirect: 'manual' });
     expect(inicio.status).toBe(303);
-    for (const ruta of ['/panel/demo/estado', '/panel/m6/estado', '/api/v1/clientes']) {
+    expect((await fetch(`${origen}/api/v1/clientes`)).status).toBe(401);
+    for (const ruta of ['/panel/demo/estado', '/panel/m6/estado']) {
       expect((await fetch(`${origen}${ruta}`)).status).toBe(404);
     }
   });

@@ -57,7 +57,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
 
 ## Pruebas de sesión y documentación
 
-- [ ] **T21. Comprobar aislamiento y ausencia de secretos heredados.** RNF-07.83.1, RNF-19.83.1, RNF-19.83.2
+- [x] **T21. Comprobar aislamiento y ausencia de secretos heredados.** RNF-07.83.1, RNF-19.83.1, RNF-19.83.2
   - Hecho cuando: pruebas negativas cubren callback ajeno, state/cookie incorrectos, retorno externo, sesión fijada, logout concurrente, suplantación y diagnóstico entre sesiones, sin tokens, cookies o códigos en registros; configuración resuelta y entorno efectivo de panel no contienen claves prohibidas ni valores centinela de base/firma/control, sin imprimirlos.
 - [ ] **T22. Preparar entorno Chrome con Keycloak real y M6 precargado.** RNF-07.83.1
   - Hecho cuando: proyecto front-keycloak y comando de ejecución compilan y levantan entorno aislado con retornos exactos, datos para los dos clientes y usuario doble rol, sin relajar PKCE ni claims; bajan sus recursos también al fallar.

@@ -157,3 +157,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T20 — Compose real sin herencia · commit 083/T20
 - docker-compose.front.yml elimina env_file y reemplaza environment completo con once variables permitidas. Front/keycloak no selecciona puente ni publica control M6; desarrollo conserva puente. Ejemplo activa M2 jwks y precarga de tres identidades. Dos pruebas del modelo Compose resuelto pasan con centinelas; imagen y entorno efectivo se validan con T22/T26. Semántica !reset/!override según docs.docker.com/reference/compose-file/merge/.
 
+
+### T21 — Comprobaciones negativas · commit 083/T21
+- Pruebas de cookies, retorno, renovación y proxy cubren fijación, state/vínculo ajenos, logout concurrente, retorno externo, suplantación y diagnóstico cruzado. Se agregan comprobaciones de logs sin code/state/cookie/verifier/tokens y JWKS compartido con reintento GET, sin reintentar POST. Se actualiza el cierre temporal de T4 a los nuevos 401/303, manteniendo 404 de herramientas. El entorno efectivo se comprueba en el proyecto Chrome de T22.
+

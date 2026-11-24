@@ -4,6 +4,7 @@ import { cargarConfigPanel } from '../../../panel/servidor/config.js';
 import { crearAlmacenSesiones } from '../../../panel/servidor/auth/sesiones.js';
 import { crearAlmacenTransacciones } from '../../../panel/servidor/auth/transacciones.js';
 import { armarTokenRsa, crearClave, jwksDe } from '../../ayudas/jwks.js';
+import { capturarLogs } from '../../ayudas/logs.js';
 
 const clave = crearClave();
 const emisor = 'http://localhost:8080/realms/prueba';
@@ -25,7 +26,8 @@ describe('retorno OIDC', () => {
       expect(String(opciones?.body)).toContain('code_verifier=verifier');
       return Response.json({ id_token: firmar('ID'), access_token: firmar('Bearer'), refresh_token: 'refresh-secreto', refresh_expires_in: 600, token_type: 'Bearer' });
     };
-    const app = construirApp({ config: configOidc(), auth: { sesiones, transacciones, pedir } });
+    const logs = capturarLogs();
+    const app = construirApp({ config: configOidc(), flujoLog: logs.flujo, auth: { sesiones, transacciones, pedir } });
     try {
       const url = `/auth/retorno?state=${tx.state}&code=codigo-secreto`;
       const headers = { host: 'localhost:8083', cookie: `m2_transaccion=${tx.vinculo}` };
@@ -37,6 +39,9 @@ describe('retorno OIDC', () => {
       expect(JSON.stringify(respuesta.headers)).not.toContain('secreto'); expect(sesiones.cantidad()).toBe(1);
       const repetida = await app.inject({ url, headers }); expect(repetida.headers.location).toBe('/?acceso=invalido');
       expect(pedidos).toHaveLength(2);
+      for (const secreto of ['codigo-secreto', 'refresh-secreto', tx.state, tx.vinculo, 'verifier', firmar('ID'), firmar('Bearer')]) {
+        expect(logs.texto().includes(secreto)).toBe(false);
+      }
     } finally { await app.close(); }
   });
 
