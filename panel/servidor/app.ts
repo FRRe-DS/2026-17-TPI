@@ -13,7 +13,8 @@ import { registrarSeguridad } from './seguridad.js';
 import { crearAlmacenTransacciones } from './auth/transacciones.js';
 import { registrarInicioAuth } from './auth/rutas.js';
 import { crearAlmacenSesiones } from './auth/sesiones.js';
-import { crearClienteOidc, type ClienteOidc } from './auth/oidc.js';
+import { crearClienteOidc, SesionRechazada, type ClienteOidc } from './auth/oidc.js';
+import { crearCookiesAuth } from './auth/cookies.js';
 import { registrarRetornoAuth } from './auth/retorno.js';
 import { crearRenovacion } from './auth/renovacion.js';
 import { registrarEstadoAuth } from './auth/estado.js';
@@ -111,6 +112,16 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
     app.register(registrarRetornoAuth, { config, sesiones, transacciones, oidc });
     app.register(registrarEstadoAuth, { config, sesiones, transacciones, oidc, renovacion });
     app.register(registrarSalidaAuth, { config, sesiones, transacciones, oidc });
+    const cookies = crearCookiesAuth(config);
+    app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos: crearRegistroDePedidos(),
+      autenticar: async (request) => {
+        const encontrada = cookies.leerSesion(request, sesiones);
+        if (!encontrada) throw new SesionRechazada();
+        const sesion = await renovacion.obtener(encontrada.id);
+        if (!sesiones.registrarActividad(encontrada.id)) throw new SesionRechazada();
+        return sesion.credenciales.accessToken;
+      },
+    });
     if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
     // T4 inicia autorización. Cuenta, retorno y sesión siguen cerrados hasta conectar las tareas siguientes.
     return app;

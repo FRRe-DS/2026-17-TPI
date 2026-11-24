@@ -113,3 +113,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T9 — Salida local y remota · commit 083/T9
 - salida.ts invalida antes de redirigir, borra cookie y vincula retorno a transacción única. Usa client_id y state, nunca id_token_hint. Fallar el cierre remoto deja la sesión local cerrada y muestra salida no confirmada. Prueba HTTP incluye retorno único y token ausente en URL; compilación pasa.
 
+
+### T10 — Proxy con sesión · commit 083/T10
+- proxy.ts conserva transporte y lista cerrada existentes; OIDC obtiene token solo de sesión renovada, rechaza Authorization y suplantación. Preserva bytes, idempotencia, respuesta y no reenvía tras 401. Registro real omite cuerpos y rutas personales. proxy-real.test.ts prueba estos invariantes; servidor compila.
+
