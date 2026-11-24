@@ -46,7 +46,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
 
 ## Datos y entorno reproducible
 
-- [ ] **T17. Añadir al realm un usuario de ejemplo con CLIENTE y OPERADOR.** RNF-12.83.6.1, RNF-12.83.8
+- [x] **T17. Añadir al realm un usuario de ejemplo con CLIENTE y OPERADOR.** RNF-12.83.6.1, RNF-12.83.8
   - Hecho cuando: cliente-operador1 tiene UUID fijo d0b00000-0000-4000-8000-000000000001, ambos roles y scopes solicitados de M2 en un token real; tests de realm comprueban que cliente1, cliente2 y operador1 mantienen sus roles previos y PKCE sigue obligatorio.
 - [ ] **T18. Configurar precarga determinista del M6 simulado al arrancar.** RNF-02.83.2, RNF-02.83.3, RNF-06.83.1
   - Hecho cuando: M6_CLIENTES_PRECARGA se valida antes de abrir API, vacío conserva el comportamiento anterior y los IDs configurados reciben un COMPLETED y un IN_PROGRESS propios; repetir no duplica, y ningún perfil ni calificación se escribe en M2.

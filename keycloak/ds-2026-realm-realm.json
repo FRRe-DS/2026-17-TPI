@@ -747,6 +747,27 @@
       "realmRoles": [
         "CONDUCTOR"
       ]
+    },
+    {
+      "enabled": true,
+      "username": "cliente-operador1",
+      "id": "d0b00000-0000-4000-8000-000000000001",
+      "realmRoles": [
+        "CLIENTE",
+        "OPERADOR"
+      ],
+      "email": "cliente-operador1@ejemplo.test",
+      "lastName": "Operador",
+      "requiredActions": [],
+      "emailVerified": true,
+      "credentials": [
+        {
+          "temporary": false,
+          "type": "password",
+          "value": "cliente-operador1-contrasena-de-desarrollo"
+        }
+      ],
+      "firstName": "Cliente"
     }
   ]
 }

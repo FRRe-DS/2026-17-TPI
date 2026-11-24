@@ -141,3 +141,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T16 — Alta recuperable · commit 083/T16
 - crearAltaPropia conserva clave por cuerpo y comparte envío; ante 409 consulta sub propio y ante cuerpo cambiado tras resultado incierto comprueba primero si existe. CompletarPerfil reutiliza campos y errores existentes, sin UUID inventado. Unitarias y prueba con M2/PostgreSQL real pasan: dos pestañas terminan con un perfil. Cliente compila.
 
+
+### T17 — Identidad doble de ejemplo · commit 083/T17
+- Realm agrega cliente-operador1 con UUID fijo y dos roles; ayudas tipadas separan identidad doble de fixtures de rol único. PKCE y usuarios anteriores sin cambios. 23 pruebas estáticas pasan; pkce.test.ts agrega comprobación real de roles/scopes, que se ejecuta con la puerta Keycloak de T26.
+
