@@ -228,3 +228,10 @@ Preguntas para estudiar: ¿por qué el ID token no sirve para M2? ¿Qué impide 
 - La verificación detectó expectativas antiguas de 404, el control de cinco proyectos y una demora para bloquear envíos ante 503 de identidad. Se adaptaron los controles a seis proyectos y el cliente notifica el error tipado inmediatamente, manteniendo sesión y campos. Prueba negativa en rojo y luego verde, más suite completa y Chrome posteriores.
 - Sin dependencias nuevas, cambios de contrato, servicio M2 ni migraciones. El entorno habitual conserva seis servicios sanos. La spec se marca implementada; aprobación de PR y publicación siguen pendientes fuera de esta ejecución.
 
+
+## Validación de la spec · commit 083/V
+
+Las 26 tareas están marcadas y la spec figura implementada. Las puertas de T26 se ejecutaron con Docker y Chrome disponibles; los resultados y las dos advertencias del generador de contrato están registrados arriba. No hay pruebas bloqueadas declaradas verdes. El entorno temporal de sesión fue eliminado y el desarrollo habitual se conserva.
+
+La revisión y aprobación del integrador requieren un PR posterior. No se hizo push. El rediseño #119 y la entrega integral #120 siguen separados; sesión permanece en memoria de un solo proceso y el reinicio requiere reingreso.
+
