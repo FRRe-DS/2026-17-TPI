@@ -12,8 +12,12 @@ import { ESPERA_M2_MS, registrarReenvio } from './proxy.js';
 import { registrarSeguridad } from './seguridad.js';
 import { crearAlmacenTransacciones } from './auth/transacciones.js';
 import { registrarInicioAuth } from './auth/rutas.js';
+import { crearAlmacenSesiones } from './auth/sesiones.js';
+import { crearClienteOidc } from './auth/oidc.js';
+import { registrarRetornoAuth } from './auth/retorno.js';
 
 export type OpcionesApp = {
+  auth?: { sesiones?: ReturnType<typeof crearAlmacenSesiones>; transacciones?: ReturnType<typeof crearAlmacenTransacciones>; pedir?: typeof fetch };
   config: ConfigPanel;
   // Adonde van los logs; sin él, a la salida estándar.
   flujoLog?: Writable;
@@ -46,7 +50,7 @@ function estadoDe(error: unknown): number {
 
 // Seguridad, salud, logs y archivos del cliente para ambos modos. Desarrollo agrega reenvío y evaluación;
 // OIDC registra solo las rutas reales implementadas hasta ahora. No escucha en puertos; eso lo hace el arranque.
-export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente, demo }: OpcionesApp): FastifyInstance {
+export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente, demo, auth }: OpcionesApp): FastifyInstance {
   const app = Fastify({
     // El cuerpo se pasa tal cual a M2, que es quien lo valida; el límite de 1 MiB es el de M2 (RNF-03.2).
     bodyLimit: 1024 * 1024,
@@ -95,9 +99,12 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
 
   app.get('/salud-panel', async () => ({ estado: 'ok' }));
   if (config.modoAuth === 'oidc') {
-    const transacciones = crearAlmacenTransacciones();
-    app.addHook('onClose', async () => transacciones.cerrar());
+    const transacciones = auth?.transacciones ?? crearAlmacenTransacciones();
+    const sesiones = auth?.sesiones ?? crearAlmacenSesiones();
+    const oidc = crearClienteOidc(config, auth?.pedir);
+    app.addHook('onClose', async () => { transacciones.cerrar(); sesiones.cerrar(); });
     app.register(registrarInicioAuth, { config, transacciones });
+    app.register(registrarRetornoAuth, { config, sesiones, transacciones, oidc });
     if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
     // T4 inicia autorización. Cuenta, retorno y sesión siguen cerrados hasta conectar las tareas siguientes.
     return app;

@@ -18,7 +18,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: POST propio genera 303 con parámetros correctos, verifier solo en servidor y retorno local permitido; la CSP oidc permite solo self y el origen público de Keycloak, desarrollo conserva self y las pruebas rechazan comodines y no usan contraseñas ni tokens en navegador.
 - [x] **T5. Validar ID token y access token por separado con JWKS de prueba.** RNF-12.83.1
   - Hecho cuando: pruebas rechazan firma, algoritmo, issuer, audiencia, nonce, sub y tipo inválidos; ID token nunca se acepta como access token de M2.
-- [ ] **T6. Completar retorno OIDC y abrir sesión con URL limpia.** RF-2.1.83.1, RNF-12.83.1, RNF-19.83.1
+- [x] **T6. Completar retorno OIDC y abrir sesión con URL limpia.** RF-2.1.83.1, RNF-12.83.1, RNF-19.83.1
   - Hecho cuando: retorno válido crea cookie nueva y redirige; retorno repetido, cancelado, expirado o de otro navegador no crea sesión ni deja códigos en logs o diagnósticos.
 - [ ] **T7. Renovar credenciales con una operación compartida por sesión.** RNF-12.83.4, RNF-13.83.1
   - Hecho cuando: varios pedidos concurrentes causan un refresh, los tokens se actualizan atómicamente y una renovación que termina después de logout no recrea la sesión.

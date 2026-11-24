@@ -96,3 +96,8 @@ T1 a T5 implementadas y validadas en `impl/083-front-keycloak`. T6 a T26 siguen 
 ## Siguiente tarea
 
 T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, intercambiar el código y validar las credenciales antes de emitir una sesión nueva y redirigir a una URL limpia. Conectar JWKS remoto con timeout, reintento GET acotado y refresco compartido; no reintentar el POST de intercambio.
+
+### T6 — Retorno y cliente OIDC · commit 083/T6
+- auth/oidc.ts obtiene JWKS con límite de cuerpo, timeout completo, un reintento GET y carga compartida; intercambia códigos sin reintentar POST. auth/retorno.ts consume state vinculado una sola vez, valida tokens y crea cookie nueva, con URL limpia y errores fijos.
+- Pruebas: retorno-auth.test.ts pasa sus cuatro casos de ingreso, repetición, navegador ajeno y retornos ambiguos. Compilación del servidor pasa. Las puertas globales se repiten en T26.
+
