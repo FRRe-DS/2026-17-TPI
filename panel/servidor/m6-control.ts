@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ConfigPanel } from './config.js';
+import type { ConfigPanelDesarrollo } from './config.js';
 import { responderProblema, type Problema } from './problemas.js';
 import { causaDe } from './proxy.js';
 
@@ -53,7 +53,7 @@ export class ControlM6NoResponde extends Error {
 // El pedido al canal de control, separado de las rutas del panel para usarlo también desde la vista de demostración (spec 072,
 // plan «Estructura»). Una sola vez, sin reintento: la persona repite desde la pantalla. `esperaMs` cuenta el cuerpo de la respuesta.
 export async function pedirControlM6(
-  { urlM6Control }: Pick<ConfigPanel, 'urlM6Control'>,
+  { urlM6Control }: Pick<ConfigPanelDesarrollo, 'urlM6Control'>,
   { metodo, ruta, requestId, cuerpo, tipoContenido }: PedidoControl,
   esperaMs = ESPERA_CONTROL_MS,
 ): Promise<RespuestaControl> {
@@ -74,7 +74,7 @@ export async function pedirControlM6(
   }
 }
 
-export type OpcionesControlM6 = { config: ConfigPanel; esperaMs: number };
+export type OpcionesControlM6 = { config: ConfigPanelDesarrollo; esperaMs: number };
 
 // Se registra como plugin: así el lector de cuerpos crudos vale solo para estas rutas.
 export async function registrarControlM6(app: FastifyInstance, { config, esperaMs }: OpcionesControlM6): Promise<void> {

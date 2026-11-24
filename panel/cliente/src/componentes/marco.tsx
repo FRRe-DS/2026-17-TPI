@@ -8,6 +8,7 @@ import { MenuLateral } from './menu-lateral.js';
 import estilos from './marco.module.css';
 
 type Props = {
+  modoReal?: boolean;
   sesion: Sesion | undefined;
   ruta: Ruta;
   etiquetas: Etiqueta[];
@@ -18,7 +19,7 @@ type Props = {
 
 // La estructura de toda vista (T17): menú por rol a la izquierda, encabezado con las etiquetas de lo simulado (RNF-12.7), la
 // pantalla y, al pie, la franja con el último pedido a M2. Debajo de 960 px el menú pasa arriba y se abre con un botón.
-export function Marco({ sesion, ruta, etiquetas, ultimo, alCerrarSesion, children }: Props) {
+export function Marco({ sesion, ruta, etiquetas, ultimo, alCerrarSesion, children, modoReal = false }: Props) {
   const contenido = useRef<HTMLElement>(null);
 
   // Al cambiar de ruta el foco pasa al título de la pantalla nueva (RNF-15.3): el lector anuncia dónde se está y el teclado
@@ -35,7 +36,7 @@ export function Marco({ sesion, ruta, etiquetas, ultimo, alCerrarSesion, childre
       <button type="button" className={estilos.salto} onClick={() => contenido.current?.focus()}>
         Ir al contenido
       </button>
-      <MenuLateral rol={sesion?.rol} ruta={ruta} />
+      <MenuLateral rol={sesion?.rol} ruta={ruta} modoReal={modoReal} />
       <Encabezado sesion={sesion} etiquetas={etiquetas} alCerrarSesion={alCerrarSesion} />
       <main ref={contenido} tabIndex={-1} className={estilos.contenido}>
         {children}

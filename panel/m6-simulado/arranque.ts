@@ -5,6 +5,7 @@ import { construirAppControl } from './app-control.js';
 import { construirAppM6 } from './app-m6.js';
 import { crearEstadoM6 } from './estado.js';
 import { crearPuertoApi } from './puerto-api.js';
+import { precargarM6 } from './precarga.js';
 
 // En todas las interfaces: dentro del contenedor, M2 y el panel llegan por la red de docker y no por localhost. Afuera, compose
 // publica solo el canal de control y solo en 127.0.0.1 (plan, Infraestructura).
@@ -29,6 +30,7 @@ export async function arrancarM6(env: Entorno, salir: Salir, { flujoLog }: Opcio
   }
 
   const estado = crearEstadoM6();
+  precargarM6(estado, config.clientesPrecarga ?? []);
   const api = crearPuertoApi({ puerto: config.puerto, escucha: ESCUCHA, construir: () => construirAppM6({ config, estado, flujoLog }) });
   const control = construirAppControl({ config, estado, api, flujoLog });
   try {

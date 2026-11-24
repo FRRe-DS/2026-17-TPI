@@ -10,6 +10,9 @@ export const USUARIOS_DE_EJEMPLO: readonly UsuarioDeEjemplo[] = [
   { usuario: 'conductor1', id: 'c0d00000-0000-4000-8000-000000000001', rol: 'CONDUCTOR', contrasena: 'conductor1-contrasena-de-desarrollo' },
 ];
 
+export const USUARIO_DOBLE = { usuario: 'cliente-operador1', id: 'd0b00000-0000-4000-8000-000000000001',
+  roles: ['CLIENTE', 'OPERADOR'], contrasena: 'cliente-operador1-contrasena-de-desarrollo' } as const;
+
 // El cliente público con el que las pruebas piden tokens de persona con usuario y contraseña, sin navegador.
 export const CLIENTE_DE_DESARROLLO = 'm2-desarrollo';
 

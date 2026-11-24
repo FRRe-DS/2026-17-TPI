@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { ConfigPanel } from './config.js';
+import type { ConfigPanel, ConfigPanelDesarrollo } from './config.js';
+import { responderFallaSesion } from './auth/estado.js';
 import { type RegistroDePedidos } from './pedidos.js';
 import { responderProblema, type Problema } from './problemas.js';
 import { firmarToken, TokenInvalido } from './tokens.js';
@@ -68,7 +69,7 @@ const identidadInvalida = (motivo: string): Problema => ({
 
 // La identidad de prueba que pide el navegador (X-Panel-Rol y X-Panel-Sub), ya firmada. Sin ninguno de los dos, el pedido va
 // sin token y M2 responde lo que responda (por ejemplo, 401): también eso se quiere poder ver.
-async function tokenDelPedido(request: FastifyRequest, config: ConfigPanel): Promise<string | undefined> {
+async function tokenDelPedido(request: FastifyRequest, config: ConfigPanelDesarrollo): Promise<string | undefined> {
   const rol = request.headers['x-panel-rol'];
   const sub = request.headers['x-panel-sub'];
   if (rol === undefined && sub === undefined) return undefined;
@@ -82,10 +83,13 @@ export function causaDe(error: unknown): { tipo: string; codigo?: string } {
   return typeof codigo === 'string' ? { tipo: name, codigo } : { tipo: name };
 }
 
-export type OpcionesReenvio = { config: ConfigPanel; esperaMs: number; pedidos: RegistroDePedidos };
+export type OpcionesReenvio = { config: ConfigPanel; esperaMs: number; pedidos: RegistroDePedidos;
+  autenticar?: (request: FastifyRequest) => Promise<string>;
+  registroPara?: (request: FastifyRequest) => RegistroDePedidos;
+};
 
 // Se registra como plugin: así el lector de cuerpos crudos vale solo para estas rutas.
-export async function registrarReenvio(app: FastifyInstance, { config, esperaMs, pedidos }: OpcionesReenvio): Promise<void> {
+export async function registrarReenvio(app: FastifyInstance, { config, esperaMs, pedidos, autenticar, registroPara }: OpcionesReenvio): Promise<void> {
   const tokens = new WeakMap<FastifyRequest, string | undefined>();
 
   // El cuerpo va a M2 tal como llegó, sin parsear: M2 es quien lo valida. El límite de 1 MiB es el de la app.
@@ -95,6 +99,14 @@ export async function registrarReenvio(app: FastifyInstance, { config, esperaMs,
   // Después del hook de seguridad (que es del padre) y antes de leer el cuerpo: lo que no se reenvía no se lee.
   app.addHook('onRequest', async (request, reply) => {
     if (!rutaPermitida(request.url)) return responderProblema(reply, RUTA_NO_PERMITIDA);
+    if (config.modoAuth === 'oidc') {
+      if (['authorization', 'x-panel-rol', 'x-panel-sub'].some(nombre => request.headers[nombre] !== undefined)) {
+        return responderProblema(reply, { status: 403, type: '/panel/errores/identidad-no-admitida', title: 'Identidad no admitida' });
+      }
+      try { tokens.set(request, await autenticar!(request)); }
+      catch (error) { return responderFallaSesion(reply, error); }
+      return;
+    }
     try {
       tokens.set(request, await tokenDelPedido(request, config));
     } catch (error) {
@@ -120,14 +132,14 @@ export async function registrarReenvio(app: FastifyInstance, { config, esperaMs,
 
     const inicio = performance.now();
     const registrar = (estado: number) =>
-      pedidos.registrar({
+      (registroPara?.(request) ?? pedidos).registrar({
         requestId: request.id,
         hora: new Date().toISOString(),
         metodo: request.method,
-        ruta: request.url,
-        encabezados: registrados,
+        ruta: config.modoAuth === 'oidc' ? request.routeOptions.url! : request.url,
+        encabezados: config.modoAuth === 'oidc' ? { 'X-Request-Id': request.id } : registrados,
         conToken: token !== undefined,
-        ...(cuerpo !== undefined && cuerpo.length > 0 ? { cuerpo: Buffer.from(cuerpo).toString('utf8') } : {}),
+        ...(config.modoAuth !== 'oidc' && cuerpo !== undefined && cuerpo.length > 0 ? { cuerpo: Buffer.from(cuerpo).toString('utf8') } : {}),
         estado,
         duracionMs: Math.round(performance.now() - inicio),
       });

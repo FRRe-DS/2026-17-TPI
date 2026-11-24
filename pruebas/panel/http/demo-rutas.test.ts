@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import pg from 'pg';
-import type { ConfigPanel } from '../../../panel/servidor/config.js';
+import type { ConfigPanelDesarrollo } from '../../../panel/servidor/config.js';
 import { crearBaseDemo } from '../../../panel/servidor/demo/base.js';
 import { ComandoDockerFallido, DockerNoDisponible } from '../../../panel/servidor/demo/docker.js';
 import { puertoLibre } from '../../ayudas/arranque.js';
@@ -53,7 +53,7 @@ function dockerDeMentira(cambios: Record<string, unknown> = {}) {
 }
 
 async function levantar(
-  opciones: { base?: ReturnType<typeof baseDeMentira>; docker?: ReturnType<typeof dockerDeMentira>; modo?: string; config?: Partial<ConfigPanel>; flujoLog?: Parameters<typeof crearAppPanel>[0] extends infer O ? (O extends { flujoLog?: infer F } ? F : never) : never; esperaSaludMs?: number } = {},
+  opciones: { base?: ReturnType<typeof baseDeMentira>; docker?: ReturnType<typeof dockerDeMentira>; modo?: string; config?: Partial<ConfigPanelDesarrollo>; flujoLog?: Parameters<typeof crearAppPanel>[0] extends infer O ? (O extends { flujoLog?: infer F } ? F : never) : never; esperaSaludMs?: number } = {},
 ) {
   const m2 = m2YControl(opciones.modo ?? 'normal');
   abiertos.push(m2);

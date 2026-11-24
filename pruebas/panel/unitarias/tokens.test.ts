@@ -11,7 +11,7 @@ const SUB = '00000000-0000-4000-8000-000000000001';
 // La configuración de tokens del panel sale de ejemplo.env, la misma que usa M2 en compose: si cambia allá, esta prueba sigue
 // diciendo si M2 acepta lo que firma el panel.
 const { config } = cargarConfigPanel(cargarEntornoEjemplo({}, EJEMPLO));
-if (config === undefined) throw new Error('ejemplo.env no da una configuración válida del panel');
+if (config === undefined || config.modoAuth !== 'desarrollo') throw new Error('ejemplo.env no da una configuración válida de desarrollo');
 const TOKENS = { claveTokens: config.claveTokens, emisorTokens: config.emisorTokens, audienciaTokens: config.audienciaTokens, campoRoles: config.campoRoles };
 
 const decodificar = (parte: string) => JSON.parse(Buffer.from(parte, 'base64url').toString('utf8')) as Record<string, unknown>;

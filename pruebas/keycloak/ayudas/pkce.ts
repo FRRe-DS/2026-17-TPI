@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { CLIENTE_DEL_FRONT } from '../../ayudas/realm.js';
+import { CLIENTE_DEL_FRONT, USUARIO_DOBLE } from '../../ayudas/realm.js';
 import { URL_REALM, URL_TOKEN } from './entorno.js';
 import { usuarioDeEjemplo } from './pedir.js';
 
@@ -35,7 +35,7 @@ const cookiesDe = (respuesta: Response) =>
 
 // Inicia sesión como `nombre` y devuelve el `code` de la redirección a RETORNO.
 export async function codigoDeAutorizacion(nombre: string, scopes: readonly string[], desafio: string): Promise<string> {
-  const { usuario, contrasena } = usuarioDeEjemplo(nombre);
+  const { usuario, contrasena } = nombre === USUARIO_DOBLE.usuario ? USUARIO_DOBLE : usuarioDeEjemplo(nombre);
   const pagina = await pedirAutorizacion({ scope: ['openid', ...scopes].join(' '), desafio });
   const html = await pagina.text();
   if (pagina.status !== 200) throw new Error(`Keycloak no mostró el inicio de sesión: HTTP ${pagina.status}`);

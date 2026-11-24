@@ -1,4 +1,4 @@
-import type { ConfigPanel, ConfigTokens } from '../config.js';
+import type { ConfigPanelDesarrollo, ConfigTokens } from '../config.js';
 import { causaDe } from '../proxy.js';
 import { firmarToken, type RolDelPanel } from '../tokens.js';
 
@@ -30,7 +30,7 @@ export type RespuestaDirecta = { estado: number; texto: string; tipoContenido: s
 export const idDePedido = (corrida: string, indice: number | string) => `panel-demo-${corrida}-${indice}`;
 
 export async function m2Directo(
-  config: Pick<ConfigPanel, 'urlM2'> & ConfigTokens,
+  config: Pick<ConfigPanelDesarrollo, 'urlM2'> & ConfigTokens,
   pedido: PedidoDirecto,
   esperaMs = ESPERA_M2_DIRECTO_MS,
 ): Promise<RespuestaDirecta> {

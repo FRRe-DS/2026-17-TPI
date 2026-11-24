@@ -8,6 +8,7 @@
     "node": "^24.2.0"
   },
   "scripts": {
+    "front:keycloak": "npm run panel:build && vitest run --project front-keycloak",
     "contrato:tipos": "openapi-typescript contrato/openapi.yml -o src/generado/contrato.ts",
     "contrato:test": "npm run build && node scripts/contrato-test.mjs",
     "prebuild": "npm run contrato:tipos",

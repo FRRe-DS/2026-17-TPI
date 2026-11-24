@@ -1,4 +1,5 @@
-import { useRef, type ReactNode } from 'react';
+import { useRef, useContext, type ReactNode } from 'react';
+import { ContextoSesionEditable } from './sesion-editable.js';
 import { modeloBoton } from '../logica/presentacion.js';
 import estilos from './boton-accion.module.css';
 
@@ -20,6 +21,7 @@ type Props = {
 // doble clic manda un solo pedido (RF-2.5.15). Fuera de la espera nunca está deshabilitado (RNF-15.4), salvo que la pantalla lo pida con
 // `deshabilitado` y diga por qué.
 export function BotonAccion({ esperando, variante = 'principal', tipo = 'button', textoEsperando, deshabilitado = false, onClick, children }: Props) {
+  const editable = useContext(ContextoSesionEditable);
   const modelo = modeloBoton(esperando, '', textoEsperando);
   // El fundido es para el cambio de estado, no para la primera vez que se dibuja: al abrir una pantalla los botones ya están.
   const previo = useRef(modelo.esperando);
@@ -33,7 +35,7 @@ export function BotonAccion({ esperando, variante = 'principal', tipo = 'button'
     <button
       type={tipo}
       className={`${estilos.boton} ${estilos[variante]}`}
-      disabled={modelo.deshabilitado || deshabilitado}
+      disabled={modelo.deshabilitado || deshabilitado || !editable}
       aria-busy={modelo.esperando || undefined}
       onClick={onClick}
     >

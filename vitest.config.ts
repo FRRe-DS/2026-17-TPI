@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import { OrdenDeArchivos } from './pruebas/distribuida/ayudas/orden.js';
 
-// Cinco proyectos (RNF-07.1, RNF-07.5). `unitarias` no necesita Docker: se corre sola con `vitest run --project unitarias`.
+// Seis proyectos (RNF-07.1, RNF-07.5). `unitarias` no necesita Docker: se corre sola con `vitest run --project unitarias`.
 // `integracion` levanta una base real en un contenedor, uno solo por corrida (pruebas/ayudas/global.ts).
 // `navegador` necesita Chrome y la misma base en un contenedor, y queda fuera de `npm test`: se corre con `npm run panel:navegador`,
 // que antes compila el panel.
@@ -54,6 +54,8 @@ export default defineConfig({
           hookTimeout: 15 * 60_000,
         },
       },
+      { test: { name: 'front-keycloak', include: ['pruebas/front-keycloak/**/*.test.ts'], globalSetup: ['pruebas/front-keycloak/global.ts'],
+        fileParallelism: false, testTimeout: 120_000, hookTimeout: 600_000 } },
     ],
   },
 });

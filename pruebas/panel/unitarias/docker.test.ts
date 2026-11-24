@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -13,7 +13,7 @@ import {
 
 // El control de Docker de la vista de demostración (spec 072, T7): apagar y encender la base con `docker compose`, con un
 // `ejecutar` de mentira que anota cada llamada y responde lo que se le diga (RNF-13.4, RNF-13.6, RNF-12.10).
-const RAIZ = fileURLToPath(new URL('../../../', import.meta.url)).replace(/\/$/, '');
+const RAIZ = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
 
 type Llamada = { archivo: string; argumentos: readonly string[]; opciones: Parameters<Ejecutar>[2] };
 type Falla = { code?: string | number; stderr?: string; killed?: boolean; signal?: string };

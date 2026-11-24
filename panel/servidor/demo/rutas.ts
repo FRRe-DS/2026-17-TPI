@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import type { ConfigPanel } from '../config.js';
+import type { ConfigPanelDesarrollo } from '../config.js';
 import { responderProblema, type Problema } from '../problemas.js';
 import { crearBaseDemo, type BaseDemo } from './base.js';
 import { altasSimultaneas, calificacionesSimultaneas, crearClienteDeEjemplo, PreparacionFallida } from './concurrencia.js';
@@ -23,7 +23,7 @@ export type DependenciasDemo = {
 };
 
 // Las de verdad, desde la configuración. `cerrar` suelta el pool de la base.
-export function crearDependenciasDemo(config: Pick<ConfigPanel, 'urlBd' | 'docker' | 'servicioBd'>) {
+export function crearDependenciasDemo(config: Pick<ConfigPanelDesarrollo, 'urlBd' | 'docker' | 'servicioBd'>) {
   const base = crearBaseDemo(config.urlBd);
   const docker = crearControlDocker({ docker: config.docker, servicio: config.servicioBd });
   return { base, docker, cerrar: () => base.cerrar() };
@@ -57,7 +57,7 @@ const N_SIMULTANEOS = { type: 'integer', minimum: 2, maximum: 50 } as const;
 const SIN_CAMPOS = { body: { type: 'object', additionalProperties: false, properties: {} } } as const;
 
 export type OpcionesRutasDemo = {
-  config: ConfigPanel;
+  config: ConfigPanelDesarrollo;
   demo: DependenciasDemo;
   // Cuánto se espera a cada pedido directo a M2 (las pruebas simultáneas). Solo las pruebas lo cambian.
   esperaM2Ms?: number | undefined;

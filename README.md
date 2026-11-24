@@ -4,6 +4,14 @@ Servicio de clientes de la plataforma de movilidad urbana del TPI. Guarda el per
 
 Están implementadas las 20 operaciones del contrato ([`contrato/openapi.yml`](contrato/openapi.yml), versión 1.0.0).
 
+El frontend también permite ingresar con Keycloak y completar el perfil propio, conservando tokens solo en su servidor. Para probarlo en un proyecto separado del panel de evaluación:
+
+```bash
+docker compose -p m2-front -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env up -d --build --wait
+```
+
+Abrir http://localhost:8083. Los puertos deben estar libres; si el panel de desarrollo ya los ocupa, detener ese proceso antes o usar `npm run front:keycloak`, que prueba con puertos propios. Usuarios, límites y variables permitidas están en [Probar el frontend con Keycloak](docs/probar-m2.md#frontend-con-keycloak-spec-083). Es la adaptación de sesión sobre las pantallas existentes; el rediseño #119 y la entrega integral #120 continúan por separado.
+
 ## Contenido
 
 1. [Empezar en cinco minutos](#1-empezar-en-cinco-minutos)
