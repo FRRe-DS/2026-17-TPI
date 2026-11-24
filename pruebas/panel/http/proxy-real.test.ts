@@ -35,7 +35,8 @@ describe('proxy real', () => {
     const headers = { host: 'localhost:8083', origin: 'http://localhost:8083', cookie: `m2_sesion=${id}`, 'content-type': 'application/json', 'idempotency-key': 'misma-clave' };
     try {
       for (const extra of [{ authorization: 'Bearer ajeno' }, { 'x-panel-sub': 'otro' }, { 'x-panel-rol': 'OPERADOR' }]) {
-        expect((await app.inject({ method: 'POST', url: '/api/v1/clientes', headers: { ...headers, ...extra }, payload: '{}' })).statusCode).toBe(400);
+        expect((await app.inject({ method: 'POST', url: '/api/v1/clientes', headers: { ...headers, ...extra }, payload: '{}' })).json())
+          .toMatchObject({ status: 403, type: '/panel/errores/identidad-no-admitida' });
       }
       const respuesta = await app.inject({ method: 'POST', url: '/api/v1/clientes', headers, payload: '{ "nombre": "persona" }' });
       expect(respuesta.statusCode).toBe(401); expect(respuesta.json().type).toBe('rechazo-m2'); expect(pedir).toHaveBeenCalledTimes(1);

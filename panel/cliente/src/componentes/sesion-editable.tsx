@@ -1,13 +1,13 @@
 import { createContext, useState } from 'react';
 import estilos from './sesion-editable.module.css';
+import { textoDeControles } from '../logica/copiar-formulario.js';
 export const ContextoSesionEditable = createContext(true);
 export function AvisoReingreso({ dependenciaCaida, reintentar }: { dependenciaCaida: boolean; reintentar: () => void }) {
   const [copia, guardarCopia] = useState<string | undefined>();
   const [mensaje, informar] = useState('');
   const copiar = async () => {
     const controles = [...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('main input, main textarea, main select')];
-    const texto = controles.filter(campo => !['password', 'hidden', 'submit', 'button'].includes(campo.type) && !campo.hasAttribute('data-copia'))
-      .map(campo => `${campo.labels?.[0]?.textContent?.trim() ?? 'Dato'}: ${campo.value}`).join('\n');
+    const texto = textoDeControles(controles);
     guardarCopia(texto);
     try { await navigator.clipboard.writeText(texto); informar('Datos copiados.'); }
     catch { informar('Seleccioná el texto para copiarlo manualmente.'); }

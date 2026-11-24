@@ -5,12 +5,13 @@ import { responderProblema } from '../problemas.js';
 import { CapacidadAgotada, nuevoIdentificador } from './almacen.js';
 import { crearCookiesAuth } from './cookies.js';
 import type { crearAlmacenTransacciones } from './transacciones.js';
+import { comprobarDisponibilidad } from './oidc.js';
 
-type OpcionesInicio = { config: ConfigPanelOidc; transacciones: ReturnType<typeof crearAlmacenTransacciones> };
+type OpcionesInicio = { config: ConfigPanelOidc; transacciones: ReturnType<typeof crearAlmacenTransacciones>; comprobarIdentidad?: () => Promise<void> };
 const SCOPES = 'openid clientes:read clientes:write clientes.estado:read';
 
 // Plugin separado para que el parser de formulario se aplique solo a las rutas de autenticación.
-export async function registrarInicioAuth(app: FastifyInstance, { config, transacciones }: OpcionesInicio): Promise<void> {
+export async function registrarInicioAuth(app: FastifyInstance, { config, transacciones, comprobarIdentidad = () => comprobarDisponibilidad(config) }: OpcionesInicio): Promise<void> {
   const cookies = crearCookiesAuth(config);
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 1024 }, (_request, body, listo) => {
     const parametros = new URLSearchParams(body as string);
@@ -31,8 +32,10 @@ export async function registrarInicioAuth(app: FastifyInstance, { config, transa
       body: { type: 'object', additionalProperties: false, properties: { retorno: { type: 'string', enum: ['/'] } } },
       querystring: { type: 'object', additionalProperties: false, properties: {} },
     },
-  }, (_request, reply) => {
+  }, async (_request, reply) => {
     reply.header('cache-control', 'no-store');
+    try { await comprobarIdentidad(); }
+    catch { return reply.code(303).header('location', '/?acceso=no-disponible').send(); }
     const verifier = nuevoIdentificador();
     const nonce = nuevoIdentificador();
     let transaccion: { state: string; vinculo: string };

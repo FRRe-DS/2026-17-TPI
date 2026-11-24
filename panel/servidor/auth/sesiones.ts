@@ -48,7 +48,7 @@ export function crearAlmacenSesiones(ahora: Reloj = Date.now) {
     obtener: almacen.obtener,
     registrarPedido(id: string, pedido: Pedido): void {
       const sesion = almacen.obtener(id);
-      if (sesion) almacen.actualizar(id, { ...sesion, pedidos: [pedido, ...(sesion.pedidos ?? [])].slice(0, 50) });
+      if (sesion) almacen.actualizar(id, { ...sesion, pedidos: [pedido, ...(sesion.pedidos ?? [])].slice(0, 100) });
     },
     actualizarCredenciales(id: string, version: number, datos: DatosSesion): boolean {
       const sesion = almacen.obtener(id);

@@ -2,7 +2,7 @@
 
 ## Estado de trabajo
 
-T1 a T26 implementadas y validadas en impl/083-front-keycloak. La sesión real funciona en Chrome con Keycloak; el rediseño y la entrega integral pertenecen a #119 y #120. Commits locales sin push ni PR. El usuario autorizó completar las tareas pendientes sin detenerse entre ellas.
+T1 a T26 implementadas y validadas en impl/083-front-keycloak. La sesión real funciona en Chrome con Keycloak; el rediseño y la entrega integral pertenecen a #119 y #120. Rama publicada en el [PR #121](https://github.com/FRRe-DS/2026-17-TPI/pull/121), pendiente de revisión y aprobación. El usuario autorizó completar las tareas pendientes sin detenerse entre ellas.
 
 ## Visión general
 
@@ -122,7 +122,7 @@ Preguntas para estudiar: ¿por qué el ID token no sirve para M2? ¿Qué impide 
 
 
 ### T11 — Diagnóstico aislado · commit 083/T11
-- Cada sesión guarda hasta 50 metadatos de pedidos, sin cuerpos, query ni UUID de rutas. Se eliminan con ella y no prolongan actividad. /panel/pedidos exige cookie válida y solo devuelve su registro. Modo real no registra evaluación. proxy-real.test.ts comprueba dos sesiones y rutas ausentes; compilación pasa.
+- Cada sesión guarda hasta 100 metadatos de pedidos, sin cuerpos, query ni UUID de rutas. Se eliminan con ella y no prolongan actividad. /panel/pedidos exige cookie válida y solo devuelve su registro. Modo real no registra evaluación. proxy-real.test.ts comprueba dos sesiones y rutas ausentes; compilación pasa.
 
 
 ### T12 — Fuente real de sesión · commit 083/T12
@@ -233,4 +233,13 @@ Preguntas para estudiar: ¿por qué el ID token no sirve para M2? ¿Qué impide 
 
 Las 26 tareas están marcadas y la spec figura implementada. Las puertas de T26 se ejecutaron con Docker y Chrome disponibles; los resultados y las dos advertencias del generador de contrato están registrados arriba. No hay pruebas bloqueadas declaradas verdes. El entorno temporal de sesión fue eliminado y el desarrollo habitual se conserva.
 
-La revisión y aprobación del integrador requieren un PR posterior. No se hizo push. El rediseño #119 y la entrega integral #120 siguen separados; sesión permanece en memoria de un solo proceso y el reinicio requiere reingreso.
+La rama se publicó en el PR #121; la revisión y aprobación del integrador siguen pendientes. El rediseño #119 y la entrega integral #120 siguen separados; sesión permanece en memoria de un solo proceso y el reinicio requiere reingreso.
+
+## Revisión del PR #121 — correcciones
+
+- El realm temporal usa carpeta 0755 y archivo 0644 para que Keycloak pueda leerlo con un UID distinto al runner. Los errores Docker conservan stderr acotado y sanitizado, sin adjuntar el error original que contiene entorno y comandos. Un fallo de limpieza ya no tapa el fallo original del arranque.
+- Inicio y cierre comprueban disponibilidad con GET del discovery interno, timeout configurado y sin seguir redirecciones. Si falla, vuelven con acceso=no-disponible o salida=no-confirmada; el cierre invalida localmente antes de comprobar. Nuevas pruebas cubren conexión rechazada, timeout y 503 sin secretos en logs.
+- Copia de formulario solo incluye radios y casillas marcadas; test verifica un puntaje elegido entre cinco y una casilla descartada.
+- Se ajusta el código al plan aprobado: sesion-requerida (401), identidad-no-admitida (403), retorno-invalido (400) y 100 diagnósticos por sesión. No se cambian requisitos ni se modifica el plan.
+- Se actualiza el estado de publicación en tasks y guía. El commit heredado de portabilidad permanece sin reescribir historia.
+- Validación de esta revisión: npm test pasa 171 archivos y 5934 pruebas; panel:build, build, lint y spec-check pasan. front:keycloak pasa sus cinco pruebas Chrome con Keycloak real y la prueba de POST/CSP del proyecto navegador también pasa. El cambio de permisos Linux se confirma además en el CI del PR.

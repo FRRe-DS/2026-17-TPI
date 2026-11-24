@@ -9,7 +9,7 @@ export function responderFallaSesion(reply: FastifyReply, error: unknown) {
   const rechazada = error instanceof SesionRechazada;
   if (!rechazada) reply.header('retry-after', '5');
   return responderProblema(reply, { status: rechazada ? 401 : 503,
-    type: rechazada ? '/panel/errores/sesion-vencida' : '/panel/errores/identidad-no-disponible',
+    type: rechazada ? '/panel/errores/sesion-requerida' : '/panel/errores/identidad-no-disponible',
     title: rechazada ? 'Volvé a ingresar' : 'Identidad no disponible' });
 }
 export async function registrarEstadoAuth(app: FastifyInstance, { config, sesiones, renovacion }: ContextoAuth & { renovacion: Renovacion }) {

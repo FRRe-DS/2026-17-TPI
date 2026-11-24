@@ -101,7 +101,7 @@ export async function registrarReenvio(app: FastifyInstance, { config, esperaMs,
     if (!rutaPermitida(request.url)) return responderProblema(reply, RUTA_NO_PERMITIDA);
     if (config.modoAuth === 'oidc') {
       if (['authorization', 'x-panel-rol', 'x-panel-sub'].some(nombre => request.headers[nombre] !== undefined)) {
-        return responderProblema(reply, { status: 400, type: '/panel/errores/identidad-no-admitida', title: 'Identidad no admitida' });
+        return responderProblema(reply, { status: 403, type: '/panel/errores/identidad-no-admitida', title: 'Identidad no admitida' });
       }
       try { tokens.set(request, await autenticar!(request)); }
       catch (error) { return responderFallaSesion(reply, error); }

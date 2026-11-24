@@ -14,7 +14,7 @@ import { registrarSeguridad } from './seguridad.js';
 import { crearAlmacenTransacciones } from './auth/transacciones.js';
 import { registrarInicioAuth } from './auth/rutas.js';
 import { crearAlmacenSesiones } from './auth/sesiones.js';
-import { crearClienteOidc, SesionRechazada, type ClienteOidc } from './auth/oidc.js';
+import { crearClienteOidc, SesionRechazada, comprobarDisponibilidad, type ClienteOidc } from './auth/oidc.js';
 import { crearCookiesAuth } from './auth/cookies.js';
 import { registrarRetornoAuth } from './auth/retorno.js';
 import { crearRenovacion } from './auth/renovacion.js';
@@ -22,7 +22,7 @@ import { registrarEstadoAuth } from './auth/estado.js';
 import { registrarSalidaAuth } from './auth/salida.js';
 
 export type OpcionesApp = {
-  auth?: { sesiones?: ReturnType<typeof crearAlmacenSesiones>; transacciones?: ReturnType<typeof crearAlmacenTransacciones>; pedir?: typeof fetch; oidc?: ClienteOidc };
+  auth?: { sesiones?: ReturnType<typeof crearAlmacenSesiones>; transacciones?: ReturnType<typeof crearAlmacenTransacciones>; pedir?: typeof fetch; oidc?: ClienteOidc; comprobarIdentidad?: () => Promise<void> };
   config: ConfigPanel;
   // Adonde van los logs; sin él, a la salida estándar.
   flujoLog?: Writable;
@@ -113,10 +113,11 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
     const oidc = auth?.oidc ?? crearClienteOidc(config, auth?.pedir);
     const renovacion = crearRenovacion(sesiones, oidc);
     app.addHook('onClose', async () => { transacciones.cerrar(); sesiones.cerrar(); });
-    app.register(registrarInicioAuth, { config, transacciones });
+    const comprobarIdentidad = auth?.comprobarIdentidad ?? (() => comprobarDisponibilidad(config, auth?.pedir));
+    app.register(registrarInicioAuth, { config, transacciones, comprobarIdentidad });
     app.register(registrarRetornoAuth, { config, sesiones, transacciones, oidc });
     app.register(registrarEstadoAuth, { config, sesiones, transacciones, oidc, renovacion });
-    app.register(registrarSalidaAuth, { config, sesiones, transacciones, oidc });
+    app.register(registrarSalidaAuth, { config, sesiones, transacciones, oidc, comprobarIdentidad });
     const cookies = crearCookiesAuth(config);
     app.get('/panel/pedidos', async (request, reply) => {
       reply.header('cache-control', 'no-store');

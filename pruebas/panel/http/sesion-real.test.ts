@@ -12,7 +12,7 @@ describe('consulta y cierre de sesión real', () => {
     const sesiones = crearAlmacenSesiones(); const ahora = Date.now();
     const id = sesiones.crear({ sub: 'usuario', roles: [], scopes: [], credenciales: { accessToken: 'secreto', refreshToken: 'secreto',
       accessTokenVenceEn: ahora + 60_000, refreshTokenVenceEn: ahora + 300_000 } });
-    const app = construirApp({ config, auth: { sesiones } });
+    const app = construirApp({ config, auth: { sesiones, comprobarIdentidad: async () => {} } });
     try {
       const salida = await app.inject({ method: 'POST', url: '/auth/cerrar', headers: { ...headers, cookie: `m2_sesion=${id}` } });
       expect(salida.statusCode).toBe(303); expect(sesiones.obtener(id)).toBeUndefined();
@@ -36,7 +36,7 @@ describe('consulta y cierre de sesión real', () => {
       expect(respuesta.statusCode).toBe(200); expect(respuesta.json()).toEqual({ sub: 'usuario', roles: ['CLIENTE'], scopes: ['clientes:read'] });
       expect(respuesta.headers['cache-control']).toBe('no-store'); expect(respuesta.body).not.toContain('secreto');
       expect(sesiones.obtener(id)!.ultimaActividadEn).toBe(antes);
-      expect((await app.inject({ url: '/auth/sesion', headers })).statusCode).toBe(401);
+      expect((await app.inject({ url: '/auth/sesion', headers })).json()).toMatchObject({ status: 401, type: '/panel/errores/sesion-requerida' });
     } finally { await app.close(); }
   });
   it.each([new IdentidadNoDisponible(), new SesionRechazada()])('clasifica fallas de renovación: %s', async (falla) => {

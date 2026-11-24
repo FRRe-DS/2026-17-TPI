@@ -7,6 +7,16 @@ import { crearValidadorTokens, CredencialInvalida, IdentidadNoDisponible } from 
 export class SesionRechazada extends Error {
   constructor() { super('La sesión ya no es válida'); this.name = 'SesionRechazada'; }
 }
+export async function comprobarDisponibilidad(config: ConfigPanelOidc, pedir: typeof fetch = fetch): Promise<void> {
+  try {
+    const respuesta = await pedir(`${config.oidcUrlInterna}/.well-known/openid-configuration`, {
+      method: 'GET', redirect: 'error', signal: AbortSignal.timeout(config.tiempoIdentidadMs),
+    });
+    // Solo interesa disponibilidad; no se conserva ni procesa el documento remoto.
+    await respuesta.body?.cancel();
+    if (!respuesta.ok) throw new IdentidadNoDisponible();
+  } catch { throw new IdentidadNoDisponible(); }
+}
 
 export function crearClienteOidc(config: ConfigPanelOidc, pedir: typeof fetch = fetch, ahora = Date.now) {
   let local: ReturnType<typeof createLocalJWKSet> | undefined;

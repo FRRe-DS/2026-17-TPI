@@ -1,6 +1,6 @@
 # Tareas — Spec 083: sesión real del frontend
 
-T1 a T26 están implementadas y validadas (ver guia.md). Se conservaron pruebas, documentación y commits por tarea. El usuario autorizó completar las pendientes en una misma sesión; no se realizó push ni PR. La interfaz #119 y la entrega integral #120 conservan su alcance separado.
+T1 a T26 están implementadas y validadas (ver guia.md). Se conservaron pruebas, documentación y commits por tarea. El usuario autorizó completar las pendientes en una misma sesión; la rama está publicada en el PR #121, pendiente de aprobación. La interfaz #119 y la entrega integral #120 conservan su alcance separado.
 
 El PR #118 se dividió en sesión, interfaz y entrega por pedido del integrador. Esta lista conserva solo sesión y la infraestructura necesaria para probarla. Las antiguas T31 (compose) y T33 (entorno Keycloak) permanecen aquí como T20 y T22. El recorrido completo antiguo T34 se traslada a entrega; aquí se agrega un recorrido acotado de sesión que no depende del rediseño.
 

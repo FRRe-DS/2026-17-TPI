@@ -32,12 +32,12 @@ describe('retorno OIDC', () => {
       const url = `/auth/retorno?state=${tx.state}&code=codigo-secreto`;
       const headers = { host: 'localhost:8083', cookie: `m2_transaccion=${tx.vinculo}` };
       const ajeno = await app.inject({ url, headers: { ...headers, cookie: 'm2_transaccion=otro' } });
-      expect(ajeno.headers.location).toBe('/?acceso=invalido'); expect(pedidos).toHaveLength(0);
+      expect(ajeno.json()).toMatchObject({ status: 400, type: '/panel/errores/retorno-invalido' }); expect(pedidos).toHaveLength(0);
       const respuesta = await app.inject({ url, headers });
       expect(respuesta.statusCode).toBe(303); expect(respuesta.headers.location).toBe('/');
       expect(respuesta.cookies.find(c => c.name === 'm2_sesion')?.value).toHaveLength(43);
       expect(JSON.stringify(respuesta.headers)).not.toContain('secreto'); expect(sesiones.cantidad()).toBe(1);
-      const repetida = await app.inject({ url, headers }); expect(repetida.headers.location).toBe('/?acceso=invalido');
+      const repetida = await app.inject({ url, headers }); expect(repetida.json()).toMatchObject({ status: 400, type: '/panel/errores/retorno-invalido' });
       expect(pedidos).toHaveLength(2);
       for (const secreto of ['codigo-secreto', 'refresh-secreto', tx.state, tx.vinculo, 'verifier', firmar('ID'), firmar('Bearer')]) {
         expect(logs.texto().includes(secreto)).toBe(false);
@@ -47,7 +47,7 @@ describe('retorno OIDC', () => {
 
   it.each(['error=access_denied', 'code=a&code=b', 'code=a&retorno=https://ajeno.test'])('no intercambia un retorno cancelado o ambiguo: %s', async (parametros) => {
     const app = construirApp({ config: configOidc(), auth: { pedir: async () => { throw new Error('No debe pedir'); } } });
-    try { expect((await app.inject({ url: `/auth/retorno?state=desconocido&${parametros}`, headers: { host: 'localhost:8083' } })).headers.location).toBe('/?acceso=invalido'); }
+    try { expect((await app.inject({ url: `/auth/retorno?state=desconocido&${parametros}`, headers: { host: 'localhost:8083' } })).json()).toMatchObject({ status: 400, type: '/panel/errores/retorno-invalido' }); }
     finally { await app.close(); }
   });
 });

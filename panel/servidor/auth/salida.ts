@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { crearCookiesAuth } from './cookies.js';
 import { parametrosUnicos, type ContextoAuth } from './retorno.js';
+import { comprobarDisponibilidad } from './oidc.js';
 
-export async function registrarSalidaAuth(app: FastifyInstance, { config, sesiones, transacciones }: ContextoAuth) {
+export async function registrarSalidaAuth(app: FastifyInstance, { config, sesiones, transacciones, comprobarIdentidad = () => comprobarDisponibilidad(config) }: ContextoAuth & { comprobarIdentidad?: () => Promise<void> }) {
   const cookies = crearCookiesAuth(config);
   // Acepta el formulario nativo vacío. No usa campos aportados por el navegador.
   app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, _body, listo) => listo(null, {}));
@@ -12,6 +13,7 @@ export async function registrarSalidaAuth(app: FastifyInstance, { config, sesion
     if (encontrada) sesiones.invalidar(encontrada.id);
     cookies.borrarSesion(reply);
     try {
+      await comprobarIdentidad();
       const tx = transacciones.crear({ tipo: 'salida', retorno: '/' });
       cookies.establecerTransaccion(reply, tx.vinculo);
       const destino = new URL(`${config.oidcEmisor}/protocol/openid-connect/logout`);

@@ -24,7 +24,7 @@ function crear() {
   const transacciones = crearAlmacenTransacciones();
   app.addHook('onClose', async () => transacciones.cerrar());
   registrarSeguridad(app, CONFIG); registrarEncabezadosDeSeguridad(app, CONFIG);
-  app.register(registrarInicioAuth, { config: CONFIG, transacciones });
+  app.register(registrarInicioAuth, { config: CONFIG, transacciones, comprobarIdentidad: async () => {} });
   return { app, transacciones };
 }
 
@@ -155,14 +155,14 @@ describe('CSP e integración del modo real (083/T4)', () => {
   });
 
   it('la app real protege cuenta y sesión, mantiene cerradas herramientas y no registra credenciales', async () => {
-    const logs = capturarLogs(); const app = construirApp({ config: CONFIG, flujoLog: logs.flujo }); abiertas.push(app);
+    const logs = capturarLogs(); const app = construirApp({ config: CONFIG, flujoLog: logs.flujo, auth: { comprobarIdentidad: async () => {} } }); abiertas.push(app);
     expect((await app.inject({ url: '/salud-panel', headers: { host: HEADERS.host } })).statusCode).toBe(200);
     const inicio = await app.inject({ method: 'POST', url: '/auth/iniciar', headers: HEADERS });
     expect(inicio.statusCode).toBe(303);
     for (const ruta of ['/api/v1/clientes', '/auth/sesion', '/panel/pedidos']) {
       expect((await app.inject({ url: ruta, headers: { host: HEADERS.host } })).statusCode).toBe(401);
     }
-    expect((await app.inject({ url: '/auth/retorno', headers: { host: HEADERS.host } })).headers.location).toBe('/?acceso=invalido');
+    expect((await app.inject({ url: '/auth/retorno', headers: { host: HEADERS.host } })).json()).toMatchObject({ status: 400, type: '/panel/errores/retorno-invalido' });
     for (const ruta of ['/panel/demo/estado', '/panel/m6/estado']) {
       expect((await app.inject({ url: ruta, headers: { host: HEADERS.host } })).statusCode).toBe(404);
     }

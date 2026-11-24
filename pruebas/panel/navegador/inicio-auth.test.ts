@@ -11,6 +11,7 @@ import { descartarLogs } from '../../ayudas/logs.js';
 it('Chrome envía POST propio, sigue el 303 y llega al destino permitido sin violaciones CSP', async () => {
   const identidad = Fastify();
   let refererIdentidad: string | undefined;
+  identidad.get('/realms/movilidad/.well-known/openid-configuration', async () => ({ issuer: 'prueba' }));
   identidad.get('/realms/movilidad/protocol/openid-connect/auth', (request, reply) => {
     refererIdentidad = request.headers.referer;
     return reply.type('text/html; charset=utf-8').send('<!doctype html><html lang="es"><title>Identidad de prueba</title><h1>Identidad de prueba</h1></html>');
