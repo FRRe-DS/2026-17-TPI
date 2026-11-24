@@ -44,6 +44,11 @@ export function crearAlmacenSesiones(ahora: Reloj = Date.now) {
     },
     // Leer (por ejemplo /auth/sesion) nunca cuenta como actividad de la API autenticada.
     obtener: almacen.obtener,
+    actualizarCredenciales(id: string, version: number, datos: DatosSesion): boolean {
+      const sesion = almacen.obtener(id);
+      if (!sesion || sesion.version !== version || sesion.sub !== datos.sub) return false;
+      return almacen.actualizar(id, { ...sesion, ...datos, version: version + 1 });
+    },
     registrarActividad(id: string | undefined): boolean {
       const sesion = almacen.obtener(id);
       if (sesion === undefined) return false;

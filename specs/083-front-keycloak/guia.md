@@ -101,3 +101,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 - auth/oidc.ts obtiene JWKS con límite de cuerpo, timeout completo, un reintento GET y carga compartida; intercambia códigos sin reintentar POST. auth/retorno.ts consume state vinculado una sola vez, valida tokens y crea cookie nueva, con URL limpia y errores fijos.
 - Pruebas: retorno-auth.test.ts pasa sus cuatro casos de ingreso, repetición, navegador ajeno y retornos ambiguos. Compilación del servidor pasa. Las puertas globales se repiten en T26.
 
+
+### T7 — Renovación atómica · commit 083/T7
+- renovacion.ts comparte promesa por sesión y sesiones.ts actualiza con versión y sub coherente. Logout o expiración impiden recreación. Rechazo invalida; caída transitoria conserva solo acceso vigente. renovacion-auth.test.ts prueba concurrencia, versión, logout y clasificación; servidor compila.
+
