@@ -81,7 +81,7 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 
 ## Casos límite
 
-- Callback cancelado, repetido, expirado, con state o nonce inválidos o desde otro navegador: no abre sesión.
+- Callback cancelado, repetido, expirado, con state o nonce inválidos, con un código o una credencial rechazados o desde otro navegador: no abre sesión y la persona vuelve al acceso con un aviso y la opción de reintentar, sin ver una respuesta técnica (RNF-15.83.3).
 - 401, 403 y 503 al consultar perfil no crean un perfil nuevo.
 - Dos pestañas crean perfil: 201 o recuperación del existente tras 409, sin duplicados.
 - Doble rol: inicia en Mi cuenta, puede abrir Operación sin perfil propio y no cambia identidad.
@@ -124,6 +124,7 @@ El estado aprobada identifica al candidato de PR. La aprobación efectiva es el 
 - Selector para doble rol y aviso/copia antes de reingreso confirmados por DRAZEN.
 - Incorporar precarga del simulador por variable y usuario de doble rol para que las pruebas de sesión sean reproducibles, conforme a la revisión.
 - Mantener la numeración 83.x de los requisitos para evitar colisiones, como pidió el integrador.
+- Cambio del 2026-11-24 (#83, revisión del PR #121): un retorno inválido vuelve al acceso con un aviso, en lugar del 400 retorno-invalido que decía el plan. A ese retorno llega el navegador de la persona, y con el 400 vería un JSON sin forma de continuar, contra RNF-15.83.3. Alternativa descartada: conservar el 400.
 
 ## Dudas abiertas
 
