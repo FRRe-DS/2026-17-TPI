@@ -153,3 +153,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T19 — Conservación del formulario · commit 083/T19
 - ContextoSesionEditable bloquea enviar/reintentar sin desmontar campos. AvisoReingreso permite copiar controles visibles, ofrece texto seleccionable si Clipboard falla y avisa pérdida antes del POST voluntario. No persiste datos ni repite escrituras al reingresar. Prueba de botón bloqueado pasa y cliente compila; comportamiento Chrome en T24.
 
+
+### T20 — Compose real sin herencia · commit 083/T20
+- docker-compose.front.yml elimina env_file y reemplaza environment completo con once variables permitidas. Front/keycloak no selecciona puente ni publica control M6; desarrollo conserva puente. Ejemplo activa M2 jwks y precarga de tres identidades. Dos pruebas del modelo Compose resuelto pasan con centinelas; imagen y entorno efectivo se validan con T22/T26. Semántica !reset/!override según docs.docker.com/reference/compose-file/merge/.
+

@@ -52,7 +52,7 @@ Aunque quedan más de diez tareas, no se vuelven a mezclar diseño y entrega par
   - Hecho cuando: M6_CLIENTES_PRECARGA se valida antes de abrir API, vacío conserva el comportamiento anterior y los IDs configurados reciben un COMPLETED y un IN_PROGRESS propios; repetir no duplica, y ningún perfil ni calificación se escribe en M2.
 - [x] **T19. Conservar el formulario y permitir copia antes de reingresar.** RNF-12.83.4.1, RNF-15.83.2, RNF-15.83.3
   - Hecho cuando: sesión vencida mantiene la vista montada con enviar deshabilitado, ofrece copia o selección manual y avisa la pérdida posible al redirigir; no persiste datos ni reenvía escrituras después del login.
-- [ ] **T20. Preparar compose e imagen del frontend real con M6 precargado.** RNF-02.83.1, RNF-02.83.2, RNF-04.83.1, RNF-04.83.2, RNF-12.83.7, RNF-19.83.2
+- [x] **T20. Preparar compose e imagen del frontend real con M6 precargado.** RNF-02.83.1, RNF-02.83.2, RNF-04.83.1, RNF-04.83.2, RNF-12.83.7, RNF-19.83.2
   - Hecho cuando: ejemplo y override levantan frontend oidc, M2 jwks, bases, Keycloak, Redis y M6 con datos para cliente1/cliente2; el panel usa env_file: !reset [] y environment: !override con solo las variables necesarias, sin PANEL_URL_BD ni secretos de base o firma; m6 usa ports: !reset [], front,keycloak no inicia bd-puente y desarrollo conserva el puente en panel.
 
 ## Pruebas de sesión y documentación
