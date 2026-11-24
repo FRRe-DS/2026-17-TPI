@@ -162,7 +162,8 @@ describe('CSP e integración del modo real (083/T4)', () => {
     for (const ruta of ['/api/v1/clientes', '/auth/sesion', '/panel/pedidos']) {
       expect((await app.inject({ url: ruta, headers: { host: HEADERS.host } })).statusCode).toBe(401);
     }
-    expect((await app.inject({ url: '/auth/retorno', headers: { host: HEADERS.host } })).json()).toMatchObject({ status: 400, type: '/panel/errores/retorno-invalido' });
+    const retorno = await app.inject({ url: '/auth/retorno', headers: { host: HEADERS.host } });
+    expect(retorno.statusCode).toBe(303); expect(retorno.headers.location).toBe('/?acceso=invalido');
     for (const ruta of ['/panel/demo/estado', '/panel/m6/estado']) {
       expect((await app.inject({ url: ruta, headers: { host: HEADERS.host } })).statusCode).toBe(404);
     }

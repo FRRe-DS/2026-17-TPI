@@ -240,6 +240,14 @@ La rama se publicó en el PR #121; la revisión y aprobación del integrador sig
 - El realm temporal usa carpeta 0755 y archivo 0644 para que Keycloak pueda leerlo con un UID distinto al runner. Los errores Docker conservan stderr acotado y sanitizado, sin adjuntar el error original que contiene entorno y comandos. Un fallo de limpieza ya no tapa el fallo original del arranque.
 - Inicio y cierre comprueban disponibilidad con GET del discovery interno, timeout configurado y sin seguir redirecciones. Si falla, vuelven con acceso=no-disponible o salida=no-confirmada; el cierre invalida localmente antes de comprobar. Nuevas pruebas cubren conexión rechazada, timeout y 503 sin secretos en logs.
 - Copia de formulario solo incluye radios y casillas marcadas; test verifica un puntaje elegido entre cinco y una casilla descartada.
-- Se ajusta el código al plan aprobado: sesion-requerida (401), identidad-no-admitida (403), retorno-invalido (400) y 100 diagnósticos por sesión. No se cambian requisitos ni se modifica el plan.
+- Se mantienen sesion-requerida (401), identidad-no-admitida (403) y 100 diagnósticos por sesión. El retorno del navegador se recupera con 303 y aviso según RNF-15.83.3, como se detalla en el ajuste posterior.
 - Se actualiza el estado de publicación en tasks y guía. El commit heredado de portabilidad permanece sin reescribir historia.
 - Validación de esta revisión: npm test pasa 171 archivos y 5934 pruebas; panel:build, build, lint y spec-check pasan. front:keycloak pasa sus cinco pruebas Chrome con Keycloak real y la prueba de POST/CSP del proyecto navegador también pasa. El cambio de permisos Linux se confirma además en el CI del PR.
+
+## Revisión del PR #121 — recuperación del retorno OIDC
+
+- Por aclaración del integrador y RNF-15.83.3, GET /auth/retorno vuelve a responder 303 hacia /?acceso=invalido para transacciones inválidas, canceladas, expiradas, ambiguas o ajenas, y para intercambio rechazado por código o credencial. Así el navegador vuelve a la pantalla de acceso con un aviso y puede reintentar, sin mostrar problem+json crudo.
+- La dependencia de identidad caída conserva 303 hacia /?acceso=no-disponible. Se mantienen no-store, consumo único de transacción y ausencia de sesión nueva ante cualquier fallo.
+- retorno-auth.test.ts e inicio-auth.test.ts verifican las redirecciones; se agregan casos explícitos de cancelación y expiración con transacción vinculada, código/credencial rechazados y proveedor caído. Rojo inicial: nueve fallas antes del cambio; verde: 30 pruebas de esos dos archivos.
+- Sin cambios en plan.md, sesion-requerida, rechazo 403 de suplantación ni límite de 100 diagnósticos. El integrador actualizará la línea del plan mediante su sdd-change.
+- Validación del ajuste: npm test pasa 171 archivos y 5939 pruebas; panel:build, lint, diff-check y spec-check pasan. La primera corrida global tuvo EADDRINUSE en una prueba existente de M6; la repetición completa pasó sin cambios en esa prueba.

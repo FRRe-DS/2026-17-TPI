@@ -5,7 +5,6 @@ import type { ClienteOidc } from './oidc.js';
 import type { crearAlmacenSesiones } from './sesiones.js';
 import type { crearAlmacenTransacciones } from './transacciones.js';
 import { IdentidadNoDisponible } from './validacion.js';
-import { responderProblema } from '../problemas.js';
 
 export type ContextoAuth = {
   config: ConfigPanelOidc; sesiones: ReturnType<typeof crearAlmacenSesiones>;
@@ -19,7 +18,7 @@ export async function registrarRetornoAuth(app: FastifyInstance, { config, sesio
   const cookies = crearCookiesAuth(config);
   app.get('/auth/retorno', async (request, reply) => {
     reply.header('cache-control', 'no-store');
-    const retornoInvalido = () => responderProblema(reply, { status: 400, type: '/panel/errores/retorno-invalido', title: 'Retorno de identidad inválido' });
+    const retornoInvalido = () => reply.code(303).header('location', '/?acceso=invalido').send();
     const parametros = parametrosUnicos(request.url, ['code', 'state', 'error', 'error_description', 'session_state', 'iss']);
     const transaccion = parametros && transacciones.consumir(parametros.get('state') ?? undefined, cookies.leerTransaccion(request));
     if (!transaccion || transaccion.tipo !== 'ingreso') return retornoInvalido();
