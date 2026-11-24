@@ -17,6 +17,7 @@ import { Calificaciones } from './pantallas/calificaciones.js';
 import { EstadoDeCuenta } from './pantallas/estado-cuenta.js';
 import { Operador } from './pantallas/operador.js';
 import { DetalleTecnico } from './pantallas/detalle-tecnico.js';
+import { PuertaPerfil } from './pantallas/puerta-perfil.js';
 import { enlace, inicioDe } from './rutas.js';
 
 const fuente = crearSesionReal();
@@ -60,6 +61,7 @@ export function AppReal({ m6Simulado = true }: { m6Simulado?: boolean }) {
   return <Marco modoReal sesion={sesion} ruta={ruta} etiquetas={m6Simulado ? [{ de: 'Viajes', texto: 'M6 simulado' }] : []} ultimo={ultimo} alCerrarSesion={cerrar}>
     {espacios.length > 1 && <label>Espacio <select value={espacio} onChange={evento => { const nuevo = evento.target.value as Espacio; elegir(nuevo); window.location.hash = enlace(inicioDe(nuevo)); }}>
       <option value="CLIENTE">Mi cuenta</option><option value="OPERADOR">Operación</option></select></label>}
-    {pantalla()}
+    {sesion && espacio === 'CLIENTE' && estado.sesion?.roles.includes('CLIENTE')
+      ? <PuertaPerfil api={api} sub={sesion.sub}>{pantalla()}</PuertaPerfil> : pantalla()}
   </Marco>;
 }

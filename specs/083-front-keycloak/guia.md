@@ -133,3 +133,7 @@ T6: completar el retorno OIDC, consumir la transacción vinculada al navegador, 
 ### T14 — Acceso y aplicación real · commit 083/T14
 - main.tsx carga dinámicamente el modo decidido por el servidor. app-real.tsx conecta sesión y pantallas sin suplantación ni herramientas; selector cambia espacio y mantiene sub. IngresarReal usa POST nativo; encabezado cierra por POST propio. Perfil sin fuente de control no ofrece carga de ejemplo. Prueba del formulario pasa; cliente compila. Chrome completo corresponde a T23/T24.
 
+
+### T15 — Primer perfil por identidad · commit 083/T15
+- consultarPerfilPropio distingue únicamente 404 de éxito y propaga 401/403/503. PuertaPerfil consulta sub firmado antes de Mi cuenta y no bloquea Operación por perfil inexistente. Prueba de cinco estados pasa y cliente compila. Alta se conecta en T16.
+
