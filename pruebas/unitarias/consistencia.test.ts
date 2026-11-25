@@ -764,9 +764,11 @@ describe('scripts/contrato-test.mjs y job contract-test (RNF-04.1, RNF-07)', () 
   });
 
   it('acota el tiempo de pedirToken y del job contract-test en CI', () => {
+    const segundos = /const TIEMPO_MAXIMO_TOKEN_S = (\d+);/.exec(script)?.[1];
+    expect(Number(segundos)).toBeGreaterThan(0);
     const funcionPedirToken = /async function pedirToken\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
     expect(funcionPedirToken).toBeDefined();
-    expect(funcionPedirToken).toMatch(/timeout:\s*\d+/);
+    expect(funcionPedirToken).toMatch(/timeout:\s*TIEMPO_MAXIMO_TOKEN_S\s*\*\s*1000/);
     expect(ci.jobs?.['contract-test']?.['timeout-minutes']).toBeGreaterThan(0);
   });
 });
