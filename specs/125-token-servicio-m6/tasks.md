@@ -18,7 +18,7 @@
 - [ ] **T6. Renovación ante un `401` de M6.** RF-2.4.11.8, RF-2.4.11.9
   - Hecho cuando: `historial-http.test.ts` y `calificaciones-http.test.ts`, con el M6 de prueba y un endpoint de tokens falso, muestran que un `401` con token reutilizado descarta, pide otro y repite una vez; que un segundo `401` da `500`; que un `401` con token recién pedido da `500` sin repetir; y que con Keycloak caído la respuesta es `503` genérico con `Retry-After` y M6 no recibe pedidos.
 
-- [ ] **T7. M6 simulado valida RS256 de Keycloak.** RNF-07, RNF-12
+- [x] **T7. M6 simulado valida RS256 de Keycloak.** RNF-07, RNF-12
   - Hecho cuando: con `M6_EMISOR_KEYCLOAK` y `M6_URL_JWKS_KEYCLOAK` (las dos o ninguna), `m6-simulado.test.ts` con `pruebas/ayudas/jwks.ts` muestra que un RS256 del emisor correcto con `clientes-be` o `SERVICIO` en `roles` da `200`; que otro emisor, otra clave, sin rol o vencido da `401`; y que sin esas variables un RS256 da `401` y el HS256 sigue andando.
 
 - [ ] **T8. Entornos con Keycloak.** RF-2.4.11.1, RNF-06, RNF-20

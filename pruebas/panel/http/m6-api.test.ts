@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { tokenDeServicio } from '../../../src/auth/tokens.js';
 import { firmarToken } from '../../../panel/servidor/tokens.js';
 import { capturarLogs } from '../../ayudas/logs.js';
+import { armarTokenRsa, crearClave, jwksDe } from '../../ayudas/jwks.js';
+import { crearServidorModulo } from '../../ayudas/servidor-modulo.js';
 import { armarToken } from '../../ayudas/tokens.js';
 import { construirAppM6 } from '../../../panel/m6-simulado/app-m6.js';
 import { crearEstadoM6 } from '../../../panel/m6-simulado/estado.js';
@@ -86,6 +88,66 @@ describe('token de servicio (RNF-13.7): el M6 simulado acepta lo que manda M2 y 
     const respuesta = await m6().inject({ method: 'GET', url: '/trips', headers: aMano({ roles: ['CLIENTE'] }) });
 
     expect(respuesta.body).not.toContain('eyJ');
+  });
+});
+
+// Spec 125 (RNF-07, RNF-12): con el emisor y el JWKS de Keycloak, el simulado acepta además el token RS256 que M2 pide a Keycloak
+// por client_credentials, como el M6 real del Grupo 12: sin exigir audiencia y con `clientes-be` o `SERVICIO` en `roles`.
+describe('token de servicio de Keycloak (spec 125, RNF-07, RNF-12)', () => {
+  const EMISOR = 'http://localhost:8080/realms/ds-2026-realm';
+  const clave = crearClave('clave-de-keycloak');
+  const otraClave = crearClave('clave-de-otro-keycloak');
+  const jwks = crearServidorModulo();
+  beforeAll(async () => {
+    await jwks.levantar();
+    jwks.responderCon({ tipo: 'ok', cuerpo: jwksDe(clave) });
+  });
+  afterAll(() => jwks.cerrar());
+
+  const conKeycloak = () => {
+    const creado = crearM6([viaje(id(1))], { keycloak: { emisor: EMISOR, urlJwks: jwks.url } });
+    abiertas.push(creado.app);
+    return creado.app;
+  };
+  const deKeycloak = (claims: Record<string, unknown> = {}, firmante = clave) => ({
+    authorization: `Bearer ${armarTokenRsa(firmante, { claims: { iss: EMISOR, aud: 'account', sub: 'cuenta-de-servicio', azp: 'grupo-17', roles: ['clientes-be'], ...claims } })}`,
+  });
+  const pedir = async (app: ReturnType<typeof conKeycloak>, encabezados: Record<string, string>) =>
+    app.inject({ method: 'GET', url: `/trips/${id(1)}`, headers: encabezados });
+
+  it.each([
+    ['con clientes-be', ['clientes-be']],
+    ['con SERVICIO', ['SERVICIO']],
+    ['con otros roles además de clientes-be', ['offline_access', 'clientes-be']],
+  ])('acepta un RS256 del emisor de Keycloak %s, sin exigir audiencia', async (_caso, roles) => {
+    expect((await pedir(conKeycloak(), deKeycloak({ roles }))).statusCode).toBe(200);
+  });
+
+  it('acepta un RS256 sin aud', async () => {
+    expect((await pedir(conKeycloak(), deKeycloak({ aud: undefined }))).statusCode).toBe(200);
+  });
+
+  it('sigue aceptando el token HS256 de M2', async () => {
+    expect((await pedir(conKeycloak(), await comoM2())).statusCode).toBe(200);
+  });
+
+  it.each([
+    ['de otro emisor', () => deKeycloak({ iss: 'http://otro-keycloak/realms/ds-2026-realm' })],
+    ['firmado con una clave que no está en el JWKS', () => deKeycloak({}, otraClave)],
+    ['sin roles de servicio', () => deKeycloak({ roles: ['CLIENTE'] })],
+    ['sin el campo de roles', () => deKeycloak({ roles: undefined })],
+    ['con el rol como texto y no como lista', () => deKeycloak({ roles: 'clientes-be' })],
+    ['vencido', () => deKeycloak({ exp: Math.floor(Date.now() / 1000) - 120 })],
+    ['sin exp', () => deKeycloak({ exp: undefined })],
+  ])('responde 401 a un RS256 %s', async (_caso, encabezados) => {
+    const respuesta = await pedir(conKeycloak(), encabezados());
+
+    expect(respuesta.statusCode).toBe(401);
+    expect(respuesta.json()).toMatchObject({ status: 401, code: 'UNAUTHENTICATED' });
+  });
+
+  it('sin el emisor y el JWKS de Keycloak, un RS256 válido da 401', async () => {
+    expect((await pedir(m6([viaje(id(1))]), deKeycloak())).statusCode).toBe(401);
   });
 });
 
