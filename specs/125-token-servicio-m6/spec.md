@@ -1,6 +1,6 @@
 # Spec 125 — Token de servicio de M2 ante M6 obtenido de Keycloak
 
-Estado: aprobada
+Estado: implementada
 Issue: #125
 Etapa: TP3
 Responsable: @sandobaitt

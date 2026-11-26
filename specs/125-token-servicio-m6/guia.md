@@ -1,6 +1,6 @@
 # Guía — Spec 125 Token de servicio de M2 ante M6 obtenido de Keycloak
 
-## Visión general (se escribe al validar, 30-60 líneas)
+## Visión general
 **Qué resuelve.** M2 llama a M6 para el historial (spec 007) y para verificar el viaje antes de calificar (spec 008). Hasta ahora se presentaba con un token HS256 que firmaba él mismo con la clave compartida. El M6 del Grupo 12 va a aceptar solo tokens RS256 de Keycloak, así que M2 pasa a pedirle su token de servicio a Keycloak con `client_credentials` y el cliente `grupo-17`. Sin Keycloak configurado, todo sigue como antes (HS256), para el desarrollo y las pruebas que no lo levantan.
 
 **El recorrido de una consulta.**
@@ -120,8 +120,14 @@
 - Corrección tras la revisión independiente: la sección 8 de `docs/probar-m2.md`, `ejemplo.env` y la cabecera de `docker-compose.yml` levantan el M6 real con `env …` en lugar de `export`, para que las variables no queden en la terminal y el `docker compose up` de las otras secciones no apunte M2 a un M6 y un Keycloak apagados. `probar-m2.md` también corrige cómo se presenta M2 ante M6 (los dos modos) y que el M6 real ya valida con Keycloak; `tokenHs256DeM2` informa una configuración inválida, y el emisor esperado sale de `URL_TOKEN`. El workflow «Integración con M6 real», corrido a mano sobre la rama, pasó.
 
 ## Validación de la spec · commit 125/V
-- Resultado: VALIDADO para T1 a T10. T11 (RNF-07.15, la prueba distribuida con el M6 real que exige RS256) espera el merge del Grupo 12, así que la spec sigue en «aprobada» y pasa a «implementada» cuando se haga T11.
+- Resultado del 2026-11-25: VALIDADO para T1 a T10. T11 (RNF-07.15) esperaba el merge del Grupo 12.
 - Corridas del 2026-11-25: `npm test` 173 archivos y 6056 pruebas en verde; `npm run contrato:test` 3560 casos en verde; lint, build y `spec-check` sin errores. `npm run keycloak:test` (4 archivos, 28 pruebas) se corrió en T9 y la corrección de abajo no toca el camino que prueba.
 - En vivo, con `ejemplo-front-keycloak.env`: M2 arranca con `tokenServicioM6: keycloak`, una consulta del historial deja una sola `llamada a Keycloak` (`200`) y las dos llamadas a M6 dan `200`, la segunda con el token guardado.
 - La revisión independiente encontró que un `401` en el reintento tras un `5xx` renovaba un token pedido en la misma operación (RF-2.4.11.8) y que un token de menos de 30 s sumaba un pedido a Keycloak por reintento (RNF-13). Se corrigió en el commit `125/T6` posterior (ver «T6, corrección tras la validación»), con dos pruebas que primero fallaron. También se corrigieron los archivos de prueba que nombraba T7 en `tasks.md`.
 - Fuera del diff no hay cambios: ni `contrato/`, ni archivos de otras specs; el ADR 009 solo cambió su línea de estado.
+
+## Validación de T11 y cierre de la spec · commit 125/V
+- Resultado del 2026-11-26: VALIDADO. Las 11 tareas están hechas y la spec pasa a «implementada».
+- RNF-07.15: `npm run integracion:m6` contra el M6 real en `0e89944` (el del Grupo 12 que exige RS256), 8 archivos y 38 pruebas en verde en local, dos corridas. El workflow «Integración con M6 real», corrido a mano sobre la rama, pasó. El token es RS256 de `grupo-17` con `clientes-be`; `GET /trips` y `GET /trips/{tripId}` dan `200`; el HS256 de antes, `401`. El resto de la suite (historial, calificación, rechazos, resiliencia) pasa con el token de Keycloak.
+- La revisión independiente de T11 confirmó que sumar Keycloak al perfil `m6-real` no cambia los otros entornos (por defecto, `panel`, `ejemplo-keycloak.env`, front, `m2-keycloak`), y encontró que el `export` de la documentación dejaba variables en la terminal; se corrigió en el segundo commit `125/T11`.
+- Queda fuera, como dice la spec: los `sdd-change` de 007, 008 y 081 para que remitan a esta spec, y la copia del contrato de M6 (`contrato/dependencias/m6.yml`), que sigue al de la cátedra (ADR 096) hasta que el Grupo 12 suba su 2.0.0.
