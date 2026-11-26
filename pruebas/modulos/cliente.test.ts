@@ -307,6 +307,33 @@ describe('crearClienteModulo', () => {
       expect(serv.llamadas).toBe(0);
     });
 
+    // Spec 125: el token de servicio se pide por operación, para saber cuál usó cada llamada (RF-2.4.11.8).
+    it('una credencial pasada en la llamada reemplaza a la fija, en cada intento', async () => {
+      serv.responderCon([{ tipo: '5xx', estado: 500 }, { tipo: 'ok', cuerpo: { ok: true } }]);
+      const { credencial, llamadas } = credencialPorLlamada();
+
+      await conCredencial(serv.url, 1).obtener('/', 'id', { credencial });
+
+      expect(llamadas()).toBe(2);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+    });
+
+    it('en un POST, la credencial de la llamada también reemplaza a la fija', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+
+      await conCredencial(serv.url).enviar('POST', '/', { dato: 1 }, 'id', { credencial: async () => 'de-la-llamada' });
+
+      expect(serv.autorizaciones).toEqual(['Bearer de-la-llamada']);
+    });
+
+    it('sin credencial fija, la de la llamada va igual', async () => {
+      serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
+
+      await clienteDe(serv.url, 0).obtener('/', 'id', { credencial: async () => 'de-la-llamada' });
+
+      expect(serv.autorizaciones).toEqual(['Bearer de-la-llamada']);
+    });
+
     it('sin credencial no se envía Authorization', async () => {
       serv.responderCon({ tipo: 'ok', cuerpo: { ok: true } });
 

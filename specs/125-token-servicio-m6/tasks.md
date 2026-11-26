@@ -3,7 +3,7 @@
 - [x] **T1. Configuración del token de servicio.** RF-2.4.11.1, RF-2.4.11.2, RF-2.4.11.3, RNF-06, RNF-19
   - Hecho cuando: `cargarConfig` lee `M2_URL_TOKENS_SERVICIO`, `M2_CLIENTE_SERVICIO` y `M2_SECRETO_SERVICIO` (las tres o ninguna; URL `http`/`https` sin usuario ni contraseña), una combinación incompleta da un error por cada variable que falta sin mostrar el secreto, `secretosDeConfig` tacha el secreto, `ejemplo.env` las trae vacías, y `config.test.ts`, `secretos.test.ts` y `ejemplo-env.test.ts` están en verde.
 
-- [ ] **T2. Token de servicio HS256 y paso por `m6.ts`.** RF-2.4.11.2, RF-2.4.11.9
+- [x] **T2. Token de servicio HS256 y paso por `m6.ts`.** RF-2.4.11.2, RF-2.4.11.9
   - Hecho cuando: `src/auth/token-servicio.ts` tiene la forma `obtener`/`descartar`/`modo` con la implementación HS256, `crearM6` la recibe desde `src/app.ts` en lugar de llamar a `tokenDeServicio`, el cliente de módulos acepta una credencial por llamada, y todas las pruebas existentes del historial y la calificación siguen en verde sin cambios.
 
 - [ ] **T3. Pedido de token a Keycloak.** RF-2.4.11.1, RF-2.4.11.6, RF-2.4.11.7, RF-2.4.11.10, RNF-13

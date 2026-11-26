@@ -2,7 +2,7 @@
 // `page` desde 1 y `pageSize`, que responde `TripSummaryPage`, para el historial (plan 007, Lectura de la respuesta de M6), y
 // `GET /trips/{tripId}`, que responde `Trip`, para calificar al conductor (plan 008, Lectura del viaje de M6).
 import type { FastifyBaseLogger } from 'fastify';
-import { tokenDeServicio } from '../auth/tokens.js';
+import { crearTokenServicio, type TokenServicio } from '../auth/token-servicio.js';
 import type { Config, ConfigTokens } from '../config.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../errores.js';
 import { crearClienteModulo } from '../modulos/cliente.js';
@@ -24,9 +24,13 @@ export type ViajeACalificar = { estado: string; conductorId?: string };
 // El único estado que habilita calificar (RF-2.5.2; contrato de M6, `TripState`).
 const COMPLETADO = 'COMPLETED';
 
-// Con la configuración de los tokens firma el token de servicio de cada intento (RF-2.4.11).
+// Con la configuración de los tokens arma, si no se lo pasan, el token de servicio (spec 125).
 type ConfigM6 = ConfigTokens &
-  Pick<Config, 'urlM6' | 'tiempoModulosMs' | 'reintentosModulos' | 'encabezadoCorrelacion' | 'audienciaM6' | 'reintentarDespuesS'>;
+  Pick<
+    Config,
+    'urlM6' | 'tiempoModulosMs' | 'reintentosModulos' | 'encabezadoCorrelacion' | 'audienciaM6' | 'reintentarDespuesS'
+  > &
+  Partial<Pick<Config, 'tokenServicio'>>;
 
 const NOMBRE = 'M6';
 
@@ -86,8 +90,13 @@ const limiteDePedidos = (reintentarDespues: string | undefined, reintentarDespue
     reintentarDespuesS: segundosDeEspera(reintentarDespues, reintentarDespuesS),
   });
 
-// `log` es el de la app: cada llamada a M6 deja su línea con el id de correlación de la solicitud (RNF-14.10).
-export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
+// `log` es el de la app: cada llamada a M6 deja su línea con el id de correlación de la solicitud (RNF-14.10). `tokenServicio`
+// da el token con el que M2 se presenta ante M6 (spec 125); la app lo crea al arrancar, y sin él se arma con la configuración.
+export function crearM6(
+  config: ConfigM6,
+  log?: FastifyBaseLogger,
+  tokenServicio: TokenServicio = crearTokenServicio(config),
+): M6 {
   const cliente = crearClienteModulo({
     nombre: NOMBRE,
     urlBase: config.urlM6,
@@ -95,10 +104,15 @@ export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
     reintentos: config.reintentosModulos,
     encabezadoCorrelacion: config.encabezadoCorrelacion,
     correlacionDelModulo: CORRELACION_DE_M6,
-    credencial: () => tokenDeServicio(config),
     reintentarDespuesS: config.reintentarDespuesS,
     log,
   });
+
+  // El token de cada intento sale del token de servicio, pedido con el id de correlación de la operación (RF-2.4.11.9).
+  const pedirAM6 = (ruta: string, idCorrelacion: string) =>
+    cliente.obtener(ruta, idCorrelacion, {
+      credencial: async () => (await tokenServicio.obtener(idCorrelacion)).token,
+    });
 
   return {
     async listarViajes(clienteId, page, size, idCorrelacion) {
@@ -107,7 +121,7 @@ export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
       const pageM6 = inalcanzable ? 1 : aPaginaDeM6(page);
       const query = new URLSearchParams({ clientId: clienteId, page: String(pageM6), pageSize: String(size) });
       // Puede lanzar ModuloNoDisponible, tras el reintento (RF-2.4.6, RNF-13).
-      const { estado, cuerpo, reintentarDespues } = await cliente.obtener(`/trips?${query}`, idCorrelacion);
+      const { estado, cuerpo, reintentarDespues } = await pedirAM6(`/trips?${query}`, idCorrelacion);
 
       if (estado === LIMITE_DE_PEDIDOS) throw limiteDePedidos(reintentarDespues, config.reintentarDespuesS);
       // Las causas llevan el código y nunca el cuerpo, que puede traer datos de viajes (RNF-19).
@@ -122,7 +136,7 @@ export function crearM6(config: ConfigM6, log?: FastifyBaseLogger): M6 {
     // UUID validado por el contrato; se escapa igual, por si acaso.
     async obtenerViaje(viajeId, clienteId, idCorrelacion) {
       // Puede lanzar ModuloNoDisponible, tras el reintento (RF-2.5.5, RNF-13).
-      const { estado, cuerpo, reintentarDespues } = await cliente.obtener(`/trips/${encodeURIComponent(viajeId)}`, idCorrelacion);
+      const { estado, cuerpo, reintentarDespues } = await pedirAM6(`/trips/${encodeURIComponent(viajeId)}`, idCorrelacion);
 
       if (estado === 404) return null;
       // Como en el historial: el límite de pedidos es un 503, sin reintento (RF-2.5.18).
