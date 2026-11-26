@@ -485,6 +485,22 @@ describe('docker-compose.yml: Redis para la caché (spec 107, RNF-06, RNF-11)', 
   });
 });
 
+describe('docker-compose.yml: el secreto del token de servicio llega solo a M2 (spec 125, RNF-19)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const conEjemploEnv = Object.entries(compose.services ?? {}).filter(
+    ([nombre, servicio]) => nombre !== 'm2' && [servicio?.env_file ?? []].flat().includes('ejemplo.env'),
+  );
+
+  it('hay servicios además de m2 que cargan ejemplo.env', () => {
+    expect(conEjemploEnv.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm6', 'panel']);
+  });
+
+  // ejemplo.env interpola M2_SECRETO_SERVICIO desde el --env-file: sin esto, la base, el M6 simulado y el panel lo recibirían.
+  it.each(conEjemploEnv.map(([nombre]) => nombre))('%s lo deja vacío en environment', (nombre) => {
+    expect(compose.services?.[nombre]?.environment?.['M2_SECRETO_SERVICIO']).toBe('');
+  });
+});
+
 describe('docker-compose.yml: perfil panel (spec 071, RNF-04.6)', () => {
   const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
   const panel = compose.services?.['panel'];

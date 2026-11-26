@@ -104,6 +104,13 @@
 - Tests: `pruebas/integracion/historial-http.test.ts`, bloque «token de servicio de Keycloak y renovación»: sin token guardado, `5xx` y después `401` dan `500` con `token-1` en los dos intentos y un solo pedido a Keycloak; un token con `expires_in` de 10 s se usa en el reintento tras un `5xx`, sin otro pedido.
 - Para mirar con atención: dentro de una operación el token ya no se vuelve a mirar en la caché. Si otra operación lo descarta mientras tanto, este reintento lo usa igual; si M6 lo rechaza, el `401` se maneja como siempre.
 
+### T8, el secreto llega solo a M2 · commit `125/T8`
+- Qué cambió: `docker-compose.yml` deja `M2_SECRETO_SERVICIO` vacío en el `environment` de `bd`, `m6` y `panel`. Los tres cargan `ejemplo.env`, que interpola el secreto desde el `--env-file`, así que con `ejemplo-keycloak.env` o `ejemplo-front-keycloak.env` lo recibían sin usarlo.
+- Por qué así: RNF-19 y la sugerencia de la revisión independiente: la credencial de `grupo-17` es de M2. Vaciarla en el servicio es más chico que dejar de cargar `ejemplo.env`, del que la base toma `POSTGRES_*` y el simulado sus puertos.
+- Cómo se conecta: `environment` pisa a `env_file` en compose. El override del front ya quitaba el `env_file` del panel.
+- Tests: `pruebas/unitarias/consistencia.test.ts`, bloque «el secreto del token de servicio llega solo a M2»: los servicios distintos de `m2` que cargan `ejemplo.env` son `bd`, `m6` y `panel`, y los tres lo dejan vacío. A mano, `docker compose --env-file ejemplo-keycloak.env --profile keycloak config` muestra el secreto solo en `m2`.
+- Para mirar con atención: un servicio nuevo que cargue `ejemplo.env` hace fallar la primera prueba, a propósito, para que alguien decida si necesita el secreto.
+
 ## Validación de la spec · commit 125/V
 - Resultado: VALIDADO para T1 a T10. T11 (RNF-07.15, la prueba distribuida con el M6 real que exige RS256) espera el merge del Grupo 12, así que la spec sigue en «aprobada» y pasa a «implementada» cuando se haga T11.
 - Corridas del 2026-11-25: `npm test` 173 archivos y 6056 pruebas en verde; `npm run contrato:test` 3560 casos en verde; lint, build y `spec-check` sin errores. `npm run keycloak:test` (4 archivos, 28 pruebas) se corrió en T9 y la corrección de abajo no toca el camino que prueba.

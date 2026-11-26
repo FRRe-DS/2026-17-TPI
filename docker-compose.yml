@@ -40,6 +40,9 @@ services:
   bd:
     image: postgres:18.6
     env_file: ejemplo.env
+    # El secreto del token de servicio es solo de M2 (spec 125, RNF-19): ejemplo.env lo interpola y acá se vacía.
+    environment:
+      M2_SECRETO_SERVICIO: ""
     volumes:
       # La imagen 18 guarda los datos en /var/lib/postgresql/18/docker (ADR del stack): el volumen va un nivel más arriba.
       - datos-bd:/var/lib/postgresql
@@ -81,6 +84,8 @@ services:
     environment:
       M6_EMISOR_KEYCLOAK: ${M6_EMISOR_KEYCLOAK:-}
       M6_URL_JWKS_KEYCLOAK: ${M6_URL_JWKS_KEYCLOAK:-}
+      # El secreto del token de servicio es solo de M2 (spec 125, RNF-19).
+      M2_SECRETO_SERVICIO: ""
     init: true
     # Solo el canal de control. La API de M6 (M6_PUERTO) la ve M2 por la red de compose como m6:3006, sin publicarla.
     ports:
@@ -108,6 +113,8 @@ services:
     init: true
     environment:
       PANEL_ESCUCHA: 0.0.0.0
+      # El secreto del token de servicio es solo de M2 (spec 125, RNF-19).
+      M2_SECRETO_SERVICIO: ""
       # Dentro del contenedor el panel llega a la base por la red de compose, sin pasar por el puente. Compose interpola estas
       # variables de su propio entorno, no de ejemplo.env: los valores por defecto se repiten acá y se cambian juntos.
       PANEL_URL_BD: postgres://${POSTGRES_USER:-m2}:${POSTGRES_PASSWORD:-m2-contrasena-de-desarrollo}@bd:5432/${POSTGRES_DB:-m2}
