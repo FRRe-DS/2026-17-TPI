@@ -312,7 +312,7 @@ Se corta con `docker compose --env-file ejemplo-keycloak.env down`. Para aplicar
 
 ### Un token de persona
 
-El realm trae cuatro usuarios de desarrollo: `cliente1` y `cliente2` (rol `CLIENTE`), `operador1` (`OPERADOR`) y `conductor1` (`CONDUCTOR`). Su contraseña es `<usuario>-contrasena-de-desarrollo`, y sus `id` son fijos (el de `cliente1` es `c1e00000-0000-4000-8000-000000000001`). Se piden al cliente `m2-desarrollo`, que es solo para pruebas:
+El realm trae seis usuarios de desarrollo: `cliente1` a `cliente4` (rol `CLIENTE`), `operador1` (`OPERADOR`) y `conductor1` (`CONDUCTOR`). Su contraseña es `<usuario>-contrasena-de-desarrollo`, y sus `id` son fijos (el de `cliente1` es `c1e00000-0000-4000-8000-000000000001`; el de `clienteN` termina en `N`). Se piden al cliente `m2-desarrollo`, que es solo para pruebas:
 
 ```bash
 KC=http://localhost:8080/realms/ds-2026-realm/protocol/openid-connect/token
@@ -355,6 +355,24 @@ curl -s -o /dev/null -w '[%{http_code}]\n' http://localhost:8082/api/v1/clientes
 ```
 
 Salida esperada: `[201]`, `[200]`, `[403]`, `{"clienteId":"c1e0…0001","estado":"ACTIVO","bloqueosVigentes":[]} [200]`, `[403]` y `[401]`.
+
+### Clientes precargados para otros grupos
+
+Issue #131. Para que otro módulo (por ejemplo, Reservas) pruebe el estado de cuenta sin armar nada a mano, con el entorno levantado:
+
+```bash
+node scripts/precargar-clientes.mjs
+```
+
+Crea por la API el perfil de `cliente2`, `cliente3` y `cliente4`, bloquea a `cliente4` con `operador1` y muestra el estado de cuenta de cada uno con la cuenta de servicio `grupo-09`:
+
+| Usuario | `clienteId` | Estado |
+|---|---|---|
+| `cliente2` | `c1e00000-0000-4000-8000-000000000002` | `ACTIVO` |
+| `cliente3` | `c1e00000-0000-4000-8000-000000000003` | `ACTIVO` |
+| `cliente4` | `c1e00000-0000-4000-8000-000000000004` | `BLOQUEADO` |
+
+Se puede correr las veces que haga falta: un perfil que ya existe o un bloqueo ya vigente se dejan como están. `cliente1` queda sin perfil para el recorrido de arriba. Si `cliente3` o `cliente4` no consiguen token, el Keycloak se creó antes de #131 y no los tiene: el realm se importa una sola vez, así que hace falta `down -v` (que también borra los datos de M2) y volver a levantar. Si ya se corrió en el entorno del front, `cliente2` entra con su perfil hecho.
 
 ### Lo que conviene saber
 
