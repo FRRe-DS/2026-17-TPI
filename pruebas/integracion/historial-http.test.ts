@@ -585,6 +585,29 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(keycloak.llamadas).toBe(2);
     });
 
+    it('sin token guardado, un 401 en el reintento tras un 5xx da 500 sin renovar: el token se pidió en esta operación', async () => {
+      const id = await perfil();
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, { tipo: '4xx', estado: 401 }]);
+
+      const respuesta = await crearConKeycloak().pedir(id);
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-1']);
+      expect(keycloak.llamadas).toBe(1);
+    });
+
+    it('un token de menos de 30 s se usa en el reintento de la misma consulta sin pedir otro (Casos límite, RNF-13)', async () => {
+      const id = await perfil();
+      keycloak.responderCon([{ tipo: 'ok', cuerpo: { access_token: 'token-1', expires_in: 10 } }, conToken('token-2')]);
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, { tipo: 'ok', cuerpo: pagina([], 0) }]);
+
+      const respuesta = await crearConKeycloak().pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-1']);
+      expect(keycloak.llamadas).toBe(1);
+    });
+
     it('con Keycloak caído: 503 genérico con Retry-After, y M6 no recibe pedidos (RF-2.4.11.6)', async () => {
       const id = await perfil();
       keycloak.responderCon({ tipo: '5xx', estado: 503 });

@@ -114,17 +114,20 @@ export function crearM6(
   // El token de cada intento sale del token de servicio, pedido con el id de correlación de la operación; nunca el de quien
   // llamó a M2 (RF-2.4.11.9). Si M6 responde 401 a un token reutilizado, puede ser que Keycloak lo haya revocado o cambiado sus
   // claves: se descarta y se repite una sola vez, con uno nuevo (RF-2.4.11.8). Un 401 con un token recién pedido, o el de la
-  // repetición, queda como respuesta y da 500 como cualquier 4xx (RF-2.4.7). `usado` es el token del último intento: si el
-  // cliente reintentó por un 5xx, cuenta el que recibió el 401.
+  // repetición, queda como respuesta y da 500 como cualquier 4xx (RF-2.4.7). `usado` es el token de la operación: se obtiene en
+  // el primer intento y el reintento del cliente tras un 5xx lo vuelve a usar sin pedirlo otra vez, así un token pedido en esta
+  // operación sigue contando como recién pedido aunque ya esté guardado, y uno de menos de 30 s, que no se guarda, no suma
+  // otro pedido a Keycloak (RNF-13). Solo la repetición ante el 401 lo descarta y obtiene otro.
   async function pedirAM6(ruta: string, idCorrelacion: string) {
     let usado: TokenObtenido | undefined;
     const credencial = async () => {
-      usado = await tokenServicio.obtener(idCorrelacion);
+      usado ??= await tokenServicio.obtener(idCorrelacion);
       return usado.token;
     };
     const respuesta = await cliente.obtener(ruta, idCorrelacion, { credencial });
     if (respuesta.estado !== NO_AUTENTICADO || usado?.reutilizado !== true) return respuesta;
     tokenServicio.descartar(usado.token);
+    usado = undefined;
     return cliente.obtener(ruta, idCorrelacion, { credencial });
   }
 

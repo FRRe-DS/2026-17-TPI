@@ -100,7 +100,7 @@ pedirAM6(ruta, id):
     r = await cliente.obtener(ruta, id, { credencial })
   devolver r
 ```
-`listarViajes` y `obtenerViaje` usan `pedirAM6` y, después, siguen igual: un `401` que queda es un `4xx` y da `500` (RF-2.4.7, RF-2.5.6). `usado` guarda el token del último intento: si el cliente de módulos reintentó por un `5xx`, cuenta el del intento que recibió el `401`.
+`listarViajes` y `obtenerViaje` usan `pedirAM6` y, después, siguen igual: un `401` que queda es un `4xx` y da `500` (RF-2.4.7, RF-2.5.6). `usado` guarda el token de la operación: se obtiene en el primer intento y, si el cliente de módulos reintenta por un `5xx`, el reintento usa el mismo, sin volver a pedirlo. Así un token pedido en esta operación sigue contando como recién pedido aunque ya esté guardado (RF-2.4.11.8), y uno de menos de 30 s, que no se guarda, no suma otro pedido a Keycloak (RNF-13). Solo la repetición ante el `401` lo descarta y obtiene otro.
 
 Si `obtener` lanza (Keycloak caído o rechazando), el cliente de módulos ya deja salir el error de la credencial tal cual, sin llamar al módulo ni reintentar (comentario de `ejecutar` en `src/modulos/cliente.ts`): da el `503` o el `500` de arriba y M6 no recibe nada (RF-2.4.11.6, RF-2.4.11.7).
 
