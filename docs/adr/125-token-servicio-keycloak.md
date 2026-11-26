@@ -1,6 +1,6 @@
 # ADR 125 — Token de servicio de M2 obtenido de Keycloak
 
-Fecha: 2026-11-25 · Estado: propuesta
+Fecha: 2026-11-25 · Estado: aceptada
 Issue: #125
 
 ## Contexto

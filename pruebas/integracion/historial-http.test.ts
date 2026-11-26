@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type BaseDeDatos, type PoolBd } from '../../src/bd/pool.js';
 import { crearCalificacion } from '../../src/calificaciones/repositorio.js';
+import type { Config } from '../../src/config.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { BaseNoDisponible } from '../../src/errores.js';
 import { listarHistorialViajes } from '../../src/historial/operaciones.js';
@@ -10,7 +11,7 @@ import { crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { capturarLogs } from '../ayudas/logs.js';
 import { errorDeM6, paginaDeM6, resumenDeM6 } from '../ayudas/m6-simulado.js';
-import { crearServidorModulo } from '../ayudas/servidor-modulo.js';
+import { type Comportamiento, crearServidorModulo } from '../ayudas/servidor-modulo.js';
 import { armarToken } from '../ayudas/tokens.js';
 
 const contrato = cargarContrato();
@@ -53,7 +54,7 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
 
   // La app y un pedido: el token y el log quedan a mano para mirar después que no se filtraron. La URL de M6 se conoce
   // recién cuando levanta el simulado.
-  function crear(config: { reintentarDespuesS?: number } = {}, bd: BaseDeDatos = pool) {
+  function crear(config: Partial<Pick<Config, 'reintentarDespuesS' | 'tokenServicio'>> = {}, bd: BaseDeDatos = pool) {
     const logs = capturarLogs();
     const app = crearApp(
       { listarHistorialViajes },
@@ -464,6 +465,189 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
       expect(respuesta.headers['retry-after']).toBeUndefined();
       expect(respuesta.json()).not.toHaveProperty('items');
+    });
+  });
+
+  // Con Keycloak configurado, el token de servicio sale de un endpoint de tokens falso que entrega `token-1`, `token-2`, …, así
+  // se ve qué token le llegó a M6 en cada pedido. La app guarda el token entre solicitudes (spec 125, RF-2.4.11.8, RF-2.4.11.9).
+  describe('token de servicio de Keycloak y renovación ante un 401 de M6 (spec 125, T6)', () => {
+    const keycloak = crearServidorModulo();
+    const conToken = (token: string): Comportamiento => ({ tipo: 'ok', cuerpo: { access_token: token, expires_in: 300 } });
+
+    beforeAll(async () => {
+      await keycloak.levantar();
+    });
+    afterAll(async () => {
+      await keycloak.cerrar();
+    });
+    beforeEach(() => keycloak.responderCon([conToken('token-1'), conToken('token-2'), conToken('token-3')]));
+
+    const crearConKeycloak = () =>
+      crear({
+        reintentarDespuesS: 7,
+        tokenServicio: { urlTokens: `${keycloak.url}/token`, cliente: 'grupo-17', secreto: 'secreto-de-prueba' },
+      });
+
+    // Una consulta que sale bien deja `token-1` guardado; después, M6 responde lo que diga la prueba.
+    async function conTokenGuardado(id: string, m6: Comportamiento[]) {
+      const app = crearConKeycloak();
+      expect((await app.pedir(id)).statusCode).toBe(200);
+      serv.responderCon(m6);
+      return app;
+    }
+
+    it('M6 recibe el token de Keycloak y no el del usuario, y la segunda consulta lo reutiliza (RF-2.4.11.1, RF-2.4.11.4)', async () => {
+      const id = await perfil();
+      const { pedir, tokens } = crearConKeycloak();
+
+      expect((await pedir(id)).statusCode).toBe(200);
+      expect((await pedir(id)).statusCode).toBe(200);
+
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-1']);
+      expect(serv.autorizaciones).not.toContain(`Bearer ${tokens[0]}`);
+      expect(keycloak.llamadas).toBe(1);
+    });
+
+    it('la consulta que pide el token deja una línea llamada a Keycloak con su id; la que lo reutiliza, ninguna (RNF-14.15)', async () => {
+      const id = await perfil();
+      const { pedir, logs } = crearConKeycloak();
+
+      const primera = await pedir(id);
+      await pedir(id);
+
+      expect(logs.lineas().filter(({ msg }) => msg === 'llamada a Keycloak')).toEqual([
+        expect.objectContaining({ level: 30, idCorrelacion: primera.headers['x-request-id'], modulo: 'Keycloak', estado: 200 }),
+      ]);
+      expect(logs.texto()).not.toContain('token-1');
+      expect(logs.texto()).not.toContain('secreto-de-prueba');
+    });
+
+    it('un 401 con token reutilizado lo descarta, pide otro y repite una vez; el nuevo queda guardado', async () => {
+      const id = await perfil();
+      const { pedir } = await conTokenGuardado(id, [{ tipo: '4xx', estado: 401 }, { tipo: 'ok', cuerpo: pagina([viaje(1, id)], 1) }]);
+
+      const respuesta = await pedir(id);
+      const siguiente = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(respuesta.json()).toMatchObject({ totalElementos: 1 });
+      expect(siguiente.statusCode).toBe(200);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2', 'Bearer token-2']);
+      expect(keycloak.llamadas).toBe(2);
+    });
+
+    it('un segundo 401 da 500 sin otra repetición', async () => {
+      const id = await perfil();
+      const { pedir } = await conTokenGuardado(id, [{ tipo: '4xx', estado: 401 }]);
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+      expect(keycloak.llamadas).toBe(2);
+    });
+
+    it('un 401 con un token recién pedido da 500 sin repetir', async () => {
+      const id = await perfil();
+      serv.responderCon({ tipo: '4xx', estado: 401 });
+
+      const respuesta = await crearConKeycloak().pedir(id);
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1']);
+      expect(keycloak.llamadas).toBe(1);
+    });
+
+    it('un 403 de M6 con token reutilizado da 500 sin pedir otro token (Casos límite)', async () => {
+      const id = await perfil();
+      const { pedir } = await conTokenGuardado(id, [{ tipo: '4xx', estado: 403 }]);
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(serv.llamadas).toBe(1);
+      expect(keycloak.llamadas).toBe(1);
+    });
+
+    it('si el 401 llega en el reintento tras un 5xx, también se renueva', async () => {
+      const id = await perfil();
+      const { pedir } = await conTokenGuardado(id, [
+        { tipo: '5xx', estado: 502 },
+        { tipo: '4xx', estado: 401 },
+        { tipo: 'ok', cuerpo: pagina([], 0) },
+      ]);
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-1', 'Bearer token-2']);
+      expect(keycloak.llamadas).toBe(2);
+    });
+
+    it('sin token guardado, un 401 en el reintento tras un 5xx da 500 sin renovar: el token se pidió en esta operación', async () => {
+      const id = await perfil();
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, { tipo: '4xx', estado: 401 }]);
+
+      const respuesta = await crearConKeycloak().pedir(id);
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-1']);
+      expect(keycloak.llamadas).toBe(1);
+    });
+
+    it('un token de menos de 30 s se usa en el reintento de la misma consulta sin pedir otro (Casos límite, RNF-13)', async () => {
+      const id = await perfil();
+      keycloak.responderCon([{ tipo: 'ok', cuerpo: { access_token: 'token-1', expires_in: 10 } }, conToken('token-2')]);
+      serv.responderCon([{ tipo: '5xx', estado: 502 }, { tipo: 'ok', cuerpo: pagina([], 0) }]);
+
+      const respuesta = await crearConKeycloak().pedir(id);
+
+      expect(respuesta.statusCode).toBe(200);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-1']);
+      expect(keycloak.llamadas).toBe(1);
+    });
+
+    it('con Keycloak caído: 503 genérico con Retry-After, y M6 no recibe pedidos (RF-2.4.11.6)', async () => {
+      const id = await perfil();
+      keycloak.responderCon({ tipo: '5xx', estado: 503 });
+
+      const respuesta = await crearConKeycloak().pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(respuesta.headers['retry-after']).toBe('7');
+      expect(respuesta.json()).toMatchObject({ type: 'about:blank', status: 503, detail: 'Keycloak no está disponible' });
+      expect(serv.llamadas).toBe(0);
+      expect(keycloak.llamadas).toBe(2);
+    });
+
+    it('si Keycloak se cae al renovar: 503 y M6 recibió solo el primer pedido', async () => {
+      const id = await perfil();
+      const { pedir } = await conTokenGuardado(id, [{ tipo: '4xx', estado: 401 }]);
+      keycloak.responderCon({ tipo: '5xx', estado: 503 });
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.json()).toMatchObject({ detail: 'Keycloak no está disponible' });
+      expect(serv.autorizaciones).toEqual(['Bearer token-1']);
+    });
+
+    it('si Keycloak rechaza las credenciales: 500 sin datos de Keycloak, y M6 no recibe pedidos (RF-2.4.11.7)', async () => {
+      const id = await perfil();
+      keycloak.responderCon({ tipo: '4xx', estado: 401, cuerpo: { error: 'invalid_client', error_description: 'dato-de-keycloak' } });
+      const { pedir, logs } = crearConKeycloak();
+
+      const respuesta = await pedir(id);
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(respuesta.body).not.toContain('Keycloak');
+      expect(respuesta.body).not.toContain('dato-de-keycloak');
+      expect(logs.texto()).toContain('Keycloak respondió 401');
+      expect(logs.texto()).not.toContain('secreto-de-prueba');
+      expect(serv.llamadas).toBe(0);
+      expect(keycloak.llamadas).toBe(1);
     });
   });
 });

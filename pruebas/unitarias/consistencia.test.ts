@@ -299,14 +299,25 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   const m2 = compose.services?.['m2'];
   const bd = compose.services?.['bd'];
 
-  it('declara m2, bd y redis (spec 107), los del panel (specs 071 y 072) solo bajo el perfil panel, los del M6 real (spec 081) solo bajo m6-real y los de Keycloak (spec 080) bajo el suyo', () => {
+  it('declara m2, bd y redis (spec 107), los del panel (specs 071 y 072) solo bajo el perfil panel, los del M6 real (spec 081) solo bajo m6-real y los de Keycloak (spec 080) bajo el suyo y bajo m6-real (spec 125)', () => {
     expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'keycloak', 'keycloak-bd', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel', 'redis']);
     expect(m2?.profiles).toBeUndefined();
     expect(bd?.profiles).toBeUndefined();
     expect(compose.services?.['redis']?.profiles).toBeUndefined();
-    for (const nombre of ['m6', 'panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    for (const nombre of ['panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    // Spec 125: el M6 simulado también con Keycloak, para que M2 tenga a quién presentarle su token de Keycloak.
+    expect(compose.services?.['m6']?.profiles).toEqual(['panel', 'keycloak']);
     for (const nombre of ['m6-real', 'm6-real-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['m6-real']);
-    for (const nombre of ['keycloak', 'keycloak-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['keycloak']);
+    for (const nombre of ['keycloak', 'keycloak-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['keycloak', 'm6-real']);
+  });
+
+  // Spec 125, RNF-20: el M6 simulado valida el RS256 de Keycloak solo si recibe el emisor y el JWKS. Vacías en el perfil panel, que
+  // sigue con HS256; les dan valor los dos archivos de ejemplo de Keycloak.
+  it('el M6 simulado recibe M6_EMISOR_KEYCLOAK y M6_URL_JWKS_KEYCLOAK, vacías por defecto', () => {
+    expect(compose.services?.['m6']?.environment).toMatchObject({
+      M6_EMISOR_KEYCLOAK: '${M6_EMISOR_KEYCLOAK:-}',
+      M6_URL_JWKS_KEYCLOAK: '${M6_URL_JWKS_KEYCLOAK:-}',
+    });
   });
 
   it('las imágenes tienen versión exacta, nunca latest', () => {
@@ -474,6 +485,22 @@ describe('docker-compose.yml: Redis para la caché (spec 107, RNF-06, RNF-11)', 
   });
 });
 
+describe('docker-compose.yml: el secreto del token de servicio llega solo a M2 (spec 125, RNF-19)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const conEjemploEnv = Object.entries(compose.services ?? {}).filter(
+    ([nombre, servicio]) => nombre !== 'm2' && [servicio?.env_file ?? []].flat().includes('ejemplo.env'),
+  );
+
+  it('hay servicios además de m2 que cargan ejemplo.env', () => {
+    expect(conEjemploEnv.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm6', 'panel']);
+  });
+
+  // ejemplo.env interpola M2_SECRETO_SERVICIO desde el --env-file: sin esto, la base, el M6 simulado y el panel lo recibirían.
+  it.each(conEjemploEnv.map(([nombre]) => nombre))('%s lo deja vacío en environment', (nombre) => {
+    expect(compose.services?.[nombre]?.environment?.['M2_SECRETO_SERVICIO']).toBe('');
+  });
+});
+
 describe('docker-compose.yml: perfil panel (spec 071, RNF-04.6)', () => {
   const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
   const panel = compose.services?.['panel'];
@@ -562,7 +589,28 @@ describe('docker-compose.yml: perfil m6-real con el M6 del Grupo 12 (spec 081, R
         'postgresql://${M6_REAL_BD_USUARIO:-m6}:${M6_REAL_BD_CLAVE:-m6-contrasena-de-desarrollo}@m6-real-bd:5432/${M6_REAL_BD_NOMBRE:-m6}?schema=public',
       PORT: '3006',
       ENABLE_DEMO_AUTH: 'true',
+      AUTH_ISSUER: 'http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm',
+      AUTH_JWKS_URI: 'http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/certs',
     });
+  });
+
+  // Spec 125 (RNF-07.15): desde el commit del Grupo 12 que exige RS256, M6 valida el token de servicio contra nuestro Keycloak. El
+  // emisor es el que ve la máquina (KC_HOSTNAME) y las claves se bajan por la red de compose, como en el M6 simulado.
+  it('M6 real valida con el emisor y las claves del Keycloak del compose, los mismos que el M6 simulado de ejemplo-keycloak.env', () => {
+    const keycloakEnv = readFileSync(new URL('ejemplo-keycloak.env', raiz), 'utf8');
+    const valor = (variable: string) => new RegExp(`^${variable}=(.*)$`, 'm').exec(keycloakEnv)?.[1];
+    expect(m6Real?.environment?.['AUTH_ISSUER']).toBe(valor('M6_EMISOR_KEYCLOAK'));
+    expect(m6Real?.environment?.['AUTH_JWKS_URI']).toBe(valor('M6_URL_JWKS_KEYCLOAK'));
+    expect(compose.services?.['keycloak']?.environment?.['KC_HOSTNAME']).toBe('http://localhost:${KEYCLOAK_PUERTO:-8080}');
+  });
+
+  it('el perfil m6-real levanta también Keycloak y su base, contra los que M6 valida los tokens', () => {
+    expect(compose.services?.['keycloak']?.profiles).toEqual(['keycloak', 'm6-real']);
+    expect(compose.services?.['keycloak-bd']?.profiles).toEqual(['keycloak', 'm6-real']);
+  });
+
+  it('el commit por defecto es el merge del PR #30 del Grupo 12, el primero que exige RS256 (spec 125, T11)', () => {
+    expect(contexto()).toContain('#${M6_REAL_COMMIT:-0e89944811569e6d80bdcf0bef36909ce65d0288}');
   });
 
   it('la base de M6 usa PostgreSQL 16 en versión exacta, su propio volumen y no publica ningún puerto (RNF-05)', () => {

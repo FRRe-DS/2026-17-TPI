@@ -101,6 +101,33 @@ describe('realm de desarrollo: lo que se conserva de la cátedra (RNF-12.17)', (
   });
 });
 
+// Spec 125: M2 se presenta ante M6 con el token de la cuenta de servicio de grupo-17. El M6 del Grupo 12 autoriza por `clientes-be`
+// en el campo `roles` del token: lo pone algún scope por defecto del cliente con el mapper de roles de realm.
+describe('realm de desarrollo: la cuenta de servicio de grupo-17 (spec 125, RNF-12)', () => {
+  it('grupo-17 es confidencial, con secreto y cuenta de servicio', () => {
+    const grupo17 = cliente('grupo-17');
+    expect(grupo17?.publicClient).not.toBe(true);
+    expect(grupo17?.secret).toEqual(expect.any(String));
+    expect(grupo17?.serviceAccountsEnabled).toBe(true);
+  });
+
+  it('su cuenta de servicio tiene clientes-be y ningún rol de persona', () => {
+    const roles = cuentaDeServicio('grupo-17')?.realmRoles ?? [];
+    expect(roles).toContain('clientes-be');
+    expect(roles.filter((r) => ['CLIENTE', 'OPERADOR', 'CONDUCTOR'].includes(r))).toEqual([]);
+  });
+
+  it('algún scope por defecto de grupo-17 pone los roles de realm en el campo roles del token de acceso', () => {
+    const mappers = (cliente('grupo-17')?.defaultClientScopes ?? []).flatMap((nombre) => scope(nombre)?.protocolMappers ?? []);
+    expect(mappers).toContainEqual(
+      expect.objectContaining({
+        protocolMapper: 'oidc-usermodel-realm-role-mapper',
+        config: expect.objectContaining({ 'claim.name': 'roles', 'access.token.claim': 'true', multivalued: 'true' }),
+      }),
+    );
+  });
+});
+
 describe('realm de desarrollo: roles, scopes y cuentas de servicio de M2 (RNF-12.17)', () => {
   it('trae los roles de realm de M2, una sola vez cada uno', () => {
     const roles = (realm.roles?.realm ?? []).map((r) => r.name);

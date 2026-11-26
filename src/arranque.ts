@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { hostname } from 'node:os';
 import type { Writable } from 'node:stream';
 import { construirApp } from './app.js';
+import { modoTokenServicio } from './auth/token-servicio.js';
 import { migrar } from './bd/migraciones.js';
 import { crearPool, type PoolBd } from './bd/pool.js';
 import { cargarConfig, type Entorno } from './config.js';
@@ -102,6 +103,8 @@ export async function arrancar(
     // Compila los esquemas del contrato: uno que no compila falla acá, antes de tocar la base.
     await app.ready();
     log.info(listarOperaciones(contrato, manejadores), 'Operaciones del contrato');
+    // Con qué se presenta M2 ante M6: solo el modo, sin la URL, el cliente ni el secreto (spec 125, RNF-14.14).
+    log.info({ tokenServicioM6: modoTokenServicio(config) }, 'Token de servicio ante M6');
     // Con la parada, migrar deja de esperar a la base y falla: el catch ve la parada y sale con 0.
     await migrar({ urlBd: config.urlBd, tiempoBdMs: config.tiempoBdMs, log: (mensaje) => app.log.info(mensaje), parada });
     // La que llega justo cuando terminan las migraciones tampoco llega a escuchar.

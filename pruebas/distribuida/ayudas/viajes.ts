@@ -25,7 +25,8 @@ export async function crearViaje(clienteId: string, estado: EstadoFinal): Promis
       clientId: clienteId,
       driverId: conductorId,
       vehicleId: randomUUID(),
-      vehicleType: 'CAR',
+      // AUTO y MOTO desde el contrato 2.0.0 de M6 (su commit 0e89944, spec 125); antes, CAR y MOTORCYCLE.
+      vehicleType: 'AUTO',
       originLatitude: -27.4511,
       originLongitude: -58.9867,
       destinationLatitude: -27.4698,
