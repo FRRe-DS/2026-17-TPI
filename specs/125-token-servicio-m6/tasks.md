@@ -6,7 +6,7 @@
 - [x] **T2. Token de servicio HS256 y paso por `m6.ts`.** RF-2.4.11.2, RF-2.4.11.9
   - Hecho cuando: `src/auth/token-servicio.ts` tiene la forma `obtener`/`descartar`/`modo` con la implementación HS256, `crearM6` la recibe desde `src/app.ts` en lugar de llamar a `tokenDeServicio`, el cliente de módulos acepta una credencial por llamada, y todas las pruebas existentes del historial y la calificación siguen en verde sin cambios.
 
-- [ ] **T3. Pedido de token a Keycloak.** RF-2.4.11.1, RF-2.4.11.6, RF-2.4.11.7, RF-2.4.11.10, RNF-13
+- [x] **T3. Pedido de token a Keycloak.** RF-2.4.11.1, RF-2.4.11.6, RF-2.4.11.7, RF-2.4.11.10, RNF-13
   - Hecho cuando: las pruebas unitarias con `servidor-modulo.ts` como endpoint de tokens muestran que el pedido va en formulario con `grant_type=client_credentials` y `Basic`; que un `5xx`, un corte o un `200` sin `access_token`, sin `expires_in` entero positivo o que no es JSON se reintenta una vez y termina en `ModuloNoDisponible('Keycloak')` con `Retry-After`; y que un `400` o `401` da `ErrorDeIntegracion` sin reintento.
 
 - [ ] **T4. Caché y pedido compartido.** RF-2.4.11.4, RF-2.4.11.5
