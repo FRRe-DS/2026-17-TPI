@@ -9,7 +9,7 @@
 - [x] **T3. Pedido de token a Keycloak.** RF-2.4.11.1, RF-2.4.11.6, RF-2.4.11.7, RF-2.4.11.10, RNF-13
   - Hecho cuando: las pruebas unitarias con `servidor-modulo.ts` como endpoint de tokens muestran que el pedido va en formulario con `grant_type=client_credentials` y `Basic`; que un `5xx`, un corte o un `200` sin `access_token`, sin `expires_in` entero positivo o que no es JSON se reintenta una vez y termina en `ModuloNoDisponible('Keycloak')` con `Retry-After`; y que un `400` o `401` da `ErrorDeIntegracion` sin reintento.
 
-- [ ] **T4. Caché y pedido compartido.** RF-2.4.11.4, RF-2.4.11.5
+- [x] **T4. Caché y pedido compartido.** RF-2.4.11.4, RF-2.4.11.5
   - Hecho cuando: con reloj falso, las pruebas unitarias muestran que se reutiliza un token con 30 s o más de vida y se pide otro con menos, que un `expires_in` de 10 s se usa y no se guarda, que diez `obtener` simultáneos hacen un solo pedido y reciben el mismo token o el mismo error, que tras una falla el siguiente vuelve a pedir, y que `descartar` no borra un token más nuevo.
 
 - [ ] **T5. Línea de log del pedido y línea de arranque.** RNF-14.14, RNF-14.15, RNF-19

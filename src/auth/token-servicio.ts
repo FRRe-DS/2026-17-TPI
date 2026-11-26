@@ -126,13 +126,45 @@ function crearPedidoDeToken(
   };
 }
 
-// El token de Keycloak (RF-2.4.11.1). Por ahora cada `obtener` hace su pedido.
+// Lo que le tiene que quedar de vida a un token para reutilizarlo (RF-2.4.11.4): cubre la llamada a M6 con su reintento y deja
+// margen para relojes que no coinciden.
+const VIDA_MINIMA_MS = 30_000;
+
+// El token de Keycloak (RF-2.4.11.1). Guarda en la memoria del proceso, y en ningún otro lugar, un token y su vencimiento
+// (RNF-19), y lo reutiliza mientras le queden 30 s o más (RF-2.4.11.4). Si hay que pedir uno y ya hay un pedido en curso, se
+// espera ese mismo: todos reciben el mismo token o el mismo error (RF-2.4.11.5, Casos límite).
 function crearTokenServicioKeycloak(tokenServicio: ConfigTokenServicio, config: ConfigPedido): TokenServicio {
   const pedir = crearPedidoDeToken(tokenServicio, config);
+  let guardado: TokenDeKeycloak | undefined;
+  let enCurso: Promise<TokenDeKeycloak> | undefined;
+
+  const leQuedaVida = ({ venceEn }: TokenDeKeycloak) => venceEn - Date.now() >= VIDA_MINIMA_MS;
+
+  // El pedido mismo guarda su resultado y se borra al terminar, sin depender de cuál de los que esperan siga primero. Un token
+  // de menos de 30 s se entrega y no se guarda; una falla no se guarda, así que el siguiente vuelve a pedir.
+  function pedirCompartido(): Promise<TokenDeKeycloak> {
+    enCurso ??= pedir()
+      .then((obtenido) => {
+        if (leQuedaVida(obtenido)) guardado = obtenido;
+        return obtenido;
+      })
+      .finally(() => {
+        enCurso = undefined;
+      });
+    return enCurso;
+  }
+
   return {
     modo: 'keycloak',
-    obtener: async () => ({ token: (await pedir()).token, reutilizado: false }),
-    descartar: () => undefined,
+    async obtener() {
+      if (guardado !== undefined && leQuedaVida(guardado)) return { token: guardado.token, reutilizado: true };
+      // Pedido durante esta operación, aunque lo haya iniciado otra: no es reutilizado (RF-2.4.11.8).
+      return { token: (await pedirCompartido()).token, reutilizado: false };
+    },
+    // Compara el token: un 401 que llega tarde con uno viejo no borra el más nuevo que guardó otro pedido.
+    descartar(token) {
+      if (guardado?.token === token) guardado = undefined;
+    },
   };
 }
 

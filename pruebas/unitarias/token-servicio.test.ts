@@ -1,7 +1,7 @@
 import { decodeProtectedHeader, jwtVerify } from 'jose';
 import { createServer } from 'node:net';
 import { inspect } from 'node:util';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { crearTokenServicio, crearTokenServicioHs256 } from '../../src/auth/token-servicio.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../../src/errores.js';
 import { CONFIG } from '../ayudas/app.js';
@@ -199,5 +199,161 @@ describe('token de servicio de Keycloak: el pedido (spec 125, RF-2.4.11.1, RF-2.
       expect(inspect(error, { depth: 5 })).not.toContain(SECRETO);
       expect(inspect(error, { depth: 5 })).not.toContain(Buffer.from(`${CLIENTE}:${SECRETO}`).toString('base64'));
     }
+  });
+});
+
+// La caché y el pedido compartido (spec 125, T4). Solo `Date` es falso: el servidor, los cortes y la pausa entre intentos
+// siguen con el reloj real, y el tiempo de vida del token avanza cuando la prueba lo dice.
+describe('token de servicio de Keycloak: caché y pedido compartido (spec 125, RF-2.4.11.4, RF-2.4.11.5)', () => {
+  const keycloak = crearServidorModulo();
+  const INICIO = new Date('2026-11-25T12:00:00Z').getTime();
+  const conToken = (token: string, expiresIn = 300): Comportamiento => ({
+    tipo: 'ok',
+    cuerpo: { access_token: token, expires_in: expiresIn },
+  });
+
+  const tokenServicioDe = () =>
+    crearTokenServicio({
+      ...CONFIG,
+      audienciaM6: 'm6-de-prueba',
+      tiempoModulosMs: 200,
+      reintentosModulos: 1,
+      reintentarDespuesS: 7,
+      tokenServicio: { urlTokens: `${keycloak.url}/token`, cliente: 'grupo-17', secreto: 'secreto-de-prueba' },
+    });
+
+  const avanzar = (ms: number) => vi.setSystemTime(Date.now() + ms);
+
+  beforeAll(async () => {
+    await keycloak.levantar();
+  });
+
+  afterAll(async () => {
+    await keycloak.cerrar();
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(INICIO);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reutiliza el token guardado mientras le quedan 30 s o más, sin pedir otro', async () => {
+    keycloak.responderCon([conToken('token-1'), conToken('token-2')]);
+    const tokenServicio = tokenServicioDe();
+
+    const primero = await tokenServicio.obtener('id-1');
+    avanzar(270_000); // le quedan justo 30 s
+    const segundo = await tokenServicio.obtener('id-2');
+
+    expect(primero).toStrictEqual({ token: 'token-1', reutilizado: false });
+    expect(segundo).toStrictEqual({ token: 'token-1', reutilizado: true });
+    expect(keycloak.llamadas).toBe(1);
+  });
+
+  it('con menos de 30 s de vida pide otro y guarda el nuevo', async () => {
+    keycloak.responderCon([conToken('token-1'), conToken('token-2'), conToken('token-3')]);
+    const tokenServicio = tokenServicioDe();
+
+    await tokenServicio.obtener('id-1');
+    avanzar(270_001); // le quedan 29,999 s
+    const segundo = await tokenServicio.obtener('id-2');
+    const tercero = await tokenServicio.obtener('id-3');
+
+    expect(segundo).toStrictEqual({ token: 'token-2', reutilizado: false });
+    expect(tercero).toStrictEqual({ token: 'token-2', reutilizado: true });
+    expect(keycloak.llamadas).toBe(2);
+  });
+
+  it('un expires_in de 10 s se usa para esa llamada y no se guarda', async () => {
+    keycloak.responderCon([conToken('corto-1', 10), conToken('corto-2', 10)]);
+    const tokenServicio = tokenServicioDe();
+
+    const primero = await tokenServicio.obtener('id-1');
+    const segundo = await tokenServicio.obtener('id-2');
+
+    expect(primero).toStrictEqual({ token: 'corto-1', reutilizado: false });
+    expect(segundo).toStrictEqual({ token: 'corto-2', reutilizado: false });
+    expect(keycloak.llamadas).toBe(2);
+  });
+
+  it('un expires_in de 30 s justos se guarda', async () => {
+    keycloak.responderCon([conToken('justo', 30), conToken('otro')]);
+    const tokenServicio = tokenServicioDe();
+
+    await tokenServicio.obtener('id-1');
+
+    await expect(tokenServicio.obtener('id-2')).resolves.toStrictEqual({ token: 'justo', reutilizado: true });
+    expect(keycloak.llamadas).toBe(1);
+  });
+
+  it('diez obtener simultáneos hacen un solo pedido y reciben el mismo token', async () => {
+    keycloak.responderCon([conToken('compartido'), conToken('otro')]);
+    const tokenServicio = tokenServicioDe();
+
+    const obtenidos = await Promise.all(Array.from({ length: 10 }, (_, i) => tokenServicio.obtener(`id-${i}`)));
+
+    expect(keycloak.llamadas).toBe(1);
+    // Ninguno es reutilizado: se pidió durante su operación, y un 401 de M6 con él no se renueva (RF-2.4.11.8).
+    expect(obtenidos).toStrictEqual(Array.from({ length: 10 }, () => ({ token: 'compartido', reutilizado: false })));
+  });
+
+  it('diez obtener simultáneos ante una falla reciben el mismo error, y el siguiente vuelve a pedir', async () => {
+    keycloak.responderCon([{ tipo: '5xx', estado: 500 }, { tipo: '5xx', estado: 500 }, conToken('despues')]);
+    const tokenServicio = tokenServicioDe();
+
+    const resultados = await Promise.allSettled(Array.from({ length: 10 }, (_, i) => tokenServicio.obtener(`id-${i}`)));
+    const errores = resultados.map((r) => (r.status === 'rejected' ? (r.reason as unknown) : r));
+
+    expect(keycloak.llamadas).toBe(2); // un pedido, con su reintento
+    expect(errores[0]).toBeInstanceOf(ModuloNoDisponible);
+    for (const error of errores) expect(error).toBe(errores[0]);
+
+    await expect(tokenServicio.obtener('id-siguiente')).resolves.toStrictEqual({ token: 'despues', reutilizado: false });
+    expect(keycloak.llamadas).toBe(3);
+  });
+
+  it('tras un rechazo de Keycloak el siguiente también vuelve a pedir', async () => {
+    keycloak.responderCon([{ tipo: '4xx', estado: 401 }, conToken('despues')]);
+    const tokenServicio = tokenServicioDe();
+
+    await expect(tokenServicio.obtener('id-1')).rejects.toBeInstanceOf(ErrorDeIntegracion);
+    await expect(tokenServicio.obtener('id-2')).resolves.toStrictEqual({ token: 'despues', reutilizado: false });
+    expect(keycloak.llamadas).toBe(2);
+  });
+
+  it('descartar el token guardado hace que el siguiente pida otro', async () => {
+    keycloak.responderCon([conToken('token-1'), conToken('token-2')]);
+    const tokenServicio = tokenServicioDe();
+
+    await tokenServicio.obtener('id-1');
+    tokenServicio.descartar('token-1');
+
+    await expect(tokenServicio.obtener('id-2')).resolves.toStrictEqual({ token: 'token-2', reutilizado: false });
+    expect(keycloak.llamadas).toBe(2);
+  });
+
+  it('descartar un token viejo no borra uno más nuevo', async () => {
+    keycloak.responderCon([conToken('viejo'), conToken('nuevo'), conToken('otro')]);
+    const tokenServicio = tokenServicioDe();
+
+    await tokenServicio.obtener('id-1');
+    tokenServicio.descartar('viejo');
+    await tokenServicio.obtener('id-2');
+    // Otra operación que usó el viejo recibe su 401 tarde y lo descarta: el nuevo queda.
+    tokenServicio.descartar('viejo');
+
+    await expect(tokenServicio.obtener('id-3')).resolves.toStrictEqual({ token: 'nuevo', reutilizado: true });
+    expect(keycloak.llamadas).toBe(2);
+  });
+
+  it('cada token de servicio tiene su propia caché', async () => {
+    keycloak.responderCon([conToken('de-uno'), conToken('de-otro')]);
+
+    await tokenServicioDe().obtener('id-1');
+    await expect(tokenServicioDe().obtener('id-2')).resolves.toStrictEqual({ token: 'de-otro', reutilizado: false });
   });
 });
