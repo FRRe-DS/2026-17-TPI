@@ -8,10 +8,12 @@ import { promisify } from 'node:util';
 // lo que la persona tenga levantado.
 export const PROYECTO = 'm2-keycloak';
 export const PUERTO_M2 = 18083;
-export const PUERTO_KEYCLOAK = 18080;
 // El canal de control del M6 simulado, que el perfil keycloak levanta desde la spec 125: uno propio, para no chocar con el del panel.
 export const PUERTO_CONTROL_M6 = 13007;
+export const PUERTO_KEYCLOAK = 18080;
 export const URL_M2 = `http://127.0.0.1:${PUERTO_M2}`;
+// El canal de control del M6 simulado, para cargarle los viajes de ejemplo de un cliente (spec 125).
+export const URL_CONTROL_M6 = `http://127.0.0.1:${PUERTO_CONTROL_M6}`;
 // El emisor sale de KC_HOSTNAME, que dice localhost: se le pide a Keycloak por ese mismo nombre.
 export const URL_REALM = `http://localhost:${PUERTO_KEYCLOAK}/realms/ds-2026-realm`;
 export const URL_TOKEN = `${URL_REALM}/protocol/openid-connect/token`;

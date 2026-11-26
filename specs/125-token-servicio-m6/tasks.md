@@ -24,7 +24,7 @@
 - [x] **T8. Entornos con Keycloak.** RF-2.4.11.1, RNF-06, RNF-20
   - Hecho cuando: `m6` está en los perfiles `panel` y `keycloak`, `ejemplo-keycloak.env` y `ejemplo-front-keycloak.env` traen las variables de M2 (`grupo-17`) y del simulado (emisor `localhost`, JWKS `keycloak:8080`), `realm.test.ts` comprueba que la cuenta de servicio de `grupo-17` emite `clientes-be` en `roles`, y `docker compose --env-file ejemplo-front-keycloak.env -f docker-compose.yml -f docker-compose.front.yml up -d --build --wait` deja el historial de `cliente1` en `200` desde el front.
 
-- [ ] **T9. Prueba con Keycloak real.** RNF-07, RNF-12, RNF-14.14, RNF-14.15
+- [x] **T9. Prueba con Keycloak real.** RNF-07, RNF-12, RNF-14.14, RNF-14.15
   - Hecho cuando: `pruebas/keycloak/token-servicio.test.ts` (`npm run keycloak:test`) muestra que el historial y la calificación de un cliente con viajes precargados responden `200` con el token de `grupo-17`, que dos consultas seguidas dejan una sola línea `modulo: 'Keycloak'` en el log de M2, que la línea de arranque dice `keycloak`, y que con Keycloak detenido el historial da `503` con `Retry-After`; el job `keycloak` de CI está en verde.
 
 - [ ] **T10. Documentación y guía.** RNF-20
