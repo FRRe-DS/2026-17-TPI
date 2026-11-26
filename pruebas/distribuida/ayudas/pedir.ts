@@ -85,7 +85,11 @@ export async function tokenDeServicioDeM2(): Promise<string> {
 const FIRMAR_TOKEN_HS256 = `
 import { tokenDeServicio } from './dist/auth/tokens.js';
 import { cargarConfig } from './dist/config.js';
-const { config } = cargarConfig(process.env);
+const { config, errores } = cargarConfig(process.env);
+if (config === undefined) {
+  console.error('Configuración no válida: ' + errores.map(({ variable }) => variable).join(', '));
+  process.exit(1);
+}
 console.log(await tokenDeServicio(config));
 `;
 

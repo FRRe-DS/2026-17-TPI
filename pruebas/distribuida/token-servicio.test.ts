@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { URL_TOKEN } from './ayudas/entorno.js';
 import { describirRespuesta } from './ayudas/errores.js';
 import { pedirM6, tokenDeServicioDeM2, tokenHs256DeM2 } from './ayudas/pedir.js';
 import { crearViaje } from './ayudas/viajes.js';
@@ -13,7 +14,7 @@ describe('el token de servicio de M2 ante el M6 real (RNF-07.15)', () => {
     const token = await tokenDeServicioDeM2();
     const [cabecera, cuerpo] = token.split('.').slice(0, 2).map((parte) => JSON.parse(Buffer.from(parte, 'base64url').toString('utf8')) as Record<string, unknown>);
     expect(cabecera).toMatchObject({ alg: 'RS256' });
-    expect(cuerpo).toMatchObject({ azp: 'grupo-17', iss: 'http://localhost:18081/realms/ds-2026-realm' });
+    expect(cuerpo).toMatchObject({ azp: 'grupo-17', iss: URL_TOKEN.replace('/protocol/openid-connect/token', '') });
     expect(cuerpo?.['roles']).toContain('clientes-be');
   });
 

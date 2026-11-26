@@ -260,7 +260,7 @@ npm test
 | `npm test` | Las pruebas unitarias y las de integración, que levantan un PostgreSQL real con Testcontainers | Docker |
 | `npm run lint` y `npm run build` | El estilo del código y que compila | — |
 | `npm run contrato:test` | El servicio contra su contrato, con Schemathesis (una imagen de Docker), en las 20 operaciones | El servicio levantado (`docker compose up -d --build --wait`) |
-| `npm run integracion:m6` | M2 con el M6 real del Grupo 12: historial, calificación y qué pasa cuando M6 se cae (spec 081) | Docker, e internet la primera vez |
+| `npm run integracion:m6` | M2 con el M6 real del Grupo 12: historial, calificación, qué pasa cuando M6 se cae (spec 081) y el token de servicio de Keycloak (spec 125) | Docker, e internet la primera vez (construye M6 y baja Keycloak, unos 470 MB) |
 | `npm run keycloak:test` | M2 en modo `jwks` junto a Keycloak, con tokens RS256 pedidos al realm: cada rol ve lo suyo y M2 sigue de pie si Keycloak se cae (spec 080) | Docker |
 | `npm run panel:navegador` | El panel en Chrome | Chrome y Docker |
 | `npx --yes @redocly/cli@2.62.1 lint contrato/openapi.yml` | Que el contrato es un OpenAPI válido | — |
