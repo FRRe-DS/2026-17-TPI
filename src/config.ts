@@ -88,16 +88,16 @@ const urlHttp: Regla<string> = {
   },
 };
 
-// La URL de Redis: `redis://` o `rediss://` (con TLS), con una dirección válida. Puede llevar la contraseña (`redis://:clave@host`),
-// como la URL de la base, así que el error nunca repite el valor (RNF-06.2, RNF-19). Se rechaza también lo que node-redis
-// rechazaría al crear el cliente, porque ese error sale de `construirApp` sin nombrar la variable: una ruta que no sea vacía,
-// `/` o `/<entero>` (el número de base), y un usuario o una contraseña con un `%` mal codificado.
+// La URL de Redis: `redis://` o `rediss://` (con TLS), con hostname y una dirección válida. Puede llevar la contraseña
+// (`redis://:clave@host`), como la URL de la base, así que el error nunca repite el valor (RNF-06.2, RNF-19). Se rechaza también
+// lo que node-redis rechazaría al crear el cliente, porque ese error sale de `construirApp` sin nombrar la variable: una ruta
+// que no sea vacía, `/` o `/<entero>` (el número de base), y un usuario o una contraseña con un `%` mal codificado.
 const urlRedis: Regla<string> = {
-  motivo: 'no es una URL redis:// o rediss:// válida',
+  motivo: 'no es una URL redis:// o rediss:// válida con host',
   convertir: (texto) => {
     if (!/^rediss?:\/\//i.test(texto) || !URL.canParse(texto)) return undefined;
     const url = new URL(texto);
-    if (!/^\/?(\d+)?$/.test(url.pathname)) return undefined;
+    if (!url.hostname || !/^\/?(\d+)?$/.test(url.pathname)) return undefined;
     try {
       decodeURIComponent(url.username);
       decodeURIComponent(url.password);
