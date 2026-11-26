@@ -27,7 +27,7 @@
 - [x] **T9. Prueba con Keycloak real.** RNF-07, RNF-12, RNF-14.14, RNF-14.15
   - Hecho cuando: `pruebas/keycloak/token-servicio.test.ts` (`npm run keycloak:test`) muestra que el historial y la calificación de un cliente con viajes precargados responden `200` con el token de `grupo-17`, que dos consultas seguidas dejan una sola línea `modulo: 'Keycloak'` en el log de M2, que la línea de arranque dice `keycloak`, y que con Keycloak detenido el historial da `503` con `Retry-After`; el job `keycloak` de CI está en verde.
 
-- [ ] **T10. Documentación y guía.** RNF-20
+- [x] **T10. Documentación y guía.** RNF-20
   - Hecho cuando: `docs/probar-m2.md` explica las tres variables, cómo levantar M2 con Keycloak para llamar a M6 y cómo comprobar con el log que M6 acepta el token; el `README.md` suma las variables; el ADR 125 pasa a «aceptada»; y `guia.md` tiene la visión general y una entrada por tarea.
 
 - [ ] **T11. Prueba distribuida con el M6 real que exige RS256.** RNF-07.15

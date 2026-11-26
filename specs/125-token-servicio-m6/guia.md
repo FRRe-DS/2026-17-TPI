@@ -1,7 +1,30 @@
 # Guía — Spec 125 Token de servicio de M2 ante M6 obtenido de Keycloak
 
 ## Visión general (se escribe al validar, 30-60 líneas)
-Pendiente: se escribe al validar la spec.
+**Qué resuelve.** M2 llama a M6 para el historial (spec 007) y para verificar el viaje antes de calificar (spec 008). Hasta ahora se presentaba con un token HS256 que firmaba él mismo con la clave compartida. El M6 del Grupo 12 va a aceptar solo tokens RS256 de Keycloak, así que M2 pasa a pedirle su token de servicio a Keycloak con `client_credentials` y el cliente `grupo-17`. Sin Keycloak configurado, todo sigue como antes (HS256), para el desarrollo y las pruebas que no lo levantan.
+
+**El recorrido de una consulta.**
+1. Al arrancar, `cargarConfig` lee `M2_URL_TOKENS_SERVICIO`, `M2_CLIENTE_SERVICIO` y `M2_SECRETO_SERVICIO` (las tres o ninguna). `src/arranque.ts` escribe `{ tokenServicioM6: 'keycloak' | 'hs256' }`.
+2. `src/app.ts` crea un solo token de servicio (`crearTokenServicio`, `src/auth/token-servicio.ts`) y se lo pasa a `crearM6`.
+3. Llega un historial o una calificación. `src/historial/m6.ts:pedirAM6` llama a M6 con el cliente de módulos y le da como credencial `tokenServicio.obtener(idCorrelacion)`.
+4. `obtener` devuelve el token guardado si le quedan 30 s o más (`reutilizado: true`). Si no, pide uno a Keycloak, y los que lleguen mientras tanto esperan ese mismo pedido.
+5. El pedido (`crearPedidoDeToken`) es un `POST` en formulario con `Basic`, un intento de `M2_TIEMPO_MODULOS_MS`, un reintento a los 200 ms, y una línea `llamada a Keycloak` al terminar.
+6. Si M6 responde `401` a un token reutilizado, `pedirAM6` lo descarta, pide otro y repite una vez.
+
+**Qué sale ante cada falla.**
+- Keycloak no contesta, corta, da `5xx` o un `200` sin `access_token` o sin `expires_in` entero positivo: `503` genérico con `Retry-After` y «Keycloak no está disponible». M6 no recibe nada.
+- Keycloak rechaza las credenciales (`4xx`): `500`, sin reintento y sin datos de Keycloak en la respuesta. La causa queda en el log.
+- M6 responde `401` con un token recién pedido, o por segunda vez: `500`, como cualquier `4xx` de M6. Un `403` no se renueva, porque otro token tendría los mismos roles.
+
+**Qué no hace.** No verifica ni decodifica el token de Keycloak (lo valida M6). No lo guarda fuera de la memoria del proceso: ni en la base, ni en Redis, ni en el log. No reenvía a M6 el token de quien llamó a M2.
+
+**Dónde mirar.**
+- Lógica: `src/auth/token-servicio.ts` (las dos implementaciones, la caché y el pedido) y `src/historial/m6.ts:pedirAM6` (la renovación).
+- Entornos: `ejemplo-keycloak.env` y `ejemplo-front-keycloak.env` traen las variables con el secreto de desarrollo de `grupo-17`. `docker-compose.yml` suma el M6 simulado al perfil `keycloak`, y ese simulado valida el RS256 con el JWKS de Keycloak (`panel/m6-simulado/app-m6.ts`).
+- Pruebas: `pruebas/unitarias/token-servicio.test.ts` (pedido, caché, pedido compartido y línea de log, con un endpoint de tokens falso); `pruebas/integracion/historial-http.test.ts` y `calificaciones-http.test.ts` (la renovación y Keycloak caído, de punta a punta); `pruebas/keycloak/token-servicio.test.ts` (Keycloak real y M6 simulado, `npm run keycloak:test`).
+- Cómo probarlo a mano: `docs/probar-m2.md`, sección 9, «El token de servicio ante M6».
+
+**Pendiente.** T11 (la prueba distribuida con el M6 real que exige RS256) espera a que el Grupo 12 mergee ese cambio en su rama de trabajo. Mientras tanto, `M6_REAL_COMMIT` sigue apuntando al commit que acepta HS256.
 
 ## Tareas
 ### T1 — Configuración del token de servicio · commit `125/T1`
@@ -66,3 +89,10 @@ Pendiente: se escribe al validar la spec.
 - Cómo se conecta: el paso de Keycloak caído reinicia M2 y hace una consulta que no llama a M6 (el perfil) para que M2 guarde las claves con las que valida el token de la persona; recién después detiene Keycloak. Así el `503` sale del token de servicio y no de la validación del token de entrada (`caido.test.ts` ya prueba ese otro caso). Deja Keycloak andando, también si falla, porque `caido.test.ts` corre después.
 - Tests: historial dos veces en `200` con el viaje completado del simulado, una sola línea `llamada a Keycloak` (la de la primera consulta) y ningún token en el log; calificación del viaje completado en `201` sin pedir otro token; la línea de arranque dice `keycloak` y el log no tiene el secreto; con Keycloak detenido y sin token guardado, `503` genérico con `Retry-After` y `detail` «Keycloak no está disponible», y la línea del pedido con `estado: null` e `intentos: 2`; cuando vuelve, `200`. `npm run keycloak:test`: 4 archivos, 28 pruebas, en verde en local.
 - Para mirar con atención: el job `keycloak` de CI corre este mismo comando y no cambió; su resultado se ve recién con el push. La prueba usa `cliente2` y no `cliente1` para no depender del bloqueo que `operaciones.test.ts` le pone a `cliente1`.
+
+### T10 — Documentación y guía · commit `125/T10`
+- Qué cambió: `README.md` explica cómo se presenta M2 ante M6 en los dos modos, suma a «Qué responde M2 cuando M6 falla» el `401` con token guardado, Keycloak caído y Keycloak que rechaza, y agrega las tres variables a la tabla de las llamadas a M6 (`M2_AUDIENCIA_M6` vale solo para HS256). `docs/probar-m2.md`, sección 9: los seis servicios del perfil, una subsección «El token de servicio ante M6» con las variables, los pasos para comprobar con el log que M6 acepta el token, y la fila de `token-servicio.test.ts` (4 archivos, 28 pruebas). El ADR 125 pasa a «aceptada», y el 009 dice que el 125 lo reemplaza para el token hacia M6. Esta guía suma la visión general.
+- Por qué así: RNF-20. Los pasos de `probar-m2.md` se corrieron tal cual en un proyecto aparte (`m2-doc-check`, con otros puertos, bajado después con `down -v`) y dieron lo que dice el documento.
+- Cómo se conecta: la sección 9 ya explicaba Keycloak para los tokens que M2 recibe; el token de servicio queda al lado, con el mismo entorno.
+- Tests: no hay código nuevo. `npm test`, lint, build y `spec-check` en verde.
+- Para mirar con atención: la sección 9 decía «cuatro servicios»; ya eran cinco desde Redis (spec 107) y ahora son seis con el M6 simulado.
