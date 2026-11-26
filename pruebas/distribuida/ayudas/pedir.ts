@@ -54,22 +54,42 @@ export async function tokenDeM2(sub: string, roles: string[]): Promise<string> {
   return salida.trim();
 }
 
-// Corre dentro del contenedor de M2 la misma función, con la misma configuración, que usa M2 al llamar a M6 (`src/historial/m6.ts`).
-const FIRMAR_TOKEN_DE_SERVICIO = `
-import { tokenDeServicio } from './dist/auth/tokens.js';
+// Corre dentro del contenedor de M2 la misma función, con la misma configuración, que usa M2 al llamar a M6 (`src/historial/m6.ts`):
+// desde la spec 125, pide el token a Keycloak por client_credentials como grupo-17. Si M2 no quedó en modo keycloak, falla: el M6
+// real rechaza el HS256 y la prueba tiene que decir por qué.
+const OBTENER_TOKEN_DE_SERVICIO = `
+import { crearTokenServicio } from './dist/auth/token-servicio.js';
 import { cargarConfig } from './dist/config.js';
 const { config, errores } = cargarConfig(process.env);
 if (config === undefined) {
   console.error('Configuración no válida: ' + errores.map(({ variable }) => variable).join(', '));
   process.exit(1);
 }
+const tokenServicio = crearTokenServicio(config);
+if (tokenServicio.modo !== 'keycloak') {
+  console.error('M2 no pide su token de servicio a Keycloak (modo ' + tokenServicio.modo + '): faltan las variables M2_*_SERVICIO.');
+  process.exit(1);
+}
+console.log((await tokenServicio.obtener('prueba-distribuida')).token);
+`;
+
+// El token con el que M2 se presenta ante M6 de verdad: uno nuevo de Keycloak en cada llamada, que vive lo que diga el realm.
+export async function tokenDeServicioDeM2(): Promise<string> {
+  const salida = await compose(['exec', '-T', 'm2', 'node', '--input-type=module', '-e', OBTENER_TOKEN_DE_SERVICIO], {
+    tiempoMs: 30_000,
+  });
+  return salida.trim();
+}
+
+// El HS256 que M2 firmaba antes de la spec 125 (RF-2.4.11.2), con su misma función y configuración: el M6 real tiene que rechazarlo.
+const FIRMAR_TOKEN_HS256 = `
+import { tokenDeServicio } from './dist/auth/tokens.js';
+import { cargarConfig } from './dist/config.js';
+const { config } = cargarConfig(process.env);
 console.log(await tokenDeServicio(config));
 `;
 
-// El token con el que M2 se presenta ante M6 de verdad. Vive 60 s: se pide justo antes de usarlo.
-export async function tokenDeServicioDeM2(): Promise<string> {
-  const salida = await compose(['exec', '-T', 'm2', 'node', '--input-type=module', '-e', FIRMAR_TOKEN_DE_SERVICIO], {
-    tiempoMs: 30_000,
-  });
+export async function tokenHs256DeM2(): Promise<string> {
+  const salida = await compose(['exec', '-T', 'm2', 'node', '--input-type=module', '-e', FIRMAR_TOKEN_HS256], { tiempoMs: 30_000 });
   return salida.trim();
 }

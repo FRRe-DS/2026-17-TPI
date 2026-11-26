@@ -30,5 +30,5 @@
 - [x] **T10. Documentación y guía.** RNF-20
   - Hecho cuando: `docs/probar-m2.md` explica las tres variables, cómo levantar M2 con Keycloak para llamar a M6 y cómo comprobar con el log que M6 acepta el token; el `README.md` suma las variables; el ADR 125 pasa a «aceptada»; y `guia.md` tiene la visión general y una entrada por tarea.
 
-- [ ] **T11. Prueba distribuida con el M6 real que exige RS256.** RNF-07.15
+- [x] **T11. Prueba distribuida con el M6 real que exige RS256.** RNF-07.15
   - Hecho cuando: con el commit del Grupo 12 que exige RS256 ya mergeado en su rama de trabajo (si no lo está, la tarea espera), `M6_REAL_COMMIT` apunta a ese commit, `m6-real` recibe `AUTH_ISSUER` y `AUTH_JWKS_URI` de nuestro Keycloak, el proyecto `m2-distribuida` levanta Keycloak, `token-servicio.test.ts` pide el token por `client_credentials` y comprueba que `GET /trips` y `GET /trips/{tripId}` no dan `401` ni `403`, `workflow-integracion-m6.test.ts` está en verde y el workflow «Integración con M6 real» pasa.

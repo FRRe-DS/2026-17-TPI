@@ -204,32 +204,38 @@ Simulado en el panel: la sesión (pendiente de M1, el panel firma tokens de desa
 
 ## 8. M2 contra el M6 real del Grupo 12
 
-Spec 081. Levanta el M6 que construyó el Grupo 12 (con su propia base) junto a M2 y comprueba historial, calificación y qué pasa cuando M6 se cae. Hace falta lo mismo que antes (Node 24, Docker con compose v2 sin `sudo`) y acceso a internet la primera vez: compose construye M6 desde su repositorio, `github.com/FRRe-DS/2026-12-TPI`.
+Spec 081. Levanta el M6 que construyó el Grupo 12 (con su propia base) junto a M2 y comprueba historial, calificación y qué pasa cuando M6 se cae. Desde la spec 125, M6 acepta solo tokens RS256 de Keycloak: el perfil `m6-real` levanta también Keycloak y su base, y M2 pide su token de servicio a Keycloak como `grupo-17` (sección 9, «El token de servicio ante M6»). Hace falta lo mismo que antes (Node 24, Docker con compose v2 sin `sudo`) y acceso a internet la primera vez: compose construye M6 desde su repositorio, `github.com/FRRe-DS/2026-12-TPI`.
 
-**Qué versión de M6 se usa.** El commit `7d3d5af9138d9b220f109798e9f615ca853d2bda` de la rama `m6/base-de-datos` (6 de noviembre de 2026). Compose lo toma de `docker-compose.yml`, donde es el valor por defecto de `M6_REAL_COMMIT`; acá se repite solo como texto. Para probar otro sin editar nada:
+**Qué versión de M6 se usa.** El commit `0e89944811569e6d80bdcf0bef36909ce65d0288` de la rama `m6/base-de-datos` (26 de noviembre de 2026, el merge de su PR #30: contrato 2.0.0, el primero que exige RS256). Compose lo toma de `docker-compose.yml`, donde es el valor por defecto de `M6_REAL_COMMIT`; acá se repite solo como texto. Para probar otro sin editar nada:
 
 ```bash
-M6_REAL_COMMIT=<hash completo> M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
+M6_REAL_COMMIT=<hash completo> docker compose --profile m6-real up -d --build --wait
 ```
+
+(con las variables de M2 exportadas como en «Levantarlo»).
 
 Para cambiar el commit fijo: editá ese valor en `docker-compose.yml` y el hash de esta sección, corré la prueba (más abajo), y anotá en la guía de la spec qué diferencias nuevas aparecen.
 
 ### Levantarlo
 
 ```bash
-M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
+export M2_URL_M6=http://m6-real:3006 $(grep -E '^M2_(URL_TOKENS|CLIENTE|SECRETO)_SERVICIO=' ejemplo-keycloak.env)
+docker compose --profile m6-real up -d --build --wait
 ```
 
-Crea cuatro servicios sanos: `m2`, `bd`, `m6-real` y `m6-real-bd`. Lo único que le dice a M2 dónde está M6 es `M2_URL_M6`; sin el perfil `m6-real` no se crea nada de M6, y `m2` no depende de `m6-real`: arranca aunque M6 no esté. La URL no lleva `/api/v1` porque M6 sirve en `/trips`.
+La primera línea deja en la terminal dónde está M6 y las tres variables del token de servicio, tomadas de `ejemplo-keycloak.env` (el secreto es el de desarrollo de `grupo-17`). Sin ellas, M2 firma el HS256 de siempre, M6 lo rechaza con `401` y el historial da `500`. M2 sigue en modo `hs256` para los tokens que recibe, así que los de `dist/herramientas/token.js` sirven igual.
+
+Crea siete servicios sanos: `m2`, `bd`, `redis`, `m6-real`, `m6-real-bd`, `keycloak` y `keycloak-bd`. M6 valida el token con el emisor `http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm` y baja las claves por `keycloak:8080` (`AUTH_ISSUER` y `AUTH_JWKS_URI` en `docker-compose.yml`). Si ya tenés otro Keycloak en el 8080, usá otro puerto: `KEYCLOAK_PUERTO=18090` delante de `docker compose` cambia el publicado y el emisor a la vez. Lo único que le dice a M2 dónde está M6 es `M2_URL_M6`; sin el perfil `m6-real` no se crea nada de M6, y `m2` no depende de `m6-real`: arranca aunque M6 no esté. La URL no lleva `/api/v1` porque M6 sirve en `/trips`.
 
 | Qué | Dónde |
 |---|---|
 | M2 | <http://localhost:8082> (o `M2_PUERTO`) |
 | M6 real | <http://127.0.0.1:3016> (o `M6_REAL_PUERTO`), solo desde tu máquina: trae atajos de demo |
 | Base de M6 | sin puerto publicado |
+| Keycloak | <http://localhost:8080> (o `KEYCLOAK_PUERTO`), el emisor contra el que M6 valida |
 | Credenciales de la base de M6 | `M6_REAL_BD_USUARIO`, `M6_REAL_BD_CLAVE`, `M6_REAL_BD_NOMBRE` (valores de desarrollo en `ejemplo.env`) |
 
-Se corta con `docker compose --profile m6-real down`. Con `-v` también borra los datos: los de M6 y la base de trabajo de M2.
+Se corta con `docker compose --profile m6-real down`. Con `-v` también borra los datos: los de M6, los de Keycloak y la base de trabajo de M2.
 
 ### Recorrerlo a mano
 
@@ -246,7 +252,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $TOKE
 
 # 2. Un viaje en M6, llevado hasta COMPLETED (200 en cada paso).
 VIAJE=$(curl -s -X POST -H 'Authorization: Bearer SYSTEM' -H 'Content-Type: application/json' \
-  -d "{\"requestId\":\"$(uuid)\",\"clientId\":\"$CLIENTE\",\"driverId\":\"$CONDUCTOR\",\"vehicleId\":\"$(uuid)\",\"vehicleType\":\"CAR\",\"originLatitude\":-27.45,\"originLongitude\":-58.98,\"destinationLatitude\":-27.47,\"destinationLongitude\":-58.83}" \
+  -d "{\"requestId\":\"$(uuid)\",\"clientId\":\"$CLIENTE\",\"driverId\":\"$CONDUCTOR\",\"vehicleId\":\"$(uuid)\",\"vehicleType\":\"AUTO\",\"originLatitude\":-27.45,\"originLongitude\":-58.98,\"destinationLatitude\":-27.47,\"destinationLongitude\":-58.83}" \
   http://127.0.0.1:3016/trips | node -pe 'JSON.parse(require("fs").readFileSync(0)).id')
 curl -s -o /dev/null -w 'arrived %{http_code}\n' -X POST -H "Authorization: Bearer DRIVER:$CONDUCTOR" http://127.0.0.1:3016/trips/$VIAJE/arrived
 curl -s -o /dev/null -w 'start %{http_code}\n' -X POST -H "Authorization: Bearer DRIVER:$CONDUCTOR" -H 'Content-Type: application/json' -d "{\"verificationToken\":\"qr-$(uuid)\"}" http://127.0.0.1:3016/trips/$VIAJE/start
@@ -274,12 +280,13 @@ npm ci
 npm run integracion:m6
 ```
 
-Levanta todo por su cuenta en un proyecto de compose aparte (`m2-distribuida`, con M2 en el puerto 18082 y M6 en el 13006, para no pisar lo que tengas levantado), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. La primera vez construye M6 (unos minutos); con la imagen en caché tarda unos 30 s. Salida esperada: `Test Files  8 passed (8)` y `Tests  37 passed (37)`. Lo que prueba, por archivo (`pruebas/distribuida/`):
+Levanta todo por su cuenta en un proyecto de compose aparte (`m2-distribuida`, con M2 en el puerto 18082, M6 en el 13006 y Keycloak en el 18081, para no pisar lo que tengas levantado; las variables del token de servicio las toma de `ejemplo-keycloak.env`, no hace falta exportarlas), corre los escenarios y lo baja con `down -v`. No forma parte de `npm test`. La primera vez construye M6 (unos minutos); con la imagen en caché tarda unos 30 s. Salida esperada: `Test Files  8 passed (8)` y `Tests  38 passed (38)`. Lo que prueba, por archivo (`pruebas/distribuida/`):
 
 | Archivo | Qué comprueba | Requisito |
 |---|---|---|
 | `salud.test.ts` | M2 y M6 contestan `/health`; M2 guarda y devuelve un perfil | RNF-07.7 |
-| `viajes.test.ts`, `token-servicio.test.ts` | La preparación de viajes en M6, y que el token de servicio de M2 no es rechazado | RNF-07.11 |
+| `viajes.test.ts` | La preparación de viajes en M6 con sus atajos de demo | RNF-07.11 |
+| `token-servicio.test.ts` | El token de servicio que M2 pide a Keycloak (RS256, `grupo-17`, `clientes-be`) y que M6 no lo rechaza en `GET /trips` ni en `GET /trips/{tripId}`; el HS256 de antes y la falta de token dan `401` | RNF-07.15 |
 | `historial.test.ts` | Los viajes del cliente y solo esos, `calificado`, la paginación de M2 traducida a la de M6, página vacía | RNF-07.8 |
 | `calificacion.test.ts` | Calificar (201), conductor tomado de M6, duplicado (409) | RNF-07.9 |
 | `rechazos.test.ts` | Viaje inexistente o ajeno (404), cancelado o en curso (422) | RNF-07.10 |
