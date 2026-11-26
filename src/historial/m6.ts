@@ -98,7 +98,7 @@ const limiteDePedidos = (reintentarDespues: string | undefined, reintentarDespue
 export function crearM6(
   config: ConfigM6,
   log?: FastifyBaseLogger,
-  tokenServicio: TokenServicio = crearTokenServicio(config),
+  tokenServicio: TokenServicio = crearTokenServicio(config, log),
 ): M6 {
   const cliente = crearClienteModulo({
     nombre: NOMBRE,

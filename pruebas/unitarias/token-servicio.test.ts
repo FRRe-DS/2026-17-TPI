@@ -357,3 +357,125 @@ describe('token de servicio de Keycloak: caché y pedido compartido (spec 125, R
     await expect(tokenServicioDe().obtener('id-2')).resolves.toStrictEqual({ token: 'de-otro', reutilizado: false });
   });
 });
+
+// La línea de cada pedido a Keycloak (spec 125, T5): el mismo formato que la de las llamadas a M6, con el id de la operación que
+// lo disparó. Un token reutilizado no hace pedido y no deja línea. Nunca el token, el secreto, el `Basic` ni la URL.
+describe('token de servicio de Keycloak: la línea del pedido (spec 125, RNF-14.15, RNF-19)', () => {
+  const keycloak = crearServidorModulo();
+  const SECRETO = 'secreto-de-prueba';
+  const TOKEN = 'eyJ.token-de-keycloak.firma';
+  const RUTA = '/realms/r/protocol/openid-connect/token';
+
+  type Linea = { nivel: 'info' | 'warn'; datos: Record<string, unknown>; msg: string };
+  function logDePrueba() {
+    const lineas: Linea[] = [];
+    return {
+      lineas,
+      log: {
+        info: (datos: Record<string, unknown>, msg: string) => lineas.push({ nivel: 'info', datos, msg }),
+        warn: (datos: Record<string, unknown>, msg: string) => lineas.push({ nivel: 'warn', datos, msg }),
+      },
+    };
+  }
+
+  const tokenServicioDe = (log: ReturnType<typeof logDePrueba>['log']) =>
+    crearTokenServicio(
+      {
+        ...CONFIG,
+        audienciaM6: 'm6-de-prueba',
+        tiempoModulosMs: 200,
+        reintentosModulos: 1,
+        reintentarDespuesS: 7,
+        tokenServicio: { urlTokens: `${keycloak.url}${RUTA}`, cliente: 'grupo-17', secreto: SECRETO },
+      },
+      log as never,
+    );
+
+  // Lo que no puede aparecer en ninguna línea (RNF-19).
+  const sinSecretos = (lineas: Linea[]) => {
+    const texto = JSON.stringify(lineas);
+    expect(texto).not.toContain(TOKEN);
+    expect(texto).not.toContain(SECRETO);
+    expect(texto).not.toContain(Buffer.from(`grupo-17:${SECRETO}`).toString('base64'));
+    expect(texto).not.toContain(RUTA);
+    expect(texto).not.toContain('127.0.0.1');
+  };
+
+  beforeAll(async () => {
+    await keycloak.levantar();
+  });
+
+  afterAll(async () => {
+    await keycloak.cerrar();
+  });
+
+  it('un pedido que sale bien deja una línea info con los campos de RNF-14.15; el token reutilizado no deja otra', async () => {
+    keycloak.responderCon({ tipo: 'ok', cuerpo: { access_token: TOKEN, expires_in: 300 } });
+    const { lineas, log } = logDePrueba();
+    const tokenServicio = tokenServicioDe(log);
+
+    await tokenServicio.obtener('id-1');
+    await tokenServicio.obtener('id-2');
+
+    expect(lineas).toEqual([
+      {
+        nivel: 'info',
+        msg: 'llamada a Keycloak',
+        datos: { idCorrelacion: 'id-1', modulo: 'Keycloak', metodo: 'POST', estado: 200, intentos: 1, duracionMs: expect.any(Number) },
+      },
+    ]);
+    expect(Object.keys(lineas[0]!.datos)).toEqual(['idCorrelacion', 'modulo', 'metodo', 'estado', 'intentos', 'duracionMs']);
+    sinSecretos(lineas);
+  });
+
+  it('un pedido compartido deja una sola línea, con el id de la operación que lo disparó', async () => {
+    keycloak.responderCon({ tipo: 'ok', cuerpo: { access_token: TOKEN, expires_in: 300 } });
+    const { lineas, log } = logDePrueba();
+    const tokenServicio = tokenServicioDe(log);
+
+    await Promise.all(['id-a', 'id-b', 'id-c'].map((id) => tokenServicio.obtener(id)));
+
+    expect(lineas).toHaveLength(1);
+    expect(lineas[0]!.datos).toMatchObject({ idCorrelacion: 'id-a', intentos: 1 });
+  });
+
+  it('con el reintento, la línea cuenta los dos intentos y el código del último', async () => {
+    keycloak.responderCon([{ tipo: '5xx', estado: 502 }, { tipo: 'ok', cuerpo: { access_token: TOKEN, expires_in: 300 } }]);
+    const { lineas, log } = logDePrueba();
+
+    await tokenServicioDe(log).obtener('id-1');
+
+    expect(lineas).toEqual([expect.objectContaining({ nivel: 'info', datos: expect.objectContaining({ estado: 200, intentos: 2 }) })]);
+    expect((lineas[0]!.datos.duracionMs as number) >= 200).toBe(true); // la pausa entre intentos
+  });
+
+  it.each<[string, Comportamiento, number | null, number]>([
+    ['un 5xx', { tipo: '5xx', estado: 503 }, 503, 2],
+    ['un corte por tiempo', { tipo: 'cuelga' }, null, 2],
+    ['un cuerpo que se corta por tiempo', { tipo: 'demora-cuerpo', retardoMs: 800 }, null, 2],
+    ['un 200 sin access_token', { tipo: 'ok', cuerpo: { expires_in: 300, dato: TOKEN } }, 200, 2],
+    ['un 401 de Keycloak', { tipo: '4xx', estado: 401, cuerpo: { error: 'invalid_client', detalle: SECRETO } }, 401, 1],
+  ])('%s deja una línea warn con el código del último intento y los intentos', async (_caso, comportamiento, estado, intentos) => {
+    keycloak.responderCon(comportamiento);
+    const { lineas, log } = logDePrueba();
+
+    await tokenServicioDe(log)
+      .obtener('id-1')
+      .catch(() => undefined);
+
+    expect(lineas).toEqual([
+      {
+        nivel: 'warn',
+        msg: 'llamada a Keycloak',
+        datos: { idCorrelacion: 'id-1', modulo: 'Keycloak', metodo: 'POST', estado, intentos, duracionMs: expect.any(Number) },
+      },
+    ]);
+    sinSecretos(lineas);
+  });
+
+  it('sin log no escribe nada y anda igual', async () => {
+    keycloak.responderCon({ tipo: 'ok', cuerpo: { access_token: TOKEN, expires_in: 300 } });
+
+    await expect(tokenServicioDe(undefined as never).obtener('id-1')).resolves.toMatchObject({ token: TOKEN });
+  });
+});

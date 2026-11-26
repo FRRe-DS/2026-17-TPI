@@ -12,7 +12,7 @@
 - [x] **T4. Caché y pedido compartido.** RF-2.4.11.4, RF-2.4.11.5
   - Hecho cuando: con reloj falso, las pruebas unitarias muestran que se reutiliza un token con 30 s o más de vida y se pide otro con menos, que un `expires_in` de 10 s se usa y no se guarda, que diez `obtener` simultáneos hacen un solo pedido y reciben el mismo token o el mismo error, que tras una falla el siguiente vuelve a pedir, y que `descartar` no borra un token más nuevo.
 
-- [ ] **T5. Línea de log del pedido y línea de arranque.** RNF-14.14, RNF-14.15, RNF-19
+- [x] **T5. Línea de log del pedido y línea de arranque.** RNF-14.14, RNF-14.15, RNF-19
   - Hecho cuando: cada pedido a Keycloak deja una línea con `idCorrelacion`, `modulo: 'Keycloak'`, `metodo`, `estado`, `intentos` y `duracionMs`, un token reutilizado no deja línea, ninguna línea tiene el token, el secreto ni la URL, y `arranque.test.ts` comprueba la línea `tokenServicioM6` con `keycloak` y con `hs256`.
 
 - [x] **T6. Renovación ante un `401` de M6.** RF-2.4.11.8, RF-2.4.11.9

@@ -508,6 +508,20 @@ describe('listarHistorialViajes por HTTP, con PostgreSQL real y M6 simulado (007
       expect(keycloak.llamadas).toBe(1);
     });
 
+    it('la consulta que pide el token deja una línea llamada a Keycloak con su id; la que lo reutiliza, ninguna (RNF-14.15)', async () => {
+      const id = await perfil();
+      const { pedir, logs } = crearConKeycloak();
+
+      const primera = await pedir(id);
+      await pedir(id);
+
+      expect(logs.lineas().filter(({ msg }) => msg === 'llamada a Keycloak')).toEqual([
+        expect.objectContaining({ level: 30, idCorrelacion: primera.headers['x-request-id'], modulo: 'Keycloak', estado: 200 }),
+      ]);
+      expect(logs.texto()).not.toContain('token-1');
+      expect(logs.texto()).not.toContain('secreto-de-prueba');
+    });
+
     it('un 401 con token reutilizado lo descarta, pide otro y repite una vez; el nuevo queda guardado', async () => {
       const id = await perfil();
       const { pedir } = await conTokenGuardado(id, [{ tipo: '4xx', estado: 401 }, { tipo: 'ok', cuerpo: pagina([viaje(1, id)], 1) }]);
