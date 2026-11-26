@@ -103,3 +103,10 @@
 - Cómo se conecta: no cambia `token-servicio.ts` ni el cliente de módulos. Con el token guardado antes de la operación, el `401` en el reintento tras un `5xx` sigue renovando, porque `usado` conserva `reutilizado: true`.
 - Tests: `pruebas/integracion/historial-http.test.ts`, bloque «token de servicio de Keycloak y renovación»: sin token guardado, `5xx` y después `401` dan `500` con `token-1` en los dos intentos y un solo pedido a Keycloak; un token con `expires_in` de 10 s se usa en el reintento tras un `5xx`, sin otro pedido.
 - Para mirar con atención: dentro de una operación el token ya no se vuelve a mirar en la caché. Si otra operación lo descarta mientras tanto, este reintento lo usa igual; si M6 lo rechaza, el `401` se maneja como siempre.
+
+## Validación de la spec · commit 125/V
+- Resultado: VALIDADO para T1 a T10. T11 (RNF-07.15, la prueba distribuida con el M6 real que exige RS256) espera el merge del Grupo 12, así que la spec sigue en «aprobada» y pasa a «implementada» cuando se haga T11.
+- Corridas del 2026-11-25: `npm test` 173 archivos y 6056 pruebas en verde; `npm run contrato:test` 3560 casos en verde; lint, build y `spec-check` sin errores. `npm run keycloak:test` (4 archivos, 28 pruebas) se corrió en T9 y la corrección de abajo no toca el camino que prueba.
+- En vivo, con `ejemplo-front-keycloak.env`: M2 arranca con `tokenServicioM6: keycloak`, una consulta del historial deja una sola `llamada a Keycloak` (`200`) y las dos llamadas a M6 dan `200`, la segunda con el token guardado.
+- La revisión independiente encontró que un `401` en el reintento tras un `5xx` renovaba un token pedido en la misma operación (RF-2.4.11.8) y que un token de menos de 30 s sumaba un pedido a Keycloak por reintento (RNF-13). Se corrigió en el commit `125/T6` posterior (ver «T6, corrección tras la validación»), con dos pruebas que primero fallaron. También se corrigieron los archivos de prueba que nombraba T7 en `tasks.md`.
+- Fuera del diff no hay cambios: ni `contrato/`, ni archivos de otras specs; el ADR 009 solo cambió su línea de estado.
