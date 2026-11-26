@@ -11,9 +11,13 @@ export type RespuestaModulo = {
   reintentarDespues?: string;
 };
 
+// Lo que se puede cambiar en una llamada: la credencial, que reemplaza a la fija del cliente. Así quien llama sabe qué token usó
+// en esa llamada (spec 125, RF-2.4.11.8). Se pide en cada intento, como la fija.
+export type OpcionesLlamada = { credencial?: () => Promise<string> };
+
 export type ClienteModulo = {
-  obtener(ruta: string, idCorrelacion: string): Promise<RespuestaModulo>;
-  enviar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo>;
+  obtener(ruta: string, idCorrelacion: string, opciones?: OpcionesLlamada): Promise<RespuestaModulo>;
+  enviar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string, opciones?: OpcionesLlamada): Promise<RespuestaModulo>;
 };
 
 type OpcionesCliente = {
@@ -157,7 +161,14 @@ export function crearClienteModulo({
 
   // Los GET se reintentan; un POST, PUT o DELETE no, porque repetirlo podría hacer el efecto dos veces (RNF-13.2). Agotados
   // los intentos, lanza `ModuloNoDisponible` con lo que falló en el último como causa (RNF-14.8).
-  async function ejecutar(metodo: string, ruta: string, cuerpo: unknown, idCorrelacion: string): Promise<RespuestaModulo> {
+  async function ejecutar(
+    metodo: string,
+    ruta: string,
+    cuerpo: unknown,
+    idCorrelacion: string,
+    { credencial: credencialDeLaLlamada }: OpcionesLlamada = {},
+  ): Promise<RespuestaModulo> {
+    const credencialDelIntento = credencialDeLaLlamada ?? credencial;
     const intentos = metodo === 'GET' ? 1 + reintentos : 1;
     const inicio = performance.now();
     let ultimaFalla: unknown;
@@ -168,7 +179,7 @@ export function crearClienteModulo({
       // llamada y no hay línea.
       let autorizacion: string | undefined;
       try {
-        autorizacion = credencial !== undefined ? `Bearer ${await credencial()}` : undefined;
+        autorizacion = credencialDelIntento !== undefined ? `Bearer ${await credencialDelIntento()}` : undefined;
       } catch (error) {
         if (intento > 1) registrarLlamada(metodo, idCorrelacion, ultimoEstado, intento - 1, inicio, true);
         throw error;
@@ -188,11 +199,11 @@ export function crearClienteModulo({
   }
 
   return {
-    obtener(ruta, idCorrelacion) {
-      return ejecutar('GET', ruta, undefined, idCorrelacion);
+    obtener(ruta, idCorrelacion, opciones) {
+      return ejecutar('GET', ruta, undefined, idCorrelacion, opciones);
     },
-    enviar(metodo, ruta, cuerpo, idCorrelacion) {
-      return ejecutar(metodo, ruta, cuerpo, idCorrelacion);
+    enviar(metodo, ruta, cuerpo, idCorrelacion, opciones) {
+      return ejecutar(metodo, ruta, cuerpo, idCorrelacion, opciones);
     },
   };
 }

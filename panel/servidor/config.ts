@@ -57,6 +57,8 @@ export type ConfigM6 = ConfigTokens & {
   retardoLentoMs: number;
   // Audiencia (`aud`) del token de servicio con el que M2 se presenta ante M6 (RNF-13.7).
   audienciaM6: string;
+  // El emisor y el JWKS de Keycloak (spec 125): con ellos, el simulado acepta también el token RS256 que M2 pide a Keycloak.
+  keycloak?: { emisor: string; urlJwks: string };
 };
 
 type Regla<T> = { motivo: string; convertir: (texto: string) => T | undefined };
@@ -250,6 +252,14 @@ export function cargarConfigPanel(env: Entorno): ResultadoConfig<ConfigPanel> {
   });
 }
 
+// `M6_EMISOR_KEYCLOAK` y `M6_URL_JWKS_KEYCLOAK` van juntas (spec 125): sin ninguna, el simulado acepta solo el HS256 de M2.
+function leerKeycloakM6(lector: ReturnType<typeof crearLector>, env: Entorno): Pick<ConfigM6, 'keycloak'> {
+  if (!env['M6_EMISOR_KEYCLOAK'] && !env['M6_URL_JWKS_KEYCLOAK']) return {};
+  const emisor = lector.obligatoria('M6_EMISOR_KEYCLOAK', textoSinEspaciosAlBorde);
+  const urlJwks = lector.obligatoria('M6_URL_JWKS_KEYCLOAK', urlHttp);
+  return emisor !== '' && urlJwks !== '' ? { keycloak: { emisor, urlJwks } } : {};
+}
+
 export function cargarConfigM6(env: Entorno): ResultadoConfig<ConfigM6> {
   const lector = crearLector(env);
   const config: ConfigM6 = {
@@ -267,6 +277,7 @@ export function cargarConfigM6(env: Entorno): ResultadoConfig<ConfigM6> {
     retardoLentoMs: lector.opcional('M6_RETARDO_LENTO_MS', RETARDO_LENTO_MS, tiempoEnMs),
     audienciaM6: lector.opcional('M2_AUDIENCIA_M6', 'm6-viajes', textoSinEspaciosAlBorde),
     ...leerTokens(lector),
+    ...leerKeycloakM6(lector, env),
   };
   // El modo caído cierra el puerto de la API y el canal de control tiene que seguir abierto para volver a normal.
   if (config.puerto === config.puertoControl) lector.rechazar('M6_PUERTO_CONTROL', 'es igual a M6_PUERTO', undefined);

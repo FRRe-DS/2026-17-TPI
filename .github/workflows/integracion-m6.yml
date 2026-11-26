@@ -1,6 +1,7 @@
 name: Integración con M6 real
 
-# Prueba distribuida (spec 081, RNF-07.7): M2, su base y el M6 real del Grupo 12, levantados con compose. Es aparte de ci.yml porque
+# Prueba distribuida (spec 081, RNF-07.7): M2, su base, el M6 real del Grupo 12 y, desde la spec 125, el Keycloak contra el que M6 valida
+# el token de servicio de M2, levantados con compose. Es aparte de ci.yml porque
 # construye el M6 desde su repositorio y tarda: no corre en los PR y no es uno de los checks que exige la protección de `main`
 # (RNF-17.2). Corre en cada push a `main` y a mano desde la pestaña Actions.
 on:
