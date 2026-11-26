@@ -2,7 +2,7 @@
 // `page` desde 1 y `pageSize`, que responde `TripSummaryPage`, para el historial (plan 007, Lectura de la respuesta de M6), y
 // `GET /trips/{tripId}`, que responde `Trip`, para calificar al conductor (plan 008, Lectura del viaje de M6).
 import type { FastifyBaseLogger } from 'fastify';
-import { crearTokenServicio, type TokenServicio } from '../auth/token-servicio.js';
+import { crearTokenServicio, type TokenObtenido, type TokenServicio } from '../auth/token-servicio.js';
 import type { Config, ConfigTokens } from '../config.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../errores.js';
 import { crearClienteModulo } from '../modulos/cliente.js';
@@ -77,6 +77,9 @@ const formaInesperada = (estado: number, reintentarDespuesS: number) =>
     reintentarDespuesS,
   });
 
+// El código con que M6 rechaza el token de servicio (contrato de M6, respuesta `Unauthenticated`).
+const NO_AUTENTICADO = 401;
+
 // El código con que M6 avisa que M2 pasó su límite de pedidos (contrato de M6, respuesta `TooManyRequests`).
 const LIMITE_DE_PEDIDOS = 429;
 
@@ -108,11 +111,22 @@ export function crearM6(
     log,
   });
 
-  // El token de cada intento sale del token de servicio, pedido con el id de correlación de la operación (RF-2.4.11.9).
-  const pedirAM6 = (ruta: string, idCorrelacion: string) =>
-    cliente.obtener(ruta, idCorrelacion, {
-      credencial: async () => (await tokenServicio.obtener(idCorrelacion)).token,
-    });
+  // El token de cada intento sale del token de servicio, pedido con el id de correlación de la operación; nunca el de quien
+  // llamó a M2 (RF-2.4.11.9). Si M6 responde 401 a un token reutilizado, puede ser que Keycloak lo haya revocado o cambiado sus
+  // claves: se descarta y se repite una sola vez, con uno nuevo (RF-2.4.11.8). Un 401 con un token recién pedido, o el de la
+  // repetición, queda como respuesta y da 500 como cualquier 4xx (RF-2.4.7). `usado` es el token del último intento: si el
+  // cliente reintentó por un 5xx, cuenta el que recibió el 401.
+  async function pedirAM6(ruta: string, idCorrelacion: string) {
+    let usado: TokenObtenido | undefined;
+    const credencial = async () => {
+      usado = await tokenServicio.obtener(idCorrelacion);
+      return usado.token;
+    };
+    const respuesta = await cliente.obtener(ruta, idCorrelacion, { credencial });
+    if (respuesta.estado !== NO_AUTENTICADO || usado?.reutilizado !== true) return respuesta;
+    tokenServicio.descartar(usado.token);
+    return cliente.obtener(ruta, idCorrelacion, { credencial });
+  }
 
   return {
     async listarViajes(clienteId, page, size, idCorrelacion) {

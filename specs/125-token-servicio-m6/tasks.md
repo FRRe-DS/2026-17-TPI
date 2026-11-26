@@ -15,7 +15,7 @@
 - [ ] **T5. Línea de log del pedido y línea de arranque.** RNF-14.14, RNF-14.15, RNF-19
   - Hecho cuando: cada pedido a Keycloak deja una línea con `idCorrelacion`, `modulo: 'Keycloak'`, `metodo`, `estado`, `intentos` y `duracionMs`, un token reutilizado no deja línea, ninguna línea tiene el token, el secreto ni la URL, y `arranque.test.ts` comprueba la línea `tokenServicioM6` con `keycloak` y con `hs256`.
 
-- [ ] **T6. Renovación ante un `401` de M6.** RF-2.4.11.8, RF-2.4.11.9
+- [x] **T6. Renovación ante un `401` de M6.** RF-2.4.11.8, RF-2.4.11.9
   - Hecho cuando: `historial-http.test.ts` y `calificaciones-http.test.ts`, con el M6 de prueba y un endpoint de tokens falso, muestran que un `401` con token reutilizado descarta, pide otro y repite una vez; que un segundo `401` da `500`; que un `401` con token recién pedido da `500` sin repetir; y que con Keycloak caído la respuesta es `503` genérico con `Retry-After` y M6 no recibe pedidos.
 
 - [x] **T7. M6 simulado valida RS256 de Keycloak.** RNF-07, RNF-12
