@@ -21,7 +21,7 @@
 - [x] **T7. M6 simulado valida RS256 de Keycloak.** RNF-07, RNF-12
   - Hecho cuando: con `M6_EMISOR_KEYCLOAK` y `M6_URL_JWKS_KEYCLOAK` (las dos o ninguna), `m6-simulado.test.ts` con `pruebas/ayudas/jwks.ts` muestra que un RS256 del emisor correcto con `clientes-be` o `SERVICIO` en `roles` da `200`; que otro emisor, otra clave, sin rol o vencido da `401`; y que sin esas variables un RS256 da `401` y el HS256 sigue andando.
 
-- [ ] **T8. Entornos con Keycloak.** RF-2.4.11.1, RNF-06, RNF-20
+- [x] **T8. Entornos con Keycloak.** RF-2.4.11.1, RNF-06, RNF-20
   - Hecho cuando: `m6` está en los perfiles `panel` y `keycloak`, `ejemplo-keycloak.env` y `ejemplo-front-keycloak.env` traen las variables de M2 (`grupo-17`) y del simulado (emisor `localhost`, JWKS `keycloak:8080`), `realm.test.ts` comprueba que la cuenta de servicio de `grupo-17` emite `clientes-be` en `roles`, y `docker compose --env-file ejemplo-front-keycloak.env -f docker-compose.yml -f docker-compose.front.yml up -d --build --wait` deja el historial de `cliente1` en `200` desde el front.
 
 - [ ] **T9. Prueba con Keycloak real.** RNF-07, RNF-12, RNF-14.14, RNF-14.15

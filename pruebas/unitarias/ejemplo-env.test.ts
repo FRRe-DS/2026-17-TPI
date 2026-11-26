@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { cargarConfigM6 } from '../../panel/servidor/config.js';
 import { cargarConfig } from '../../src/config.js';
 
 // ejemplo.env es el archivo que docker compose carga por defecto (RNF-06.3). Cada línea es VARIABLE=${VARIABLE:-valor}: compose
@@ -142,13 +143,25 @@ function conPuerto(valor: string, puerto = '8080'): string {
   return valor.replaceAll('${KEYCLOAK_PUERTO:-8080}', puerto);
 }
 
+// Spec 125, RNF-20: lo que suman los dos archivos de Keycloak. M2 pide su token por la red de compose (keycloak:8080) con el cliente
+// grupo-17 y el secreto de desarrollo del realm; el M6 simulado valida el emisor que ve la máquina y baja las claves por la red de
+// compose. Son las mismas URL que usa M2 para validar los tokens que recibe.
+const TOKEN_SERVICIO_KEYCLOAK = {
+  M2_URL_TOKENS_SERVICIO: 'http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/token',
+  M2_CLIENTE_SERVICIO: 'grupo-17',
+  M2_SECRETO_SERVICIO: 'd51a8e72-6c94-4f30-b217-9e5d3a608142',
+  M6_EMISOR_KEYCLOAK: 'http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm',
+  M6_URL_JWKS_KEYCLOAK: 'http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/certs',
+};
+
 describe('ejemplo-keycloak.env (spec 080, RNF-06.7, RNF-06.8)', () => {
-  it('existe y trae solo el perfil, el modo y el emisor', () => {
+  it('existe y trae el perfil, el modo, el emisor, el token de servicio de M2 y el Keycloak del M6 simulado', () => {
     expect(existsSync(URL_KEYCLOAK)).toBe(true);
     expect(valoresKeycloak).toEqual({
       COMPOSE_PROFILES: 'keycloak',
       M2_MODO_TOKENS: 'jwks',
       M2_EMISOR_TOKENS: 'http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm',
+      ...TOKEN_SERVICIO_KEYCLOAK,
     });
   });
 
@@ -182,6 +195,67 @@ describe('ejemplo-keycloak.env (spec 080, RNF-06.7, RNF-06.8)', () => {
     const { config, errores } = cargarConfig(env);
     expect(errores).toBeUndefined();
     expect(config).toMatchObject({ modoTokens: 'jwks', emisorTokens: 'http://localhost:8080/realms/ds-2026-realm', audienciaTokens: 'm2-clientes' });
+  });
+});
+
+// Spec 125, RNF-20: el token de servicio de Keycloak en los dos archivos, con los mismos valores, y que coinciden con el realm y con
+// lo que M2 ya usa para validar los tokens que recibe.
+describe('token de servicio de Keycloak en los archivos de ejemplo (spec 125, RNF-06, RNF-20)', () => {
+  const URL_FRONT_KEYCLOAK = new URL('../../ejemplo-front-keycloak.env', import.meta.url);
+  const valoresFront = Object.fromEntries(
+    readFileSync(URL_FRONT_KEYCLOAK, 'utf8')
+      .replaceAll('\r\n', '\n')
+      .split('\n')
+      .flatMap((linea) => {
+        const coincide = DE_KEYCLOAK.exec(linea);
+        return coincide ? [[coincide[1] ?? '', coincide[2] ?? '']] : [];
+      }),
+  );
+  type ClienteRealm = { clientId: string; secret?: string };
+  const realm = JSON.parse(readFileSync(new URL('../../keycloak/ds-2026-realm-realm.json', import.meta.url), 'utf8')) as {
+    realm: string;
+    clients: ClienteRealm[];
+  };
+
+  it('ejemplo-front-keycloak.env trae las mismas variables con los mismos valores', () => {
+    expect(valoresFront).toMatchObject(TOKEN_SERVICIO_KEYCLOAK);
+  });
+
+  it('el secreto es el que el realm importado le da a grupo-17, y la URL es la de tokens de ese realm', () => {
+    expect(realm.clients.find((c) => c.clientId === TOKEN_SERVICIO_KEYCLOAK.M2_CLIENTE_SERVICIO)?.secret).toBe(
+      TOKEN_SERVICIO_KEYCLOAK.M2_SECRETO_SERVICIO,
+    );
+    expect(new URL(TOKEN_SERVICIO_KEYCLOAK.M2_URL_TOKENS_SERVICIO).pathname).toBe(`/realms/${realm.realm}/protocol/openid-connect/token`);
+  });
+
+  it('el M6 simulado valida el mismo emisor y las mismas claves que M2', () => {
+    expect(TOKEN_SERVICIO_KEYCLOAK.M6_EMISOR_KEYCLOAK).toBe(valoresKeycloak['M2_EMISOR_TOKENS']);
+    expect(TOKEN_SERVICIO_KEYCLOAK.M6_URL_JWKS_KEYCLOAK).toBe(porDefecto['M2_URL_JWKS']);
+  });
+
+  it('el secreto no tiene valor en ejemplo.env: el entorno por defecto sigue con HS256', () => {
+    expect(porDefecto['M2_SECRETO_SERVICIO']).toBe('');
+    expect(cargarConfig(porDefecto).config?.tokenServicio).toBeUndefined();
+  });
+
+  it('con sus valores sobre los de ejemplo.env, M2 arranca con el token de Keycloak y el M6 simulado con su emisor', () => {
+    const conKeycloak = Object.fromEntries(Object.entries(valoresKeycloak).map(([variable, valor]) => [variable, conPuerto(valor)]));
+    const env = { ...porDefecto, ...conKeycloak };
+
+    const m2 = cargarConfig(env);
+    const m6 = cargarConfigM6(env);
+
+    expect(m2.errores).toBeUndefined();
+    expect(m2.config?.tokenServicio).toEqual({
+      urlTokens: TOKEN_SERVICIO_KEYCLOAK.M2_URL_TOKENS_SERVICIO,
+      cliente: 'grupo-17',
+      secreto: TOKEN_SERVICIO_KEYCLOAK.M2_SECRETO_SERVICIO,
+    });
+    expect(m6.errores).toBeUndefined();
+    expect(m6.config?.keycloak).toEqual({
+      emisor: 'http://localhost:8080/realms/ds-2026-realm',
+      urlJwks: TOKEN_SERVICIO_KEYCLOAK.M6_URL_JWKS_KEYCLOAK,
+    });
   });
 });
 

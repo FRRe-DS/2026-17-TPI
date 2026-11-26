@@ -304,9 +304,20 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
     expect(m2?.profiles).toBeUndefined();
     expect(bd?.profiles).toBeUndefined();
     expect(compose.services?.['redis']?.profiles).toBeUndefined();
-    for (const nombre of ['m6', 'panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    for (const nombre of ['panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    // Spec 125: el M6 simulado también con Keycloak, para que M2 tenga a quién presentarle su token de Keycloak.
+    expect(compose.services?.['m6']?.profiles).toEqual(['panel', 'keycloak']);
     for (const nombre of ['m6-real', 'm6-real-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['m6-real']);
     for (const nombre of ['keycloak', 'keycloak-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['keycloak']);
+  });
+
+  // Spec 125, RNF-20: el M6 simulado valida el RS256 de Keycloak solo si recibe el emisor y el JWKS. Vacías en el perfil panel, que
+  // sigue con HS256; les dan valor los dos archivos de ejemplo de Keycloak.
+  it('el M6 simulado recibe M6_EMISOR_KEYCLOAK y M6_URL_JWKS_KEYCLOAK, vacías por defecto', () => {
+    expect(compose.services?.['m6']?.environment).toMatchObject({
+      M6_EMISOR_KEYCLOAK: '${M6_EMISOR_KEYCLOAK:-}',
+      M6_URL_JWKS_KEYCLOAK: '${M6_URL_JWKS_KEYCLOAK:-}',
+    });
   });
 
   it('las imágenes tienen versión exacta, nunca latest', () => {

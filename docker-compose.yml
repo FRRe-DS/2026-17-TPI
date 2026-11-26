@@ -6,7 +6,8 @@
 #   M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
 # Con el perfil `keycloak` suma Keycloak y su base (spec 080); M2 sigue en modo hs256:
 #   docker compose --profile keycloak up -d --build --wait
-# Con ejemplo-keycloak.env activa el mismo perfil y deja a M2 en modo jwks, con el emisor de Keycloak:
+# Con ejemplo-keycloak.env activa el mismo perfil y deja a M2 en modo jwks, con el emisor de Keycloak; además, M2 pide a Keycloak el
+# token con el que se presenta ante el M6 simulado, que también levanta y lo valida (spec 125):
 #   docker compose --env-file ejemplo-keycloak.env up -d --build --wait
 # La configuración sale de ejemplo.env; una variable definida en el entorno manda sobre el ejemplo (RNF-06.3).
 services:
@@ -66,14 +67,20 @@ services:
   # El panel y el M6 simulado (spec 071, RNF-04.6). Solo con `--profile panel`. Los dos publican su puerto únicamente en
   # 127.0.0.1: el panel firma tokens de desarrollo y el canal de control cambia el comportamiento del M6; ninguno es para exponerlo.
   # Leen ejemplo.env como los demás; lo que cambia dentro del contenedor (dónde escuchan y cómo se llaman entre sí) va en `environment`.
+  # El M6 simulado también va con `--profile keycloak` (spec 125): M2 le presenta el token que pide a Keycloak.
   m6:
-    profiles: [panel]
+    profiles: [panel, keycloak]
     build:
       context: .
       dockerfile: panel/Dockerfile
       target: m6-simulado
     image: m2-m6-simulado:0.1.0
     env_file: ejemplo.env
+    # Con las dos, además del HS256 acepta el RS256 de Keycloak (spec 125): el emisor que ve la máquina y las claves por la red de
+    # compose. Vacías, como en el perfil panel, sigue solo con HS256. Les dan valor ejemplo-keycloak.env y ejemplo-front-keycloak.env.
+    environment:
+      M6_EMISOR_KEYCLOAK: ${M6_EMISOR_KEYCLOAK:-}
+      M6_URL_JWKS_KEYCLOAK: ${M6_URL_JWKS_KEYCLOAK:-}
     init: true
     # Solo el canal de control. La API de M6 (M6_PUERTO) la ve M2 por la red de compose como m6:3006, sin publicarla.
     ports:

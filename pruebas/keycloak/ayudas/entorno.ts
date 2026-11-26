@@ -9,6 +9,8 @@ import { promisify } from 'node:util';
 export const PROYECTO = 'm2-keycloak';
 export const PUERTO_M2 = 18083;
 export const PUERTO_KEYCLOAK = 18080;
+// El canal de control del M6 simulado, que el perfil keycloak levanta desde la spec 125: uno propio, para no chocar con el del panel.
+export const PUERTO_CONTROL_M6 = 13007;
 export const URL_M2 = `http://127.0.0.1:${PUERTO_M2}`;
 // El emisor sale de KC_HOSTNAME, que dice localhost: se le pide a Keycloak por ese mismo nombre.
 export const URL_REALM = `http://localhost:${PUERTO_KEYCLOAK}/realms/ds-2026-realm`;
@@ -23,10 +25,24 @@ const ejecutar = promisify(execFile);
 
 // Lo que define ejemplo-keycloak.env no se hereda del entorno de quien corre la prueba: compose le daría prioridad, y una
 // M2_MODO_TOKENS=hs256 de la terminal haría pasar la prueba por el modo equivocado.
-const DEL_ARCHIVO = ['COMPOSE_PROFILES', 'M2_MODO_TOKENS', 'M2_EMISOR_TOKENS'];
+const DEL_ARCHIVO = [
+  'COMPOSE_PROFILES',
+  'M2_MODO_TOKENS',
+  'M2_EMISOR_TOKENS',
+  'M2_URL_TOKENS_SERVICIO',
+  'M2_CLIENTE_SERVICIO',
+  'M2_SECRETO_SERVICIO',
+  'M6_EMISOR_KEYCLOAK',
+  'M6_URL_JWKS_KEYCLOAK',
+];
 
 export function entornoCompose(): NodeJS.ProcessEnv {
-  const entorno: NodeJS.ProcessEnv = { ...process.env, M2_PUERTO: String(PUERTO_M2), KEYCLOAK_PUERTO: String(PUERTO_KEYCLOAK) };
+  const entorno: NodeJS.ProcessEnv = {
+    ...process.env,
+    M2_PUERTO: String(PUERTO_M2),
+    KEYCLOAK_PUERTO: String(PUERTO_KEYCLOAK),
+    M6_PUERTO_CONTROL: String(PUERTO_CONTROL_M6),
+  };
   for (const variable of DEL_ARCHIVO) delete entorno[variable];
   return entorno;
 }
