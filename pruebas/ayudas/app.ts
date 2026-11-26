@@ -28,6 +28,7 @@ export const CONFIG: Config = {
   urlRedis: undefined,
   cacheTtlS: 60,
   tiempoRedisMs: 200,
+  tokenServicio: undefined,
 };
 
 // Un contrato armado en la prueba, para los casos que el contrato de prueba no tiene.

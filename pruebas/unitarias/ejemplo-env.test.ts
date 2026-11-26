@@ -37,7 +37,13 @@ const DEL_SERVICIO = [
   'M2_URL_REDIS',
   'M2_CACHE_TTL_S',
   'M2_TIEMPO_REDIS_MS',
+  'M2_URL_TOKENS_SERVICIO',
+  'M2_CLIENTE_SERVICIO',
+  'M2_SECRETO_SERVICIO',
 ];
+// Spec 125: el token de servicio de Keycloak. Vacías por defecto: sin ellas M2 firma el HS256 de siempre, y con valor van solo en
+// los archivos de ejemplo de Keycloak (RNF-20). Son las únicas sin valor por defecto.
+const SIN_VALOR_POR_DEFECTO = ['M2_URL_TOKENS_SERVICIO', 'M2_CLIENTE_SERVICIO', 'M2_SECRETO_SERVICIO'];
 const DE_LA_BASE = ['POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_DB'];
 // Specs 071 y 072: las del panel y las del M6 simulado. Las lee panel/servidor/config.ts, no el servicio (PANEL_PUERTO_BD, solo compose).
 const DEL_PANEL = [
@@ -70,7 +76,9 @@ describe('ejemplo.env (RNF-06.3)', () => {
   });
 
   it('cada variable tiene un valor por defecto y un comentario justo arriba', () => {
-    expect(entradas.filter((entrada) => entrada.porDefecto === '').map((entrada) => entrada.variable)).toEqual([]);
+    expect(entradas.filter((entrada) => entrada.porDefecto === '').map((entrada) => entrada.variable)).toEqual(
+      SIN_VALOR_POR_DEFECTO,
+    );
     expect(entradas.filter((entrada) => !entrada.comentario).map((entrada) => entrada.variable)).toEqual([]);
   });
 
@@ -99,6 +107,7 @@ describe('ejemplo.env (RNF-06.3)', () => {
       urlRedis: 'redis://redis:6379',
       cacheTtlS: 60,
       tiempoRedisMs: 200,
+      tokenServicio: undefined,
     });
   });
 

@@ -57,6 +57,7 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       urlRedis: undefined,
       cacheTtlS: 60,
       tiempoRedisMs: 200,
+      tokenServicio: undefined,
     });
   });
 
@@ -449,5 +450,79 @@ describe('cargarConfigTokens (RNF-06.1, RNF-06.2)', () => {
     const errores = erroresDe(cargarConfigTokens({ ...SOLO_TOKENS, M2_CLAVE_TOKENS: corta }));
     expect(nombres(errores)).toEqual(['M2_CLAVE_TOKENS']);
     expect(JSON.stringify(errores)).not.toContain(corta);
+  });
+});
+
+// El token con el que M2 se presenta ante M6 (spec 125): con las tres variables, M2 lo pide a Keycloak por client_credentials
+// (RF-2.4.11.1); sin ninguna, firma el HS256 de siempre (RF-2.4.11.2); con una parte, no arranca (RF-2.4.11.3).
+describe('cargarConfig: token de servicio de Keycloak (spec 125, RF-2.4.11.1 a RF-2.4.11.3, RNF-06)', () => {
+  const SECRETO = 'secreto-de-grupo-17-que-no-se-muestra';
+  const URL_TOKENS = 'http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/token';
+  const TRES = {
+    M2_URL_TOKENS_SERVICIO: URL_TOKENS,
+    M2_CLIENTE_SERVICIO: 'grupo-17',
+    M2_SECRETO_SERVICIO: SECRETO,
+  };
+
+  it('sin ninguna de las tres, no hay token de Keycloak', () => {
+    expect(cargada(OBLIGATORIAS).tokenServicio).toBeUndefined();
+  });
+
+  it('las tres vacías cuentan como no definidas', () => {
+    const vacias = { M2_URL_TOKENS_SERVICIO: '', M2_CLIENTE_SERVICIO: '', M2_SECRETO_SERVICIO: '' };
+    expect(cargada({ ...OBLIGATORIAS, ...vacias }).tokenServicio).toBeUndefined();
+  });
+
+  it('con las tres, guarda la URL sin barra final, el cliente y el secreto', () => {
+    expect(cargada({ ...OBLIGATORIAS, ...TRES, M2_URL_TOKENS_SERVICIO: `${URL_TOKENS}/` }).tokenServicio).toEqual({
+      urlTokens: URL_TOKENS,
+      cliente: 'grupo-17',
+      secreto: SECRETO,
+    });
+  });
+
+  it('no depende del modo de los tokens que recibe M2', () => {
+    const env = { ...OBLIGATORIAS, ...TRES, M2_MODO_TOKENS: 'jwks', M2_URL_JWKS: 'http://keycloak:8080/certs' };
+    expect(cargada(env).tokenServicio?.cliente).toBe('grupo-17');
+  });
+
+  it.each([
+    [['M2_URL_TOKENS_SERVICIO']],
+    [['M2_CLIENTE_SERVICIO']],
+    [['M2_SECRETO_SERVICIO']],
+    [['M2_URL_TOKENS_SERVICIO', 'M2_CLIENTE_SERVICIO']],
+    [['M2_CLIENTE_SERVICIO', 'M2_SECRETO_SERVICIO']],
+    [['M2_URL_TOKENS_SERVICIO', 'M2_SECRETO_SERVICIO']],
+  ])('si faltan %j, informa cada una que falta y no repite el secreto', (faltan) => {
+    const env = faltan.reduce<Entorno>((acumulado, variable) => sin(acumulado, variable), { ...OBLIGATORIAS, ...TRES });
+    const errores = erroresDe(cargarConfig(env));
+    expect([...errores].sort((a, b) => a.variable.localeCompare(b.variable))).toEqual(
+      [...faltan].sort().map((variable) => ({
+        variable,
+        motivo: 'es obligatoria si se configura el token de servicio de Keycloak',
+      })),
+    );
+    expect(JSON.stringify(errores)).not.toContain(SECRETO);
+  });
+
+  it.each(['ftp://keycloak/token', 'keycloak:8080/token', 'http://usuario:clave@keycloak/token', 'no es una url'])(
+    'rechaza la URL de tokens %j sin repetirla',
+    (url) => {
+      const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, ...TRES, M2_URL_TOKENS_SERVICIO: url }));
+      expect(errores).toEqual([
+        { variable: 'M2_URL_TOKENS_SERVICIO', motivo: 'no es una URL http:// o https:// sin usuario ni contraseña' },
+      ]);
+      expect(JSON.stringify(errores)).not.toContain(url);
+    },
+  );
+
+  it('una URL inválida se informa también sin las otras dos', () => {
+    const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, M2_URL_TOKENS_SERVICIO: 'ftp://keycloak/token' }));
+    expect(nombres(errores)).toEqual(['M2_CLIENTE_SERVICIO', 'M2_SECRETO_SERVICIO', 'M2_URL_TOKENS_SERVICIO']);
+  });
+
+  it('rechaza un cliente con espacios al borde', () => {
+    const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, ...TRES, M2_CLIENTE_SERVICIO: ' grupo-17' }));
+    expect(nombres(errores)).toEqual(['M2_CLIENTE_SERVICIO']);
   });
 });

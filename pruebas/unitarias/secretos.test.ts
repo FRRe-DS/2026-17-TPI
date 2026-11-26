@@ -85,6 +85,12 @@ describe('limpiarSecretos: reemplaza cada secreto conocido por [oculto] (RNF-19.
 describe('secretosDeConfig: la clave de los tokens y la contraseña de la base (RNF-19.1)', () => {
   const de = (urlBd: string) => secretosDeConfig({ claveTokens: CLAVE, urlBd });
 
+  it('suma el secreto del token de servicio de Keycloak, si está configurado (spec 125, RNF-19)', () => {
+    const tokenServicio = { urlTokens: 'http://keycloak:8080/token', cliente: 'grupo-17', secreto: 'secreto-de-grupo-17' };
+    expect(secretosDeConfig({ claveTokens: CLAVE, urlBd: URL_BD, tokenServicio })).toEqual([CLAVE, 'secreto-de-grupo-17', CONTRASENA]);
+    expect(secretosDeConfig({ claveTokens: CLAVE, urlBd: URL_BD, tokenServicio: undefined })).toEqual([CLAVE, CONTRASENA]);
+  });
+
   it('la clave y la contraseña que va en la URL', () => {
     expect(de(URL_BD)).toEqual([CLAVE, CONTRASENA]);
   });

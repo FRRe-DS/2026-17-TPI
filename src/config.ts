@@ -36,7 +36,13 @@ export type Config = ConfigTokens & {
   urlRedis: string | undefined;
   cacheTtlS: number;
   tiempoRedisMs: number;
+  // El token con el que M2 se presenta ante M6 (spec 125). Con las tres variables, M2 lo pide a Keycloak por `client_credentials`
+  // (RF-2.4.11.1); sin ninguna queda `undefined` y M2 firma el token HS256 de siempre (RF-2.4.11.2). El secreto es sensible:
+  // `secretosDeConfig` lo tacha del log (RNF-19).
+  tokenServicio: ConfigTokenServicio | undefined;
 };
+
+export type ConfigTokenServicio = { urlTokens: string; cliente: string; secreto: string };
 
 export type ModoTokens = 'hs256' | 'jwks';
 
@@ -154,6 +160,11 @@ function crearLector(env: Entorno) {
       return regla.convertir(valor) ?? rechazar(variable, regla.motivo, '');
     },
 
+    // Una variable que hace falta solo porque otra está definida: se informa con su motivo y devuelve `undefined`.
+    faltante(variable: string, motivo: string): undefined {
+      return rechazar(variable, motivo, undefined);
+    },
+
     opcional<T>(variable: string, porDefecto: T, regla: Regla<T>): T {
       const valor = texto(variable);
       if (valor === undefined) return porDefecto;
@@ -167,6 +178,22 @@ function crearLector(env: Entorno) {
 }
 
 type Lector = ReturnType<typeof crearLector>;
+
+// Las tres variables del token de servicio de Keycloak van juntas (RF-2.4.11.3): sin ninguna, no hay token de Keycloak; con
+// alguna, las que faltan se informan por nombre. La URL se valida siempre que está, como `M2_URL_JWKS`. Ningún error repite un
+// valor, tampoco el del secreto (RNF-06.2).
+const VARIABLES_TOKEN_SERVICIO = ['M2_URL_TOKENS_SERVICIO', 'M2_CLIENTE_SERVICIO', 'M2_SECRETO_SERVICIO'] as const;
+const FALTA_TOKEN_SERVICIO = 'es obligatoria si se configura el token de servicio de Keycloak';
+
+function leerTokenServicio(lector: Lector, env: Entorno): ConfigTokenServicio | undefined {
+  if (VARIABLES_TOKEN_SERVICIO.every((variable) => !env[variable])) return undefined;
+  const leer = <T>(variable: (typeof VARIABLES_TOKEN_SERVICIO)[number], regla: Regla<T>): T | undefined =>
+    env[variable] ? lector.opcional<T | undefined>(variable, undefined, regla) : lector.faltante(variable, FALTA_TOKEN_SERVICIO);
+  const urlTokens = leer('M2_URL_TOKENS_SERVICIO', urlHttp);
+  const cliente = leer('M2_CLIENTE_SERVICIO', textoSinEspaciosAlBorde);
+  const secreto = leer('M2_SECRETO_SERVICIO', cualquierTexto);
+  return urlTokens !== undefined && cliente !== undefined && secreto !== undefined ? { urlTokens, cliente, secreto } : undefined;
+}
 
 function leerTokens(lector: Lector): ConfigTokens {
   return {
@@ -209,5 +236,6 @@ export function cargarConfig(env: Entorno): ResultadoConfig<Config> {
     urlRedis: lector.opcional<string | undefined>('M2_URL_REDIS', undefined, urlRedis),
     cacheTtlS: lector.opcional('M2_CACHE_TTL_S', 60, enteroEntre(1, 3600)),
     tiempoRedisMs: lector.opcional('M2_TIEMPO_REDIS_MS', 200, tiempoEnMs),
+    tokenServicio: leerTokenServicio(lector, env),
   });
 }

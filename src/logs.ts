@@ -27,11 +27,17 @@ function decodificar(texto: string): string {
   }
 }
 
-// Los secretos que se conocen al arrancar: la clave de los tokens y la contraseña de la base, sacada de su URL (de donde
-// va el usuario, o de la query string), como está escrita y decodificada. El usuario no se oculta: un nombre corto como m2
-// desfiguraría los mensajes, y el plan pide la contraseña.
-export function secretosDeConfig({ claveTokens, urlBd }: Pick<Config, 'claveTokens' | 'urlBd'>): string[] {
+// Los secretos que se conocen al arrancar: la clave de los tokens, el secreto del token de servicio (spec 125) y la contraseña de
+// la base, sacada de su URL (de donde va el usuario, o de la query string), como está escrita y decodificada. El usuario no se
+// oculta: un nombre corto como m2 desfiguraría los mensajes, y el plan pide la contraseña.
+export function secretosDeConfig({
+  claveTokens,
+  urlBd,
+  tokenServicio,
+}: Pick<Config, 'claveTokens' | 'urlBd'> & Partial<Pick<Config, 'tokenServicio'>>): string[] {
   const secretos = new Set([claveTokens]);
+  // El secreto del cliente con el que M2 pide su token de servicio a Keycloak (spec 125, RNF-19).
+  if (tokenServicio !== undefined) secretos.add(tokenServicio.secreto);
   if (URL.canParse(urlBd)) {
     const url = new URL(urlBd);
     for (const contrasena of [url.password, /[?&]password=([^&]*)/.exec(url.search)?.[1] ?? '']) {

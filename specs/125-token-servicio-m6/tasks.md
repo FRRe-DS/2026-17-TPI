@@ -1,6 +1,6 @@
 # Tareas 125 — Token de servicio de M2 ante M6 obtenido de Keycloak
 
-- [ ] **T1. Configuración del token de servicio.** RF-2.4.11.1, RF-2.4.11.2, RF-2.4.11.3, RNF-06, RNF-19
+- [x] **T1. Configuración del token de servicio.** RF-2.4.11.1, RF-2.4.11.2, RF-2.4.11.3, RNF-06, RNF-19
   - Hecho cuando: `cargarConfig` lee `M2_URL_TOKENS_SERVICIO`, `M2_CLIENTE_SERVICIO` y `M2_SECRETO_SERVICIO` (las tres o ninguna; URL `http`/`https` sin usuario ni contraseña), una combinación incompleta da un error por cada variable que falta sin mostrar el secreto, `secretosDeConfig` tacha el secreto, `ejemplo.env` las trae vacías, y `config.test.ts`, `secretos.test.ts` y `ejemplo-env.test.ts` están en verde.
 
 - [ ] **T2. Token de servicio HS256 y paso por `m6.ts`.** RF-2.4.11.2, RF-2.4.11.9
