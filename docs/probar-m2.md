@@ -318,7 +318,7 @@ Se corta con `docker compose --env-file ejemplo-keycloak.env down`. Para aplicar
 
 ### Un token de persona
 
-El realm trae cuatro usuarios de desarrollo: `cliente1` y `cliente2` (rol `CLIENTE`), `operador1` (`OPERADOR`) y `conductor1` (`CONDUCTOR`). Su contraseña es `<usuario>-contrasena-de-desarrollo`, y sus `id` son fijos (el de `cliente1` es `c1e00000-0000-4000-8000-000000000001`). Se piden al cliente `m2-desarrollo`, que es solo para pruebas:
+El realm trae seis usuarios de desarrollo: `cliente1` a `cliente4` (rol `CLIENTE`), `operador1` (`OPERADOR`) y `conductor1` (`CONDUCTOR`). Su contraseña es `<usuario>-contrasena-de-desarrollo`, y sus `id` son fijos (el de `cliente1` es `c1e00000-0000-4000-8000-000000000001`; el de `clienteN` termina en `N`). Se piden al cliente `m2-desarrollo`, que es solo para pruebas:
 
 ```bash
 KC=http://localhost:8080/realms/ds-2026-realm/protocol/openid-connect/token
@@ -390,6 +390,24 @@ docker compose --env-file ejemplo-keycloak.env logs m2 --no-log-prefix | grep -E
 Salida esperada del paso 2: una línea con `"tokenServicioM6":"keycloak"`, una `llamada a Keycloak` con `"estado":200` y dos `llamada a M6` con `"estado":200`. La segunda consulta reutiliza el token guardado, así que no deja otra línea de Keycloak. Si M6 lo rechazara, la `llamada a M6` diría `"estado":401` y el historial daría `500`. Ni el token ni el secreto aparecen nunca en el log.
 
 Para verlo con el front: `docker compose -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env up -d --build --wait`, que trae las mismas variables, y el historial de `cliente1` en <http://localhost:8083>.
+
+### Clientes precargados para otros grupos
+
+Issue #131. Para que otro módulo (por ejemplo, Reservas) pruebe el estado de cuenta sin armar nada a mano, con el entorno levantado:
+
+```bash
+node scripts/precargar-clientes.mjs
+```
+
+Crea por la API el perfil de `cliente2`, `cliente3` y `cliente4`, bloquea a `cliente4` con `operador1` y muestra el estado de cuenta de cada uno con la cuenta de servicio `grupo-09`:
+
+| Usuario | `clienteId` | Estado |
+|---|---|---|
+| `cliente2` | `c1e00000-0000-4000-8000-000000000002` | `ACTIVO` |
+| `cliente3` | `c1e00000-0000-4000-8000-000000000003` | `ACTIVO` |
+| `cliente4` | `c1e00000-0000-4000-8000-000000000004` | `BLOQUEADO` |
+
+Se puede correr las veces que haga falta: un perfil que ya existe o un bloqueo ya vigente se dejan como están. `cliente1` queda sin perfil para el recorrido de arriba. Si `cliente3` o `cliente4` no consiguen token, el Keycloak se creó antes de #131 y no los tiene: el realm se importa una sola vez, así que hace falta `down -v` (que también borra los datos de M2) y volver a levantar. Si ya se corrió en el entorno del front, `cliente2` entra con su perfil hecho.
 
 ### Lo que conviene saber
 
