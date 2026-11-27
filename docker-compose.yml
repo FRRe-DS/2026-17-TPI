@@ -18,6 +18,7 @@ services:
     init: true
     ports:
       - "${M2_PUERTO:-8082}:${M2_PUERTO:-8082}"
+      - "9464:9464"
     depends_on:
       bd:
         condition: service_healthy
@@ -32,7 +33,7 @@ services:
       timeout: 3s
       retries: 6
       # Da tiempo a las migraciones del primer arranque.
-      start_period: 30s
+      start_period: 60s
 
   bd:
     image: postgres:18.6
@@ -98,9 +99,9 @@ services:
       - "127.0.0.1:${PANEL_PUERTO:-8083}:${PANEL_PUERTO:-8083}"
     depends_on:
       m2:
-        condition: service_healthy
+        condition: service_started
       m6:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test:
         - CMD
@@ -239,8 +240,29 @@ services:
       retries: 24
       # El primer arranque crea las tablas e importa el realm: tarda más de medio minuto.
       start_period: 30s
+      
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      default:
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Cambiar en producción
+    networks:
+      default:
 
 volumes:
   datos-bd:
   datos-m6-real-bd:
   datos-keycloak-bd:
+
+
+  

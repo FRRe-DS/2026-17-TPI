@@ -17,6 +17,18 @@ import type {
 import * as repositorio from './repositorio.js';
 import { actualizarPerfil, crearPerfil, obtenerPerfil, type PedidoHistorial } from './repositorio.js';
 
+import { metrics } from '@opentelemetry/api';
+
+// Esta función obtiene o crea la métrica desde el registro global del SDK
+const getMétricas = () => {
+  const meter = metrics.getMeter('modulo-clientes');
+  return {
+    solicitudes: meter.createCounter('solicitudes_totales'),
+    aceptadas: meter.createCounter('solicitudes_aceptadas'),
+    tiempoAsignacion: meter.createHistogram('tiempo_asignacion_ms')
+  };
+};
+
 // Las reglas de las operaciones de perfil que el contrato no expresa (plan, Estructura): el rol efectivo, la propiedad, el
 // clienteId que sale del token y la idempotencia del alta. No sabe de HTTP: lo llama `operaciones.ts`.
 
@@ -160,6 +172,13 @@ export async function crearBloqueo(
   clave: string,
   datos: BloqueoNuevo,
 ): Promise<RespuestaIdempotente> {
+  
+  // 1. Solicitud recibida
+  const inicio = Date.now();
+  // Obtenemos las métricas globales
+  const m = getMétricas();
+  m.solicitudes.add(1);
+
   const hasta = datos.hasta === undefined ? undefined : instanteUtc(datos.hasta);
   if (hasta !== undefined && hasta > ULTIMO_INSTANTE) throw new BloqueoHastaFueraDeRango();
   const enBase = hasta === undefined ? undefined : hasta < PRIMER_INSTANTE ? '-infinity' : new Date(hasta).toISOString();
@@ -172,9 +191,20 @@ export async function crearBloqueo(
     clave,
     huella: { cuerpo: datos, ruta: { clienteId: cliente } },
   };
+
   return conIdempotencia(pool, solicitud, async (consultar) => {
     const bloqueo = await repositorio.crearBloqueo(consultar, cliente, randomUUID(), enUtc, identidad.sub);
-    return { estado: 201, ubicacion: `/api/v1/clientes/${cliente}/bloqueos/${bloqueo.bloqueoId}`, cuerpo: bloqueo };
+    
+    // ÉXITO: Registramos aceptadas y tiempo
+    // Registramos éxito
+    m.aceptadas.add(1);
+    m.tiempoAsignacion.record(Date.now() - inicio);
+
+    return { 
+        estado: 201, 
+        ubicacion: `/api/v1/clientes/${cliente}/bloqueos/${bloqueo.bloqueoId}`, 
+        cuerpo: bloqueo 
+    };
   });
 }
 
