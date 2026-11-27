@@ -2,11 +2,15 @@
 #   docker compose up -d --build --wait
 # Con el perfil `panel` suma el panel, el M6 simulado (spec 071) y el puente a la base (spec 072); sin él, no se crean:
 #   docker compose --profile panel up -d --build --wait
-# Con el perfil `m6-real` suma el M6 del Grupo 12 y su base (spec 081); M2 lo usa solo si se lo indica M2_URL_M6:
-#   M2_URL_M6=http://m6-real:3006 docker compose --profile m6-real up -d --build --wait
+# Con el perfil `m6-real` suma el M6 del Grupo 12, su base y Keycloak (specs 081 y 125); M2 lo usa solo si se lo indica M2_URL_M6, y
+# M6 acepta solo el token de servicio de Keycloak, así que M2 necesita las tres variables del token de ejemplo-keycloak.env
+# (docs/probar-m2.md, sección 8):
+#   env M2_URL_M6=http://m6-real:3006 $(grep -E '^M2_(URL_TOKENS|CLIENTE|SECRETO)_SERVICIO=' ejemplo-keycloak.env) \
+#     docker compose --profile m6-real up -d --build --wait
 # Con el perfil `keycloak` suma Keycloak y su base (spec 080); M2 sigue en modo hs256:
 #   docker compose --profile keycloak up -d --build --wait
-# Con ejemplo-keycloak.env activa el mismo perfil y deja a M2 en modo jwks, con el emisor de Keycloak:
+# Con ejemplo-keycloak.env activa el mismo perfil y deja a M2 en modo jwks, con el emisor de Keycloak; además, M2 pide a Keycloak el
+# token con el que se presenta ante el M6 simulado, que también levanta y lo valida (spec 125):
 #   docker compose --env-file ejemplo-keycloak.env up -d --build --wait
 # La configuración sale de ejemplo.env; una variable definida en el entorno manda sobre el ejemplo (RNF-06.3).
 services:
@@ -21,6 +25,8 @@ services:
       - "9464:9464"
     depends_on:
       bd:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     # Un GET con Node: la imagen no trae curl, y `wget --spider` manda HEAD, que da 405. El puerto lo lee del entorno del contenedor.
     healthcheck:
@@ -38,6 +44,9 @@ services:
   bd:
     image: postgres:18.6
     env_file: ejemplo.env
+    # El secreto del token de servicio es solo de M2 (spec 125, RNF-19): ejemplo.env lo interpola y acá se vacía.
+    environment:
+      M2_SECRETO_SERVICIO: ""
     volumes:
       # La imagen 18 guarda los datos en /var/lib/postgresql/18/docker (ADR del stack): el volumen va un nivel más arriba.
       - datos-bd:/var/lib/postgresql
@@ -49,17 +58,38 @@ services:
       timeout: 2s
       retries: 20
 
+  # La caché del estado de cuenta (spec 107, RNF-11). Es solo una copia: sin volumen y sin persistencia (`--save ""` y
+  # `--appendonly no`), un reinicio la vacía y M2 la reconstruye desde la base. Sin puerto publicado: solo M2 la ve, por la red de compose.
+  # Sin límite de memoria ni desalojo (`noeviction`, el valor por defecto): desalojar el contador de versión de un cliente dejaría
+  # volver una copia vieja, y un Redis lleno solo hace fallar los guardados, que M2 ignora.
+  redis:
+    image: redis:8.6.8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
   # El panel y el M6 simulado (spec 071, RNF-04.6). Solo con `--profile panel`. Los dos publican su puerto únicamente en
   # 127.0.0.1: el panel firma tokens de desarrollo y el canal de control cambia el comportamiento del M6; ninguno es para exponerlo.
   # Leen ejemplo.env como los demás; lo que cambia dentro del contenedor (dónde escuchan y cómo se llaman entre sí) va en `environment`.
+  # El M6 simulado también va con `--profile keycloak` (spec 125): M2 le presenta el token que pide a Keycloak.
   m6:
-    profiles: [panel]
+    profiles: [panel, keycloak]
     build:
       context: .
       dockerfile: panel/Dockerfile
       target: m6-simulado
     image: m2-m6-simulado:0.1.0
     env_file: ejemplo.env
+    # Con las dos, además del HS256 acepta el RS256 de Keycloak (spec 125): el emisor que ve la máquina y las claves por la red de
+    # compose. Vacías, como en el perfil panel, sigue solo con HS256. Les dan valor ejemplo-keycloak.env y ejemplo-front-keycloak.env.
+    environment:
+      M6_EMISOR_KEYCLOAK: ${M6_EMISOR_KEYCLOAK:-}
+      M6_URL_JWKS_KEYCLOAK: ${M6_URL_JWKS_KEYCLOAK:-}
+      # El secreto del token de servicio es solo de M2 (spec 125, RNF-19).
+      M2_SECRETO_SERVICIO: ""
     init: true
     # Solo el canal de control. La API de M6 (M6_PUERTO) la ve M2 por la red de compose como m6:3006, sin publicarla.
     ports:
@@ -87,6 +117,8 @@ services:
     init: true
     environment:
       PANEL_ESCUCHA: 0.0.0.0
+      # El secreto del token de servicio es solo de M2 (spec 125, RNF-19).
+      M2_SECRETO_SERVICIO: ""
       # Dentro del contenedor el panel llega a la base por la red de compose, sin pasar por el puente. Compose interpola estas
       # variables de su propio entorno, no de ejemplo.env: los valores por defecto se repiten acá y se cambian juntos.
       PANEL_URL_BD: postgres://${POSTGRES_USER:-m2}:${POSTGRES_PASSWORD:-m2-contrasena-de-desarrollo}@bd:5432/${POSTGRES_DB:-m2}
@@ -149,7 +181,7 @@ services:
   m6-real:
     profiles: [m6-real]
     build:
-      context: https://github.com/FRRe-DS/2026-12-TPI.git#${M6_REAL_COMMIT:-7d3d5af9138d9b220f109798e9f615ca853d2bda}
+      context: https://github.com/FRRe-DS/2026-12-TPI.git#${M6_REAL_COMMIT:-0e89944811569e6d80bdcf0bef36909ce65d0288}
       dockerfile: backend/Dockerfile
     # Su imagen arranca con `sh -c`, que no reenvía señales: sin init, cada parada esperaría los 10 s de Docker.
     init: true
@@ -158,6 +190,11 @@ services:
       PORT: "3006"
       # Sus atajos de demo: los usa solo la preparación de la prueba para crear viajes, nunca M2.
       ENABLE_DEMO_AUTH: "true"
+      # Desde su commit que exige RS256 (spec 125), valida el token de servicio de M2 contra el Keycloak de este compose: el emisor
+      # que ve la máquina (KC_HOSTNAME) y las claves por la red de compose. M2 tiene que pedir su token a Keycloak
+      # (M2_URL_TOKENS_SERVICIO y las otras dos, de ejemplo-keycloak.env): el HS256 lo rechaza con 401.
+      AUTH_ISSUER: http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm
+      AUTH_JWKS_URI: http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/certs
     # Solo en 127.0.0.1: con los atajos de demo no es para exponerlo. M2 lo ve por la red de compose como m6-real:3006.
     ports:
       - "127.0.0.1:${M6_REAL_PUERTO:-3016}:3006"
@@ -181,12 +218,13 @@ services:
       timeout: 2s
       retries: 20
 
-  # Keycloak y su base (spec 080, RNF-04.10, RNF-05.6): solo con `--profile keycloak`. M2 no depende de ellos: en modo jwks
+  # Keycloak y su base (spec 080, RNF-04.10, RNF-05.6): solo con `--profile keycloak`, o con `--profile m6-real`, porque el M6 real
+  # valida contra él el token de servicio de M2 (spec 125). M2 no depende de ellos: en modo jwks
   # pide las claves cuando las necesita (RNF-13.9). Ninguno lee ejemplo.env, que tiene las POSTGRES_* de M2. Las credenciales
   # salen de variables de compose con un valor de desarrollo (RNF-06.8); se escriben `${VARIABLE:-valor}` porque `:?` haría
   # fallar a compose también sin el perfil.
   keycloak-bd:
-    profiles: [keycloak]
+    profiles: [keycloak, m6-real]
     image: postgres:18.6
     environment:
       POSTGRES_USER: ${KEYCLOAK_BD_USUARIO:-keycloak}
@@ -204,7 +242,7 @@ services:
   # El realm se importa una sola vez, al crear la base: para aplicar un cambio de keycloak/ hace falta `down -v`. El archivo se
   # llama <realm>-realm.json, porque Keycloak 26 no arranca con otro nombre.
   keycloak:
-    profiles: [keycloak]
+    profiles: [keycloak, m6-real]
     image: quay.io/keycloak/keycloak:26.8.2
     command: start --import-realm
     environment:

@@ -709,6 +709,46 @@
       ]
     },
     {
+      "id": "c1e00000-0000-4000-8000-000000000003",
+      "username": "cliente3",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Cliente",
+      "lastName": "Tres",
+      "email": "cliente3@ejemplo.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "cliente3-contrasena-de-desarrollo",
+          "temporary": false
+        }
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "CLIENTE"
+      ]
+    },
+    {
+      "id": "c1e00000-0000-4000-8000-000000000004",
+      "username": "cliente4",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Cliente",
+      "lastName": "Cuatro",
+      "email": "cliente4@ejemplo.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "cliente4-contrasena-de-desarrollo",
+          "temporary": false
+        }
+      ],
+      "requiredActions": [],
+      "realmRoles": [
+        "CLIENTE"
+      ]
+    },
+    {
       "id": "0be00000-0000-4000-8000-000000000001",
       "username": "operador1",
       "enabled": true,
@@ -747,6 +787,27 @@
       "realmRoles": [
         "CONDUCTOR"
       ]
+    },
+    {
+      "enabled": true,
+      "username": "cliente-operador1",
+      "id": "d0b00000-0000-4000-8000-000000000001",
+      "realmRoles": [
+        "CLIENTE",
+        "OPERADOR"
+      ],
+      "email": "cliente-operador1@ejemplo.test",
+      "lastName": "Operador",
+      "requiredActions": [],
+      "emailVerified": true,
+      "credentials": [
+        {
+          "temporary": false,
+          "type": "password",
+          "value": "cliente-operador1-contrasena-de-desarrollo"
+        }
+      ],
+      "firstName": "Cliente"
     }
   ]
 }

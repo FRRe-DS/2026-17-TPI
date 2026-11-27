@@ -9,6 +9,15 @@ import { claimsDe, pedirM2, usuarioDeEjemplo } from './ayudas/pedir.js';
 const cliente2 = usuarioDeEjemplo('cliente2');
 
 describe('m2-front: flujo de código con PKCE S256 (RNF-12.20)', () => {
+  it('identidad doble conserva CLIENTE y OPERADOR y solo los scopes pedidos', async () => {
+    const { verificador, desafio } = parPkce();
+    const tokens = await canjear(await codigoDeAutorizacion('cliente-operador1', ['clientes:read'], desafio), verificador);
+    expect(tokens.estado).toBe(200);
+    const claims = claimsDe(tokens.cuerpo.access_token ?? '');
+    expect(claims.sub).toBe('d0b00000-0000-4000-8000-000000000001');
+    expect(new Set(claims.roles as string[])).toEqual(new Set(['CLIENTE', 'OPERADOR']));
+    expect(String(claims.scope).split(' ').sort()).toEqual(['clientes:read', 'openid']);
+  });
   it('cliente2 inicia sesión, canjea el código con el verificador y el token sirve en M2', async () => {
     const { verificador, desafio } = parPkce();
     const codigo = await codigoDeAutorizacion('cliente2', ['clientes:read', 'clientes:write'], desafio);

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { IMAGEN_POSTGRES } from '../ayudas/global.js';
+import { IMAGEN_REDIS } from '../ayudas/redis-real.js';
 import configuracionDeVitest from '../../vitest.config.js';
 import { ARCHIVO_ULTIMO, ARCHIVO_ULTIMO_KEYCLOAK, OrdenDeArchivos } from '../distribuida/ayudas/orden.js';
 
@@ -75,8 +76,8 @@ const archivosDe = (proyecto: Proyecto) => globSync(proyecto.test.include, { cwd
 const todasLasPruebas = globSync('pruebas/**/*.test.ts', { cwd: raizEnDisco }).map(conBarras);
 
 describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y keycloak (RNF-07.1, RNF-07.5, RNF-07.7, RNF-07.13)', () => {
-  it('declara los cinco proyectos, en ese orden', () => {
-    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida', 'keycloak']);
+  it('declara los seis proyectos, en ese orden', () => {
+    expect(proyectos.map((proyecto) => proyecto.test.name)).toEqual(['unitarias', 'integracion', 'navegador', 'distribuida', 'keycloak', 'front-keycloak']);
   });
 
   // Sin Docker se corre `vitest run --project unitarias`: por eso solo integracion levanta la base.
@@ -102,6 +103,12 @@ describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y key
     expect(keycloak?.test.globalSetup).toEqual(['pruebas/keycloak/global.ts']);
     expect(existsSync(new URL('pruebas/keycloak/global.ts', raiz))).toBe(true);
     expect(archivosDe(keycloak ?? { test: { name: '', include: [] } }).length).toBeGreaterThan(0);
+  });
+  it('front:keycloak compila y ejecuta Chrome con preparación aislada, sin mezclarlo con npm test', () => {
+    expect(paquete.scripts?.['front:keycloak']).toBe('npm run panel:build && vitest run --project front-keycloak');
+    const front = proyectos.find(proyecto => proyecto.test.name === 'front-keycloak');
+    expect(front?.test.include).toEqual(['pruebas/front-keycloak/**/*.test.ts']);
+    expect(front?.test.globalSetup).toEqual(['pruebas/front-keycloak/global.ts']);
   });
 
   it('hay pruebas en unitarias y en integracion', () => {
@@ -130,17 +137,19 @@ describe('vitest.config.ts: unitarias, integracion, navegador, distribuida y key
   });
 
   it('las de integracion/ son de integracion, las de panel/navegador/ de navegador, las de distribuida/ de distribuida, las de keycloak/ de keycloak, y las demás, de unitarias', () => {
-    const [unitarias, integracion, navegador, distribuida, keycloak] = proyectos;
+    const [unitarias, integracion, navegador, distribuida, keycloak, frontKeycloak] = proyectos;
     const deUnitarias = new Set(unitarias ? archivosDe(unitarias) : []);
     const deIntegracion = new Set(integracion ? archivosDe(integracion) : []);
     const deNavegador = new Set(navegador ? archivosDe(navegador) : []);
     const deDistribuida = new Set(distribuida ? archivosDe(distribuida) : []);
     const deKeycloak = new Set(keycloak ? archivosDe(keycloak) : []);
+    const deFrontKeycloak = new Set(frontKeycloak ? archivosDe(frontKeycloak) : []);
     const alReves = todasLasPruebas.filter((archivo) => {
       if (/^pruebas\/(panel\/)?integracion\//.test(archivo)) return !deIntegracion.has(archivo);
       if (archivo.startsWith('pruebas/panel/navegador/')) return !deNavegador.has(archivo);
       if (archivo.startsWith('pruebas/distribuida/')) return !deDistribuida.has(archivo);
       if (archivo.startsWith('pruebas/keycloak/')) return !deKeycloak.has(archivo);
+      if (archivo.startsWith('pruebas/front-keycloak/')) return !deFrontKeycloak.has(archivo);
       return !deUnitarias.has(archivo);
     });
     expect(alReves).toEqual([]);
@@ -290,13 +299,25 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   const m2 = compose.services?.['m2'];
   const bd = compose.services?.['bd'];
 
-  it('declara m2 y bd, los del panel (specs 071 y 072) solo bajo el perfil panel, los del M6 real (spec 081) solo bajo m6-real y los de Keycloak (spec 080) bajo el suyo', () => {
-    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'keycloak', 'keycloak-bd', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel']);
+  it('declara m2, bd y redis (spec 107), los del panel (specs 071 y 072) solo bajo el perfil panel, los del M6 real (spec 081) solo bajo m6-real y los de Keycloak (spec 080) bajo el suyo y bajo m6-real (spec 125)', () => {
+    expect(Object.keys(compose.services ?? {}).sort()).toEqual(['bd', 'bd-puente', 'keycloak', 'keycloak-bd', 'm2', 'm6', 'm6-real', 'm6-real-bd', 'panel', 'redis']);
     expect(m2?.profiles).toBeUndefined();
     expect(bd?.profiles).toBeUndefined();
-    for (const nombre of ['m6', 'panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    expect(compose.services?.['redis']?.profiles).toBeUndefined();
+    for (const nombre of ['panel', 'bd-puente']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['panel']);
+    // Spec 125: el M6 simulado también con Keycloak, para que M2 tenga a quién presentarle su token de Keycloak.
+    expect(compose.services?.['m6']?.profiles).toEqual(['panel', 'keycloak']);
     for (const nombre of ['m6-real', 'm6-real-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['m6-real']);
-    for (const nombre of ['keycloak', 'keycloak-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['keycloak']);
+    for (const nombre of ['keycloak', 'keycloak-bd']) expect(compose.services?.[nombre]?.profiles, nombre).toEqual(['keycloak', 'm6-real']);
+  });
+
+  // Spec 125, RNF-20: el M6 simulado valida el RS256 de Keycloak solo si recibe el emisor y el JWKS. Vacías en el perfil panel, que
+  // sigue con HS256; les dan valor los dos archivos de ejemplo de Keycloak.
+  it('el M6 simulado recibe M6_EMISOR_KEYCLOAK y M6_URL_JWKS_KEYCLOAK, vacías por defecto', () => {
+    expect(compose.services?.['m6']?.environment).toMatchObject({
+      M6_EMISOR_KEYCLOAK: '${M6_EMISOR_KEYCLOAK:-}',
+      M6_URL_JWKS_KEYCLOAK: '${M6_URL_JWKS_KEYCLOAK:-}',
+    });
   });
 
   it('las imágenes tienen versión exacta, nunca latest', () => {
@@ -321,7 +342,7 @@ describe('docker-compose.yml (RNF-04.1, RNF-04.3, RNF-04.4)', () => {
   it('m2 usa init, publica el puerto configurado (8082 por defecto) y espera a que la base esté sana', () => {
     expect(m2?.init).toBe(true);
     expect(m2?.ports).toEqual(['${M2_PUERTO:-8082}:${M2_PUERTO:-8082}']);
-    expect(m2?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
+    expect(m2?.depends_on).toEqual({ bd: { condition: 'service_healthy' }, redis: { condition: 'service_healthy' } });
   });
 
   it('la base no publica ningún puerto y guarda sus datos en el volumen datos-bd; el de Keycloak es otro (spec 080)', () => {
@@ -435,6 +456,51 @@ describe('panel/Dockerfile.dockerignore (spec 071, RNF-04.2)', () => {
   });
 });
 
+describe('docker-compose.yml: Redis para la caché (spec 107, RNF-06, RNF-11)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const redis = compose.services?.['redis'];
+
+  it('la imagen tiene versión exacta (X.Y.Z), nunca latest', () => {
+    expect(imagenExacta(redis?.image ?? '')).toBe(true);
+    // La misma que levantan las pruebas de integración (T8).
+    expect(redis?.image).toBe(IMAGEN_REDIS);
+    expect(redis?.image).toMatch(/^redis:\d+\.\d+\.\d+/);
+  });
+
+  // Es una copia: sin volumen ni persistencia, un reinicio la vacía y todo se reconstruye desde la base (RNF-05, RF-2.6.8).
+  it('no guarda datos en disco ni publica ningún puerto', () => {
+    expect(redis?.ports).toBeUndefined();
+    expect(redis?.volumes).toBeUndefined();
+    expect(redis?.command).toEqual(['redis-server', '--save', '', '--appendonly', 'no', '--maxmemory-policy', 'noeviction']);
+  });
+
+  it('tiene un chequeo de salud con redis-cli ping, sin $ de compose', () => {
+    expect(redis?.healthcheck?.test).toEqual(['CMD', 'redis-cli', 'ping']);
+    expect(redis?.healthcheck).toMatchObject({ interval: '2s', timeout: '2s', retries: 20 });
+  });
+
+  it('m2 usa Redis por la red de compose', () => {
+    const texto = readFileSync(new URL('ejemplo.env', raiz), 'utf8');
+    expect(texto).toContain('M2_URL_REDIS=${M2_URL_REDIS:-redis://redis:6379}');
+  });
+});
+
+describe('docker-compose.yml: el secreto del token de servicio llega solo a M2 (spec 125, RNF-19)', () => {
+  const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
+  const conEjemploEnv = Object.entries(compose.services ?? {}).filter(
+    ([nombre, servicio]) => nombre !== 'm2' && [servicio?.env_file ?? []].flat().includes('ejemplo.env'),
+  );
+
+  it('hay servicios además de m2 que cargan ejemplo.env', () => {
+    expect(conEjemploEnv.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm6', 'panel']);
+  });
+
+  // ejemplo.env interpola M2_SECRETO_SERVICIO desde el --env-file: sin esto, la base, el M6 simulado y el panel lo recibirían.
+  it.each(conEjemploEnv.map(([nombre]) => nombre))('%s lo deja vacío en environment', (nombre) => {
+    expect(compose.services?.[nombre]?.environment?.['M2_SECRETO_SERVICIO']).toBe('');
+  });
+});
+
 describe('docker-compose.yml: perfil panel (spec 071, RNF-04.6)', () => {
   const compose = parseYaml(readFileSync(new URL('docker-compose.yml', raiz), 'utf8')) as Compose;
   const panel = compose.services?.['panel'];
@@ -523,7 +589,28 @@ describe('docker-compose.yml: perfil m6-real con el M6 del Grupo 12 (spec 081, R
         'postgresql://${M6_REAL_BD_USUARIO:-m6}:${M6_REAL_BD_CLAVE:-m6-contrasena-de-desarrollo}@m6-real-bd:5432/${M6_REAL_BD_NOMBRE:-m6}?schema=public',
       PORT: '3006',
       ENABLE_DEMO_AUTH: 'true',
+      AUTH_ISSUER: 'http://localhost:${KEYCLOAK_PUERTO:-8080}/realms/ds-2026-realm',
+      AUTH_JWKS_URI: 'http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/certs',
     });
+  });
+
+  // Spec 125 (RNF-07.15): desde el commit del Grupo 12 que exige RS256, M6 valida el token de servicio contra nuestro Keycloak. El
+  // emisor es el que ve la máquina (KC_HOSTNAME) y las claves se bajan por la red de compose, como en el M6 simulado.
+  it('M6 real valida con el emisor y las claves del Keycloak del compose, los mismos que el M6 simulado de ejemplo-keycloak.env', () => {
+    const keycloakEnv = readFileSync(new URL('ejemplo-keycloak.env', raiz), 'utf8');
+    const valor = (variable: string) => new RegExp(`^${variable}=(.*)$`, 'm').exec(keycloakEnv)?.[1];
+    expect(m6Real?.environment?.['AUTH_ISSUER']).toBe(valor('M6_EMISOR_KEYCLOAK'));
+    expect(m6Real?.environment?.['AUTH_JWKS_URI']).toBe(valor('M6_URL_JWKS_KEYCLOAK'));
+    expect(compose.services?.['keycloak']?.environment?.['KC_HOSTNAME']).toBe('http://localhost:${KEYCLOAK_PUERTO:-8080}');
+  });
+
+  it('el perfil m6-real levanta también Keycloak y su base, contra los que M6 valida los tokens', () => {
+    expect(compose.services?.['keycloak']?.profiles).toEqual(['keycloak', 'm6-real']);
+    expect(compose.services?.['keycloak-bd']?.profiles).toEqual(['keycloak', 'm6-real']);
+  });
+
+  it('el commit por defecto es el merge del PR #30 del Grupo 12, el primero que exige RS256 (spec 125, T11)', () => {
+    expect(contexto()).toContain('#${M6_REAL_COMMIT:-0e89944811569e6d80bdcf0bef36909ce65d0288}');
   });
 
   it('la base de M6 usa PostgreSQL 16 en versión exacta, su propio volumen y no publica ningún puerto (RNF-05)', () => {
@@ -547,7 +634,7 @@ describe('docker-compose.yml: perfil m6-real con el M6 del Grupo 12 (spec 081, R
   });
 
   it('m2 no depende de M6: tiene que arrancar y responder aunque M6 no esté (RNF-13)', () => {
-    expect(Object.keys(compose.services?.['m2']?.depends_on ?? {})).toEqual(['bd']);
+    expect(Object.keys(compose.services?.['m2']?.depends_on ?? {})).toEqual(['bd', 'redis']);
   });
 
   it.each([
@@ -567,8 +654,8 @@ describe('docker-compose.yml: puente a la base y variables nuevas del panel (spe
   const panel = compose.services?.['panel'];
   const sinPerfil = Object.entries(compose.services ?? {}).filter(([, servicio]) => servicio?.profiles === undefined);
 
-  it('sin el perfil solo están m2 y bd, y no se publica ningún puerto de la base', () => {
-    expect(sinPerfil.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm2']);
+  it('sin el perfil solo están m2, bd y redis, y no se publica ningún puerto de la base', () => {
+    expect(sinPerfil.map(([nombre]) => nombre).sort()).toEqual(['bd', 'm2', 'redis']);
     expect(compose.services?.['bd']?.ports).toBeUndefined();
     expect(compose.services?.['m2']?.ports).toEqual(['${M2_PUERTO:-8082}:${M2_PUERTO:-8082}']);
   });
@@ -696,7 +783,7 @@ describe('docker-compose.yml: perfil keycloak (spec 080, RNF-04.10, RNF-05.6, RN
   });
 
   it('m2 no depende de Keycloak ni nombra sus variables', () => {
-    expect(compose.services?.['m2']?.depends_on).toEqual({ bd: { condition: 'service_healthy' } });
+    expect(compose.services?.['m2']?.depends_on).toEqual({ bd: { condition: 'service_healthy' }, redis: { condition: 'service_healthy' } });
     expect(JSON.stringify(compose.services?.['m2'])).not.toMatch(/KEYCLOAK|keycloak/);
   });
 
@@ -712,3 +799,24 @@ describe('docker-compose.yml: perfil keycloak (spec 080, RNF-04.10, RNF-05.6, RN
   });
 });
 
+describe('scripts/contrato-test.mjs y job contract-test (RNF-04.1, RNF-07)', () => {
+  const script = readFileSync(new URL('scripts/contrato-test.mjs', raiz), 'utf8');
+  const ci = parseYaml(readFileSync(new URL('.github/workflows/ci.yml', raiz), 'utf8')) as {
+    jobs?: { [nombre: string]: { 'timeout-minutes'?: number } | undefined };
+  };
+
+  it('fija la versión exacta de la imagen de Schemathesis, nunca latest', () => {
+    const imagen = /const SCHEMATHESIS = '([^']+)'/.exec(script)?.[1] ?? '';
+    expect(imagen).toMatch(/^schemathesis\/schemathesis:/);
+    expect(imagenExacta(imagen)).toBe(true);
+  });
+
+  it('acota el tiempo de pedirToken y del job contract-test en CI', () => {
+    const segundos = /const TIEMPO_MAXIMO_TOKEN_S = (\d+);/.exec(script)?.[1];
+    expect(Number(segundos)).toBeGreaterThan(0);
+    const funcionPedirToken = /async function pedirToken\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+    expect(funcionPedirToken).toBeDefined();
+    expect(funcionPedirToken).toMatch(/timeout:\s*TIEMPO_MAXIMO_TOKEN_S\s*\*\s*1000/);
+    expect(ci.jobs?.['contract-test']?.['timeout-minutes']).toBeGreaterThan(0);
+  });
+});

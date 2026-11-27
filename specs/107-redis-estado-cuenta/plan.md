@@ -27,7 +27,7 @@ Un módulo nuevo, `src/cache/`, guarda en Redis la respuesta `EstadoCuenta` de c
 
 ## Datos
 Ninguna tabla ni migración nueva. En Redis, dos claves por cliente (RNF-19: solo el `clienteId`, nunca nombre, motivo ni token):
-- `m2:estado-cuenta:v:<clienteId>`: contador entero de versión; ausente vale 0.
+- `m2:estado-cuenta:v:<clienteId>`: contador entero de versión; ausente vale 0. Sin vencimiento (ver Invalidar con versión). No es un dato de la base sino una marca para descartar copias: si Redis se reinicia o se vacía, se pierde junto con las copias y todo vuelve a empezar en 0, que sigue siendo consistente (RNF-05).
 - `m2:estado-cuenta:c:<clienteId>:<versión>`: el JSON de `EstadoCuenta`, con vencimiento.
 
 ## Lógica
@@ -58,9 +58,9 @@ Así una copia nunca sobrevive al primer vencimiento entre los bloqueos vigentes
 ### Invalidar con versión (RF-2.6.6, RF-2.6.6.1, RF-2.6.6.2)
 ```
 tras confirmar el alta o el levantamiento en la base:
-  INCR versión(clienteId); PEXPIRE versión 2 * ttl
+  INCR versión(clienteId)            (sin vencimiento)
 ```
-El lector captura la versión **antes** de leer la base. Si un bloqueo se confirma entre esa lectura y su `SET`, el lector escribe en la clave de la versión vieja, que ya nadie lee. Eso evita que una copia vieja sobreviva a la invalidación sin usar scripts ni transacciones de Redis. La versión vive el doble que una copia, para que expire solo después de que lo hayan hecho todas las copias que la usaban. Si la base no confirma, no se invalida (RF-2.6.6.2).
+El lector captura la versión **antes** de leer la base. Si un bloqueo se confirma entre esa lectura y su `SET`, el lector escribe en la clave de la versión vieja, que ya nadie lee. Eso evita que una copia vieja sobreviva a la invalidación sin usar scripts ni transacciones de Redis. La versión no vence. *Corregido el 2026-11-15, durante la T6 (aprobado por Lautaro):* la primera versión de este plan la hacía vencer al doble del TTL, y eso no alcanza: las consultas siguen guardando copias con la versión vigente mucho después del último cambio, así que al vencer la versión todavía hay copias vivas con ese número, y el siguiente `INCR`, que parte de 0, lo vuelve a dar. Con TTL 60 s: copia de la versión 1 guardada a los 70 s (vive hasta los 130 s), versión vencida a los 120 s, bloqueo a los 125 s que vuelve a dar 1, y la consulta siguiente serviría el estado ACTIVO de los 70 s. Sin vencimiento, un número no se repite. El costo es una clave chica por cliente que alguna vez tuvo un alta o un levantamiento; con `noeviction` Redis no la borra por memoria. Si la base no confirma, no se invalida (RF-2.6.6.2).
 
 ### Invalidación que falla (RF-2.6.8.1)
 Si `INCR` falla, el cliente queda en un conjunto en memoria. Mientras esté ahí, `leerEstadoCuenta` reintenta el `INCR` y, si no puede, responde desde la base sin guardar ni usar copias. La respuesta al operador no cambia. Si el proceso se reinicia con la marca pendiente, una copia vieja dura como máximo el TTL: es el límite que acepta la spec.

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { migrar } from '../../src/bd/migraciones.js';
 import { crearPool, type BaseDeDatos, type PoolBd } from '../../src/bd/pool.js';
 import { calificarConductor, listarCalificaciones, obtenerCalificacion } from '../../src/calificaciones/operaciones.js';
+import type { Config } from '../../src/config.js';
 import { cargarContrato } from '../../src/contrato/cargar.js';
 import { BaseNoDisponible } from '../../src/errores.js';
 import { crearApp, POOL_FALSO } from '../ayudas/app.js';
@@ -58,7 +59,7 @@ describe('calificaciones por HTTP (008/T8)', () => {
 
   // La app y los pedidos. Los tokens quedan a mano para buscarlos enteros en los logs (RNF-19). La URL de M6 se conoce recién
   // cuando levanta el simulado.
-  function crear(config: { reintentarDespuesS?: number } = {}, bd: BaseDeDatos = pool) {
+  function crear(config: Partial<Pick<Config, 'reintentarDespuesS' | 'tokenServicio'>> = {}, bd: BaseDeDatos = pool) {
     const logs = capturarLogs();
     const app = crearApp(
       { listarCalificaciones, calificarConductor, obtenerCalificacion },
@@ -642,6 +643,119 @@ describe('calificaciones por HTTP (008/T8)', () => {
         '/api/v1/clientes/:clienteId/calificaciones/:calificacionId',
         '/api/v1/clientes/:clienteId/calificaciones/:calificacionId',
       ]);
+    });
+  });
+
+  // Como en el historial: el endpoint de tokens falso entrega `token-1`, `token-2`, … y la app guarda el token entre solicitudes.
+  // La verificación del viaje usa el mismo token de servicio y las mismas reglas (spec 125, RF-2.4.11.8, RF-2.4.11.9).
+  describe('token de servicio de Keycloak y renovación ante un 401 de M6 (spec 125, T6)', () => {
+    const keycloak = crearServidorModulo();
+    const conToken = (token: string): Comportamiento => ({ tipo: 'ok', cuerpo: { access_token: token, expires_in: 300 } });
+
+    beforeAll(async () => {
+      await keycloak.levantar();
+    });
+    afterAll(async () => {
+      await keycloak.cerrar();
+    });
+    beforeEach(() => keycloak.responderCon([conToken('token-1'), conToken('token-2'), conToken('token-3')]));
+
+    const crearConKeycloak = () =>
+      crear({
+        reintentarDespuesS: 7,
+        tokenServicio: { urlTokens: `${keycloak.url}/token`, cliente: 'grupo-17', secreto: 'secreto-de-prueba' },
+      });
+
+    const calificaciones = async (clienteId: string) =>
+      (await pool.consultar('SELECT 1 FROM calificaciones WHERE cliente_id = $1', [clienteId])).rowCount;
+
+    // Una calificación que sale bien deja `token-1` guardado; después, M6 responde lo que diga la prueba sobre `viajeId`.
+    async function conTokenGuardado(clienteId: string, m6: (viajeId: string) => Comportamiento[]) {
+      const app = crearConKeycloak();
+      const primero = randomUUID();
+      serv.responderCon(viajeDeM6(primero, clienteId));
+      expect((await app.alta(clienteId, { viajeId: primero, puntaje: 4 })).statusCode).toBe(201);
+      const viajeId = randomUUID();
+      serv.responderCon(m6(viajeId));
+      return { ...app, viajeId };
+    }
+
+    it('M6 recibe el token de Keycloak y no el del usuario (RF-2.4.11.1, RF-2.4.11.9)', async () => {
+      const clienteId = await cliente();
+      const viajeId = randomUUID();
+      serv.responderCon(viajeDeM6(viajeId, clienteId));
+      const { alta, tokens } = crearConKeycloak();
+
+      const respuesta = await alta(clienteId, { viajeId, puntaje: 5 });
+
+      expect(respuesta.statusCode).toBe(201);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1']);
+      expect(serv.autorizaciones).not.toContain(`Bearer ${tokens[0]}`);
+    });
+
+    it('un 401 con token reutilizado lo descarta, pide otro y repite una vez', async () => {
+      const clienteId = await cliente();
+      const { alta, viajeId } = await conTokenGuardado(clienteId, (viajeId) => [
+        { tipo: '4xx', estado: 401 },
+        viajeDeM6(viajeId, clienteId),
+      ]);
+
+      const respuesta = await alta(clienteId, { viajeId, puntaje: 5 });
+
+      expect(respuesta.statusCode).toBe(201);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+      expect(keycloak.llamadas).toBe(2);
+      expect(await calificaciones(clienteId)).toBe(2);
+    });
+
+    it('un segundo 401 da 500 sin otra repetición y sin guardar nada', async () => {
+      const clienteId = await cliente();
+      const { alta, viajeId } = await conTokenGuardado(clienteId, () => [{ tipo: '4xx', estado: 401 }]);
+
+      const respuesta = await alta(clienteId, { viajeId, puntaje: 5 });
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1', 'Bearer token-2']);
+      expect(keycloak.llamadas).toBe(2);
+      expect(await calificaciones(clienteId)).toBe(1);
+    });
+
+    it('un 401 con un token recién pedido da 500 sin repetir', async () => {
+      const clienteId = await cliente();
+      serv.responderCon({ tipo: '4xx', estado: 401 });
+
+      const respuesta = await crearConKeycloak().alta(clienteId, { viajeId: randomUUID(), puntaje: 5 });
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(serv.autorizaciones).toEqual(['Bearer token-1']);
+      expect(keycloak.llamadas).toBe(1);
+      expect(await calificaciones(clienteId)).toBe(0);
+    });
+
+    it('con Keycloak caído: 503 genérico con Retry-After, M6 no recibe pedidos y no se guarda nada (RF-2.4.11.6)', async () => {
+      const clienteId = await cliente();
+      keycloak.responderCon({ tipo: '5xx', estado: 503 });
+
+      const respuesta = await crearConKeycloak().alta(clienteId, { viajeId: randomUUID(), puntaje: 5 });
+
+      expect(respuesta.statusCode).toBe(503);
+      expect(respuesta.headers['content-type']).toMatch(PROBLEMA);
+      expect(respuesta.headers['retry-after']).toBe('7');
+      expect(respuesta.json()).toMatchObject({ type: 'about:blank', status: 503, detail: 'Keycloak no está disponible' });
+      expect(serv.llamadas).toBe(0);
+      expect(await calificaciones(clienteId)).toBe(0);
+    });
+
+    it('si Keycloak rechaza las credenciales: 500 y M6 no recibe pedidos (RF-2.4.11.7)', async () => {
+      const clienteId = await cliente();
+      keycloak.responderCon({ tipo: '4xx', estado: 401 });
+
+      const respuesta = await crearConKeycloak().alta(clienteId, { viajeId: randomUUID(), puntaje: 5 });
+
+      expect(respuesta.statusCode).toBe(500);
+      expect(respuesta.body).not.toContain('Keycloak');
+      expect(serv.llamadas).toBe(0);
     });
   });
 });

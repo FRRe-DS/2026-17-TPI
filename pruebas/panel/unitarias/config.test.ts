@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cargarConfigM6, cargarConfigPanel } from '../../../panel/servidor/config.js';
+import { cargarConfigM6, cargarConfigPanel as cargarPanel, type Entorno, type ConfigPanelDesarrollo, type ResultadoConfig } from '../../../panel/servidor/config.js';
 import {
   cargarEntornoEjemplo,
   completarEntorno,
@@ -17,10 +17,19 @@ const TOKENS = {
 };
 const EJEMPLO = new URL('../../../ejemplo.env', import.meta.url);
 
+// Estas pruebas conservan el contrato de desarrollo; la configuración real se prueba en config-oidc.test.ts.
+function cargarConfigPanel(env: Entorno): ResultadoConfig<ConfigPanelDesarrollo> {
+  const resultado = cargarPanel(env);
+  if (resultado.errores) return resultado;
+  if (resultado.config.modoAuth !== 'desarrollo') throw new Error('Se esperaba configuración de desarrollo');
+  return { config: resultado.config };
+}
+
 describe('cargarConfigPanel (RNF-06.4)', () => {
   it('aplica los valores por defecto del plan y lee los tokens de M2', () => {
     expect(cargarConfigPanel(TOKENS)).toEqual({
       config: {
+        modoAuth: 'desarrollo',
         puerto: 8083,
         escucha: '127.0.0.1',
         urlM2: 'http://localhost:8082',
@@ -175,6 +184,7 @@ describe('cargarConfigM6 (RNF-06.4, RNF-13.5)', () => {
   it('aplica los valores por defecto del plan', () => {
     expect(cargarConfigM6(M6)).toEqual({
       config: {
+        clientesPrecarga: [],
         puerto: 3006,
         puertoControl: 3007,
         retardoLentoMs: 5000,

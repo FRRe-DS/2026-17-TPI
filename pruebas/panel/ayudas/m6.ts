@@ -43,8 +43,9 @@ export const viaje = (id: string, cambios: Partial<Viaje> = {}): Viaje => ({
   ...cambios,
 });
 
-export function crearM6(viajes: Viaje[] = []) {
+// `config` se suma a CONFIG_M6: con `keycloak`, el simulado acepta también el token RS256 de Keycloak (spec 125).
+export function crearM6(viajes: Viaje[] = [], config: Partial<ConfigM6> = {}) {
   const estado = crearEstadoM6();
   for (const v of viajes) estado.guardar(v);
-  return { estado, app: construirAppM6({ config: CONFIG_M6, estado, flujoLog: descartarLogs }) };
+  return { estado, app: construirAppM6({ config: { ...CONFIG_M6, ...config }, estado, flujoLog: descartarLogs }) };
 }

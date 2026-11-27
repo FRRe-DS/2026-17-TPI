@@ -1,4 +1,5 @@
-import { useId, type FormEvent, type ReactNode } from 'react';
+import { useId, useContext, type FormEvent, type ReactNode } from 'react';
+import { ContextoSesionEditable } from './sesion-editable.js';
 import type { DatosDeError } from '../api/errores.js';
 import { atributosDeCampo } from '../logica/presentacion.js';
 import { ErrorDeM2 } from './error-de-m2.js';
@@ -22,10 +23,11 @@ type PropsFormulario = {
 // Una hoja del formulario: cabecera con título y folio, los casilleros y el pie con las acciones. La validación es del panel
 // (cada error con su campo), no la del navegador, que no se puede leer igual en todos.
 export function Formulario({ titulo, folio, alEnviar, error, alReintentar, mensajeDelError, acciones, children }: PropsFormulario) {
+  const editable = useContext(ContextoSesionEditable);
   const id = useId();
   const enviar = (evento: FormEvent) => {
     evento.preventDefault();
-    alEnviar();
+    if (editable) alEnviar();
   };
 
   return (

@@ -19,7 +19,7 @@ import { CargarEjemplo } from './cargar-ejemplo.js';
 import estilos from './perfil.module.css';
 
 type Cliente = components['schemas']['Cliente'];
-type Props = { api: ApiM2; viajes: FuenteDeViajes; sesion: Sesion };
+type Props = { api: ApiM2; viajes?: FuenteDeViajes | undefined; sesion: Sesion };
 
 // El perfil de quien tiene la sesión (RF-2.1.8, RF-2.1.9): se carga con `obtenerCliente` y se edita con `actualizarCliente`,
 // que recibe solo lo modificado. El CONDUCTOR llega acá también y ve el error de M2.
@@ -36,7 +36,7 @@ export function Perfil({ api, viajes, sesion }: Props) {
   );
 }
 
-function EditarPerfil({ api, viajes, inicial }: { api: ApiM2; viajes: FuenteDeViajes; inicial: Cliente }) {
+function EditarPerfil({ api, viajes, inicial }: { api: ApiM2; viajes?: FuenteDeViajes | undefined; inicial: Cliente }) {
   const id = useId();
   // El perfil de M2: el que se cargó, o el que devolvió el último guardado.
   const [perfil, setPerfil] = useState(inicial);
@@ -126,7 +126,7 @@ function EditarPerfil({ api, viajes, inicial }: { api: ApiM2; viajes: FuenteDeVi
         <CamposDeCliente id={id} campos={campos} errores={errores} alCambiar={alCambiar} />
       </Formulario>
       <Aviso estado={estado} />
-      <CargarEjemplo api={api} viajes={viajes} clienteId={perfil.clienteId} />
+      {viajes && <CargarEjemplo api={api} viajes={viajes} clienteId={perfil.clienteId} />}
     </div>
   );
 }

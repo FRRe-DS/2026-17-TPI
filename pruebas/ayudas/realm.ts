@@ -6,9 +6,15 @@ export type UsuarioDeEjemplo = { usuario: string; id: string; rol: 'CLIENTE' | '
 export const USUARIOS_DE_EJEMPLO: readonly UsuarioDeEjemplo[] = [
   { usuario: 'cliente1', id: 'c1e00000-0000-4000-8000-000000000001', rol: 'CLIENTE', contrasena: 'cliente1-contrasena-de-desarrollo' },
   { usuario: 'cliente2', id: 'c1e00000-0000-4000-8000-000000000002', rol: 'CLIENTE', contrasena: 'cliente2-contrasena-de-desarrollo' },
+  // cliente3 y cliente4 son para otros grupos: `scripts/precargar-clientes.mjs` les crea el perfil y bloquea a cliente4 (#131).
+  { usuario: 'cliente3', id: 'c1e00000-0000-4000-8000-000000000003', rol: 'CLIENTE', contrasena: 'cliente3-contrasena-de-desarrollo' },
+  { usuario: 'cliente4', id: 'c1e00000-0000-4000-8000-000000000004', rol: 'CLIENTE', contrasena: 'cliente4-contrasena-de-desarrollo' },
   { usuario: 'operador1', id: '0be00000-0000-4000-8000-000000000001', rol: 'OPERADOR', contrasena: 'operador1-contrasena-de-desarrollo' },
   { usuario: 'conductor1', id: 'c0d00000-0000-4000-8000-000000000001', rol: 'CONDUCTOR', contrasena: 'conductor1-contrasena-de-desarrollo' },
 ];
+
+export const USUARIO_DOBLE = { usuario: 'cliente-operador1', id: 'd0b00000-0000-4000-8000-000000000001',
+  roles: ['CLIENTE', 'OPERADOR'], contrasena: 'cliente-operador1-contrasena-de-desarrollo' } as const;
 
 // El cliente público con el que las pruebas piden tokens de persona con usuario y contraseña, sin navegador.
 export const CLIENTE_DE_DESARROLLO = 'm2-desarrollo';

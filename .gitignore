@@ -8,3 +8,4 @@ node_modules/
 dist/
 src/generado/
 panel/cliente/src/generado/
+.idea/

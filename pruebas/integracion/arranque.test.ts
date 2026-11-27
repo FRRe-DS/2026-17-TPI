@@ -423,6 +423,41 @@ describe('arranque normal (RNF-05.2)', () => {
     }
   });
 
+  // RNF-14.14: después de las operaciones, una línea con el modo del token de servicio ante M6, sin la URL, el cliente ni el
+  // secreto.
+  it.each([
+    ['hs256', {}],
+    [
+      'keycloak',
+      {
+        M2_URL_TOKENS_SERVICIO: 'http://127.0.0.1:1/realms/r/protocol/openid-connect/token',
+        M2_CLIENTE_SERVICIO: 'cliente-de-arranque',
+        M2_SECRETO_SERVICIO: 'secreto-de-arranque',
+      },
+    ],
+  ] as const)('registra el token de servicio ante M6: %s (spec 125, RNF-14.14)', async (modo, cambios) => {
+    const puerto = await puertoLibre();
+    const { salir, logs, arranque } = arrancarParaProbar(entorno(base.urlBd, puerto, cambios));
+    await arranque;
+
+    expect(salir).not.toHaveBeenCalled();
+    const lineas = logs.lineas();
+    const mensajes = lineas.map(({ msg }) => msg ?? '');
+    const indice = mensajes.indexOf('Token de servicio ante M6');
+    expect(indice).toBe(mensajes.indexOf(OPERACIONES) + 1);
+    expect(lineas[indice]).toEqual({
+      level: INFO,
+      time: expect.any(Number),
+      pid: process.pid,
+      hostname: hostname(),
+      tokenServicioM6: modo,
+      msg: 'Token de servicio ante M6',
+    });
+    expect(logs.texto()).not.toContain('realms/r');
+    expect(logs.texto()).not.toContain('cliente-de-arranque');
+    expect(logs.texto()).not.toContain('secreto-de-arranque');
+  });
+
   it('con el contrato del repositorio, reconoce como implementadas las de las specs 004, 005 y 006', async () => {
     const { logs, arranque } = arrancarParaProbar(entorno(base.urlBd, await puertoLibre()));
     await arranque;

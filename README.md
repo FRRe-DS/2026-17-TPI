@@ -4,6 +4,14 @@ Servicio de clientes de la plataforma de movilidad urbana del TPI. Guarda el per
 
 Están implementadas las 20 operaciones del contrato ([`contrato/openapi.yml`](contrato/openapi.yml), versión 1.0.0).
 
+El frontend también permite ingresar con Keycloak y completar el perfil propio, conservando tokens solo en su servidor. Para probarlo en un proyecto separado del panel de evaluación:
+
+```bash
+docker compose -p m2-front -f docker-compose.yml -f docker-compose.front.yml --env-file ejemplo-front-keycloak.env up -d --build --wait
+```
+
+Abrir http://localhost:8083. Los puertos deben estar libres; si el panel de desarrollo ya los ocupa, detener ese proceso antes o usar `npm run front:keycloak`, que prueba con puertos propios. Usuarios, límites y variables permitidas están en [Probar el frontend con Keycloak](docs/probar-m2.md#frontend-con-keycloak-spec-083). Es la adaptación de sesión sobre las pantallas existentes; el rediseño #119 y la entrega integral #120 continúan por separado.
+
 ## Contenido
 
 1. [Empezar en cinco minutos](#1-empezar-en-cinco-minutos)
@@ -24,13 +32,13 @@ Hace falta:
 Desde un clon limpio, sin crear ningún archivo:
 
 ```bash
-docker compose up -d --build --wait      # levanta M2 y su base PostgreSQL; termina cuando los dos están sanos
+docker compose up -d --build --wait      # levanta M2, su base PostgreSQL y Redis; termina cuando los tres están sanos
 curl -fsS http://localhost:8082/health   # responde {"estado":"ok"}
 node scripts/demo.mjs                    # recorre las 20 operaciones y comprueba cada respuesta
 docker compose down                      # al terminar
 ```
 
-La demostración imprime una línea por paso, con ✔ o ✘, y termina con «Todo en orden» y la cantidad de pasos comprobados (hoy, 51). Levanta por su cuenta un M6 simulado para el historial y las calificaciones, y lo borra al terminar.
+La demostración imprime una línea por paso, con ✔ o ✘, y termina con «Todo en orden» y la cantidad de pasos comprobados (hoy, 61). Levanta por su cuenta un M6 simulado para el historial y las calificaciones, y lo borra al terminar.
 
 Si algo no anda:
 
@@ -53,7 +61,7 @@ Todas las rutas cuelgan de `/api/v1`, salvo `GET /health`, que no pide token. La
 | `crearCliente` | `POST /clientes` | Crea el perfil del cliente autenticado | CLIENTE | 004 |
 | `obtenerCliente` | `GET /clientes/{clienteId}` | Consulta el perfil | CLIENTE, OPERADOR | 004 |
 | `actualizarCliente` | `PATCH /clientes/{clienteId}` | Actualiza el perfil | CLIENTE | 004 |
-| `obtenerEstadoCuenta` | `GET /clientes/{clienteId}/estado-cuenta` | Estado del perfil y bloqueos vigentes; lo consultan otros módulos | CLIENTE, OPERADOR, SERVICIO | 004 |
+| `obtenerEstadoCuenta` | `GET /clientes/{clienteId}/estado-cuenta` | Estado del perfil y bloqueos vigentes; lo consultan otros módulos. Guarda una copia en Redis | CLIENTE, OPERADOR, SERVICIO | 004, 107 |
 | `listarBloqueos` | `GET /clientes/{clienteId}/bloqueos` | Historial de bloqueos, vigentes y levantados | OPERADOR | 004 |
 | `crearBloqueo` | `POST /clientes/{clienteId}/bloqueos` | Bloquea administrativamente al cliente | OPERADOR | 004 |
 | `obtenerBloqueo` | `GET /clientes/{clienteId}/bloqueos/{bloqueoId}` | Consulta un bloqueo | OPERADOR | 004 |
@@ -71,6 +79,8 @@ Todas las rutas cuelgan de `/api/v1`, salvo `GET /health`, que no pide token. La
 | `obtenerCalificacion` | `GET /clientes/{clienteId}/calificaciones/{calificacionId}` | Consulta una calificación | CLIENTE, OPERADOR | 008 |
 
 El contrato es la fuente de verdad de rutas, esquemas, roles y errores; esta tabla lo resume. Cada spec está en `specs/NNN-…/` y tiene una `guia.md` que explica lo hecho, tarea por tarea.
+
+El estado de cuenta, que M5 y M9 consultan en cada operación, guarda una copia en Redis (spec 107, RNF-11): dura como máximo `M2_CACHE_TTL_S` o hasta el primer `hasta` de los bloqueos vigentes, se descarta al registrar o levantar un bloqueo, y si Redis no está M2 responde desde su base. Cómo comprobarlo: [`docs/probar-m2.md`](docs/probar-m2.md), sección 10.
 
 Detrás de las operaciones está la base del servicio (spec 003): configuración por variables de entorno, base PostgreSQL propia con migraciones, errores en `application/problem+json`, autenticación por token, identificador de correlación en los logs, cliente HTTP para llamar a otros módulos con tiempo máximo y reintento, imágenes de contenedor y CI.
 
@@ -108,7 +118,7 @@ Dos operaciones dependen de M6, y solo esas dos:
 - El historial (`listarHistorialViajes`) le pide la lista de viajes del cliente: `GET /trips?clientId=…`.
 - Calificar (`calificarConductor`) le pide el viaje: `GET /trips/{tripId}`, para saber si es de ese cliente, si está completado y quién fue el conductor.
 
-En cada pedido M2 se presenta con un token de servicio de vida corta (rol `SERVICIO`, spec 007) y manda el identificador de correlación de la solicitud en dos encabezados: el configurado (`X-Request-Id`) y `X-Correlation-Id`, que es el que lee M6 según su contrato. Así un pedido se puede seguir en los logs de los dos módulos: `docker compose logs m2 | grep 'llamada a M6'`.
+En cada pedido M2 se presenta con un token de servicio. Con `M2_URL_TOKENS_SERVICIO`, `M2_CLIENTE_SERVICIO` y `M2_SECRETO_SERVICIO`, lo pide a Keycloak con `client_credentials` (cliente `grupo-17`, rol `clientes-be`), lo guarda en memoria y lo reutiliza hasta que le quedan 30 s; si M6 rechaza un token guardado con `401`, pide otro y repite una vez (spec 125). Sin esas variables, firma uno HS256 de vida corta con la clave de desarrollo (rol `SERVICIO`, spec 007). Además manda el identificador de correlación de la solicitud en dos encabezados: el configurado (`X-Request-Id`) y `X-Correlation-Id`, que es el que lee M6 según su contrato. Así un pedido se puede seguir en los logs de los dos módulos: `docker compose logs m2 | grep 'llamada a M6'`. Los pedidos de token dejan su propia línea, `llamada a Keycloak`, y al arrancar M2 dice cuál usa: `"tokenServicioM6":"keycloak"` o `"hs256"`.
 
 ### Qué responde M2 cuando M6 falla
 
@@ -119,6 +129,9 @@ En cada pedido M2 se presenta con un token de servicio de vida corta (rol `SERVI
 | Limita los pedidos (`429`) | En el historial: `503`, sin reintentar, con el `Retry-After` que informa M6 si va de 1 a 3600 segundos y, si no, con el configurado. Al calificar también: `503` con el mismo `Retry-After`, sin reintentar y sin guardar nada, así que se puede repetir el mismo pedido con la misma clave |
 | Responde `404` al pedirle un viaje | Al calificar: `404`, el viaje no existe |
 | Rechaza el pedido con otro `4xx` | `500`, sin reintentar: es un problema de configuración entre módulos, no del cliente |
+| Rechaza con `401` un token de servicio que M2 tenía guardado | Lo descarta, pide otro a Keycloak y repite una vez; si vuelve el `401`, `500` |
+| Keycloak no entrega el token de servicio (no contesta, `5xx` o una respuesta sin token) | Reintenta una vez. Si vuelve a fallar: `503` con `Retry-After` y `detail` «Keycloak no está disponible», sin llamar a M6 |
+| Keycloak rechaza las credenciales de `grupo-17` (`4xx`) | `500`, sin reintentar y sin llamar a M6 |
 
 El `Retry-After` configurado es `M2_REINTENTAR_DESPUES_S`. M2 nunca devuelve un historial parcial ni copia en su respuesta o en sus logs el cuerpo de un error de M6. Las operaciones que no dependen de M6 siguen respondiendo aunque M6 esté caído.
 
@@ -247,7 +260,7 @@ npm test
 | `npm test` | Las pruebas unitarias y las de integración, que levantan un PostgreSQL real con Testcontainers | Docker |
 | `npm run lint` y `npm run build` | El estilo del código y que compila | — |
 | `npm run contrato:test` | El servicio contra su contrato, con Schemathesis (una imagen de Docker), en las 20 operaciones | El servicio levantado (`docker compose up -d --build --wait`) |
-| `npm run integracion:m6` | M2 con el M6 real del Grupo 12: historial, calificación y qué pasa cuando M6 se cae (spec 081) | Docker, e internet la primera vez |
+| `npm run integracion:m6` | M2 con el M6 real del Grupo 12: historial, calificación, qué pasa cuando M6 se cae (spec 081) y el token de servicio de Keycloak (spec 125) | Docker, e internet la primera vez (construye M6 y baja Keycloak, unos 470 MB) |
 | `npm run keycloak:test` | M2 en modo `jwks` junto a Keycloak, con tokens RS256 pedidos al realm: cada rol ve lo suyo y M2 sigue de pie si Keycloak se cae (spec 080) | Docker |
 | `npm run panel:navegador` | El panel en Chrome | Chrome y Docker |
 | `npx --yes @redocly/cli@2.62.1 lint contrato/openapi.yml` | Que el contrato es un OpenAPI válido | — |
@@ -298,10 +311,21 @@ Un servicio con una variable obligatoria faltante o inválida no arranca: sale c
 | Variable | Obligatoria | Por defecto | Qué es |
 |---|---|---|---|
 | `M2_URL_M6` | sí | — | URL base de M6 (Viajes), `http://` o `https://`, sin usuario ni contraseña. M6 sirve en `/trips`, así que no lleva `/api/v1`; el servicio no arranca sin ella |
-| `M2_AUDIENCIA_M6` | no | `m6-viajes` | Audiencia (`aud`) del token de servicio con el que M2 se presenta ante M6; no puede estar en blanco ni tener espacios al principio o al final |
+| `M2_AUDIENCIA_M6` | no | `m6-viajes` | Audiencia (`aud`) del token de servicio HS256 con el que M2 se presenta ante M6; no puede estar en blanco ni tener espacios al principio o al final. Con el token de Keycloak no se usa |
+| `M2_URL_TOKENS_SERVICIO` | las tres o ninguna | — | Endpoint de tokens de Keycloak (`…/realms/<realm>/protocol/openid-connect/token`), `http://` o `https://` y sin usuario ni contraseña. Con las tres, M2 pide su token de servicio a Keycloak por `client_credentials`; sin ninguna, lo firma con HS256 (spec 125; ver [`docs/probar-m2.md`](docs/probar-m2.md), sección 9) |
+| `M2_CLIENTE_SERVICIO` | las tres o ninguna | — | Cliente de Keycloak con el que M2 pide el token (`grupo-17` en el realm de la cátedra) |
+| `M2_SECRETO_SERVICIO` | las tres o ninguna | — | Secreto de ese cliente. Es sensible: nunca aparece en un error ni en el log |
 | `M2_TIEMPO_MODULOS_MS` | no | `2000` | Espera máxima por intento a otro módulo, en milisegundos (de 1 a 2147483647) |
 | `M2_REINTENTOS_MODULOS` | no | `1` | Reintentos de una lectura a otro módulo, de 0 a 5 |
 | `M2_REINTENTAR_DESPUES_S` | no | `5` | Segundos del `Retry-After` del `503` cuando M6 no está disponible, de 1 a 3600. Si M6 limita los pedidos (`429`) e informa su propio `Retry-After` de 1 a 3600 segundos, el historial y calificar responden con el de M6 y no con este |
+
+**La caché del estado de cuenta (Redis, spec 107)**
+
+| Variable | Obligatoria | Por defecto | Qué es |
+|---|---|---|---|
+| `M2_URL_REDIS` | no | sin caché (`redis://redis:6379` en `ejemplo.env`) | URL de Redis, `redis://` o `rediss://`. Sin ella, M2 funciona sin caché; con Redis caído, responde desde su base |
+| `M2_CACHE_TTL_S` | no | `60` | Segundos que dura una copia del estado de cuenta como máximo, de 1 a 3600. Un bloqueo con `hasta` más cercano la acorta |
+| `M2_TIEMPO_REDIS_MS` | no | `200` | Espera máxima por operación a Redis, en milisegundos (de 1 a 2147483647); pasado ese tiempo, la consulta sale de la base |
 
 Las variables del panel y de los M6 de prueba (`PANEL_*`, `M6_*`) están en `ejemplo.env`, cada una con su explicación.
 

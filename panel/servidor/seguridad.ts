@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { ConfigPanelOidc } from './config.js';
 import { responderProblema, type Problema } from './problemas.js';
 
 // El panel firma tokens y solo es para quien lo abre en su máquina (RNF-12.8). Dos defensas, ninguna con CORS:
@@ -35,14 +36,28 @@ export function revisarAcceso(
   return pedido.origin?.toLowerCase() === `http://${host}` ? undefined : ORIGEN_AJENO;
 }
 
+// En modo real se exige el origen configurado, que también puede ser HTTPS o un host distinto de loopback.
+// Los encabezados reenviados y Referer no sustituyen Host/Origin. Los retornos GET de Keycloak no necesitan Origin.
+export function revisarAccesoOidc(
+  pedido: { metodo: string; host: string | undefined; origin: string | undefined },
+  origenPublico: string,
+): Problema | undefined {
+  const publico = new URL(origenPublico);
+  if (pedido.host?.toLowerCase() !== publico.host.toLowerCase()) {
+    return { ...HOST_AJENO, detail: 'El servidor solo responde en el origen público configurado.' };
+  }
+  if (METODOS_DE_CONSULTA.has(pedido.metodo.toUpperCase())) return undefined;
+  return pedido.origin === publico.origin ? undefined : ORIGEN_AJENO;
+}
+
 // Un `onRequest` para todas las rutas, también las que no existen: se registra primero, antes que ninguna ruta, y rechaza
 // antes de leer el cuerpo ni de ejecutar nada.
-export function registrarSeguridad(app: FastifyInstance, puerto: number): void {
+export function registrarSeguridad(app: FastifyInstance, origen: number | Pick<ConfigPanelOidc, 'origenPublico'>): void {
   app.addHook('onRequest', async (request, reply) => {
-    const problema = revisarAcceso(
-      { metodo: request.method, host: request.headers.host, origin: request.headers.origin },
-      puerto,
-    );
+    const pedido = { metodo: request.method, host: request.headers.host, origin: request.headers.origin };
+    const problema = typeof origen === 'number'
+      ? revisarAcceso(pedido, origen)
+      : revisarAccesoOidc(pedido, origen.origenPublico);
     if (problema !== undefined) return responderProblema(reply, problema);
     return undefined;
   });

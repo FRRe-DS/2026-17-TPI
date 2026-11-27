@@ -114,6 +114,8 @@ jobs:
         env:
           M2_DEJAR_LEVANTADO: "1"
         run: npm run keycloak:test
+      - name: sesión frontend en Chrome y Keycloak real
+        run: npm run front:keycloak
       - name: logs si falla
         if: failure()
         run: docker compose -p m2-keycloak --env-file ejemplo-keycloak.env logs
@@ -125,6 +127,7 @@ jobs:
   contract-test:
     needs: build-test
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.1.0

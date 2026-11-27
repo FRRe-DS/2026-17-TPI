@@ -8,6 +8,7 @@
     "node": "^24.2.0"
   },
   "scripts": {
+    "front:keycloak": "npm run panel:build && vitest run --project front-keycloak",
     "contrato:tipos": "openapi-typescript contrato/openapi.yml -o src/generado/contrato.ts",
     "contrato:test": "npm run build && node scripts/contrato-test.mjs",
     "prebuild": "npm run contrato:tipos",
@@ -35,6 +36,7 @@
     "jose": "6.2.12",
     "node-pg-migrate": "9.0.0",
     "pg": "8.23.1",
+    "redis": "6.3.1",
     "yaml": "2.9.1"
   },
   "devDependencies": {
@@ -51,6 +53,7 @@
     "playwright-core": "1.64.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "testcontainers": "12.2.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.2",
     "vite": "8.3.4",

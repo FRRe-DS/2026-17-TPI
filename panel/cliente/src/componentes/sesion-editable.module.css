@@ -1,0 +1,19 @@
+.aviso {
+  padding: var(--e-3);
+  margin-block: var(--e-3);
+  border: 1px solid var(--borde-campo);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.aviso p { margin-block: var(--e-2); }
+.aviso button, .aviso select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 8px 12px;
+  margin-block: 8px;
+  border: 1px solid var(--borde-campo);
+  border-radius: 4px;
+  background: var(--papel);
+  cursor: pointer;
+}
+.aviso textarea { display: block; width: 100%; min-height: 160px; }

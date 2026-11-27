@@ -54,6 +54,10 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       reintentarDespuesS: 5,
       modoTokens: 'hs256',
       urlJwks: undefined,
+      urlRedis: undefined,
+      cacheTtlS: 60,
+      tiempoRedisMs: 200,
+      tokenServicio: undefined,
     });
   });
 
@@ -71,6 +75,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       M2_REINTENTAR_DESPUES_S: '30',
       M2_MODO_TOKENS: 'jwks',
       M2_URL_JWKS: 'https://keycloak.interno:8443/realms/ds-2026-realm/protocol/openid-connect/certs',
+      M2_URL_REDIS: 'rediss://redis.interno:6380',
+      M2_CACHE_TTL_S: '120',
+      M2_TIEMPO_REDIS_MS: '50',
     };
     expect(cargada(env)).toEqual({
       urlBd: OBLIGATORIAS.M2_URL_BD,
@@ -88,6 +95,9 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
       reintentarDespuesS: 30,
       modoTokens: 'jwks',
       urlJwks: 'https://keycloak.interno:8443/realms/ds-2026-realm/protocol/openid-connect/certs',
+      urlRedis: 'rediss://redis.interno:6380',
+      cacheTtlS: 120,
+      tiempoRedisMs: 50,
     });
   });
 
@@ -115,8 +125,62 @@ describe('cargarConfig: valores (RNF-06.1)', () => {
     ['M2_MODO_TOKENS', 'hs256', 'modoTokens', 'hs256'],
     ['M2_URL_JWKS', 'http://keycloak:8080/realms/r/protocol/openid-connect/certs', 'urlJwks', 'http://keycloak:8080/realms/r/protocol/openid-connect/certs'],
     ['M2_URL_JWKS', 'HTTPS://keycloak.interno/certs/', 'urlJwks', 'HTTPS://keycloak.interno/certs'],
+    ['M2_URL_REDIS', 'redis://redis:6379', 'urlRedis', 'redis://redis:6379'],
+    ['M2_URL_REDIS', 'REDIS://localhost', 'urlRedis', 'REDIS://localhost'],
+    ['M2_URL_REDIS', 'rediss://:clave@redis.interno:6380/2', 'urlRedis', 'rediss://:clave@redis.interno:6380/2'],
+    ['M2_URL_REDIS', 'redis://redis:6379/', 'urlRedis', 'redis://redis:6379/'],
+    ['M2_URL_REDIS', 'redis://:clave%25con%40signos@redis/0', 'urlRedis', 'redis://:clave%25con%40signos@redis/0'],
+    ['M2_URL_REDIS', '', 'urlRedis', undefined],
+    ['M2_CACHE_TTL_S', '1', 'cacheTtlS', 1],
+    ['M2_CACHE_TTL_S', '3600', 'cacheTtlS', 3600],
+    ['M2_TIEMPO_REDIS_MS', '1', 'tiempoRedisMs', 1],
+    ['M2_TIEMPO_REDIS_MS', '2147483647', 'tiempoRedisMs', 2147483647],
   ])('%s = %j es válida', (variable, valor, campo, esperado) => {
     expect(cargada({ ...OBLIGATORIAS, [variable]: valor })).toMatchObject({ [campo]: esperado });
+  });
+});
+
+describe('cargarConfig: la caché de Redis (spec 107, RNF-06)', () => {
+  it.each<[string, string, string]>([
+    ['M2_URL_REDIS', 'http://redis:6379', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis:/redis', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis:6379', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis://redis:99999', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis:///', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'esto no es una url', 'no es una URL redis:// o rediss:// válida con host'],
+    // node-redis lanzaría al crear el cliente, y M2 no arrancaría sin nombrar la variable: la base es un entero y la
+    // contraseña o el usuario tienen que venir bien codificados.
+    ['M2_URL_REDIS', 'redis://redis:6379/abc', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis://redis:6379/1.5', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis://redis:6379/0/otra', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis://:%zz@redis', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_URL_REDIS', 'redis://%zz:clave@redis', 'no es una URL redis:// o rediss:// válida con host'],
+    ['M2_CACHE_TTL_S', '0', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', '3601', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', '-1', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', '1.5', 'no es un entero entre 1 y 3600'],
+    ['M2_CACHE_TTL_S', 'un minuto', 'no es un entero entre 1 y 3600'],
+    ['M2_TIEMPO_REDIS_MS', '0', 'no es un entero entre 1 y 2147483647'],
+    ['M2_TIEMPO_REDIS_MS', '2147483648', 'no es un entero entre 1 y 2147483647'],
+    ['M2_TIEMPO_REDIS_MS', 'rápido', 'no es un entero entre 1 y 2147483647'],
+  ])('%s = %j: el error da el motivo', (variable, valor, motivo) => {
+    expect(erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor }))).toEqual([{ variable, motivo }]);
+  });
+
+  // La URL de Redis puede llevar la contraseña: el error nombra la variable y nada más.
+  it.each<[string, string]>([
+    ['M2_URL_REDIS', 'http://:valor-centinela-7f3a@redis:6379'],
+    ['M2_URL_REDIS', 'redis://:valor-centinela-7f3a@redis:99999'],
+    ['M2_URL_REDIS', 'redis://:%zz-valor-centinela-7f3a@redis'],
+    ['M2_CACHE_TTL_S', 'valor-centinela-7f3a'],
+    ['M2_TIEMPO_REDIS_MS', 'valor-centinela-7f3a'],
+  ])('%s inválida: el error no repite el valor recibido', (variable, valor) => {
+    const texto = JSON.stringify(erroresDe(cargarConfig({ ...OBLIGATORIAS, [variable]: valor })));
+    expect(texto).not.toContain('valor-centinela-7f3a');
+  });
+
+  it('sin M2_URL_REDIS la configuración carga y la caché queda apagada', () => {
+    expect(cargada(OBLIGATORIAS).urlRedis).toBeUndefined();
   });
 });
 
@@ -387,5 +451,79 @@ describe('cargarConfigTokens (RNF-06.1, RNF-06.2)', () => {
     const errores = erroresDe(cargarConfigTokens({ ...SOLO_TOKENS, M2_CLAVE_TOKENS: corta }));
     expect(nombres(errores)).toEqual(['M2_CLAVE_TOKENS']);
     expect(JSON.stringify(errores)).not.toContain(corta);
+  });
+});
+
+// El token con el que M2 se presenta ante M6 (spec 125): con las tres variables, M2 lo pide a Keycloak por client_credentials
+// (RF-2.4.11.1); sin ninguna, firma el HS256 de siempre (RF-2.4.11.2); con una parte, no arranca (RF-2.4.11.3).
+describe('cargarConfig: token de servicio de Keycloak (spec 125, RF-2.4.11.1 a RF-2.4.11.3, RNF-06)', () => {
+  const SECRETO = 'secreto-de-grupo-17-que-no-se-muestra';
+  const URL_TOKENS = 'http://keycloak:8080/realms/ds-2026-realm/protocol/openid-connect/token';
+  const TRES = {
+    M2_URL_TOKENS_SERVICIO: URL_TOKENS,
+    M2_CLIENTE_SERVICIO: 'grupo-17',
+    M2_SECRETO_SERVICIO: SECRETO,
+  };
+
+  it('sin ninguna de las tres, no hay token de Keycloak', () => {
+    expect(cargada(OBLIGATORIAS).tokenServicio).toBeUndefined();
+  });
+
+  it('las tres vacías cuentan como no definidas', () => {
+    const vacias = { M2_URL_TOKENS_SERVICIO: '', M2_CLIENTE_SERVICIO: '', M2_SECRETO_SERVICIO: '' };
+    expect(cargada({ ...OBLIGATORIAS, ...vacias }).tokenServicio).toBeUndefined();
+  });
+
+  it('con las tres, guarda la URL sin barra final, el cliente y el secreto', () => {
+    expect(cargada({ ...OBLIGATORIAS, ...TRES, M2_URL_TOKENS_SERVICIO: `${URL_TOKENS}/` }).tokenServicio).toEqual({
+      urlTokens: URL_TOKENS,
+      cliente: 'grupo-17',
+      secreto: SECRETO,
+    });
+  });
+
+  it('no depende del modo de los tokens que recibe M2', () => {
+    const env = { ...OBLIGATORIAS, ...TRES, M2_MODO_TOKENS: 'jwks', M2_URL_JWKS: 'http://keycloak:8080/certs' };
+    expect(cargada(env).tokenServicio?.cliente).toBe('grupo-17');
+  });
+
+  it.each([
+    [['M2_URL_TOKENS_SERVICIO']],
+    [['M2_CLIENTE_SERVICIO']],
+    [['M2_SECRETO_SERVICIO']],
+    [['M2_URL_TOKENS_SERVICIO', 'M2_CLIENTE_SERVICIO']],
+    [['M2_CLIENTE_SERVICIO', 'M2_SECRETO_SERVICIO']],
+    [['M2_URL_TOKENS_SERVICIO', 'M2_SECRETO_SERVICIO']],
+  ])('si faltan %j, informa cada una que falta y no repite el secreto', (faltan) => {
+    const env = faltan.reduce<Entorno>((acumulado, variable) => sin(acumulado, variable), { ...OBLIGATORIAS, ...TRES });
+    const errores = erroresDe(cargarConfig(env));
+    expect([...errores].sort((a, b) => a.variable.localeCompare(b.variable))).toEqual(
+      [...faltan].sort().map((variable) => ({
+        variable,
+        motivo: 'es obligatoria si se configura el token de servicio de Keycloak',
+      })),
+    );
+    expect(JSON.stringify(errores)).not.toContain(SECRETO);
+  });
+
+  it.each(['ftp://keycloak/token', 'keycloak:8080/token', 'http://usuario:clave@keycloak/token', 'no es una url'])(
+    'rechaza la URL de tokens %j sin repetirla',
+    (url) => {
+      const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, ...TRES, M2_URL_TOKENS_SERVICIO: url }));
+      expect(errores).toEqual([
+        { variable: 'M2_URL_TOKENS_SERVICIO', motivo: 'no es una URL http:// o https:// sin usuario ni contraseña' },
+      ]);
+      expect(JSON.stringify(errores)).not.toContain(url);
+    },
+  );
+
+  it('una URL inválida se informa también sin las otras dos', () => {
+    const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, M2_URL_TOKENS_SERVICIO: 'ftp://keycloak/token' }));
+    expect(nombres(errores)).toEqual(['M2_CLIENTE_SERVICIO', 'M2_SECRETO_SERVICIO', 'M2_URL_TOKENS_SERVICIO']);
+  });
+
+  it('rechaza un cliente con espacios al borde', () => {
+    const errores = erroresDe(cargarConfig({ ...OBLIGATORIAS, ...TRES, M2_CLIENTE_SERVICIO: ' grupo-17' }));
+    expect(nombres(errores)).toEqual(['M2_CLIENTE_SERVICIO']);
   });
 });

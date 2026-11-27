@@ -126,33 +126,39 @@ const comprobaciones = [
   },
 ];
 
-// Si el panel no escucha, el resto no tiene sentido: se dice cómo levantarlo en lugar de fallar cinco veces.
-try {
-  await pedir('/salud-panel');
-} catch (error) {
-  const causa = error?.cause?.code ?? error?.name ?? 'error';
-  console.error(`${rojo('✘')} El panel no responde en ${PANEL} (${causa}).\n  ${COMO_LEVANTARLO}`);
-  process.exit(1);
-}
-
-let fallas = 0;
-for (const { nombre, correr } of comprobaciones) {
-  let problema;
+async function main() {
+  // Si el panel no escucha, se explica cómo levantarlo y se omiten las demás comprobaciones.
   try {
-    problema = await correr();
+    await pedir('/salud-panel');
   } catch (error) {
-    problema = `no hubo respuesta (${error?.cause?.code ?? error?.name ?? 'error'})`;
+    const causa = error?.cause?.code ?? error?.name ?? 'error';
+    console.error(`${rojo('✘')} El panel no responde en ${PANEL} (${causa}).\n  ${COMO_LEVANTARLO}`);
+    return 1;
   }
-  if (problema === undefined) {
-    console.log(`${verde('✔')} ${nombre}${dockerInformado !== '' && nombre.includes('Docker') ? ` ${gris(`— ${dockerInformado}`)}` : ''}`);
-  } else {
-    fallas++;
-    console.log(`${rojo('✘')} ${nombre} ${gris(`— ${problema}`)}`);
+
+  let fallas = 0;
+  for (const { nombre, correr } of comprobaciones) {
+    let problema;
+    try {
+      problema = await correr();
+    } catch (error) {
+      problema = `no hubo respuesta (${error?.cause?.code ?? error?.name ?? 'error'})`;
+    }
+    if (problema === undefined) {
+      console.log(`${verde('✔')} ${nombre}${dockerInformado !== '' && nombre.includes('Docker') ? ` ${gris(`— ${dockerInformado}`)}` : ''}`);
+    } else {
+      fallas++;
+      console.log(`${rojo('✘')} ${nombre} ${gris(`— ${problema}`)}`);
+    }
   }
+
+  if (fallas > 0) {
+    console.log(`\n${rojo(`${fallas} de ${comprobaciones.length} comprobaciones fallaron.`)} ${USO}`);
+    return 1;
+  }
+  console.log(`\n${verde(`Las ${comprobaciones.length} comprobaciones pasaron`)} contra ${PANEL}.`);
+  return 0;
 }
 
-if (fallas > 0) {
-  console.log(`\n${rojo(`${fallas} de ${comprobaciones.length} comprobaciones fallaron.`)} ${USO}`);
-  process.exit(1);
-}
-console.log(`\n${verde(`Las ${comprobaciones.length} comprobaciones pasaron`)} contra ${PANEL}.`);
+// Dejar que Node cierre las conexiones y vacíe la salida evita una terminación abrupta en Windows.
+process.exitCode = await main();

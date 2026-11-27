@@ -6,12 +6,23 @@ import type { ConfigPanel } from './config.js';
 import { registrarEncabezadosDeSeguridad, registrarEstaticos } from './estaticos.js';
 import { ESPERA_CONTROL_MS, registrarControlM6 } from './m6-control.js';
 import { crearDependenciasDemo, registrarDemo, type DependenciasDemo } from './demo/rutas.js';
-import { crearRegistroDePedidos, registrarPedidos } from './pedidos.js';
+import { crearRegistroDePedidos, registrarPedidos, presentarPedido } from './pedidos.js';
+import { responderFallaSesion } from './auth/estado.js';
 import { responderProblema } from './problemas.js';
 import { ESPERA_M2_MS, registrarReenvio } from './proxy.js';
 import { registrarSeguridad } from './seguridad.js';
+import { crearAlmacenTransacciones } from './auth/transacciones.js';
+import { registrarInicioAuth } from './auth/rutas.js';
+import { crearAlmacenSesiones } from './auth/sesiones.js';
+import { crearClienteOidc, SesionRechazada, comprobarDisponibilidad, type ClienteOidc } from './auth/oidc.js';
+import { crearCookiesAuth } from './auth/cookies.js';
+import { registrarRetornoAuth } from './auth/retorno.js';
+import { crearRenovacion } from './auth/renovacion.js';
+import { registrarEstadoAuth } from './auth/estado.js';
+import { registrarSalidaAuth } from './auth/salida.js';
 
 export type OpcionesApp = {
+  auth?: { sesiones?: ReturnType<typeof crearAlmacenSesiones>; transacciones?: ReturnType<typeof crearAlmacenTransacciones>; pedir?: typeof fetch; oidc?: ClienteOidc; comprobarIdentidad?: () => Promise<void> };
   config: ConfigPanel;
   // Adonde van los logs; sin él, a la salida estándar.
   flujoLog?: Writable;
@@ -42,9 +53,9 @@ function estadoDe(error: unknown): number {
   return typeof estado === 'number' && estado >= 400 && estado < 500 ? estado : 500;
 }
 
-// La app del panel: seguridad de acceso, salud, logs, reenvío a M2, detalle técnico de sus pedidos y reenvío al canal de control del
-// M6 simulado y, si se le da la carpeta, los archivos del cliente. No escucha en ningún puerto; eso lo hace el arranque.
-export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente, demo }: OpcionesApp): FastifyInstance {
+// Seguridad, salud, logs y archivos del cliente para ambos modos. Desarrollo agrega reenvío y evaluación;
+// OIDC registra solo las rutas reales implementadas hasta ahora. No escucha en puertos; eso lo hace el arranque.
+export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, esperaControlMs = ESPERA_CONTROL_MS, directorioCliente, demo, auth }: OpcionesApp): FastifyInstance {
   const app = Fastify({
     // El cuerpo se pasa tal cual a M2, que es quien lo valida; el límite de 1 MiB es el de M2 (RNF-03.2).
     bodyLimit: 1024 * 1024,
@@ -60,8 +71,8 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   });
 
   // Antes que toda ruta: el 403 va primero, también en una ruta que no existe.
-  registrarSeguridad(app, config.puerto);
-  registrarEncabezadosDeSeguridad(app);
+  registrarSeguridad(app, config.modoAuth === 'oidc' ? config : config.puerto);
+  registrarEncabezadosDeSeguridad(app, config);
 
   app.addHook('onSend', async (request, reply) => {
     reply.header('x-request-id', request.id);
@@ -92,6 +103,45 @@ export function construirApp({ config, flujoLog, esperaM2Ms = ESPERA_M2_MS, espe
   });
 
   app.get('/salud-panel', async () => ({ estado: 'ok' }));
+  app.get('/panel/config', async (_request, reply) => {
+    reply.header('cache-control', 'no-store');
+    return { modoAuth: config.modoAuth, m6Simulado: config.modoAuth === 'oidc' ? config.m6Simulado : true };
+  });
+  if (config.modoAuth === 'oidc') {
+    const transacciones = auth?.transacciones ?? crearAlmacenTransacciones();
+    const sesiones = auth?.sesiones ?? crearAlmacenSesiones();
+    const oidc = auth?.oidc ?? crearClienteOidc(config, auth?.pedir);
+    const renovacion = crearRenovacion(sesiones, oidc);
+    app.addHook('onClose', async () => { transacciones.cerrar(); sesiones.cerrar(); });
+    const comprobarIdentidad = auth?.comprobarIdentidad ?? (() => comprobarDisponibilidad(config, auth?.pedir));
+    app.register(registrarInicioAuth, { config, transacciones, comprobarIdentidad });
+    app.register(registrarRetornoAuth, { config, sesiones, transacciones, oidc });
+    app.register(registrarEstadoAuth, { config, sesiones, transacciones, oidc, renovacion });
+    app.register(registrarSalidaAuth, { config, sesiones, transacciones, oidc, comprobarIdentidad });
+    const cookies = crearCookiesAuth(config);
+    app.get('/panel/pedidos', async (request, reply) => {
+      reply.header('cache-control', 'no-store');
+      const encontrada = cookies.leerSesion(request, sesiones);
+      if (!encontrada) return responderFallaSesion(reply, new SesionRechazada());
+      return { pedidos: (encontrada.sesion.pedidos ?? []).map(pedido => presentarPedido(pedido, config.urlM2Publica)) };
+    });
+    app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos: crearRegistroDePedidos(),
+      registroPara: (request) => {
+        const encontrada = cookies.leerSesion(request, sesiones);
+        return { registrar: pedido => { if (encontrada) sesiones.registrarPedido(encontrada.id, pedido); }, recientes: () => [] };
+      },
+      autenticar: async (request) => {
+        const encontrada = cookies.leerSesion(request, sesiones);
+        if (!encontrada) throw new SesionRechazada();
+        const sesion = await renovacion.obtener(encontrada.id);
+        if (!sesiones.registrarActividad(encontrada.id)) throw new SesionRechazada();
+        return sesion.credenciales.accessToken;
+      },
+    });
+    if (directorioCliente !== undefined) registrarEstaticos(app, directorioCliente);
+    // T4 inicia autorización. Cuenta, retorno y sesión siguen cerrados hasta conectar las tareas siguientes.
+    return app;
+  }
   const pedidos = crearRegistroDePedidos();
   registrarPedidos(app, pedidos, config.urlM2Publica);
   app.register(registrarReenvio, { config, esperaMs: esperaM2Ms, pedidos });

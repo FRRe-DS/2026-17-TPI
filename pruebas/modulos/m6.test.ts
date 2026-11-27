@@ -145,6 +145,26 @@ describe('crearM6: el pedido de viajes a M6 y la lectura de su respuesta (007/T4
       expect(payload.exp! - payload.iat!).toBe(60);
     });
 
+    // Spec 125: el token sale del token de servicio que recibe crearM6, pedido con el id de correlación de la operación.
+    it('usa el token de servicio que recibe, con el id de correlación de la operación (RF-2.4.11.9)', async () => {
+      serv.responderCon(ok(pagina([], 0)));
+      const pedidos: string[] = [];
+      const tokenServicio = {
+        modo: 'keycloak' as const,
+        obtener: async (idCorrelacion: string) => {
+          pedidos.push(idCorrelacion);
+          return { token: 'token-del-servicio', reutilizado: false };
+        },
+        descartar: () => undefined,
+      };
+      const config = { ...CONFIG, urlM6: serv.url, tiempoModulosMs: TIEMPO_MS, reintentosModulos: 1 };
+
+      await crearM6(config, undefined, tokenServicio).listarViajes(CLIENTE, 0, 20, 'id-de-la-operacion');
+
+      expect(serv.autorizaciones).toEqual(['Bearer token-del-servicio']);
+      expect(pedidos).toEqual(['id-de-la-operacion']);
+    });
+
     it('el reintento lleva un token de servicio propio, que también verifica', async () => {
       serv.responderCon([{ tipo: '5xx', estado: 500 }, ok(pagina([], 0))]);
 

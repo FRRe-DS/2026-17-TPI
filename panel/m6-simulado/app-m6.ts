@@ -1,5 +1,5 @@
 import Fastify, { LogController, type FastifyInstance, type FastifyReply } from 'fastify';
-import { jwtVerify } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import { randomUUID } from 'node:crypto';
 import type { Writable } from 'node:stream';
 import { setTimeout as esperar } from 'node:timers/promises';
@@ -23,6 +23,9 @@ const ID_VALIDO = /^[A-Za-z0-9._-]{1,100}$/;
 const TOLERANCIA_RELOJ_SEGUNDOS = 30;
 
 const ROL_DE_SERVICIO = 'SERVICIO';
+// Los roles con los que el M6 real del Grupo 12 reconoce a otro módulo en un token de Keycloak: `clientes-be`, que el realm de la
+// cátedra da a la cuenta de servicio de `grupo-17`, o `SERVICIO` (spec 125).
+const ROLES_DE_SERVICIO_KEYCLOAK = ['clientes-be', ROL_DE_SERVICIO];
 // El campo de roles del acuerdo del consorcio (ADR 009). Es el que usa M2 en su token de servicio, aunque `M2_CAMPO_ROLES`
 // cambie el campo que lee M2 en los tokens que recibe.
 const CAMPO_ROLES = 'roles';
@@ -39,13 +42,26 @@ class ErrorM6 extends Error {
 
 const noAutenticado = () => new ErrorM6('UNAUTHENTICATED', 'Token de servicio ausente o inválido');
 
-// Si el pedido trae un token de servicio de este consorcio para M6: HS256 con la clave, el emisor, la audiencia de M6
-// (`M2_AUDIENCIA_M6`), que no venció y con `SERVICIO` en la lista de roles. Cualquier otra cosa es 401, sin decir qué falló:
-// no hace falta para probar M2, y no le da pistas a quien prueba tokens.
-async function verificarTokenDeServicio(encabezado: string | undefined, config: ConfigM6): Promise<void> {
+// Si el pedido trae un token de servicio para M6. Vale el de M2 firmado con HS256: la clave, el emisor, la audiencia de M6
+// (`M2_AUDIENCIA_M6`), que no venció y con `SERVICIO` en la lista de roles. Con `claves` (el JWKS de Keycloak, spec 125) vale
+// también un RS256 del emisor de Keycloak, sin exigir audiencia y con `clientes-be` o `SERVICIO` en `roles`, como lo valida el
+// M6 real. Cualquier otra cosa es 401, sin decir qué falló: no hace falta para probar M2, y no le da pistas a quien prueba tokens.
+async function verificarTokenDeServicio(
+  encabezado: string | undefined,
+  config: ConfigM6,
+  claves: JWTVerifyGetKey | undefined,
+): Promise<void> {
   const token = typeof encabezado === 'string' ? /^Bearer +(\S+)$/i.exec(encabezado)?.[1] : undefined;
   if (token === undefined) throw noAutenticado();
-  let roles: unknown;
+  if (await esDeM2(token, config)) return;
+  if (claves !== undefined && config.keycloak !== undefined && (await esDeKeycloak(token, config.keycloak.emisor, claves))) return;
+  throw noAutenticado();
+}
+
+const tieneAlgunRol = (roles: unknown, admitidos: readonly string[]) =>
+  Array.isArray(roles) && roles.some((rol) => admitidos.includes(rol as string));
+
+async function esDeM2(token: string, config: ConfigM6): Promise<boolean> {
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(config.claveTokens), {
       algorithms: ['HS256'],
@@ -54,11 +70,24 @@ async function verificarTokenDeServicio(encabezado: string | undefined, config: 
       clockTolerance: TOLERANCIA_RELOJ_SEGUNDOS,
       requiredClaims: ['exp', 'sub'],
     });
-    roles = payload[CAMPO_ROLES];
+    return tieneAlgunRol(payload[CAMPO_ROLES], [ROL_DE_SERVICIO]);
   } catch {
-    throw noAutenticado();
+    return false;
   }
-  if (!Array.isArray(roles) || !roles.includes(ROL_DE_SERVICIO)) throw noAutenticado();
+}
+
+async function esDeKeycloak(token: string, emisor: string, claves: JWTVerifyGetKey): Promise<boolean> {
+  try {
+    const { payload } = await jwtVerify(token, claves, {
+      algorithms: ['RS256'],
+      issuer: emisor,
+      clockTolerance: TOLERANCIA_RELOJ_SEGUNDOS,
+      requiredClaims: ['exp'],
+    });
+    return tieneAlgunRol(payload[CAMPO_ROLES], ROLES_DE_SERVICIO_KEYCLOAK);
+  } catch {
+    return false;
+  }
 }
 
 const parametroInvalido = (nombre: string) => new ErrorM6('VALIDATION', `El parámetro ${nombre} no es válido`);
@@ -95,6 +124,8 @@ async function esperarRetardo(reply: FastifyReply, ms: number): Promise<void> {
 }
 
 export function construirAppM6({ config, estado, flujoLog }: OpcionesAppM6): FastifyInstance {
+  // Las claves de Keycloak se bajan cuando llega el primer token RS256 y jose las guarda (spec 125).
+  const clavesKeycloak = config.keycloak === undefined ? undefined : createRemoteJWKSet(new URL(config.keycloak.urlJwks));
   const app = Fastify({
     // El modo caído cierra el puerto con `close()`: tiene que cortar también los pedidos en espera del modo lento.
     forceCloseConnections: true,
@@ -123,7 +154,7 @@ export function construirAppM6({ config, estado, flujoLog }: OpcionesAppM6): Fas
   // El token antes que todo, también en una ruta que no existe, y después la espera del modo lento: un token que no sirve
   // no hace esperar a nadie.
   app.addHook('onRequest', async (request, reply) => {
-    await verificarTokenDeServicio(request.headers.authorization, config);
+    await verificarTokenDeServicio(request.headers.authorization, config, clavesKeycloak);
     if (estado.modo() === 'lento') await esperarRetardo(reply, config.retardoLentoMs);
   });
 

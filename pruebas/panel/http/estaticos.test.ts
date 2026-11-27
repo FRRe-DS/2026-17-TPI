@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PANTALLAS } from '../../../panel/cliente/src/rutas.js';
@@ -19,7 +20,7 @@ let indexHtml: string;
 
 beforeAll(async () => {
   carpeta = mkdtempSync(join(tmpdir(), 'panel-cliente-'));
-  await build({ configFile: new URL('../../../panel/vite.config.ts', import.meta.url).pathname, logLevel: 'silent', build: { outDir: carpeta } });
+  await build({ configFile: fileURLToPath(new URL('../../../panel/vite.config.ts', import.meta.url)), logLevel: 'silent', build: { outDir: carpeta } });
   indexHtml = readFileSync(join(carpeta, 'index.html'), 'utf8');
   // Un archivo de un tipo que se sirve, justo afuera de /assets/: si una ruta pudiera subir un nivel, lo encontraría.
   writeFileSync(join(carpeta, 'secreto.js'), 'export const secreto = 1;');

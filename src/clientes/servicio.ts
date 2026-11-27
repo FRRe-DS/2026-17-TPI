@@ -14,6 +14,7 @@ import type {
   LevantamientoBloqueo,
   PaginaBloqueos,
 } from './modelo.js';
+import type { CacheEstadoCuenta } from '../cache/estado-cuenta.js';
 import * as repositorio from './repositorio.js';
 import { actualizarPerfil, crearPerfil, obtenerPerfil, type PedidoHistorial } from './repositorio.js';
 
@@ -146,15 +147,19 @@ export async function actualizarCliente(
 }
 
 // El estado de cuenta de `clienteId` (RF-2.6), si quien llama puede verlo: su dueño, un OPERADOR o un SERVICIO (M5 y M9). La
-// propiedad se exige solo si el único rol efectivo es CLIENTE. 404 si no existe el perfil.
+// propiedad se exige solo si el único rol efectivo es CLIENTE. 404 si no existe el perfil. Los permisos se comprueban antes de
+// mirar la caché: una copia guardada no se entrega a quien no puede verla (RF-2.6.5.3). Después, la copia o la base: si no hay
+// copia vigente, se lee la base y se guarda; un perfil inexistente lanza antes de guardar nada (RF-2.6.5.4).
 export async function obtenerEstadoCuenta(
   pool: BaseDeDatos,
+  cache: CacheEstadoCuenta,
   identidad: Identidad,
   rolesOperacion: readonly string[],
   clienteId: string,
 ): Promise<EstadoCuenta> {
   exigirPropietario(identidad, clienteId, rolesOperacion);
-  return repositorio.obtenerEstadoCuenta(delPool(pool), normalizarUuid(clienteId));
+  const id = normalizarUuid(clienteId);
+  return cache.leer(id, () => repositorio.obtenerEstadoCuenta(delPool(pool), id));
 }
 
 // Bloquea a `clienteId` (RF-2.6.1) con la Idempotency-Key `clave` (RNF-08): 201 con Location, o la respuesta guardada si la
@@ -167,6 +172,7 @@ export async function obtenerEstadoCuenta(
 // `-infinity`, anterior a cualquier instante. La huella guarda el cuerpo tal como llegó.
 export async function crearBloqueo(
   pool: BaseDeDatos,
+  cache: CacheEstadoCuenta,
   identidad: Identidad,
   clienteId: string,
   clave: string,
@@ -191,8 +197,7 @@ export async function crearBloqueo(
     clave,
     huella: { cuerpo: datos, ruta: { clienteId: cliente } },
   };
-
-  return conIdempotencia(pool, solicitud, async (consultar) => {
+  const respuesta = await conIdempotencia(pool, solicitud, async (consultar) => {
     const bloqueo = await repositorio.crearBloqueo(consultar, cliente, randomUUID(), enUtc, identidad.sub);
     
     // ÉXITO: Registramos aceptadas y tiempo
@@ -206,6 +211,11 @@ export async function crearBloqueo(
         cuerpo: bloqueo 
     };
   });
+  // `conIdempotencia` vuelve después del COMMIT: la base ya confirmó. Un error (404, 422) sale antes y no toca la copia
+  // (RF-2.6.6.2). Una repetición de la misma clave también invalida: no hace daño, y cubre el caso de que la primera haya
+  // confirmado sin llegar a invalidar.
+  await cache.invalidar(cliente);
+  return respuesta;
 }
 
 // Una página del historial de bloqueos de `clienteId` (RF-2.6.2). Solo llega OPERADOR. 404 si no existe el perfil.
@@ -224,18 +234,18 @@ export async function obtenerBloqueo(pool: BaseDeDatos, clienteId: string, bloqu
 
 // Levanta el bloqueo `bloqueoId` de `clienteId` (RF-2.6.3). Solo llega OPERADOR (el contrato), y su sub queda como autor. 404
 // si no es de ese cliente; 409 si ya fue levantado o venció (RF-2.6.3.1).
+// La copia del estado de cuenta se descarta después de que la sentencia confirmó (autocommit) y antes de responder
+// (RF-2.6.6.1); un 404 o un 409 sale antes y no la toca (RF-2.6.6.2).
 export async function levantarBloqueo(
   pool: BaseDeDatos,
+  cache: CacheEstadoCuenta,
   identidad: Identidad,
   clienteId: string,
   bloqueoId: string,
   { motivo }: LevantamientoBloqueo,
 ): Promise<Bloqueo> {
-  return repositorio.levantarBloqueo(
-    delPool(pool),
-    normalizarUuid(clienteId),
-    normalizarUuid(bloqueoId),
-    motivo,
-    identidad.sub,
-  );
+  const cliente = normalizarUuid(clienteId);
+  const bloqueo = await repositorio.levantarBloqueo(delPool(pool), cliente, normalizarUuid(bloqueoId), motivo, identidad.sub);
+  await cache.invalidar(cliente);
+  return bloqueo;
 }

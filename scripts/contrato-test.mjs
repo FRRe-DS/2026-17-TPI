@@ -13,6 +13,7 @@ const USO = 'Uso: node scripts/contrato-test.mjs [--contrato <ruta>]';
 const SCHEMATHESIS = 'schemathesis/schemathesis:4.31.1';
 const SUB_PRUEBA = '00000000-0000-4000-8000-000000000001';
 const ROLES_PRUEBA = 'CLIENTE,CONDUCTOR,OPERADOR,SERVICIO';
+const TIEMPO_MAXIMO_TOKEN_S = 15;
 
 // El puerto que publica docker-compose.yml, con su mismo valor por defecto, también si la variable está vacía (`:-`).
 const PUERTO = process.env.M2_PUERTO || '8082';
@@ -44,7 +45,7 @@ async function pedirToken() {
   const { stdout } = await promisify(execFile)(
     'docker',
     ['compose', 'exec', '-T', 'm2', 'node', 'dist/herramientas/token.js', '--sub', SUB_PRUEBA, '--roles', ROLES_PRUEBA],
-    { cwd: RAIZ },
+    { cwd: RAIZ, timeout: TIEMPO_MAXIMO_TOKEN_S * 1000 },
   );
   return stdout.trim();
 }
@@ -125,7 +126,10 @@ async function main(argumentos) {
     try {
       token = await pedirToken();
     } catch (error) {
-      console.error(`No se pudo pedir un token al contenedor m2. ${LEVANTAR}\n${error.stderr?.trim() || error.message}`);
+      const detalle = error?.killed ? ` (no respondió en ${TIEMPO_MAXIMO_TOKEN_S} s)` : '';
+      console.error(
+        `No se pudo pedir un token al contenedor m2${detalle}. ${LEVANTAR}\n${error.stderr?.trim() || error.message}`,
+      );
       return 1;
     }
 

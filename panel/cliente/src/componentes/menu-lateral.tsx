@@ -3,9 +3,9 @@ import { marcadaEn, menuDe } from '../logica/menu.js';
 import { claveDeRuta, enlace, type Rol, type Ruta } from '../rutas.js';
 import estilos from './menu-lateral.module.css';
 
-type Props = { rol: Rol | undefined; ruta: Ruta };
+type Props = { rol: Rol | undefined; ruta: Ruta; modoReal?: boolean };
 
-export function MenuLateral({ rol, ruta }: Props) {
+export function MenuLateral({ rol, ruta, modoReal = false }: Props) {
   const idMenu = useId();
   const boton = useRef<HTMLButtonElement>(null);
   const [abiertoEn, setAbiertoEn] = useState<string | undefined>(undefined);
@@ -40,7 +40,7 @@ export function MenuLateral({ rol, ruta }: Props) {
         </button>
       </div>
       <nav id={idMenu} aria-label="Pantallas" className={abierto ? `${estilos.menu} ${estilos.abierto}` : estilos.menu} onKeyDown={cerrarConEscape}>
-        {menuDe(rol).map((grupo, indice) => (
+        {menuDe(rol).filter(grupo => !modoReal || grupo.titulo !== 'Herramientas').map((grupo, indice) => (
           <section key={grupo.titulo} className={estilos.seccion} aria-labelledby={`${idMenu}-${indice}`}>
             <h2 id={`${idMenu}-${indice}`} className={estilos.titulo}>
               {grupo.titulo}

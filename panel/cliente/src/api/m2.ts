@@ -46,6 +46,7 @@ export type OpcionesApiM2 = {
   // Se llama al terminar cada pedido que tuvo respuesta (de M2 o del panel) o se agotó, con lo que muestra la franja del pie
   // (RNF-14.9). Un pedido que la persona cancela no cuenta.
   alTerminar?: (pedido: UltimoPedido) => void;
+  alFallar?: (error: ErrorDeApi) => void;
   // Solo para las pruebas.
   fetch?: typeof fetch;
   tiempoMaximoMs?: number;
@@ -61,7 +62,7 @@ type Datos = {
   clave?: string;
 };
 
-export function crearApiM2({ identidad, alTerminar, fetch: pedirHttp = (...args) => globalThis.fetch(...args), tiempoMaximoMs = TIEMPO_MAXIMO_MS }: OpcionesApiM2 = {}) {
+export function crearApiM2({ identidad, alTerminar, alFallar, fetch: pedirHttp = (...args) => globalThis.fetch(...args), tiempoMaximoMs = TIEMPO_MAXIMO_MS }: OpcionesApiM2 = {}) {
   async function pedir<T>(nombre: Nombre, { camino = {}, consulta = {}, cuerpo, clave }: Datos, { senal }: OpcionesDePedido = {}): Promise<T> {
     const { metodo, ruta } = OPERACIONES[nombre];
     const parametros = new URLSearchParams();
@@ -102,7 +103,7 @@ export function crearApiM2({ identidad, alTerminar, fetch: pedirHttp = (...args)
         throw new ErrorDeApi({ sinRespuesta: false, estado: respuesta.status, type: 'about:blank', title: 'La respuesta de M2 no se pudo leer' });
       }
     } catch (error) {
-      if (error instanceof ErrorDeApi) throw error;
+      if (error instanceof ErrorDeApi) { alFallar?.(error); throw error; }
       // La persona canceló: se devuelve tal cual, no es un fallo de M2. Si el tiempo también se agotó, manda el tiempo.
       if (senal?.aborted && !tiempo.signal.aborted) throw error;
       informar(504);

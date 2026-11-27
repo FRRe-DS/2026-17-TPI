@@ -1,6 +1,6 @@
 # Spec 107 — Caché del estado de cuenta con Redis
 
-Estado: aprobada
+Estado: implementada
 Issue: #107
 Etapa: TP2
 Responsable: @sandobaitt
