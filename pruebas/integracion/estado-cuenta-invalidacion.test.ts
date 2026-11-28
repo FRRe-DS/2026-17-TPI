@@ -10,7 +10,7 @@ import { levantarRedisFalso, type RedisFalso } from '../ayudas/redis-falso.js';
 import { armarToken } from '../ayudas/tokens.js';
 
 // La copia del estado de cuenta se descarta cuando la base confirma un alta o un levantamiento de bloqueo, antes de responder,
-// y no cambia si la base no lo confirma (spec 107: RF-2.6.6, RF-2.6.6.1, RF-2.6.6.2). PostgreSQL real; Redis, el falso por TCP,
+// y no cambia si la base no lo confirma (spec 107: RF-2.6.9, RF-2.6.9.1, RF-2.6.9.2). PostgreSQL real; Redis, el falso por TCP,
 // que anota cada comando.
 
 const TIEMPO_BD_MS = 2000;
@@ -64,7 +64,7 @@ describe('invalidación de la copia del estado de cuenta', () => {
   const incrDe = (clienteId: string) => redis.comandos.filter(([nombre, clave]) => nombre?.toUpperCase() === 'INCR' && clave === `m2:estado-cuenta:v:${clienteId}`).length;
   const lecturasDeBase = (clienteId: string) => redis.comandos.filter(([nombre, clave]) => nombre?.toUpperCase() === 'SET' && clave?.startsWith(`m2:estado-cuenta:c:${clienteId}:`)).length;
 
-  it('tras el 201 de crearBloqueo la siguiente consulta lee la base y ve BLOQUEADO (RF-2.6.6)', async () => {
+  it('tras el 201 de crearBloqueo la siguiente consulta lee la base y ve BLOQUEADO (RF-2.6.9)', async () => {
     const app = await crear();
     expect((await app.estado()).cuerpo.estado).toBe('ACTIVO');
     expect((await app.estado()).cuerpo.estado).toBe('ACTIVO');
@@ -79,7 +79,7 @@ describe('invalidación de la copia del estado de cuenta', () => {
     expect(lecturasDeBase(app.clienteId)).toBe(2);
   });
 
-  it('tras el 200 de levantarBloqueo la siguiente consulta lee la base y ve ACTIVO (RF-2.6.6.1)', async () => {
+  it('tras el 200 de levantarBloqueo la siguiente consulta lee la base y ve ACTIVO (RF-2.6.9.1)', async () => {
     const app = await crear();
     const { bloqueoId } = (await app.alta({ motivo: 'Deuda' })).json() as { bloqueoId: string };
     expect((await app.estado()).cuerpo.estado).toBe('BLOQUEADO');
@@ -98,7 +98,7 @@ describe('invalidación de la copia del estado de cuenta', () => {
     expect(redis.comandos.some(([nombre, clave]) => nombre?.toUpperCase() === 'PEXPIRE' && clave === `m2:estado-cuenta:v:${app.clienteId}`)).toBe(false);
   });
 
-  describe('lo que la base no confirma no toca la copia (RF-2.6.6.2)', () => {
+  describe('lo que la base no confirma no toca la copia (RF-2.6.9.2)', () => {
     it.each([
       ['un hasta ya pasado (422)', { motivo: 'x', hasta: '2000-01-01T00:00:00Z' }, 422],
     ])('crearBloqueo con %s', async (_caso, payload, codigo) => {

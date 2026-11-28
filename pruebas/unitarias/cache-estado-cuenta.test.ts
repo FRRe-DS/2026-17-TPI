@@ -4,7 +4,7 @@ import type { EstadoCuenta } from '../../src/clientes/modelo.js';
 import { NoEncontrado } from '../../src/errores.js';
 import { crearRedisEnMemoria, type RedisEnMemoria } from '../ayudas/redis-memoria.js';
 
-// Leer y guardar el estado de cuenta con versión y vencimiento (spec 107: RF-2.6.5, RF-2.6.5.1, RF-2.6.7, RNF-11, RNF-19).
+// Leer y guardar el estado de cuenta con versión y vencimiento (spec 107: RF-2.6.8, RF-2.6.8.1, RF-2.6.10, RNF-11, RNF-19).
 
 const CLIENTE = '4f3d9b1e-0c1a-4d5e-9f10-2a3b4c5d6e7f';
 const OTRO = '9a8b7c6d-1111-4222-8333-444455556666';
@@ -36,7 +36,7 @@ beforeEach(() => {
   redis = crearRedisEnMemoria(() => AHORA);
 });
 
-describe('leer: la segunda lectura sale de la copia (RF-2.6.5, RF-2.6.5.1)', () => {
+describe('leer: la segunda lectura sale de la copia (RF-2.6.8, RF-2.6.8.1)', () => {
   it('la primera consulta calcula y guarda; la segunda no vuelve a calcular y da el mismo cuerpo', async () => {
     const cache = crear();
     const calcular = vi.fn(async () => estadoCon(CLIENTE, en(3_600_000)));
@@ -76,7 +76,7 @@ describe('leer: la segunda lectura sale de la copia (RF-2.6.5, RF-2.6.5.1)', () 
     }
   });
 
-  it('si calcular falla (cliente inexistente), el error sale tal cual y no se guarda nada (RF-2.6.5.4)', async () => {
+  it('si calcular falla (cliente inexistente), el error sale tal cual y no se guarda nada (RF-2.6.8.4)', async () => {
     const cache = crear();
     await expect(cache.leer(CLIENTE, async () => { throw new NoEncontrado('no existe'); })).rejects.toBeInstanceOf(NoEncontrado);
     expect(clavesDeCopia()).toEqual([]);
@@ -84,7 +84,7 @@ describe('leer: la segunda lectura sale de la copia (RF-2.6.5, RF-2.6.5.1)', () 
   });
 });
 
-describe('vencimiento de la copia (RF-2.6.7, RNF-11)', () => {
+describe('vencimiento de la copia (RF-2.6.10, RNF-11)', () => {
   const vencimiento = () => redis.vencimientoPedido(clavesDeCopia()[0] ?? '');
 
   it('sin bloqueos o sin fecha hasta, dura lo configurado', async () => {
@@ -141,7 +141,7 @@ describe('vencimiento de la copia (RF-2.6.7, RNF-11)', () => {
   });
 });
 
-describe('claves y versión (RF-2.6.5.1, RNF-19)', () => {
+describe('claves y versión (RF-2.6.8.1, RNF-19)', () => {
   it('las claves solo contienen el prefijo, el clienteId y la versión', async () => {
     await crear().leer(CLIENTE, async () => estadoCon(CLIENTE, en(30_000)));
     const claves = redis.claves();
@@ -189,7 +189,7 @@ describe('claves y versión (RF-2.6.5.1, RNF-19)', () => {
   });
 });
 
-describe('sin caché o con Redis fallando (RF-2.6.8, RNF-06)', () => {
+describe('sin caché o con Redis fallando (RF-2.6.11, RNF-06)', () => {
   it('con la caché apagada, siempre calcula y no usa Redis', async () => {
     const apagada = { ...crearRedisEnMemoria(), activo: false };
     const cache = crearCacheEstadoCuenta(apagada, { ttlS: TTL_S, ahora: () => AHORA });
@@ -217,7 +217,7 @@ describe('sin caché o con Redis fallando (RF-2.6.8, RNF-06)', () => {
   });
 });
 
-describe('invalidar: subir la versión (RF-2.6.6, RF-2.6.6.1)', () => {
+describe('invalidar: subir la versión (RF-2.6.9, RF-2.6.9.1)', () => {
   it('después de invalidar, la siguiente lectura vuelve a calcular', async () => {
     const cache = crear();
     const calcular = vi.fn(async () => estadoCon(CLIENTE));
@@ -273,7 +273,7 @@ describe('invalidar: subir la versión (RF-2.6.6, RF-2.6.6.1)', () => {
   });
 });
 
-describe('invalidación que falla (RF-2.6.8.1)', () => {
+describe('invalidación que falla (RF-2.6.11.1)', () => {
   it('mientras no se confirma el descarte, no sirve la copia de ese cliente ni guarda otra', async () => {
     const cache = crear();
     await cache.leer(CLIENTE, async () => estadoCon(CLIENTE));

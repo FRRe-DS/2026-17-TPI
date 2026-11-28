@@ -10,7 +10,7 @@ import { capturarLogs } from '../ayudas/logs.js';
 import { levantarRedisFalso, type RedisFalso } from '../ayudas/redis-falso.js';
 import { armarToken } from '../ayudas/tokens.js';
 
-// Redis caído o lento no cambia ninguna respuesta (spec 107: RF-2.6.8, RF-2.6.8.1, RNF-13, RNF-14, RNF-19). PostgreSQL real; Redis,
+// Redis caído o lento no cambia ninguna respuesta (spec 107: RF-2.6.11, RF-2.6.11.1, RNF-13, RNF-14, RNF-19). PostgreSQL real; Redis,
 // el falso por TCP, que se puede cortar o colgar.
 
 const TIEMPO_BD_MS = 2000;
@@ -80,7 +80,7 @@ describe('estado de cuenta con Redis caído o lento', () => {
     expect(texto).not.toContain('127.0.0.1');
   };
 
-  it('con Redis cortado: 200 desde la base sin esperar, /health 200, el alta 201 y un aviso sin datos (RF-2.6.8, RNF-14)', async () => {
+  it('con Redis cortado: 200 desde la base sin esperar, /health 200, el alta 201 y un aviso sin datos (RF-2.6.11, RNF-14)', async () => {
     const { redis, logs, clienteId, estado, alta, salud } = await crear();
     await estado();
     await redis.cerrar();
@@ -119,7 +119,7 @@ describe('estado de cuenta con Redis caído o lento', () => {
     sinDatos(logs.texto().split('\n').filter((linea) => linea.includes('"operacion"')).join('\n'), clienteId);
   });
 
-  it('cuando Redis vuelve, el descarte pendiente se confirma y la copia ACTIVA de antes no reaparece (RF-2.6.8.1)', async () => {
+  it('cuando Redis vuelve, el descarte pendiente se confirma y la copia ACTIVA de antes no reaparece (RF-2.6.11.1)', async () => {
     const { redis, estado, alta } = await crear();
     // Copia ACTIVA guardada.
     expect((await estado()).resultado.cuerpo.estado).toBe('ACTIVO');

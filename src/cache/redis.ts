@@ -2,7 +2,7 @@ import { createClient } from 'redis';
 import type { Config } from '../config.js';
 
 // El cliente de Redis de la caché del estado de cuenta (spec 107). Redis es solo una copia: todo fallo se convierte en
-// RedisNoDisponible y quien llama sigue por la base (RF-2.6.8). Por eso este módulo:
+// RedisNoDisponible y quien llama sigue por la base (RF-2.6.11). Por eso este módulo:
 //  - pone un tiempo máximo a cada operación (`tiempoRedisMs`) y no reintenta dentro de la solicitud (RNF-13);
 //  - falla de inmediato si no está conectado, en vez de encolar el pedido para cuando vuelva (`disableOfflineQueue`);
 //  - se reconecta solo en segundo plano, con espera creciente, y nunca tumba el proceso: sin un `error` atendido, Node lo haría;
