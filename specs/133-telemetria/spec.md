@@ -3,7 +3,7 @@
 Estado: aprobada
 Issue: #133
 Etapa: TP3
-Responsable: @chrgomez
+Responsable: @chrgomez y Adriano Nikcevich
 
 ## Contexto y objetivo
 El Trabajo Práctico Integrador de DevOps requiere instrumentar el módulo M2 (Clientes) con OpenTelemetry para enviar métricas técnicas, trazas distribuidas y tres métricas propias del dominio a una plataforma APM con plan gratuito (Grafana Cloud).
@@ -44,6 +44,7 @@ El objetivo es incorporar la instrumentación mínima indispensable enviando dir
 - Señal `SIGTERM` o `SIGINT` durante ejecución: `detener` apaga el SDK de telemetría para vaciar los lotes pendientes antes de finalizar el proceso.
 
 ## Fuera de alcance
+- Métricas de CPU y memoria de infraestructura: su recopilación e integración con Grafana dependen de la plataforma de despliegue.
 - Levantar Prometheus o Grafana locales en `docker-compose.yml` o mantener archivos `prometheus.yml`.
 - Implementar un `otel-collector` local mientras el envío directo a Grafana Cloud sea suficiente.
 - Cambiar rutas, esquemas o respuestas del contrato OpenAPI.
