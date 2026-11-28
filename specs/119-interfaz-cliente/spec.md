@@ -45,9 +45,9 @@ La maqueta es una referencia adaptada: se toma su composición, pero lo que M2 n
 - RNF-15.119.2: EL SISTEMA sigue el tema del sistema operativo hasta que el cliente elige claro u oscuro con el selector de la barra lateral o del menú, recuerda esa elección en el navegador y mantiene en los dos temas un contraste de texto de al menos 4,5:1.
 - RNF-15.119.3: EL SISTEMA usa una tipografía propia servida por el panel, sin recursos de terceros y con su licencia en el repositorio.
 - RNF-15.119.6: SI la tipografía propia no carga, ENTONCES EL SISTEMA usa la del sistema sin romper la presentación.
-- RNF-15.119.4: SI el cliente intenta salir de un formulario con cambios sin guardar (perfil, primer perfil, dirección, preferencias o calificación) navegando dentro de la app, cerrando sesión o, en el modo de desarrollo, cambiando de identidad, ENTONCES EL SISTEMA pide confirmación y, si cancela, conserva lo escrito.
+- RNF-15.119.4: SI el cliente intenta salir de un formulario con cambios sin guardar (perfil, primer perfil, dirección, preferencias o calificación) navegando dentro de la app, cambiando de espacio o cerrando sesión (en el modo de desarrollo, también para cambiar de identidad), ENTONCES EL SISTEMA pide confirmación y, si cancela, conserva lo escrito.
 - RNF-15.119.5: EL SISTEMA mantiene en el rediseño lo que exigen RNF-15.83.2 y RNF-15.83.3 de la spec 083 (controles de 44×44 píxeles, foco visible, uso con teclado, errores asociados a su campo, `prefers-reduced-motion`, todos los estados y textos máximos del contrato) y RNF-15.4 de la spec 071 («M2 no responde» con «Reintentar»), con los textos en español y en voseo.
-- RNF-15.119.7: EL SISTEMA muestra en el encabezado un círculo con las iniciales y el nombre del perfil cuando está cargado, y el botón «Cerrar sesión» en el modo real o el selector de identidad simulada en el modo de desarrollo, sin migas de pan ni menú desplegable de usuario.
+- RNF-15.119.7: EL SISTEMA muestra en el encabezado un círculo con las iniciales y el nombre del perfil cuando está cargado, el selector de espacio de la spec 083 si la persona tiene los roles CLIENTE y OPERADOR, y el botón «Cerrar sesión»; en el modo de desarrollo, además, el rol y el identificador de la sesión simulada, y «Cerrar sesión» lleva a Ingresar para elegir otra identidad; sin migas de pan ni menú desplegable de usuario.
 - RNF-15.119.8: MIENTRAS #155 no rediseñe el operador y la evaluación, EL SISTEMA mantiene esas pantallas operativas con la identidad nueva, sin cambiar su composición y con un contraste de texto de al menos 4,5:1 en claro y oscuro.
 - RNF-19.119.1: EL SISTEMA no agrega a las pantallas rediseñadas tokens, cookies ni códigos de autorización, y sigue cumpliendo RNF-19.83.1 y RNF-19.83.2 de la spec 083.
 - RNF-20.119.1: EL SISTEMA documenta en `panel/DESIGN.md` y `panel/PRODUCT.md` la identidad bordó y marfil que reemplaza a «Verde ciudad», y en la guía las diferencias con la maqueta por los datos que M2 no entrega.
@@ -69,7 +69,7 @@ La maqueta es una referencia adaptada: se toma su composición, pero lo que M2 n
 - La fuente propia no llega a cargar: se ve con la del sistema y el diseño no se rompe.
 - El menú del teléfono está abierto y el cliente rota la pantalla a más de 960 píxeles: el menú desplegable se cierra y aparece la barra lateral.
 - Cambios sin guardar y la sesión vence: manda el reingreso de la spec 083, que no ejecuta escrituras pendientes.
-- Cambios sin guardar y el cliente toca «Cerrar sesión» o, en el modo de desarrollo, cambia de identidad: se pide confirmación; si cancela, sigue en el formulario con lo escrito (RNF-15.119.4).
+- Cambios sin guardar y el cliente toca «Cerrar sesión» o cambia de espacio: se pide confirmación; si cancela, sigue en el formulario con lo escrito (RNF-15.119.4).
 - Modo de desarrollo con una identidad simulada sin perfil: Inicio invita a crear el perfil y no pide nada más (RF-2.1.119.3).
 - Cambios sin guardar y el cliente cierra la pestaña o recarga: queda fuera de RNF-15.119.4, que cubre la navegación dentro de la app.
 - Perfil inexistente (`404`) en modo real: antes de Inicio se pide el primer perfil, como en la spec 083.
@@ -105,7 +105,7 @@ La maqueta es una referencia adaptada: se toma su composición, pero lo que M2 n
   - Inicio pasa a ser la pantalla de entrada del cliente (RF-2.1.119.2), porque es la pensada para eso; hoy se entra a Mi perfil.
   - Con una identidad simulada sin perfil, Inicio solo invita a crearlo (RF-2.1.119.3): el estado de cuenta y los viajes también darían `404`.
   - El aviso de cambios sin guardar cubre cerrar sesión y cambiar de identidad (RNF-15.119.4), porque en los dos casos se pierde lo escrito.
-  - Encabezado sin migas de pan ni menú de usuario (RNF-15.119.7): las secciones son de un nivel y «Cerrar sesión» ya está a la vista.
+  - Encabezado sin migas de pan ni menú de usuario (RNF-15.119.7): las secciones son de un nivel y «Cerrar sesión» ya está a la vista. Corrección al escribir el plan: el modo de desarrollo no tiene un selector de identidad en el encabezado; se cambia de identidad cerrando sesión y volviendo a Ingresar, así que el aviso de cambios sin guardar cubre ese caso al cubrir «Cerrar sesión».
 - Las reglas nuevas llevan `.119.`; los ID `.83.` se conservan tal como los dejó la división del PR #118, ajustados a las decisiones de arriba (RF-2.4.83.1 y RF-2.5.83.3).
 
 ## Dudas abiertas
