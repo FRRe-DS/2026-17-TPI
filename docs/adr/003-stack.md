@@ -1,6 +1,6 @@
 # ADR 003 — Stack del servicio M2 Clientes
 
-Fecha: 2026-10-15 · Estado: aceptada
+Fecha: 2026-10-15 · Estado: aceptada; Prism nunca se usó (ver «Actualización»)
 Issue: #3
 Aceptación: la cátedra aprobó el stack (RNF-01), según informó el integrador el 2026-10-18.
 
@@ -13,7 +13,7 @@ RNF-01 deja lenguaje y framework a elección del grupo, con aprobación de la c�
 - PostgreSQL 18 (imagen oficial `postgres:18.6`), con `pg` y migraciones con node-pg-migrate. SQL explícito, sin ORM.
 - Vitest para unitarias e integración; Testcontainers (`@testcontainers/postgresql`) levanta un Postgres real por corrida.
 - Contrato: tipos generados desde `contrato/openapi.yml` con openapi-typescript; los requests se validan con los schemas del contrato. Lint con Redocly CLI 2.62.1; pruebas del servicio contra el contrato con Schemathesis 4.31.1 (imagen Docker).
-- Mocks de dependencias: Prism (`stoplight/prism:5.15.10`) en docker compose.
+- Mocks de dependencias: Prism (`stoplight/prism:5.15.10`) en docker compose. No se llegó a usar: ver «Actualización».
 - M1 simulado: JWT validado con jose, con clave o JWKS por entorno.
 - Lint: ESLint 10 con typescript-eslint 8.
 - Versiones verificadas el 2026-10-15. La spec base las fija exactas en `package.json`, `Dockerfile` y `docker-compose.yml`.
@@ -30,3 +30,9 @@ RNF-01 deja lenguaje y framework a elección del grupo, con aprobación de la c�
 - Fastify valida por defecto con ajv en draft-07, y los schemas de OpenAPI 3.1 son JSON Schema 2020-12: la spec base configura ajv para 2020-12 o limita el contrato a lo compatible.
 - La imagen `postgres:18` guarda los datos en `/var/lib/postgresql/18/docker`: el volumen se monta en `/var/lib/postgresql`.
 - Puerto propuesto: 8082 (convención 8080 + número de módulo, a proponer al consorcio).
+
+## Actualización (2026-11-28)
+Issue: #148
+- Prism nunca estuvo en `docker-compose.yml`. M6 se simula con un servicio propio (`panel/m6-simulado/`, servicio `m6` de compose, perfiles `panel` y `keycloak`), que decidió la spec 071: el panel cambia sus escenarios y modos (normal, lento, caído) por un canal de control HTTP sin tocar Docker. Desde la spec 125 también valida el token RS256 de Keycloak. Lo que devuelve se valida contra `contrato/dependencias/m6.yml` en `pruebas/unitarias/m6-simulado.test.ts` y `pruebas/panel/unitarias/m6-simulado.test.ts`.
+- M1 simulado: además del JWT HS256 validado con jose, el Keycloak de desarrollo hace de M1 (ADR 080, perfil `keycloak`).
+- El resto de las decisiones sigue igual.

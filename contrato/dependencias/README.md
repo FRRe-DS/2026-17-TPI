@@ -1,6 +1,6 @@
 # Contratos de dependencias
 
-Contratos de los módulos que M2 consume, para generar sus mocks (Prism, en `docker-compose.yml`).
+Contratos de los módulos que M2 consume. Con ellos se valida lo que M2 manda y recibe, y lo que devuelve el M6 simulado propio (`panel/m6-simulado/`, servicio `m6` de `docker-compose.yml`, perfiles `panel` y `keycloak`). M1 lo cubre el Keycloak de desarrollo (ADR 080). Prism, que proponía el ADR 003, no se llegó a usar.
 
 | Módulo | Grupo en el consorcio | Estado (2026-11-08) | Qué usa M2 | Archivo |
 |---|---|---|---|---|
