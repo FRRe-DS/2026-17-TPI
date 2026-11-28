@@ -4,7 +4,7 @@ import { crearClaves } from '../../src/auth/claves-jwks.js';
 import { crearVerificador } from '../../src/auth/tokens.js';
 import { ModuloNoDisponible, NoAutenticado, Problema } from '../../src/errores.js';
 import { armarTokenRsa, crearClave, jwksDe } from '../ayudas/jwks.js';
-import { crearServidorModulo, type Comportamiento } from '../ayudas/servidor-modulo.js';
+import { crearServidorModulo, TIEMPO_HOLGADO_MS, terminaPorTiempo, type Comportamiento } from '../ayudas/servidor-modulo.js';
 import { armarToken, CONFIG_TOKENS, SUB_DE_PRUEBA } from '../ayudas/tokens.js';
 
 // Qué pasa cuando Keycloak no entrega las claves (RNF-13.10, RNF-07.12). Las mismas reglas que con M6: cada intento tiene su
@@ -14,6 +14,7 @@ const clave = crearClave();
 const JWKS = jwksDe(clave);
 const CABECERA = { alg: 'RS256', kid: clave.kid };
 
+// El tiempo máximo de las pruebas que miden el corte. Las demás usan uno holgado (#136).
 const TIEMPO_MS = 150;
 const PAUSA_MS = 200;
 const RETRY_AFTER_S = 7;
@@ -21,14 +22,16 @@ const MARGEN_MS = 150;
 
 const config = (cambios: { reintentosModulos?: number; tiempoModulosMs?: number } = {}) => ({
   urlJwks: `${servidor.url}/certs`,
-  tiempoModulosMs: TIEMPO_MS,
+  tiempoModulosMs: TIEMPO_HOLGADO_MS,
   reintentosModulos: 1,
   reintentarDespuesS: RETRY_AFTER_S,
   ...cambios,
 });
 
 const claves = (cambios?: Parameters<typeof config>[0]) => crearClaves(config(cambios));
-const verificador = () => crearVerificador({ ...CONFIG_TOKENS, modoTokens: 'jwks', ...config() });
+const verificador = (cambios?: Parameters<typeof config>[0]) => crearVerificador({ ...CONFIG_TOKENS, modoTokens: 'jwks', ...config(cambios) });
+// El tiempo máximo corto solo para lo que termina por tiempo.
+const tiempoPara = (c: Comportamiento) => (terminaPorTiempo(c) ? { tiempoModulosMs: TIEMPO_MS } : {});
 
 // Lo que falló, sin que la prueba pueda confundir un rechazo con una clave devuelta.
 const fallaDe = (resultado: Promise<unknown>) =>
@@ -124,7 +127,7 @@ describe('claves: tiempo máximo y reintentos (RNF-13.10)', () => {
   ])('un JWKS colgado %s corta en tiempoModulosMs por intento', async (_caso, cuelga) => {
     servidor.responderCon(cuelga);
     const inicio = Date.now();
-    const error = await fallaDe(claves({ reintentosModulos: 2 }).clave(CABECERA));
+    const error = await fallaDe(claves({ reintentosModulos: 2, tiempoModulosMs: TIEMPO_MS }).clave(CABECERA));
     const tardo = Date.now() - inicio;
 
     expect(error).toBeInstanceOf(ModuloNoDisponible);
@@ -166,7 +169,7 @@ describe('claves: solicitudes juntas sin claves (spec, Casos límite)', () => {
     ['un JWKS colgado', { tipo: 'cuelga' }],
   ])('con %s hacen un solo pedido por intento', async (_caso, caida) => {
     servidor.responderCon(caida);
-    const { clave: pedir } = claves();
+    const { clave: pedir } = claves(tiempoPara(caida));
     const resultados = await diez(() => pedir(CABECERA));
 
     expect(servidor.llamadas).toBe(2);
@@ -181,6 +184,28 @@ describe('claves: solicitudes juntas sin claves (spec, Casos límite)', () => {
 
     expect(servidor.llamadas).toBe(1);
     for (const resultado of resultados) expect(resultado.status).toBe('fulfilled');
+  });
+
+  // Con la máquina cargada, las pausas de las diez no empiezan en el mismo milisegundo: Node le da a cada temporizador su hora de
+  // inicio. Si cada una esperara la suya, las que terminan más tarde llegarían con el segundo pedido ya respondido y harían un
+  // tercero (#136). Acá cada temporizador nuevo empieza 5 ms después del anterior.
+  it('aunque sus pausas no empiecen en el mismo milisegundo, vuelven a pedir juntas', async () => {
+    servidor.responderCon({ tipo: '5xx', estado: 500 });
+    const original = globalThis.setTimeout;
+    const espia = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((...argumentos: Parameters<typeof setTimeout>) => {
+      const desde = Date.now();
+      while (Date.now() - desde < 5);
+      return original(...argumentos);
+    }) as typeof setTimeout);
+    try {
+      const { clave: pedir } = claves();
+      const resultados = await diez(() => pedir(CABECERA));
+
+      expect(servidor.llamadas).toBe(2);
+      for (const resultado of resultados) expect(resultado.status).toBe('rejected');
+    } finally {
+      espia.mockRestore();
+    }
   });
 });
 
@@ -206,7 +231,7 @@ describe('precargar: trae las claves sin lanzar nunca (RNF-13.9, RNF-13.12)', ()
 
   it('con un JWKS colgado también corta, y el motivo dice que se agotó el tiempo', async () => {
     servidor.responderCon({ tipo: 'cuelga' });
-    await expect(claves({ reintentosModulos: 0 }).precargar()).resolves.toMatch(/timed out/);
+    await expect(claves({ reintentosModulos: 0, tiempoModulosMs: TIEMPO_MS }).precargar()).resolves.toMatch(/timed out/);
     expect(servidor.llamadas).toBe(1);
   });
 
@@ -235,7 +260,7 @@ describe('precargar: trae las claves sin lanzar nunca (RNF-13.9, RNF-13.12)', ()
 describe('verificador: Keycloak caído y sin claves', () => {
   it.each<[string, Comportamiento]>([...CAIDAS, ['se cuelga', { tipo: 'cuelga' }]])('si %s da 503', async (_caso, caida) => {
     servidor.responderCon(caida);
-    const error = await fallaDe(verificador().verificar(`Bearer ${armarTokenRsa(clave)}`));
+    const error = await fallaDe(verificador(tiempoPara(caida)).verificar(`Bearer ${armarTokenRsa(clave)}`));
 
     expect(error).toBeInstanceOf(ModuloNoDisponible);
     expect(error).not.toBeInstanceOf(NoAutenticado);
