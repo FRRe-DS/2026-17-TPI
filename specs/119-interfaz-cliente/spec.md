@@ -1,6 +1,6 @@
 # Spec 119 — Interfaz rediseñada del cliente
 
-Estado: borrador
+Estado: aprobada
 Issue: #119
 Etapa: TP3
 Responsable: @sandobaitt
