@@ -1,0 +1,38 @@
+# Tareas — Spec 119: interfaz rediseñada del cliente
+
+Diez tareas en orden de dependencia. Cada una deja `npm test`, lint y build en verde. Las que tocan pantallas también dejan en verde `npm run panel:navegador` y `npm run front:keycloak`, y si una prueba existente busca un texto que cambió, se ajusta en la misma tarea (plan, Pruebas). Modelo sugerido: Sonnet en T1 a T4, T6, T8 y T9; Opus en T5, T7 y T10, que tienen más estados o interceptan la navegación.
+
+## Base visual
+
+- [ ] **T1. Paleta bordó y marfil y tema por atributo.** RNF-15.83.1, RNF-15.119.2, RNF-15.119.8, RNF-20.119.1
+  - Hecho cuando: `variables.css` tiene la paleta del plan en `:root` y en `:root[data-tema='oscuro']`, sin media query `prefers-color-scheme`; `logica/tema.ts`, `hooks/usar-tema.ts` y `main.tsx` aplican `data-tema` antes del primer render; `pruebas/panel/unitarias/tema.test.ts` cubre `temaEfectivo` con elección guardada, sin elección y con un valor inválido, y la lectura y escritura con un almacén que tira error; `contraste.test.ts` lee el bloque oscuro nuevo y suma los pares de `lateral-activo`, y pasa; `panel/DESIGN.md` tiene los colores nuevos.
+- [ ] **T2. Tipografía Inter servida por el panel.** RNF-15.119.3, RNF-15.119.6, RNF-02.119.1, RNF-20.119.1
+  - Hecho cuando: `panel/cliente/src/tipografia/` tiene `inter-latin-wght-normal.woff2` (Inter 5.3.0, sacado con `npm pack`), `OFL.txt` y `LEEME.md` con el paquete, la versión y el sha256; `estilos/tipografia.css` declara `'Inter M2'` con `font-display: swap` y `--sans` la usa primero, con la pila del sistema detrás; una prueba unitaria comprueba que el sha256 del archivo es el de `LEEME.md` y que existe `OFL.txt`; `npm run panel:build` emite el `.woff2` y una prueba HTTP del panel lo sirve como `font/woff2`; `package.json` no cambia; `panel/DESIGN.md` tiene la tipografía nueva.
+
+## Marco
+
+- [ ] **T3. Barra lateral, menú del teléfono y selector de tema.** RNF-15.83.1, RNF-15.119.1, RNF-15.119.2
+  - Hecho cuando: la barra lateral es bordó, tiene íconos SVG propios, marca la sección actual y lleva el selector Claro/Oscuro (`aria-pressed`) al pie; debajo de 960 px el botón «Menú» tiene `aria-expanded`, despliega las secciones y el selector de tema, se cierra con Escape, al elegir una sección o al pasar a 960 px o más, y devuelve el foco al botón; `menu.test.ts` comprueba las etiquetas de la maqueta (Mi perfil, Direcciones, Preferencias, Mis viajes, Calificaciones, Estado de cuenta); una prueba de navegador a 360 px comprueba `aria-expanded`, Escape y el foco, y otra que la elección de tema se mantiene al recargar.
+- [ ] **T4. Encabezado con iniciales, nombre y selector de espacio.** RNF-15.119.7
+  - Hecho cuando: `logica/iniciales.ts` y `logica/perfil-actual.ts` tienen pruebas unitarias (tildes, ñ, apellido vacío; publicar, limpiar y suscribir); Mi perfil publica el nombre al cargar y al guardar; el encabezado muestra las iniciales y el nombre cuando hay perfil, y si no, el identificador de la sesión; en el modo de desarrollo muestra además el rol; el selector de espacio de la spec 083 pasa del contenido al encabezado; una prueba de integración comprueba el nombre después de abrir Mi perfil y que se limpia al cerrar sesión; las pruebas de la 083 del selector de espacio siguen en verde.
+
+## Inicio
+
+- [ ] **T5. Pantalla Inicio.** RF-2.1.83.4, RF-2.1.119.3, RF-2.4.83.1, RF-2.4.83.2, RF-2.6.83.1, RNF-20.119.1
+  - Hecho cuando: `logica/inicio.ts` tiene pruebas unitarias (hasta 5 viajes; franja activa, bloqueada con 1 y con N bloqueos; saludo con un nombre de 100 caracteres); `#/inicio` muestra saludo, franja de estado con enlace a Estado de cuenta, «Últimos viajes» (pedido con `size=5`, «Calificar» con la regla de hoy y «Calificado» con enlace a Calificaciones, sin puntaje ni fechas que M2 no informe), «Tu cuenta» con los tres accesos y la etiqueta de viajes simulados; `pruebas/panel/integracion/pantalla-inicio.test.ts` comprueba todo eso, un `503` de M6 que solo afecta a los viajes y ofrece reintentar al vencer el `Retry-After`, una falla del estado de cuenta que solo afecta a la franja, y un `404` del perfil que muestra solo la invitación sin pedir nada más; la guía lista las diferencias con la maqueta.
+- [ ] **T6. Inicio como entrada del cliente y en el menú.** RF-2.1.119.2, RNF-20.119.1
+  - Hecho cuando: `INICIO.CLIENTE` es `inicio` y el menú del cliente empieza por Inicio, en los dos modos; `permisos-reales.ts` admite `inicio` con `clientes:read`; `rutas.test.ts`, `menu.test.ts` y `permisos-reales.test.ts` lo comprueban; una prueba de integración comprueba que el cliente entra a Inicio desde Ingresar (modo de desarrollo) y una de `front:keycloak`, que entra a Inicio después del primer perfil (modo real); `panel/PRODUCT.md` nombra Inicio entre las pantallas.
+
+## Formularios y pantallas
+
+- [ ] **T7. Aviso de cambios sin guardar.** RF-2.1.83.5, RNF-15.119.4
+  - Hecho cuando: `logica/guardia.ts` tiene pruebas unitarias (marcar, desmarcar, varios formularios, `hayCambios`); `GuardiaDeNavegacion` está en los dos modos; Mi perfil, el primer perfil, el formulario de dirección, Preferencias y Calificar marcan si tienen cambios y se desmarcan al guardar bien o al desmontarse; `pruebas/panel/integracion/guardia.test.ts` comprueba, con el perfil editado, que un clic en el menú, «atrás», «Cerrar sesión» y el cambio de espacio piden confirmación, que cancelar conserva lo escrito y que confirmar sigue; sin cambios, la navegación no pide nada.
+- [ ] **T8. Perfil, primer perfil, Direcciones y Preferencias con el diseño nuevo.** RF-2.1.83.5, RF-2.1.119.1, RF-2.2.83.1, RF-2.3.83.1, RNF-15.119.5
+  - Hecho cuando: las cuatro pantallas usan la composición nueva con los tokens, sin estilos en línea; siguen con las mismas operaciones, validaciones, confirmación al eliminar y explicación de las selecciones vacías; sus pruebas de integración de hoy (`pantalla-perfil`, `primer-perfil`, `pantalla-direcciones`, `pantalla-direcciones-eliminar` y `pantalla-preferencias`) siguen en verde.
+- [ ] **T9. Mis viajes, Calificar, Calificaciones y Estado de cuenta con el diseño nuevo.** RF-2.4.83.1, RF-2.4.83.2, RF-2.5.83.1, RF-2.5.83.2, RF-2.5.83.3, RF-2.6.83.1, RNF-15.119.5
+  - Hecho cuando: las cuatro pantallas usan la composición nueva, sin estilos en línea; en Mis viajes, «Calificado» enlaza a Calificaciones sin puntaje, y `pantalla-historial.test.ts` lo comprueba; Calificaciones muestra el puntaje en la lista y en el detalle; Estado de cuenta no muestra saldos ni pagos; las pruebas de integración de hoy (`pantalla-historial`, `pantalla-calificar`, `pantalla-calificaciones` y `pantalla-estado-cuenta`) siguen en verde.
+
+## Verificación
+
+- [ ] **T10. Pruebas de navegador del rediseño y cierre de la documentación.** RNF-07.119.1, RNF-15.83.1, RNF-15.119.1, RNF-15.119.3, RNF-15.119.6, RNF-15.119.8, RNF-19.119.1, RNF-02.119.1, RNF-20.119.1
+  - Hecho cuando: `ANCHOS` es 360, 768, 1280 y 1440; `pruebas/panel/navegador/rediseno.test.ts` comprueba en cada ancho y en claro y oscuro, para cada pantalla de cliente, que no hay desplazamiento horizontal ni violaciones serias o críticas de axe y que los controles miden 44 px; para operador, otro módulo, detalle técnico, M6 simulado y Demostración, que axe no marca `color-contrast`; que la fuente carga (`document.fonts.check`) y que con el `.woff2` bloqueado no aparece desplazamiento horizontal; y que lo único nuevo en `localStorage` es `panel.tema`; `git diff origin/main --stat` no toca `contrato/`, `src/`, `migraciones/` ni `package.json`; `panel/DESIGN.md` y `panel/PRODUCT.md` describen la identidad bordó y marfil y dejan «Verde ciudad» como antecedente; `npm test`, `npm run panel:navegador`, `npm run front:keycloak`, lint, build y spec-check en verde.
