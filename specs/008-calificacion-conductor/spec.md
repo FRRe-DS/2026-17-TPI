@@ -35,7 +35,7 @@ Después de un viaje completado, el cliente quiere valorar al conductor con un p
 - RF-2.5.12: SI CLIENTE es el único rol del token que admite la operación y su `sub` no coincide con `clienteId`, ENTONCES EL SISTEMA responde `403` sin llamar a M6.
 - RF-2.5.13: CUANDO M2 consulta el viaje a M6, EL SISTEMA usa el token de servicio de RF-2.4.11 (spec #7) o, con Keycloak configurado, el de la spec 125 (RF-2.4.11.9), y nunca reenvía el token de quien llamó a M2.
 - RF-2.5.14: CUANDO un CLIENTE o un OPERADOR consulta el historial de un cliente (spec #7), EL SISTEMA agrega a cada viaje `calificado` igual a `true` si ese cliente tiene una calificación de ese viaje y `false` si no, a partir de la base de M2 y sin llamar de nuevo a M6; SI la base de M2 no responde, ENTONCES EL SISTEMA responde `503` genérico y no devuelve el historial sin `calificado`.
-- RF-2.5.18: SI M6 responde `429` (su límite de pedidos) al consultar el viaje, ENTONCES EL SISTEMA no reintenta la llamada, responde `503` en `application/problem+json` que nombra a M6 en `detail`, con la cabecera `Retry-After` calculada como en el historial (RF-2.4.15 de la spec #7), y no guarda nada.
+- RF-2.5.18: SI M6 responde `429` (su límite de pedidos) al consultar el viaje y la respuesta llega completa, cuerpo incluido, dentro del tiempo máximo del intento, ENTONCES EL SISTEMA no reintenta la llamada, responde `503` en `application/problem+json` que nombra a M6 en `detail`, con la cabecera `Retry-After` calculada como en el historial (RF-2.4.15 de la spec #7), y no guarda nada; un `429` cuyo cuerpo no termina de llegar dentro de ese tiempo es un intento cortado y sigue RF-2.5.5.
 
 ## Requisitos no funcionales
 - RNF-03: EL SISTEMA implementa `listarCalificaciones`, `calificarConductor` y `obtenerCalificacion` con las validaciones, códigos y errores `application/problem+json` del contrato.
@@ -43,7 +43,7 @@ Después de un viaje completado, el cliente quiere valorar al conductor con un p
 - RNF-06: EL SISTEMA usa para M6 la misma dirección, audiencia y clave que el historial, sin variables nuevas obligatorias.
 - RNF-07: EL SISTEMA verifica las reglas con pruebas unitarias, HTTP, integración sobre PostgreSQL real con un M6 simulado, y la prueba de contrato.
 - RNF-08: SI se repite o concurre una calificación del mismo viaje y cliente, con la misma clave de idempotencia o con otra, ENTONCES EL SISTEMA produce un solo registro, garantizado por una restricción única en la base, y las demás solicitudes reciben la respuesta de RF-2.5.3 o RF-2.5.4.
-- RNF-13: CUANDO M2 llama a M6, EL SISTEMA aplica el tiempo máximo por intento, el reintento de lecturas y la respuesta `503` definidos por la spec #3 (RNF-13.1 a RNF-13.3); la consulta del viaje es una lectura (`GET`), y un `429` de M6 no se reintenta (RF-2.5.18).
+- RNF-13: CUANDO M2 llama a M6, EL SISTEMA aplica el tiempo máximo por intento, el reintento de lecturas y la respuesta `503` definidos por la spec #3 (RNF-13.1 a RNF-13.3); la consulta del viaje es una lectura (`GET`), y un `429` de M6 que llega completo no se reintenta (RF-2.5.18).
 - RNF-14: EL SISTEMA registra la causa de cada falla de la llamada a M6 con el identificador de correlación de la solicitud, y le envía ese identificador a M6 en `X-Correlation-Id`, las dos cosas como el historial de la spec #7 (RNF-14.11 y RNF-14.12 de esa spec).
 - RNF-19: EL SISTEMA no registra tokens, comentarios, claves de idempotencia, ni identificadores de viajes, conductores o calificaciones en los logs.
 - RNF-20: EL SISTEMA documenta en la guía el recorrido de una calificación, qué sale de M6, cómo se garantiza la unicidad y cómo se prueba con un M6 simulado.
@@ -77,6 +77,7 @@ Después de un viaje completado, el cliente quiere valorar al conductor con un p
 - La base de M2 no responde: `503` genérico (`about:blank`), sin guardar nada.
 - Una calificación de otro cliente nunca se revela: dentro del cliente pedido responde `404`.
 - M6 responde `429` al consultar el viaje: `503` con el `Retry-After` de M6, sin reintentar y sin guardar nada. La clave de idempotencia no queda gastada: el mismo reintento funciona cuando M6 vuelve a aceptar pedidos (RF-2.5.18).
+- M6 manda el `429` con su `Retry-After`, pero el cuerpo no termina de llegar dentro del tiempo máximo del intento: es un intento cortado, no una respuesta. M2 reintenta como ante cualquier corte; si el reintento recibe el `429` completo, responde `503` con el `Retry-After` de M6, y si vuelve a cortarse, `503` con el valor configurado. En los dos casos no guarda nada y la clave no queda gastada (RF-2.5.5, RF-2.5.18).
 - El viaje ya está calificado y M6 está limitando los pedidos: un intento con otra clave responde `409`, porque no hace falta consultar a M6 (RF-2.5.3).
 
 ## Fuera de alcance
@@ -90,7 +91,7 @@ Después de un viaje completado, el cliente quiere valorar al conductor con un p
 
 ## Criterios de finalización
 - `listarCalificaciones`, `calificarConductor` y `obtenerCalificacion` figuran como implementadas y pasan la prueba de contrato; `listarHistorialViajes` devuelve `calificado`.
-- Las pruebas cubren: calificación feliz, viaje inexistente, ajeno, no completado, duplicado con otra clave y concurrente, repetición idempotente con la misma clave y con otro cuerpo, validación del cuerpo, permisos, perfil inexistente, listado y página vacía, fallas de M6 (tiempo, 5xx, no JSON, forma incompleta, 4xx, y `429` con el `Retry-After` de M6 y con el configurado), y `calificado` en el historial con y sin calificación.
+- Las pruebas cubren: calificación feliz, viaje inexistente, ajeno, no completado, duplicado con otra clave y concurrente, repetición idempotente con la misma clave y con otro cuerpo, validación del cuerpo, permisos, perfil inexistente, listado y página vacía, fallas de M6 (tiempo, 5xx, no JSON, forma incompleta, 4xx, y `429` con el `Retry-After` de M6 y con el configurado, también cuando su cuerpo no llega a tiempo), y `calificado` en el historial con y sin calificación.
 - Existe una restricción única en la base sobre cliente y viaje, comprobada en una prueba de integración con concurrencia.
 - `npm test`, `npm run lint`, `npm run build`, `npm run contrato:test` y `node scripts/spec-check.mjs` terminan en verde.
 - El M6 simulado de las pruebas cumple `contrato/dependencias/m6.yml` y comprueba el token de servicio.
@@ -117,6 +118,7 @@ Después de un viaje completado, el cliente quiere valorar al conductor con un p
   - La consulta del viaje lleva `X-Correlation-Id` como la del historial: las dos salen del mismo cliente de M6.
   - M2 se sigue presentando con `roles: ["SERVICIO"]` (decisión de Lautaro del 2026-11-11, en la spec #7) cuando usa el token HS256; con Keycloak se identifica como `grupo-17` con el rol `clientes-be` (spec 125).
   - M2 sigue comprobando `state`, `clientId` y `driverId` aunque el contrato de M6 ya los exige, y un viaje `COMPLETED` sin `driverId` sigue siendo `503` (RF-2.5.5; decisión de Lautaro del 2026-11-10): M2 no confía en que el otro módulo cumpla su contrato para guardar un dato que el suyo exige.
+- **Cambio del 2026-11-28 (#152): el `429` cuyo cuerpo no llega a tiempo.** Como en la spec #7 (mismo cambio): un `429` cuyo cuerpo se corta a mitad de camino cuenta como un intento cortado, se reintenta y, si no hay otro `429` completo, el `Retry-After` es el configurado. Se escribe lo que el código ya hacía desde el cambio del 2026-11-11, que la spec no contemplaba (guía, T11). Decidido por Lautaro el 2026-11-28. Alternativa descartada: decidir por el código de estado antes de leer el cuerpo, que obliga a cambiar el cliente que comparten todos los módulos.
 
 ## Dudas abiertas
 Ninguna. Lo que depende de M6 y del Grupo 1 está como supuesto en `## Decisiones`.
