@@ -1,6 +1,6 @@
 # Spec 081 — Integración distribuida de M2 con el M6 real del Grupo 12
 
-Estado: implementada
+Estado: aprobada
 Issue: #81
 Etapa: TP2
 Responsable: @sandobaitt
@@ -35,7 +35,7 @@ En esta spec «el sistema» es el conjunto M2 más el entorno de integración (c
 - RNF-07.8: CUANDO un cliente tiene viajes creados en el M6 real y se pide su historial, EL SISTEMA responde `200` con esos viajes y solo esos, con el campo `calificado` en `true` o `false` según la tabla de calificaciones de M2, y con la paginación de M2 (`page` desde 0 y `size`) traducida a la de M6 (`page` desde 1 y `pageSize`).
 - RNF-07.9: CUANDO un cliente califica un viaje que el M6 real llevó a `COMPLETED`, EL SISTEMA responde `201` y guarda como conductor el que informó M6; CUANDO el mismo cliente vuelve a calificar ese viaje con otra `Idempotency-Key`, EL SISTEMA responde `409` con `type: /errores/calificacion-duplicada` y conserva solo la primera calificación.
 - RNF-07.10: SI el viaje que se califica no existe en M6, o pertenece a otro cliente, ENTONCES EL SISTEMA responde `404` y no guarda nada; SI el viaje existe pero no está en `COMPLETED`, ENTONCES EL SISTEMA responde `422` con `type: /errores/viaje-no-completado` y no guarda nada.
-- RNF-07.11: CUANDO M2 consulta al M6 real con su token de servicio (`sub` `m2-clientes`, `roles` `["SERVICIO"]`, ADR 009), EL SISTEMA obtiene una respuesta distinta de `401` y `403`; SI M6 rechaza ese token, ENTONCES la prueba falla y muestra el código y el `code` de error de M6.
+- RNF-07.11: CUANDO M2 consulta al M6 real con su token de servicio (`sub` `m2-clientes`, `roles` `["SERVICIO"]`, ADR 009), EL SISTEMA obtiene una respuesta distinta de `401` y `403`; SI M6 rechaza ese token, ENTONCES la prueba falla y muestra el código y el `code` de error de M6. Reemplazado por RNF-07.15 de la spec 125.
 - RNF-07.14: CUANDO la prueba de integración distribuida le manda al M6 real un pedido con el encabezado `X-Correlation-Id`, EL SISTEMA comprueba que la respuesta de M6 trae ese mismo valor en `X-Correlation-Id` y, cuando la respuesta es un error, también en el `correlationId` de su cuerpo; SI no lo trae, ENTONCES la prueba falla y muestra el valor recibido.
 - RNF-13.8: CUANDO el M6 real se detiene o no responde dentro del tiempo máximo de M2, EL SISTEMA responde `503` con `Retry-After` en el historial y en la calificación, y sigue respondiendo `200` en el perfil y en las direcciones; CUANDO M6 vuelve a estar disponible, EL SISTEMA vuelve a responder `200` en el historial y `201` en la calificación, sin reiniciar M2.
 - RNF-20.4: EL SISTEMA documenta en `docs/probar-m2.md` cómo levantar M2 con el M6 real y correr la prueba (comandos, versión de M6 usada y salida esperada), y en la guía de esta spec cada diferencia encontrada con el comportamiento observado, lo que dice `m6.yml` y a quién se le consulta.
@@ -54,7 +54,7 @@ En esta spec «el sistema» es el conjunto M2 más el entorno de integración (c
 - Iniciar un viaje en M6 exige un código de QR, que hoy M6 valida de forma simulada dentro de su propio servicio. Si el Grupo 12 integra el M8 real, ese paso de la prueba puede cambiar.
 - El M6 real no valida la firma del token (su README lo anota como pendiente): la prueba no demuestra que M6 autentique a M2, solo que lo acepta y lo reconoce con el rol correcto.
 - M2 le manda a M6 la correlación en `X-Correlation-Id` (RNF-14.11 de la spec 007) y M6 la devuelve en su respuesta, pero la respuesta de M6 a M2 no se ve desde afuera. Por eso se comprueban las dos mitades por separado: que M2 lo envía, en las pruebas de la spec 007 con el M6 simulado; que el M6 real lo toma y lo devuelve, acá (RNF-07.14).
-- El contrato publicado de M6 nombra el rol `SYSTEM` y M2 se presenta con `roles: ["SERVICIO"]`, que el M6 real acepta como alias documentado solo en su repositorio. Si una versión nueva de M6 deja de aceptarlo, RNF-07.11 falla y lo avisa.
+- El contrato publicado de M6 nombra el rol `SYSTEM` y M2 se presenta con `roles: ["SERVICIO"]`, que el M6 real acepta como alias documentado solo en su repositorio. Si una versión nueva de M6 deja de aceptarlo, RNF-07.11 falla y lo avisa. Vale solo para el token HS256: con Keycloak, M2 se identifica como `grupo-17` con el rol `clientes-be` y la prueba distribuida sigue RNF-07.15 (spec 125).
 
 ## Fuera de alcance
 - Cambiar el código o el contrato de M6.
@@ -82,7 +82,7 @@ Aclaradas el 2026-11-07, por delegación de @sandobaitt (se aplicó la recomenda
 - **RNF-13.8 y el código de la calificación (cambio del 2026-11-08):** el texto decía que, al volver M6, la calificación respondía `200`. Es `201`, como dice el contrato (`calificarConductor`), RNF-07.9 de esta misma spec, el plan y `resiliencia.test.ts`. Se corrige solo el texto; no cambia código, plan ni tareas. Alternativa descartada: cambiar el contrato o la prueba a `200`, que contradiría a RNF-07.9 y a lo acordado con la cátedra.
 - **Cambio del 2026-11-11 (#96, ADR 096): `m6.yml` pasa a la versión `35b3c4d` del contrato de M6.**
   - Se suma RNF-07.14: la prueba comprueba contra el M6 real que `X-Correlation-Id` es el encabezado que M6 toma y devuelve. Es la mitad que el M6 simulado no puede demostrar. Que M6 devuelva el encabezado es comportamiento observado, no de contrato: `m6.yml` declara `X-Correlation-Id` solo como encabezado del pedido y `correlationId` como campo de `Problem`. Se comprobó el 2026-11-11 contra el M6 real en `7d3d5af`: un `GET /trips` (`200`) y un `GET /trips/{tripId}` de un viaje inexistente (`404`) devolvieron el mismo valor en el encabezado, y el `404` también en `correlationId`. Alternativa descartada: comprobar de punta a punta que el identificador de un pedido a M2 llega a M6, porque M2 no muestra la respuesta de M6 y el M6 real no registra las consultas en su log (visto en su commit `7d3d5af`).
-  - M2 se sigue presentando con `roles: ["SERVICIO"]` y RNF-07.11 no cambia (decisión de Lautaro del 2026-11-11, en la spec 007).
+  - M2 se sigue presentando con `roles: ["SERVICIO"]` y RNF-07.11 no cambia (decisión de Lautaro del 2026-11-11, en la spec 007). Desde la spec 125 eso vale solo para el token HS256, y RNF-07.15 reemplaza a RNF-07.11.
   - La tabla de diferencias se pone al día en la guía: varias filas existían solo porque `m6.yml` era de una versión anterior.
 
 ## Dudas abiertas
