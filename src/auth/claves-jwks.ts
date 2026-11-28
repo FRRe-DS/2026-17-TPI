@@ -47,10 +47,25 @@ export function crearClaves({ urlJwks, tiempoModulosMs, reintentosModulos, reint
       } catch (error) {
         if (esCulpaDelToken(error)) throw error;
         ultimaFalla = error;
-        if (intento < intentos) await pausar(PAUSA_REINTENTO_MS);
+        if (intento < intentos) await pausaDe(error);
       }
     }
     throw new ModuloNoDisponible(NOMBRE, { cause: ultimaFalla, reintentarDespuesS });
+  }
+
+  // Las solicitudes que fallaron por el mismo pedido (jose les entrega el mismo error) esperan una sola pausa y vuelven a pedir
+  // en el mismo instante, así que el intento siguiente también es un solo pedido (spec 080, Casos límite). Con una pausa cada
+  // una, con la máquina cargada sus temporizadores no terminan juntos: las más tardías llegarían con ese pedido ya respondido y
+  // harían otro (#136).
+  const pausas = new WeakMap<object, Promise<void>>();
+  function pausaDe(error: unknown): Promise<void> {
+    if (typeof error !== 'object' || error === null) return pausar(PAUSA_REINTENTO_MS);
+    let pausa = pausas.get(error);
+    if (!pausa) {
+      pausa = pausar(PAUSA_REINTENTO_MS);
+      pausas.set(error, pausa);
+    }
+    return pausa;
   }
 
   return {

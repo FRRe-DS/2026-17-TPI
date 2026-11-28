@@ -13,6 +13,14 @@ export type Comportamiento =
   // No responde nunca: la conexión queda abierta hasta que el cliente se canse o se cierre el servidor.
   | { tipo: 'cuelga' };
 
+// El tiempo máximo por intento para las pruebas que no miden el corte por tiempo (#136). Este servidor corre en el mismo proceso
+// que la prueba: con la máquina cargada puede tardar más de unos cientos de ms en atender, el cliente da el intento por perdido y
+// reintenta (como debe), y el pedido de más se cuenta en esa prueba o en la siguiente, o corre la lista de comportamientos.
+export const TIEMPO_HOLGADO_MS = 5_000;
+
+// Los comportamientos que solo terminan por el tiempo máximo del cliente: con ellos sí hace falta uno corto.
+export const terminaPorTiempo = (c: Comportamiento): boolean => c.tipo === 'cuelga' || c.tipo === 'demora-cuerpo';
+
 export function crearServidorModulo() {
   // Uno por llamada, en orden; cuando se acaban, sigue valiendo el último.
   let comportamientos: Comportamiento[] = [{ tipo: 'ok' }];

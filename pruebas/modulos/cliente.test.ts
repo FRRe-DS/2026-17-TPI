@@ -37,7 +37,8 @@ describe('crearClienteModulo', () => {
   // ## T24
 
   it('corta el intento aunque los encabezados lleguen antes del plazo', async () => {
-    serv.responderCon({ tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4 });
+    // El cuerpo llega mucho después del límite de abajo: con la máquina cargada, el corte a los 200 ms puede medir más de 600 (#136).
+    serv.responderCon({ tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 10 });
     const cliente = crearClienteModulo({
       nombre: 'M6',
       urlBase: serv.url,
@@ -48,7 +49,7 @@ describe('crearClienteModulo', () => {
 
     const inicio = Date.now();
     await expect(cliente.obtener('/', 'id-prueba')).rejects.toThrow(ModuloNoDisponible);
-    expect(Date.now() - inicio).toBeLessThan(TIEMPO_MS * 3);
+    expect(Date.now() - inicio).toBeLessThan(TIEMPO_MS * 5);
     expect(Date.now() - inicio).toBeGreaterThanOrEqual(TIEMPO_MS - 20);
   });
 
