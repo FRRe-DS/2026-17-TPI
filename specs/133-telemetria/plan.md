@@ -1,38 +1,30 @@
 # Plan — Spec 133 Telemetría OpenTelemetry hacia Grafana Cloud
 
 ## Contrato
-Sin cambios en `contrato/openapi.yml`. Se instrumentan los flujos existentes de `crearBloqueo`, `obtenerEstadoCuenta` y `calificarConductor` sin alterar sus firmas HTTP, códigos de respuesta ni esquemas.
+Sin cambios en `contrato/openapi.yml`. Se instrumentan `crearBloqueo`, `obtenerEstadoCuenta` y `calificarConductor` sin cambiar firmas, códigos ni esquemas.
 
 ## Datos
-Sin cambios en PostgreSQL ni Redis. No hay migraciones.
+Sin cambios en PostgreSQL ni Redis. Los contadores no reemplazan las restricciones ni la idempotencia de la base y no son persistentes: se reinician al reiniciar el proceso.
 
 ## Lógica
-1. **Configuración y secretos (`src/config.ts`, `src/logs.ts` — RNF-06, RNF-19):**
-   - `Config` incorpora `otelEndpoint?: string`, `otelHeaders?: string` y `otelServicio: string` (default `m2-clientes`).
-   - `OTEL_EXPORTER_OTLP_ENDPOINT` es opcional; si viene con texto no vacío se valida con `urlHttp`.
-   - `secretosDeConfig` agrega `otelHeaders` (y el token extraído si tiene esquema `Basic`/`Bearer`) para ocultarlo en cualquier log.
-2. **Inicialización y apagado (`src/telemetria.ts`, `src/servidor.ts` — RNF-16.1, RNF-16.2, RNF-16.3, RNF-14):**
-   - `inicializarTelemetria(env)` lee `OTEL_EXPORTER_OTLP_ENDPOINT`. Si falta o está vacío, devuelve `undefined` sin iniciar el SDK (RNF-16.2).
-   - Si existe, crea `NodeSDK` con `serviceName`, `OTLPMetricExporter` (dentro de `PeriodicExportingMetricReader`), `OTLPTraceExporter` y `getNodeAutoInstrumentations()` (RNF-16.1, RNF-16.3).
-   - `src/servidor.ts` conserva intactos todos sus comentarios originales sobre señales, inicializa telemetría antes de `arrancar` y usa formato JSON Pino ante fallos críticos (RNF-14). Al recibir parada, invoca `sdk.shutdown()` antes de salir.
-3. **Métricas de dominio (`src/telemetria.ts`, `src/clientes/servicio.ts`, `src/calificaciones/servicio.ts` — RNF-16.4):**
-   - `obtenerMetricasModulo()` obtiene los contadores del meter `modulo-clientes` (no-op seguro si no hay SDK):
-     - `m2_bloqueos_creados_total`: en `crearBloqueo`, suma 1 con `{ resultado: 'creado' }` al confirmar en `conIdempotencia`, o `{ resultado: 'rechazado' }` si lanza error de dominio/validación.
-     - `m2_estado_cuenta_consultas_total`: en `obtenerEstadoCuenta`, suma 1 con `{ resultado: 'exitosa' }` al resolver o `{ resultado: 'rechazada' }` si falla.
-     - `m2_calificaciones_registradas_total`: en `calificarConductor`, suma 1 con `{ resultado: 'creada' }` al confirmar o `{ resultado: 'rechazada' }` si falla.
-4. **Dependencias y entorno (`package.json`, `docker-compose.yml` — RNF-01.1, RNF-06, RNF-20):**
-   - Paquetes `@opentelemetry/*` instalados con `--save-exact` (sin `^`).
-   - `docker-compose.yml` solo expone las variables opcionales `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` y `OTEL_SERVICE_NAME` en el servicio `m2`, manteniendo `panel` con `condition: service_healthy` y sin servicios locales de Prometheus ni Grafana.
+1. **Configuración y privacidad (RNF-06.133.1, RNF-19.133.1):** `config.ts` valida el endpoint opcional y los encabezados y nombre de servicio salen del entorno. `logs.ts` oculta los secretos OTLP. Las dependencias se fijan según RNF-01.1 de la 003.
+2. **Arranque ESM y cierre (RNF-14.133.1, RNF-14.133.2, RNF-14.133.5):** cargar el SDK mediante `node --import ./dist/telemetria.js dist/servidor.js`, con el hook ESM de OpenTelemetry registrado antes de importar las librerías instrumentadas; actualizar el CMD de `Dockerfile`. El preload debe iniciar el SDK solo con endpoint configurado y compartir su cierre con `servidor.ts`, sin cambiar el manejo de señales ni comentarios. Probar en Node 24 y con la imagen real: `--import` por sí solo no demuestra que el hook ESM esté activo.
+3. **Instrumentación mínima (RNF-14.133.3):** seleccionar explícitamente HTTP, Undici para `fetch`, PostgreSQL, runtime Node para la memoria heap y, si se demuestra compatible, Redis; instrumentar Fastify con una alternativa compatible o cobertura HTTP equivalente, sin habilitar el paquete completo por defecto. La dependencia antigua `@opentelemetry/instrumentation-fastify` fue retirada; evaluar `@fastify/otel` sin asumir que un cambio de dependencia ya está aprobado. Confirmar con prueba real si la instrumentación elegida intercepta `redis@6.3.1`; si no lo hace, documentar la ausencia de trazas Redis, sin sustituir la dependencia Redis ni prometer cobertura.
+4. **Atributos de trazas (RNF-19.133.1):** usar lista permitida o sanitización antes de exportar para conservar solo servicio, operación o plantilla de ruta, método, estado y duración. Excluir encabezados, query strings, rutas con valores identificatorios, cuerpos, valores SQL y argumentos Redis; cubrir también excepciones, eventos, atributos de recurso y propagación para que no filtren datos sensibles. No asumir que los valores por defecto del SDK los eliminan.
+5. **Contadores (RNF-14.133.4):** incrementar éxitos de creación solo cuando se confirma una creación nueva, no al recuperar respuesta idempotente; comprobar claves concurrentes iguales. Contar rechazos 4xx de negocio lanzados por el servicio; 5xx y rechazos HTTP anteriores al servicio no incrementan rechazo. La consulta de estado exitosa cuenta cada lectura servida, incluso desde caché. Las decisiones de transacción, respuestas y errores no cambian.
+6. **Compose y documentación (RNF-06.133.1, RNF-20.133.1):** pasar las tres variables OTLP solo a M2, sin credenciales en el repositorio; conservar los healthchecks existentes y documentar credenciales, comandos y verificación.
 
 ## Integraciones
-- **Grafana Cloud (OTLP/HTTP):** envío directo asíncrono en segundo plano. Si no responde, las respuestas de M2 no se bloquean ni devuelven error.
+- Grafana Cloud: OTLP/HTTP asíncrono y opcional; una caída no modifica las respuestas de M2. Sin endpoint no hay exportación ni dependencia de red externa.
+- M6 y Keycloak mantienen sus clientes, límites de tiempo y reintentos actuales; la telemetría no altera sus contratos.
 
 ## Decisiones
-- **OTLP/HTTP directo en lugar de `otel-collector` o Prometheus local:** evita contenedores adicionales en `docker-compose.yml` y cumple YAGNI. Alternativa descartada: levantar `prom/prometheus` + `grafana/grafana` o `grafana/otel-lgtm` en el repo.
-- **Métricas vía API global `@opentelemetry/api`:** permite que los servicios funcionen idénticamente en tests unitarios sin inicializar `NodeSDK`.
+- Envío directo a Grafana Cloud y alternativas descartadas: [ADR 133](../../docs/adr/133-telemetria.md).
+- Instrumentación por lista explícita y filtrado antes de exportar: evita recoger atributos o librerías fuera del alcance y facilita verificar privacidad.
+- Rechazos 4xx de dominio separados de errores 5xx; reintentos idempotentes no representan nuevas creaciones.
 
 ## Pruebas
-- Unitarias en `test/` (o junto al módulo de pruebas existente) para:
-  - Validación de `OTEL_EXPORTER_OTLP_ENDPOINT` válido/inválido/ausente y ocultamiento de `OTEL_EXPORTER_OTLP_HEADERS` en `secretosDeConfig` (RNF-06, RNF-19).
-  - Inicialización no-op cuando no hay endpoint y registro sin errores de las tres métricas en los servicios (RNF-16.2, RNF-16.4).
-- Suite completa existente (`npm test`, `npm run lint`, `npm run build`, `node scripts/spec-check.mjs`).
+- `pruebas/unitarias/`: configuración válida, inválida y ausente; secretos ocultos; inicio y cierre del SDK; contadores, 4xx de dominio, 5xx, repetición y concurrencia idempotente.
+- Prueba con exportador en memoria y tráfico real del proceso ESM y la imagen: span HTTP entrante, PostgreSQL, `fetch` saliente y Redis cuando corresponda. Inspeccionar atributos, eventos y excepciones con valores centinela para probar ausencia de secretos y datos personales, sin enviar datos reales a Grafana.
+- Verificar sin endpoint y con endpoint inaccesible que M2 mantiene sus respuestas y se detiene ordenadamente; validar el primer contador tras el arranque real, no solo un mock del orden de imports.
+- `npm test`, `npm run lint`, `npm run build` y `node scripts/spec-check.mjs`; documentar la verificación en Grafana en la guía.

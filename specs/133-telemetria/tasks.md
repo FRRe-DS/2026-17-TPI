@@ -1,13 +1,19 @@
 # Tareas — Spec 133 Telemetría OpenTelemetry hacia Grafana Cloud
 
-- [ ] **T1. Instalar dependencias exactas de OpenTelemetry y agregar configuración/privacidad OTLP en `config.ts` y `logs.ts` con tests.** RNF-01.1, RNF-06, RNF-19
-  - Hecho cuando: `package.json` tiene versiones exactas sin `^`, `cargarConfig` valida `OTEL_EXPORTER_OTLP_ENDPOINT`, `secretosDeConfig` oculta `OTEL_EXPORTER_OTLP_HEADERS` y los tests unitarios pasan.
+- [ ] **T1. Configurar OTLP y proteger credenciales.** RNF-06.133.1, RNF-19.133.1
+  - Hecho cuando: dependencias con versiones exactas, variables opcionales y endpoint validado sin exponer valores; pruebas en `pruebas/unitarias/` comprueban errores y ocultamiento.
 
-- [ ] **T2. Implementar `src/telemetria.ts` (OTLP/HTTP + auto-instrumentación + shutdown) e integrarlo en `src/servidor.ts` respetando logs Pino y comentarios.** RNF-16.1, RNF-16.2, RNF-16.3, RNF-14
-  - Hecho cuando: sin endpoint no inicializa SDK remoto, con endpoint inicia `NodeSDK`, no hay `console.log`/`console.error`, los comentarios originales de `servidor.ts` siguen presentes y los tests unitarios pasan.
+- [ ] **T2. Iniciar y detener el SDK antes de cargar la aplicación ESM.** RNF-14.133.1, RNF-14.133.2, RNF-14.133.5
+  - Hecho cuando: el preload y el hook ESM funcionan con Node 24 y en la imagen; sin endpoint no hay exportación; el cierre vacía los lotes y conserva señales y logs estructurados.
 
-- [ ] **T3. Instrumentar las tres métricas de dominio de M2 (`m2_bloqueos_creados_total`, `m2_estado_cuenta_consultas_total`, `m2_calificaciones_registradas_total`) con tests.** RNF-16.4
-  - Hecho cuando: `crearBloqueo`, `obtenerEstadoCuenta` y `calificarConductor` registran sus contadores sin alterar respuestas ni errores, cubierto por tests.
+- [ ] **T3. Instrumentar HTTP, Fastify, PostgreSQL, llamadas salientes y runtime.** RNF-14.133.3, RNF-19.133.1
+  - Hecho cuando: tráfico y consultas reales generan spans y la memoria heap de Node genera métricas observables en un exportador de pruebas, sin exportar cabeceras, query strings, cuerpos, identificadores ni valores SQL; solo se habilitan instrumentaciones necesarias.
 
-- [ ] **T4. Actualizar `docker-compose.yml` con variables OTLP opcionales, completar `guia.md` y ejecutar validación completa.** RNF-06, RNF-20
-  - Hecho cuando: `docker-compose.yml` pasa variables OTLP sin secretos ni servicios de monitoreo locales, `guia.md` documenta la configuración de Grafana Cloud y `npm test`, `npm run lint`, `npm run build` y `node scripts/spec-check.mjs` pasan en verde.
+- [ ] **T4. Comprobar Redis y proteger sus atributos.** RNF-14.133.3, RNF-19.133.1
+  - Hecho cuando: una prueba con `redis@6.3.1` demuestra spans sin argumentos sensibles; si la instrumentación no es compatible, se documenta explícitamente la ausencia de trazas Redis sin cambiar la dependencia.
+
+- [ ] **T5. Registrar contadores de dominio sin duplicar creaciones.** RNF-14.133.4
+  - Hecho cuando: las pruebas comprueban éxitos, rechazos 4xx del servicio, 5xx sin rechazo, respuestas idempotentes y concurrencia con una sola creación contada; las respuestas y errores originales se conservan.
+
+- [ ] **T6. Integrar Compose, documentar y validar.** RNF-06.133.1, RNF-20.133.1
+  - Hecho cuando: las variables llegan a M2 sin secretos en el repositorio, se conservan los healthchecks, la guía explica configuración y verificación, y `npm test`, lint, build y `spec-check` pasan.
