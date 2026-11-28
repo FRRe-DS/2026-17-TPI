@@ -1,6 +1,6 @@
 # Spec 008 — Calificación del conductor
 
-Estado: implementada
+Estado: aprobada
 Issue: #8
 Etapa: TP1
 Responsable: @sandobaitt
@@ -33,7 +33,7 @@ Después de un viaje completado, el cliente quiere valorar al conductor con un p
 - RF-2.5.10: CUANDO una persona con un rol admitido consulta una calificación que pertenece al cliente de la ruta, EL SISTEMA responde `200` con esa calificación; SI la calificación no existe o es de otro cliente, ENTONCES EL SISTEMA responde `404`.
 - RF-2.5.11: SI el perfil del `clienteId` no existe en M2, ENTONCES EL SISTEMA responde `404` sin llamar a M6.
 - RF-2.5.12: SI CLIENTE es el único rol del token que admite la operación y su `sub` no coincide con `clienteId`, ENTONCES EL SISTEMA responde `403` sin llamar a M6.
-- RF-2.5.13: CUANDO M2 consulta el viaje a M6, EL SISTEMA usa el token de servicio de la spec #7 (RF-2.4.11), firmado para cada intento, y nunca reenvía el token de quien llamó a M2.
+- RF-2.5.13: CUANDO M2 consulta el viaje a M6, EL SISTEMA usa el token de servicio de RF-2.4.11 (spec #7) o, con Keycloak configurado, el de la spec 125 (RF-2.4.11.9), y nunca reenvía el token de quien llamó a M2.
 - RF-2.5.14: CUANDO un CLIENTE o un OPERADOR consulta el historial de un cliente (spec #7), EL SISTEMA agrega a cada viaje `calificado` igual a `true` si ese cliente tiene una calificación de ese viaje y `false` si no, a partir de la base de M2 y sin llamar de nuevo a M6; SI la base de M2 no responde, ENTONCES EL SISTEMA responde `503` genérico y no devuelve el historial sin `calificado`.
 - RF-2.5.18: SI M6 responde `429` (su límite de pedidos) al consultar el viaje, ENTONCES EL SISTEMA no reintenta la llamada, responde `503` en `application/problem+json` que nombra a M6 en `detail`, con la cabecera `Retry-After` calculada como en el historial (RF-2.4.15 de la spec #7), y no guarda nada.
 
@@ -115,7 +115,7 @@ Después de un viaje completado, el cliente quiere valorar al conductor con un p
 - **Cambio del 2026-11-11 (#96, ADR 096): M2 se alinea con la versión `35b3c4d` del contrato de M6.** Va junto con el cambio de la spec #7, que tiene el detalle y las alternativas descartadas de cada punto.
   - Un `429` de M6 al consultar el viaje responde `503` con el `Retry-After` de M6 y no se reintenta (RF-2.5.18), igual que en el historial. Hasta ahora daba `500`. Como ningún error gasta la clave de idempotencia, el cliente reintenta la misma calificación más tarde.
   - La consulta del viaje lleva `X-Correlation-Id` como la del historial: las dos salen del mismo cliente de M6.
-  - M2 se sigue presentando con `roles: ["SERVICIO"]` (decisión de Lautaro del 2026-11-11, en la spec #7).
+  - M2 se sigue presentando con `roles: ["SERVICIO"]` (decisión de Lautaro del 2026-11-11, en la spec #7) cuando usa el token HS256; con Keycloak se identifica como `grupo-17` con el rol `clientes-be` (spec 125).
   - M2 sigue comprobando `state`, `clientId` y `driverId` aunque el contrato de M6 ya los exige, y un viaje `COMPLETED` sin `driverId` sigue siendo `503` (RF-2.5.5; decisión de Lautaro del 2026-11-10): M2 no confía en que el otro módulo cumpla su contrato para guardar un dato que el suyo exige.
 
 ## Dudas abiertas
