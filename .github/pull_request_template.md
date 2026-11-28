@@ -6,6 +6,10 @@
 
 Issue: #N · Carpeta: `specs/NNN-…/`
 
+Closes #N
+<!-- Implementación, cambio chico y contrato: deja «Closes #N» y GitHub cierra el issue al mergear.
+     Spec: borra esa línea; el issue sigue abierto hasta la implementación. -->
+
 ## Resumen
 <2-4 líneas: qué y por qué.>
 
