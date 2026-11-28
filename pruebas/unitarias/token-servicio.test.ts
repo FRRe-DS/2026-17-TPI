@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { crearTokenServicio, crearTokenServicioHs256 } from '../../src/auth/token-servicio.js';
 import { ErrorDeIntegracion, ModuloNoDisponible } from '../../src/errores.js';
 import { CONFIG } from '../ayudas/app.js';
-import { crearServidorModulo, type Comportamiento } from '../ayudas/servidor-modulo.js';
+import { crearServidorModulo, TIEMPO_HOLGADO_MS, terminaPorTiempo, type Comportamiento } from '../ayudas/servidor-modulo.js';
 
 // Una URL a la que no escucha nadie: el puerto que acaba de dejar libre un servidor que se cerró.
 async function urlSinServidor(): Promise<string> {
@@ -70,11 +70,12 @@ describe('token de servicio de Keycloak: el pedido (spec 125, RF-2.4.11.1, RF-2.
   const TOKEN = 'eyJ.token-de-keycloak.firma';
   const RESPUESTA_OK = { tipo: 'ok', cuerpo: { access_token: TOKEN, expires_in: 300, token_type: 'Bearer' } } as const;
 
-  const tokenServicioDe = (cambios: Partial<{ cliente: string; secreto: string; urlTokens: string }> = {}) =>
+  // Con el tiempo máximo corto solo las pruebas que miden el corte; las demás, holgado (#136).
+  const tokenServicioDe = (cambios: Partial<{ cliente: string; secreto: string; urlTokens: string }> = {}, tiempoModulosMs = TIEMPO_HOLGADO_MS) =>
     crearTokenServicio({
       ...CONFIG,
       audienciaM6: 'm6-de-prueba',
-      tiempoModulosMs: TIEMPO_MS,
+      tiempoModulosMs,
       reintentosModulos: 1,
       reintentarDespuesS: 7,
       tokenServicio: { urlTokens: `${keycloak.url}/realms/r/protocol/openid-connect/token`, cliente: CLIENTE, secreto: SECRETO, ...cambios },
@@ -138,7 +139,7 @@ describe('token de servicio de Keycloak: el pedido (spec 125, RF-2.4.11.1, RF-2.
   it('un corte por tiempo se reintenta una vez y vale el token del reintento', async () => {
     keycloak.responderCon([{ tipo: 'demora-cuerpo', retardoMs: TIEMPO_MS * 4, cuerpo: RESPUESTA_OK.cuerpo }, RESPUESTA_OK]);
 
-    await expect(tokenServicioDe().obtener('id-1')).resolves.toStrictEqual({ token: TOKEN, reutilizado: false });
+    await expect(tokenServicioDe({}, TIEMPO_MS).obtener('id-1')).resolves.toStrictEqual({ token: TOKEN, reutilizado: false });
     expect(keycloak.llamadas).toBe(2);
   });
 
@@ -160,7 +161,9 @@ describe('token de servicio de Keycloak: el pedido (spec 125, RF-2.4.11.1, RF-2.
   ])('%s, dos veces, da 503 genérico con Retry-After tras un solo reintento', async (_caso, comportamiento) => {
     keycloak.responderCon(comportamiento);
 
-    const error = await tokenServicioDe().obtener('id-1').catch((e: unknown) => e);
+    const error = await tokenServicioDe({}, terminaPorTiempo(comportamiento) ? TIEMPO_MS : TIEMPO_HOLGADO_MS)
+      .obtener('id-1')
+      .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ModuloNoDisponible);
     expect(error).toMatchObject(noDisponible);
@@ -216,7 +219,7 @@ describe('token de servicio de Keycloak: caché y pedido compartido (spec 125, R
     crearTokenServicio({
       ...CONFIG,
       audienciaM6: 'm6-de-prueba',
-      tiempoModulosMs: 200,
+      tiempoModulosMs: TIEMPO_HOLGADO_MS,
       reintentosModulos: 1,
       reintentarDespuesS: 7,
       tokenServicio: { urlTokens: `${keycloak.url}/token`, cliente: 'grupo-17', secreto: 'secreto-de-prueba' },
@@ -378,12 +381,13 @@ describe('token de servicio de Keycloak: la línea del pedido (spec 125, RNF-14.
     };
   }
 
-  const tokenServicioDe = (log: ReturnType<typeof logDePrueba>['log']) =>
+  // Con el tiempo máximo corto solo las pruebas que miden el corte; las demás, holgado (#136).
+  const tokenServicioDe = (log: ReturnType<typeof logDePrueba>['log'], tiempoModulosMs = TIEMPO_HOLGADO_MS) =>
     crearTokenServicio(
       {
         ...CONFIG,
         audienciaM6: 'm6-de-prueba',
-        tiempoModulosMs: 200,
+        tiempoModulosMs,
         reintentosModulos: 1,
         reintentarDespuesS: 7,
         tokenServicio: { urlTokens: `${keycloak.url}${RUTA}`, cliente: 'grupo-17', secreto: SECRETO },
@@ -459,7 +463,7 @@ describe('token de servicio de Keycloak: la línea del pedido (spec 125, RNF-14.
     keycloak.responderCon(comportamiento);
     const { lineas, log } = logDePrueba();
 
-    await tokenServicioDe(log)
+    await tokenServicioDe(log, terminaPorTiempo(comportamiento) ? 200 : TIEMPO_HOLGADO_MS)
       .obtener('id-1')
       .catch(() => undefined);
 
