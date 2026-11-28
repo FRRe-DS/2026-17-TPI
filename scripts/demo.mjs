@@ -5,7 +5,7 @@
 //   docker compose up -d --build --wait
 //   node scripts/demo.mjs [--detalle] [--dejar-m6]
 // --detalle: muestra además el curl equivalente de cada paso y la respuesta completa.
-// --dejar-m6: no borra el M6 simulado al terminar (se borra con `docker rm -f m6-simulado`).
+// --dejar-m6: deja el M6 simulado arriba al terminar, con el cliente de la demostración (se borra con `docker rm -f m6-simulado`).
 // Con el perfil `panel` levantado, detiene el M6 del panel mientras corre y lo vuelve a arrancar al terminar (#104).
 // La sección 9 (caché, spec 107) detiene Redis un momento para mostrar que M2 sigue sin él, y lo vuelve a arrancar.
 import { execFile } from 'node:child_process';
@@ -87,8 +87,9 @@ async function apartarM6DelPanel() {
 // La sección 9 detiene Redis para mostrar que M2 sigue sin él; si la demostración se corta en el medio, se vuelve a arrancar.
 let redisDetenido = false;
 
-// Deja todo como estaba: vuelve a arrancar Redis si se lo detuvo, borra el M6 de la demostración y vuelve a arrancar el del
-// panel si se lo había detenido. Una sola vez, aunque la pidan el final de la demostración y una interrupción a la vez.
+// Deja todo como estaba: vuelve a arrancar Redis si se lo detuvo, borra el M6 de la demostración (o lo deja arriba con
+// --dejar-m6) y vuelve a arrancar el del panel si se lo había detenido. Una sola vez, aunque la pidan el final de la
+// demostración y una interrupción a la vez.
 let restauracion;
 const restaurar = () => (restauracion ??= dejarComoEstaba());
 
@@ -101,6 +102,7 @@ async function dejarComoEstaba() {
       .catch(() => console.error(rojo('No se pudo volver a arrancar Redis. Arrancalo con: docker compose start redis')));
   }
   if (!opciones['dejar-m6']) await ejecutar('docker', ['rm', '-f', NOMBRE_M6]).catch(() => undefined);
+  else await dejarM6Arriba();
   if (!m6DelPanelDetenido) return;
   const comando = `docker compose start ${SERVICIO_M6_PANEL}`;
   const { stdout: quedaElDeLaDemo } = await ejecutar('docker', ['ps', '-q', '--filter', `name=^${NOMBRE_M6}$`]).catch(() => ({ stdout: '' }));
@@ -118,7 +120,26 @@ async function dejarComoEstaba() {
   }
 }
 
+// Con --dejar-m6, el simulado tiene que quedar arriba al terminar. Corre con `--rm` y la sección 8 lo detiene para mostrar
+// M6 caído, así que detenerlo también lo borra: si ya no está, se vuelve a levantar con el mismo cliente de la demostración.
+// Si la demostración se cortó antes de levantarlo, no hay cliente y no se levanta nada.
+let clienteDelM6;
+
+async function dejarM6Arriba() {
+  const { stdout: corre } = await ejecutar('docker', ['ps', '-q', '--filter', `name=^${NOMBRE_M6}$`]).catch(() => ({ stdout: '' }));
+  if (corre.trim() === '' && clienteDelM6) {
+    try {
+      await levantarM6(clienteDelM6);
+    } catch {
+      console.error(rojo(`No se pudo dejar el M6 simulado arriba (${NOMBRE_M6}).`));
+      return;
+    }
+  }
+  if (clienteDelM6) console.log(gris(`El M6 simulado queda arriba (contenedor ${NOMBRE_M6}, cliente ${clienteDelM6}). Para borrarlo: docker rm -f ${NOMBRE_M6}`));
+}
+
 async function levantarM6(clienteId) {
+  clienteDelM6 = clienteId;
   await ejecutar('docker', ['rm', '-f', NOMBRE_M6]).catch(() => undefined);
   const { stdout: m2 } = await compose('ps', '-q', 'm2');
   const { stdout: redes } = await ejecutar('docker', ['inspect', '-f', '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}', m2.trim()]);

@@ -12,7 +12,7 @@ node scripts/demo.mjs                   # recorre todas las funcionalidades y co
 docker compose down                     # al terminar (agrega -v para borrar también los datos)
 ```
 
-La demo crea un cliente nuevo en cada corrida, así que se puede repetir sin limpiar la base. Levanta por su cuenta un M6 simulado (un contenedor llamado `m6-simulado`), lo usa para calificaciones e historial y lo borra al terminar. Imprime una línea por paso con ✔ o ✘ y termina con código distinto de cero si alguna respuesta no es la que dice el contrato. Con `--detalle` muestra además el `curl` equivalente y la respuesta completa de cada paso; con `--dejar-m6` no borra el M6 simulado.
+La demo crea un cliente nuevo en cada corrida, así que se puede repetir sin limpiar la base. Levanta por su cuenta un M6 simulado (un contenedor llamado `m6-simulado`), lo usa para calificaciones e historial y lo borra al terminar. Imprime una línea por paso con ✔ o ✘ y termina con código distinto de cero si alguna respuesta no es la que dice el contrato. Con `--detalle` muestra además el `curl` equivalente y la respuesta completa de cada paso; con `--dejar-m6` deja el M6 simulado arriba al terminar, con los viajes del cliente de la demostración (se borra con `docker rm -f m6-simulado`).
 
 Si el panel está levantado (`--profile panel`, sección 7), la demo detiene el M6 del panel mientras corre y lo vuelve a arrancar al terminar: los dos responden al nombre de red `m6` y M2 no puede tener dos. El M6 del panel vuelve con su modo y sus viajes de ejemplo de arranque.
 
