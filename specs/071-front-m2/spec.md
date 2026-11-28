@@ -1,6 +1,6 @@
 # Spec 071 — Front de M2: app de cliente y base del panel
 
-Estado: implementada
+Estado: aprobada
 Issue: #71
 Etapa: TP1
 Responsable: @sandobaitt
