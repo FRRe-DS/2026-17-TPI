@@ -9,19 +9,19 @@
 - [x] **T3. Cliente Redis y módulo de caché vacío.** RNF-13
   - Hecho cuando: con la dependencia `redis` agregada (aprobada por el integrador), `src/cache/redis.ts` se conecta con tiempo máximo por operación, falla de inmediato si no está conectado, se cierra en `detener`, y sin `M2_URL_REDIS` la caché es un no-op; las pruebas unitarias lo comprueban con un servidor que no contesta.
 
-- [x] **T4. Leer y guardar con TTL y versión.** RF-2.6.5, RF-2.6.5.1, RF-2.6.7, RNF-11, RNF-19
+- [x] **T4. Leer y guardar con TTL y versión.** RF-2.6.8, RF-2.6.8.1, RF-2.6.10, RNF-11, RNF-19
   - Hecho cuando: las pruebas unitarias con un Redis falso muestran que una segunda lectura sale de la copia, que el TTL es el menor entre el configurado y el primer `hasta`, que no se guarda si ya venció, y que las claves solo contienen el `clienteId`.
 
-- [x] **T5. `obtenerEstadoCuenta` usa la caché.** RF-2.6.5, RF-2.6.5.2, RF-2.6.5.3, RF-2.6.5.4
+- [x] **T5. `obtenerEstadoCuenta` usa la caché.** RF-2.6.8, RF-2.6.8.2, RF-2.6.8.3, RF-2.6.8.4
   - Hecho cuando: la prueba HTTP muestra que un rol sin permiso recibe `403` aunque exista copia, que un cliente inexistente da `404` sin guardar nada, y que el cuerpo es idéntico con y sin caché.
 
-- [x] **T6. Invalidar al cambiar un bloqueo.** RF-2.6.6, RF-2.6.6.1, RF-2.6.6.2
+- [x] **T6. Invalidar al cambiar un bloqueo.** RF-2.6.9, RF-2.6.9.1, RF-2.6.9.2
   - Hecho cuando: las pruebas muestran que, tras `201` de `crearBloqueo` y `200` de `levantarBloqueo`, la siguiente consulta lee la base; y que un alta rechazada (`422`, `404`, `409`) no cambia la versión.
 
-- [x] **T7. Redis caído o lento.** RF-2.6.8, RF-2.6.8.1, RNF-13, RNF-14, RNF-19
+- [x] **T7. Redis caído o lento.** RF-2.6.11, RF-2.6.11.1, RNF-13, RNF-14, RNF-19
   - Hecho cuando: con Redis cortado y con un servidor que no contesta, `obtenerEstadoCuenta` responde `200` dentro del tiempo máximo más lo que cuesta la base; una invalidación que falla deja al cliente sin copias hasta que se confirma; `/health` responde `200`; y el log tiene un aviso sin `clienteId` ni valores.
 
-- [x] **T8. Prueba de integración con Redis y PostgreSQL reales.** RF-2.6.5 a RF-2.6.8.1, RNF-05, RNF-07
+- [x] **T8. Prueba de integración con Redis y PostgreSQL reales.** RF-2.6.8 a RF-2.6.11.1, RNF-05, RNF-07
   - Hecho cuando: con Testcontainers, vaciar Redis no pierde ningún dato (todo se reconstruye desde la base), dos consultas seguidas hacen una sola lectura de estado en la base, un bloqueo con `hasta` cercano deja de informarse al vencer, y detener y volver a levantar Redis no cambia ninguna respuesta.
 
 - [x] **T9. Demostración, guía y documentos.** RNF-20
