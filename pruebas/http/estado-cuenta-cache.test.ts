@@ -6,7 +6,7 @@ import { crearApp, POOL_FALSO } from '../ayudas/app.js';
 import { levantarRedisFalso, type RedisFalso } from '../ayudas/redis-falso.js';
 import { bearer } from '../ayudas/tokens.js';
 
-// obtenerEstadoCuenta con la caché (spec 107: RF-2.6.5, RF-2.6.5.2, RF-2.6.5.3, RF-2.6.5.4). Redis es un servidor falso por TCP y la
+// obtenerEstadoCuenta con la caché (spec 107: RF-2.6.8, RF-2.6.8.2, RF-2.6.8.3, RF-2.6.8.4). Redis es un servidor falso por TCP y la
 // base es un pool que cuenta sus consultas: se ve cuándo se la consulta y cuándo no.
 
 const contrato = cargarContrato();
@@ -55,7 +55,7 @@ const pedir = (app: Awaited<ReturnType<typeof appConCache>>, encabezados: Record
 const guardados = () => redis.comandos.filter(([nombre]) => nombre?.toUpperCase() === 'SET');
 
 describe('obtenerEstadoCuenta con caché', () => {
-  it('la primera consulta lee la base y guarda; la segunda sale de la copia sin consultar la base (RF-2.6.5, RF-2.6.5.1)', async () => {
+  it('la primera consulta lee la base y guarda; la segunda sale de la copia sin consultar la base (RF-2.6.8, RF-2.6.8.1)', async () => {
     const { pool, estado } = baseCon([CON_BLOQUEO]);
     const app = await appConCache(pool);
     const primera = await pedir(app, token(['CLIENTE']));
@@ -65,7 +65,7 @@ describe('obtenerEstadoCuenta con caché', () => {
     expect(guardados()).toHaveLength(1);
   });
 
-  it('el cuerpo y los encabezados son idénticos con copia, sin copia y sin caché (RF-2.6.5.2)', async () => {
+  it('el cuerpo y los encabezados son idénticos con copia, sin copia y sin caché (RF-2.6.8.2)', async () => {
     const conCache = await appConCache(baseCon([CON_BLOQUEO]).pool);
     const desdeBase = await pedir(conCache, token(['CLIENTE']));
     const desdeCopia = await pedir(conCache, token(['CLIENTE']));
@@ -105,7 +105,7 @@ describe('obtenerEstadoCuenta con caché', () => {
   });
 });
 
-describe('los permisos van antes que la copia (RF-2.6.5.3)', () => {
+describe('los permisos van antes que la copia (RF-2.6.8.3)', () => {
   it.each([
     ['otro cliente', token(['CLIENTE'], OTRO), 403],
     ['un CONDUCTOR', token(['CONDUCTOR']), 403],
@@ -127,7 +127,7 @@ describe('los permisos van antes que la copia (RF-2.6.5.3)', () => {
   });
 });
 
-describe('un cliente inexistente no deja nada en la caché (RF-2.6.5.4)', () => {
+describe('un cliente inexistente no deja nada en la caché (RF-2.6.8.4)', () => {
   it('404 y ningún SET', async () => {
     const { pool } = baseCon([]);
     const app = await appConCache(pool);

@@ -467,7 +467,7 @@ describe('docker-compose.yml: Redis para la caché (spec 107, RNF-06, RNF-11)', 
     expect(redis?.image).toMatch(/^redis:\d+\.\d+\.\d+/);
   });
 
-  // Es una copia: sin volumen ni persistencia, un reinicio la vacía y todo se reconstruye desde la base (RNF-05, RF-2.6.8).
+  // Es una copia: sin volumen ni persistencia, un reinicio la vacía y todo se reconstruye desde la base (RNF-05, RF-2.6.11).
   it('no guarda datos en disco ni publica ningún puerto', () => {
     expect(redis?.ports).toBeUndefined();
     expect(redis?.volumes).toBeUndefined();

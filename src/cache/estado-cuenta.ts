@@ -3,7 +3,7 @@ import type { Redis } from './redis.js';
 
 // La copia del estado de cuenta en Redis (spec 107). La base sigue siendo la única fuente de verdad (RNF-05): la copia es la
 // respuesta `EstadoCuenta` tal cual, con un vencimiento, y todo lo que salga mal con Redis se vuelve «no hay copia» y se sigue
-// por la base (RF-2.6.8). Las claves identifican al cliente solo por su `clienteId`: ni nombre, ni motivo, ni token (RNF-19).
+// por la base (RF-2.6.11). Las claves identifican al cliente solo por su `clienteId`: ni nombre, ni motivo, ni token (RNF-19).
 //
 // Dos claves por cliente:
 //  - `m2:estado-cuenta:v:<clienteId>`: un contador entero, la versión; ausente vale 0.
@@ -25,11 +25,11 @@ export type OpcionesCache = {
 
 export type CacheEstadoCuenta = {
   // El estado de `clienteId`: la copia si hay una vigente y, si no, lo que devuelva `calcular` (la lectura en la base), que
-  // además se guarda. Un error de `calcular` sale tal cual y no se guarda nada (el cliente no existe: RF-2.6.5.4).
+  // además se guarda. Un error de `calcular` sale tal cual y no se guarda nada (el cliente no existe: RF-2.6.8.4).
   leer: (clienteId: string, calcular: () => Promise<EstadoCuenta>) => Promise<EstadoCuenta>;
   // Descarta las copias de `clienteId`: se llama después de que la base confirmó un alta o un levantamiento de bloqueo, y
-  // antes de responder (RF-2.6.6, RF-2.6.6.1). No lanza: si Redis falla, la respuesta al operador no cambia, y el cliente queda
-  // sin copias hasta que el descarte se confirme (RF-2.6.8.1).
+  // antes de responder (RF-2.6.9, RF-2.6.9.1). No lanza: si Redis falla, la respuesta al operador no cambia, y el cliente queda
+  // sin copias hasta que el descarte se confirme (RF-2.6.11.1).
   invalidar: (clienteId: string) => Promise<void>;
 };
 
@@ -51,7 +51,7 @@ function aEstado(texto: string, clienteId: string): EstadoCuenta | undefined {
   return valido ? (valor as EstadoCuenta) : undefined;
 }
 
-// Cuánto puede vivir la copia: lo configurado, o menos si algún bloqueo vigente termina antes (RF-2.6.7). Con 0 o menos, no se
+// Cuánto puede vivir la copia: lo configurado, o menos si algún bloqueo vigente termina antes (RF-2.6.10). Con 0 o menos, no se
 // guarda: la copia nunca sobrevive al primer `hasta`.
 function vencimientoMs(estado: EstadoCuenta, ttlS: number, ahoraMs: number): number {
   let ms = ttlS * 1000;
@@ -62,7 +62,7 @@ function vencimientoMs(estado: EstadoCuenta, ttlS: number, ahoraMs: number): num
 }
 
 export function crearCacheEstadoCuenta(redis: Redis, { ttlS, ahora = Date.now }: OpcionesCache): CacheEstadoCuenta {
-  // Los clientes cuyo descarte no se pudo confirmar en Redis (RF-2.6.8.1). Mientras un cliente esté acá, no se sirven ni se
+  // Los clientes cuyo descarte no se pudo confirmar en Redis (RF-2.6.11.1). Mientras un cliente esté acá, no se sirven ni se
   // guardan copias suyas: la copia de antes del cambio podría seguir viva. Cada lectura reintenta el descarte una vez, y lo
   // saca de acá cuando sale. Vive en memoria: con más de un proceso de M2 debería vivir en Redis (ADR 107, Consecuencias), y
   // si el proceso se reinicia con un cliente pendiente, su copia vieja dura como máximo el TTL.

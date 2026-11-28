@@ -11,7 +11,7 @@ import { type BaseDePrueba, crearBaseDePrueba } from '../ayudas/bd.js';
 import { levantarRedisReal, puertoLibre, redisCli } from '../ayudas/redis-real.js';
 import { armarToken } from '../ayudas/tokens.js';
 
-// La caché del estado de cuenta con Redis y PostgreSQL reales, en contenedor (spec 107: RF-2.6.5 a RF-2.6.8.1, RNF-05, RNF-07).
+// La caché del estado de cuenta con Redis y PostgreSQL reales, en contenedor (spec 107: RF-2.6.8 a RF-2.6.11.1, RNF-05, RNF-07).
 // Redis es la imagen del compose; PostgreSQL, la de todas las pruebas de integración.
 
 const TIEMPO_BD_MS = 2000;
@@ -71,7 +71,7 @@ describe('estado de cuenta con Redis y PostgreSQL reales', () => {
     return { app, clienteId, estado, alta, levantar, salud };
   }
 
-  it('dos consultas seguidas hacen una sola lectura en la base y dan el mismo cuerpo (RF-2.6.5, RF-2.6.5.2)', async () => {
+  it('dos consultas seguidas hacen una sola lectura en la base y dan el mismo cuerpo (RF-2.6.8, RF-2.6.8.2)', async () => {
     const { clienteId, estado } = await crear();
     const primera = await estado();
     const segunda = await estado();
@@ -87,7 +87,7 @@ describe('estado de cuenta con Redis y PostgreSQL reales', () => {
     expect(vence).toBeLessThanOrEqual(60_000);
   });
 
-  it('un alta y un levantamiento se ven en la consulta siguiente (RF-2.6.6, RF-2.6.6.1)', async () => {
+  it('un alta y un levantamiento se ven en la consulta siguiente (RF-2.6.9, RF-2.6.9.1)', async () => {
     const { estado, alta, levantar } = await crear();
     await estado();
     const { bloqueoId } = (await alta({ motivo: 'Deuda' })).json() as { bloqueoId: string };
@@ -108,7 +108,7 @@ describe('estado de cuenta con Redis y PostgreSQL reales', () => {
     expect((await estado()).base).toBe(0);
   });
 
-  it('un bloqueo con hasta cercano deja de informarse al vencer (RF-2.6.7)', async () => {
+  it('un bloqueo con hasta cercano deja de informarse al vencer (RF-2.6.10)', async () => {
     const { clienteId, estado, alta } = await crear();
     const hasta = new Date(Date.now() + 3000).toISOString();
     expect((await alta({ motivo: 'Corto', hasta })).statusCode).toBe(201);
@@ -122,7 +122,7 @@ describe('estado de cuenta con Redis y PostgreSQL reales', () => {
     expect(vencido.base).toBe(1);
   }, 15_000);
 
-  it('detener Redis y levantar otro no cambia ninguna respuesta (RF-2.6.8, RNF-13, RNF-14)', async () => {
+  it('detener Redis y levantar otro no cambia ninguna respuesta (RF-2.6.11, RNF-13, RNF-14)', async () => {
     const { app, estado, alta, salud } = await crear();
     await alta({ motivo: 'Deuda' });
     const conRedis = await estado();

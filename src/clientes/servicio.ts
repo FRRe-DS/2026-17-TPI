@@ -136,8 +136,8 @@ export async function actualizarCliente(
 
 // El estado de cuenta de `clienteId` (RF-2.6), si quien llama puede verlo: su dueño, un OPERADOR o un SERVICIO (M5 y M9). La
 // propiedad se exige solo si el único rol efectivo es CLIENTE. 404 si no existe el perfil. Los permisos se comprueban antes de
-// mirar la caché: una copia guardada no se entrega a quien no puede verla (RF-2.6.5.3). Después, la copia o la base: si no hay
-// copia vigente, se lee la base y se guarda; un perfil inexistente lanza antes de guardar nada (RF-2.6.5.4).
+// mirar la caché: una copia guardada no se entrega a quien no puede verla (RF-2.6.8.3). Después, la copia o la base: si no hay
+// copia vigente, se lee la base y se guarda; un perfil inexistente lanza antes de guardar nada (RF-2.6.8.4).
 export async function obtenerEstadoCuenta(
   pool: BaseDeDatos,
   cache: CacheEstadoCuenta,
@@ -183,7 +183,7 @@ export async function crearBloqueo(
     return { estado: 201, ubicacion: `/api/v1/clientes/${cliente}/bloqueos/${bloqueo.bloqueoId}`, cuerpo: bloqueo };
   });
   // `conIdempotencia` vuelve después del COMMIT: la base ya confirmó. Un error (404, 422) sale antes y no toca la copia
-  // (RF-2.6.6.2). Una repetición de la misma clave también invalida: no hace daño, y cubre el caso de que la primera haya
+  // (RF-2.6.9.2). Una repetición de la misma clave también invalida: no hace daño, y cubre el caso de que la primera haya
   // confirmado sin llegar a invalidar.
   await cache.invalidar(cliente);
   return respuesta;
@@ -206,7 +206,7 @@ export async function obtenerBloqueo(pool: BaseDeDatos, clienteId: string, bloqu
 // Levanta el bloqueo `bloqueoId` de `clienteId` (RF-2.6.3). Solo llega OPERADOR (el contrato), y su sub queda como autor. 404
 // si no es de ese cliente; 409 si ya fue levantado o venció (RF-2.6.3.1).
 // La copia del estado de cuenta se descarta después de que la sentencia confirmó (autocommit) y antes de responder
-// (RF-2.6.6.1); un 404 o un 409 sale antes y no la toca (RF-2.6.6.2).
+// (RF-2.6.9.1); un 404 o un 409 sale antes y no la toca (RF-2.6.9.2).
 export async function levantarBloqueo(
   pool: BaseDeDatos,
   cache: CacheEstadoCuenta,

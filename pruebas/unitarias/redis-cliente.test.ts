@@ -139,7 +139,7 @@ describe('crearRedis sin conexión (RNF-13)', () => {
   });
 });
 
-describe('avisos al log (RF-2.6.8, RNF-19)', () => {
+describe('avisos al log (RF-2.6.11, RNF-19)', () => {
   it('un fallo deja el nombre de la operación y un código, y nada más', async () => {
     const { redis, avisos } = await conectado({ colgado: true });
     await redis.incr('m2:estado-cuenta:v:cliente-secreto').catch(() => undefined);

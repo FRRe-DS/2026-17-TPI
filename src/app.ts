@@ -115,7 +115,7 @@ export function construirApp({ config, pool, contrato, manejadores, flujoLog }: 
   app.decorate('pool', pool);
   app.decorate('m6', crearM6(config, app.log, crearTokenServicio(config, app.log)));
   app.decorate('verificador', crearVerificador(config));
-  // Redis es solo una copia: que no conteste no detiene el servicio ni cambia ninguna respuesta (RF-2.6.8, RNF-13). Cada fallo deja
+  // Redis es solo una copia: que no conteste no detiene el servicio ni cambia ninguna respuesta (RF-2.6.11, RNF-13). Cada fallo deja
   // una línea de aviso, una por ventana, con la operación y un código y nunca la clave, el valor ni la dirección (RNF-19).
   const redis = crearRedis(config, {
     avisar: ({ operacion, codigo }) => app.log.warn({ operacion, codigo }, 'Redis no responde: el estado de cuenta se calcula desde la base'),
